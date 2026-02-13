@@ -238,7 +238,8 @@
         "V1 API endpoint: GET /api/systemusers used correctly"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V1 System Users API: GET /api/systemusers (list), GET /api/systemusers/{id} (get). Name resolution (username → ID) will be handled in US-018.",
       "dependsOn": ["US-008", "US-009", "US-010"]
     },

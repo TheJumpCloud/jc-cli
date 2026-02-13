@@ -41,6 +41,16 @@ type ListOptions struct {
 	Limit int
 	// PageSize is the number of results per API request (default 100).
 	PageSize int
+	// Sort is the field to sort by. Prefix with "-" for descending order.
+	Sort string
+}
+
+// ListResult holds the results from a list operation along with metadata.
+type ListResult struct {
+	// Data is the list of result items.
+	Data []json.RawMessage
+	// TotalCount is the total number of items available on the server.
+	TotalCount int
 }
 
 // effectivePageSize returns the page size to use, considering both PageSize
@@ -66,15 +76,16 @@ type v1ListResponse struct {
 
 // ListAll fetches all results from a V1 list endpoint with automatic pagination.
 // The endpoint should be a path like "/systemusers" (appended to BaseURL).
-// Results are accumulated and returned as a JSON array.
+// Results are accumulated and returned as a ListResult with total count.
 //
 // Pagination stops when:
 //   - All results have been fetched (skip >= totalCount)
 //   - The Limit has been reached
 //   - The context is cancelled
-func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOptions) ([]json.RawMessage, error) {
+func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOptions) (*ListResult, error) {
 	pageSize := opts.effectivePageSize()
 	var allResults []json.RawMessage
+	var totalCount int
 	skip := 0
 
 	for {
@@ -84,7 +95,7 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 		}
 
 		// Build URL with pagination parameters.
-		reqURL, err := c.buildListURL(endpoint, skip, pageSize)
+		reqURL, err := c.buildListURL(endpoint, skip, pageSize, opts.Sort)
 		if err != nil {
 			return nil, fmt.Errorf("building URL: %w", err)
 		}
@@ -116,6 +127,8 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 			return nil, fmt.Errorf("parsing response: %w", err)
 		}
 
+		totalCount = listResp.TotalCount
+
 		// Unmarshal the results array into individual items.
 		var pageItems []json.RawMessage
 		if err := json.Unmarshal(listResp.Results, &pageItems); err != nil {
@@ -145,7 +158,7 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 		}
 	}
 
-	return allResults, nil
+	return &ListResult{Data: allResults, TotalCount: totalCount}, nil
 }
 
 // Get fetches a single resource from a V1 endpoint.
@@ -177,7 +190,7 @@ func (c *V1Client) Get(ctx context.Context, endpoint string) (json.RawMessage, e
 }
 
 // buildListURL constructs the full URL for a V1 list request with pagination params.
-func (c *V1Client) buildListURL(endpoint string, skip, limit int) (string, error) {
+func (c *V1Client) buildListURL(endpoint string, skip, limit int, sort string) (string, error) {
 	u, err := url.Parse(c.BaseURL + endpoint)
 	if err != nil {
 		return "", err
@@ -185,6 +198,9 @@ func (c *V1Client) buildListURL(endpoint string, skip, limit int) (string, error
 	q := u.Query()
 	q.Set("skip", strconv.Itoa(skip))
 	q.Set("limit", strconv.Itoa(limit))
+	if sort != "" {
+		q.Set("sort", sort)
+	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

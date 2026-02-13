@@ -42,12 +42,15 @@ func TestV1Client_ListAll_SinglePage(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestV1Client(ts.URL)
-	results, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
 	if err != nil {
 		t.Fatalf("ListAll error: %v", err)
 	}
-	if len(results) != 2 {
-		t.Errorf("got %d results, want 2", len(results))
+	if len(result.Data) != 2 {
+		t.Errorf("got %d results, want 2", len(result.Data))
+	}
+	if result.TotalCount != 2 {
+		t.Errorf("TotalCount = %d, want 2", result.TotalCount)
 	}
 }
 
@@ -75,12 +78,12 @@ func TestV1Client_ListAll_MultiplePages(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestV1Client(ts.URL)
-	results, err := c.ListAll(context.Background(), "/systemusers", ListOptions{PageSize: 100})
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{PageSize: 100})
 	if err != nil {
 		t.Fatalf("ListAll error: %v", err)
 	}
-	if len(results) != totalItems {
-		t.Errorf("got %d results, want %d", len(results), totalItems)
+	if len(result.Data) != totalItems {
+		t.Errorf("got %d results, want %d", len(result.Data), totalItems)
 	}
 	// Should make 3 requests: 100 + 100 + 50.
 	if got := requestCount.Load(); got != 3 {
@@ -106,12 +109,12 @@ func TestV1Client_ListAll_LimitCapsResults(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestV1Client(ts.URL)
-	results, err := c.ListAll(context.Background(), "/systemusers", ListOptions{Limit: 10})
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListAll error: %v", err)
 	}
-	if len(results) != 10 {
-		t.Errorf("got %d results, want 10 (limit)", len(results))
+	if len(result.Data) != 10 {
+		t.Errorf("got %d results, want 10 (limit)", len(result.Data))
 	}
 }
 
@@ -134,15 +137,15 @@ func TestV1Client_ListAll_LimitSmallerThanPageSize(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestV1Client(ts.URL)
-	results, err := c.ListAll(context.Background(), "/systemusers", ListOptions{
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{
 		Limit:    5,
 		PageSize: 100,
 	})
 	if err != nil {
 		t.Fatalf("ListAll error: %v", err)
 	}
-	if len(results) != 5 {
-		t.Errorf("got %d results, want 5", len(results))
+	if len(result.Data) != 5 {
+		t.Errorf("got %d results, want 5", len(result.Data))
 	}
 }
 
@@ -198,12 +201,12 @@ func TestV1Client_ListAll_EmptyResults(t *testing.T) {
 	defer ts.Close()
 
 	c := newTestV1Client(ts.URL)
-	results, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
 	if err != nil {
 		t.Fatalf("ListAll error: %v", err)
 	}
-	if len(results) != 0 {
-		t.Errorf("got %d results, want 0", len(results))
+	if len(result.Data) != 0 {
+		t.Errorf("got %d results, want 0", len(result.Data))
 	}
 }
 

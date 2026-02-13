@@ -1,4 +1,11 @@
 ## Codebase Patterns
+- Resource commands follow pattern: `internal/cmd/<resource>.go` with `new<Resource>Cmd()` parent + `new<Resource>ListCmd()` / `new<Resource>GetCmd()` subcommands
+- `newV1Client` package-level var in users.go enables test injection (similar to `newAPIClient` in auth.go)
+- `ListAll()` returns `*ListResult{Data, TotalCount}` — use `TotalCount` for list footers
+- List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
+- `--limit` and `--sort` are local flags on `list` subcommands (not global)
+- `overrideV1Client(t, serverURL)` test helper redirects V1 client to httptest servers
+- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests
 - Viper env prefix is `JC_` — all env vars start with `JC_`
 - Use `viper.BindEnv("config.key", "JC_ENV_VAR")` for explicit env-to-key mappings (especially for nested keys where AutomaticEnv would require JC_DEFAULTS_OUTPUT instead of JC_OUTPUT)
 - Config file path: `~/.config/jc/config.yaml` (XDG-compliant)
@@ -257,4 +264,34 @@
   - Cobra does NOT chain `PersistentPreRunE` — if a subcommand defines its own, the parent's is skipped. Future subcommands that need their own pre-run must call the parent's manually.
   - `SetFlagErrorFunc` on root is inherited by all subcommands — it's the right hook for custom unknown-flag error messages.
   - The `levenshtein` edit distance of ≤ 3 is a good threshold for flag name suggestions — matches common typos like `--verbos`, `--debuf`, `--queit` while avoiding false positives.
+---
+
+## 2026-02-13 - US-011
+- What was implemented:
+  - `jc users list` — lists all JumpCloud system users via V1 GET /api/systemusers with automatic pagination
+  - `jc users get <id>` — gets a single user by ID via V1 GET /api/systemusers/{id}
+  - Default field subset for list/table: username, email, firstname, lastname, activated, suspended
+  - `--limit N` flag on `list` — caps total results returned (stops pagination early)
+  - `--sort <field>` flag on `list` — server-side sorting, prefix with `-` for descending (e.g. `--sort -created`)
+  - List footer: "── N items ──" or "── N of TOTAL items ──" when limit applied (printed to stderr)
+  - All output formats work: JSON (default), table (`-t`), CSV, human, plus `--ids` and `--quiet`
+  - User not found returns exit code 1 with helpful error message
+  - Extended `ListAll()` to return `*ListResult{Data, TotalCount}` (was `[]json.RawMessage`)
+  - Added `Sort` field to `ListOptions`, passed as `sort` query parameter to V1 API
+  - `newV1Client` package-level var for test injection
+- Files changed:
+  - internal/cmd/users.go — new users command group with list and get subcommands (120 lines)
+  - internal/cmd/users_test.go — 26 tests covering JSON/table/CSV/human/IDs/quiet output, limit, sort, pagination, empty results, not found, missing args, help, auth errors, API endpoints, default fields, footer
+  - internal/cmd/root.go — registered newUsersCmd()
+  - internal/api/v1.go — added Sort to ListOptions, ListResult struct, updated ListAll return type and buildListURL
+  - internal/api/v1_test.go — updated 6 tests for new ListResult return type
+  - .chief/prds/main/prd.json — marked US-011 passes
+  - progress.md — added codebase patterns and progress entry
+- **Learnings for future iterations:**
+  - Resource commands follow a consistent pattern: parent cmd + list/get subcommands. Use `var newV1Client` for test injection (same pattern as `newAPIClient` in auth.go).
+  - `ListAll()` returning `*ListResult{Data, TotalCount}` is better than just `[]json.RawMessage` — callers need the total count for footers. Changing return types is low-cost when there are few callers.
+  - List footer goes to stderr, data to stdout — this is critical for piping. `cmd.ErrOrStderr()` vs `cmd.OutOrStdout()` separates metadata from data.
+  - `--limit` and `--sort` are local flags on `list` (not global) because they don't apply to `get` or future `create`/`update`/`delete` subcommands.
+  - JumpCloud V1 API supports `sort` as a native query parameter — no client-side sorting needed. Descending uses `-` prefix (e.g., `sort=-created`).
+  - The `TestV1Client_ListAll_ContextCancellation` test from US-008 has a race condition — spin-waiting on `atomic.Int32` then calling `cancel()` sometimes misses the window. A channel-based approach would be more reliable, but the existing test was not modified to minimize scope.
 ---
