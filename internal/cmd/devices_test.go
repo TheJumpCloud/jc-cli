@@ -46,9 +46,26 @@ func startDevicesServer(t *testing.T, devices []map[string]any) *httptest.Server
 			return
 		}
 
-		// Routes under /systems/{id}.
+		// Routes under /systems/{id}[/sub-resource...].
 		if strings.HasPrefix(r.URL.Path, "/systems/") {
-			id := strings.TrimPrefix(r.URL.Path, "/systems/")
+			rest := strings.TrimPrefix(r.URL.Path, "/systems/")
+			// Split into id and optional sub-resource path.
+			id, subPath, hasSubPath := strings.Cut(rest, "/")
+
+			// Sub-resource routes (e.g., /systems/{id}/command/builtin/lock).
+			if hasSubPath && r.Method == http.MethodPost {
+				// Verify the device exists.
+				for _, d := range devices {
+					if d["_id"] == id {
+						_ = subPath // e.g., "command/builtin/lock"
+						w.Write([]byte(`{}`))
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
 
 			switch r.Method {
 			case http.MethodGet:
@@ -978,5 +995,472 @@ func TestDevicesCmd_Help_IncludesDelete(t *testing.T) {
 	help := out.String()
 	if !strings.Contains(help, "delete") {
 		t.Errorf("devices help should mention 'delete' subcommand:\n%s", help)
+	}
+}
+
+// --- Devices Lock Tests ---
+
+func TestDevicesLock_WithForce(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "alice-mbp.local lock command sent successfully") {
+		t.Errorf("output should confirm lock: %q", out.String())
+	}
+}
+
+func TestDevicesLock_WithConfirmYes(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "y\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(errOut.String(), "Lock device alice-mbp.local") {
+		t.Errorf("stderr should show confirmation prompt, got: %q", errOut.String())
+	}
+	if !strings.Contains(out.String(), "alice-mbp.local lock command sent successfully") {
+		t.Errorf("output should confirm lock: %q", out.String())
+	}
+}
+
+func TestDevicesLock_WithConfirmNo(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if strings.Contains(out.String(), "lock command sent") {
+		t.Errorf("should not have locked, got: %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Cancelled") {
+		t.Errorf("stderr should show 'Cancelled', got: %q", errOut.String())
+	}
+}
+
+func TestDevicesLock_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "lock", "nonexistent", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent device, got nil")
+	}
+	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
+		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	}
+}
+
+func TestDevicesLock_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "lock"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+func TestDevicesLock_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
+			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			capturedPath = r.URL.Path
+			capturedMethod = r.Method
+			w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "lock", "dev-abc123", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systems/dev-abc123/command/builtin/lock" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/lock")
+	}
+	if capturedMethod != http.MethodPost {
+		t.Errorf("HTTP method = %q, want POST", capturedMethod)
+	}
+}
+
+// --- Devices Restart Tests ---
+
+func TestDevicesRestart_WithForce(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "restart", "dev-bbb222", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "bob-linux.local restart command sent successfully") {
+		t.Errorf("output should confirm restart: %q", out.String())
+	}
+}
+
+func TestDevicesRestart_WithConfirmYes(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "y\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "restart", "dev-bbb222"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(errOut.String(), "Restart device bob-linux.local") {
+		t.Errorf("stderr should show confirmation prompt, got: %q", errOut.String())
+	}
+	if !strings.Contains(out.String(), "bob-linux.local restart command sent successfully") {
+		t.Errorf("output should confirm restart: %q", out.String())
+	}
+}
+
+func TestDevicesRestart_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "restart", "nonexistent", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent device, got nil")
+	}
+}
+
+func TestDevicesRestart_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "restart"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+func TestDevicesRestart_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
+			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			capturedPath = r.URL.Path
+			w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "restart", "dev-abc123", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systems/dev-abc123/command/builtin/restart" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/restart")
+	}
+}
+
+// --- Devices Erase Tests ---
+
+func TestDevicesErase_WithForceAndConfirmErase(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase", "dev-ccc333", "--confirm-erase", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "charlie-win.local erase command sent successfully") {
+		t.Errorf("output should confirm erase: %q", out.String())
+	}
+}
+
+func TestDevicesErase_WithoutConfirmEraseFlag(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error without --confirm-erase, got nil")
+	}
+	if !strings.Contains(err.Error(), "--confirm-erase") {
+		t.Errorf("error should mention --confirm-erase, got: %v", err)
+	}
+}
+
+func TestDevicesErase_WithConfirmPrompt(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "y\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--confirm-erase"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(errOut.String(), "ERASE (wipe all data on) device alice-mbp.local") {
+		t.Errorf("stderr should show erase confirmation prompt, got: %q", errOut.String())
+	}
+	if !strings.Contains(out.String(), "alice-mbp.local erase command sent successfully") {
+		t.Errorf("output should confirm erase: %q", out.String())
+	}
+}
+
+func TestDevicesErase_ConfirmNo(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--confirm-erase"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if strings.Contains(out.String(), "erase command sent") {
+		t.Errorf("should not have erased, got: %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Cancelled") {
+		t.Errorf("stderr should show 'Cancelled', got: %q", errOut.String())
+	}
+}
+
+func TestDevicesErase_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase", "nonexistent", "--confirm-erase", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent device, got nil")
+	}
+}
+
+func TestDevicesErase_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+func TestDevicesErase_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
+			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			capturedPath = r.URL.Path
+			w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase", "dev-abc123", "--confirm-erase", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systems/dev-abc123/command/builtin/erase" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/erase")
+	}
+}
+
+// --- Help Output Tests for MDM Commands ---
+
+func TestDevicesCmd_Help_IncludesMDMCommands(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	for _, sub := range []string{"lock", "restart", "erase"} {
+		if !strings.Contains(help, sub) {
+			t.Errorf("devices help should mention '%s' subcommand:\n%s", sub, help)
+		}
+	}
+}
+
+func TestDevicesEraseCmd_Help(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "erase", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	if !strings.Contains(help, "--confirm-erase") {
+		t.Errorf("erase help should mention --confirm-erase flag:\n%s", help)
+	}
+	if !strings.Contains(help, "irreversible") {
+		t.Errorf("erase help should warn about irreversibility:\n%s", help)
 	}
 }

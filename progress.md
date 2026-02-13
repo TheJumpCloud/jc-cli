@@ -12,6 +12,8 @@
 - `confirmReader` package-level var + `overrideConfirmReader(t, input)` for testable confirmation prompts
 - `cmd.Flags().Changed("flag")` to detect explicitly set flags — only send changed fields in update requests
 - V1Client mutation methods: `Create(ctx, endpoint, body)`, `Update(ctx, endpoint, body)`, `Delete(ctx, endpoint)` — all return `json.RawMessage`
+- Shared `runDevicesMDMCommand(cmd, identifier, action)` handles lock/restart/erase via `POST /systems/{id}/command/builtin/{action}`
+- Double safety gate for destructive ops: `--confirm-erase` flag + confirmation prompt — flag checked first, before any API calls
 - Cobra `MarkFlagRequired()` validates required flags before RunE — produces clear "required flag" errors
 - Viper env prefix is `JC_` — all env vars start with `JC_`
 - Use `viper.BindEnv("config.key", "JC_ENV_VAR")` for explicit env-to-key mappings (especially for nested keys where AutomaticEnv would require JC_DEFAULTS_OUTPUT instead of JC_OUTPUT)
@@ -384,4 +386,28 @@
   - JumpCloud V1 has sub-resource action endpoints like `/systemusers/{id}/resetmfa` and `/systemusers/{id}/expire`. These are POST endpoints that return `{}` — a new `Post()` method on V1Client handles them cleanly.
   - The test server routing needed to handle sub-resource paths (`/{id}/resetmfa`). Used `strings.SplitN(rest, "/", 2)` to distinguish `/systemusers/{id}` from `/systemusers/{id}/{action}`.
   - The shared `runUsersLockUnlock()` function handles both lock and unlock with a boolean parameter — keeps code DRY since the only difference is the `account_locked` value and the confirmation message verb.
+---
+
+## 2026-02-13 - US-017
+- What was implemented:
+  - `jc devices lock <device-id>` — sends MDM lock command via POST /api/systems/{id}/command/builtin/lock
+  - `jc devices restart <device-id>` — sends MDM restart command via POST /api/systems/{id}/command/builtin/restart
+  - `jc devices erase <device-id>` — sends MDM erase command via POST /api/systems/{id}/command/builtin/erase
+  - Erase REQUIRES `--confirm-erase` flag as a safety gate (double confirmation: flag + prompt)
+  - All three commands show confirmation prompt before execution (unless `--force`)
+  - Erase prompt uses emphatic wording: "ERASE (wipe all data on) device X?"
+  - All commands fetch device first to display hostname in confirmation messages
+  - Shared `runDevicesMDMCommand(cmd, identifier, action)` function handles all three commands
+  - `V1Client.Post()` used for fire-and-forget MDM endpoints (same pattern as users reset-mfa/reset-password)
+- Files changed:
+  - internal/cmd/devices.go — added `newDevicesLockCmd()`, `newDevicesRestartCmd()`, `newDevicesEraseCmd()`, `runDevicesMDMCommand()`, registered 3 new subcommands
+  - internal/cmd/devices_test.go — added 18 new tests: lock (force/confirm-yes/confirm-no/not-found/missing-arg/endpoint), restart (force/confirm-yes/not-found/missing-arg/endpoint), erase (force+confirm-erase/without-confirm-erase/confirm-prompt/confirm-no/not-found/missing-arg/endpoint), help tests for MDM commands; updated `startDevicesServer` for sub-resource POST routing
+  - .chief/prds/main/prd.json — marked US-017 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - The shared `runDevicesMDMCommand(cmd, identifier, action)` pattern is cleaner than the users approach — one function handles lock/restart/erase with the action name as a parameter, avoiding separate `runDevicesLock()`, `runDevicesRestart()`, etc. functions.
+  - JumpCloud MDM commands use `POST /api/systems/{id}/command/builtin/{action}` endpoint pattern — different from user action endpoints which use direct sub-resources like `/systemusers/{id}/resetmfa`.
+  - Double safety gate for destructive operations: `--confirm-erase` flag checked BEFORE the confirmation prompt. If the flag is missing, the command errors before any API calls or prompts. This is a good pattern for extremely dangerous operations.
+  - Test server routing for deeper sub-resource paths (e.g., `/systems/{id}/command/builtin/lock`) uses `strings.Cut(rest, "/")` to cleanly separate the ID from the sub-path.
+  - `strings.Title()` is deprecated in Go — use `strings.ToUpper(s[:1]) + s[1:]` for simple first-letter capitalization.
 ---

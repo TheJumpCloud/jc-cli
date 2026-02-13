@@ -364,7 +364,8 @@
         "Appropriate V1 API MDM endpoints used for each command"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Device erase is extremely destructive — the double confirmation (prompt + --confirm-erase flag) is intentional. MDM commands may not apply to all device types.",
       "dependsOn": ["US-015"]
     },
