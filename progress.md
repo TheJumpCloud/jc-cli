@@ -8,6 +8,11 @@
 - `--api-key` flag binds to Viper key `api_key` (underscore) to share priority with `JC_API_KEY`
 - Build version injected via `-ldflags` at build time
 - Makefile targets: build, test, lint (vet), install, clean
+- API client in `internal/api/` — `authTransport` (custom RoundTripper) injects x-api-key, Content-Type, Accept, User-Agent on every request
+- `api.NewClient()` reads key from `config.APIKey()`, `api.NewClientWithKey(key)` for explicit key
+- `api.RedactKey(key)` shows only last 4 chars — use this everywhere API keys are logged
+- `api.ValidateAPIKey()` calls `GET /api/organizations` to verify credentials
+- JumpCloud organizations endpoint returns `{"results": [...]}` wrapper; fallback to direct object parse
 ---
 
 ## 2026-02-13 - US-001
@@ -38,4 +43,24 @@
   - When binding `--api-key` flag (hyphenated) to Viper, use `api_key` (underscore) as the Viper key so it shares priority with `JC_API_KEY` env var.
   - APIKey() must check top-level `api_key` first (from env/flag), then fall back to `profiles.<active>.api_key` from config.
   - The `--output` flag default is "json" in Cobra, but must bind to `defaults.output` in Viper — not just `output` — otherwise config file value `defaults.output: table` won't be picked up.
+---
+
+## 2026-02-13 - US-004
+- What was implemented:
+  - HTTP client with `authTransport` (custom RoundTripper) that injects x-api-key, Content-Type, Accept, User-Agent headers
+  - `NewClient()` creates client from configured API key; `NewClientWithKey(key)` for explicit key
+  - `ValidateAPIKey()` validates credentials via GET /api/organizations
+  - `RedactKey(key)` shows "****" + last 4 chars for safe logging
+  - `ErrNoAPIKey` with actionable error message: "Run jc auth login or set JC_API_KEY"
+  - Clear error messages for HTTP 401 (invalid key), 403 (insufficient permissions), and server errors
+- Files changed:
+  - internal/api/client.go — Client struct, NewClient(), NewClientWithKey(), authTransport, RedactKey()
+  - internal/api/auth.go — ValidateAPIKey(), Organization struct, truncateBody()
+  - internal/api/client_test.go — 10 tests for client creation, header injection, redaction, config integration
+  - internal/api/auth_test.go — 8 tests for validation success, 401, 403, 500, empty results, connection errors
+- **Learnings for future iterations:**
+  - `json.Unmarshal` into a struct with a `Results` field succeeds even when `results` doesn't exist in JSON — it just leaves `Results` as nil/empty. Always check `len(wrapper.Results) > 0` instead of relying on unmarshal error.
+  - Use `req.Clone(req.Context())` in custom RoundTrippers to avoid mutating the caller's request.
+  - `httptest.NewServer` is the standard Go pattern for testing HTTP clients — no mocking libraries needed.
+  - The `--api-key` flag was already wired from US-003; US-004 only needed to build the consumer (api.Client).
 ---

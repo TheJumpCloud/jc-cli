@@ -83,7 +83,8 @@
         "API key never appears in --verbose or --debug output (redacted to last 4 chars)"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Plaintext api_key field in config is allowed for this story as a fallback; keychain integration comes in US-005. Always redact API keys in logs.",
       "dependsOn": ["US-003"]
     },
