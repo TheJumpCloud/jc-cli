@@ -40,6 +40,10 @@
 - `APIError` struct has `StatusCode`, `Endpoint`, `Message`; use `NewAPIError()` for HTTP error responses
 - V1 list endpoints return `{"results": [...], "totalCount": N}` — parsed by `v1ListResponse`
 - `ListOptions{Limit, PageSize}` controls pagination behavior; `effectivePageSize()` optimizes request size
+- `-t` / `--table` persistent flag sets output to `table` via `PersistentPreRunE`; `-V` shorthand for `--version`
+- `validOutputFormats` in `root.go` is the authoritative list of accepted `--output` values; validated in `PersistentPreRunE`
+- `flagErrorWithSuggestion()` + `levenshtein()` in `root.go` provides "Did you mean?" for unknown flags (edit distance ≤ 3)
+- When adding subcommands that need their own `PersistentPreRunE`, chain to parent's pre-run manually (Cobra does not auto-chain)
 ---
 
 ## 2026-02-13 - US-001
@@ -231,4 +235,26 @@
   - The output engine is resource-agnostic by design: it receives `json.RawMessage` from the API layer and formats without knowing field names. `DefaultFields` in `Options` lets each command define which fields to show by default.
   - `sortedJSON()` manually rebuilds the JSON object with sorted keys. `encoding/json` doesn't guarantee key order from `map[string]interface{}` on Go < 1.12 and uses insertion order, not alphabetical.
   - The `--ids` flag is separate from `--output` — it overrides format entirely. This follows the pattern where `--ids` is a convenience for `| jq -r '.[].id'`.
+---
+
+## 2026-02-13 - US-010
+- What was implemented:
+  - `-V` shorthand for `--version` (pre-registered to override Cobra's auto-creation since `-v` is taken by `--verbose`)
+  - `-t` / `--table` persistent flag as shorthand for `--output table` (handled in `PersistentPreRunE`)
+  - Output format validation in `PersistentPreRunE` — rejects unknown formats with clear error listing valid options
+  - `flagErrorWithSuggestion()` — custom flag error handler that suggests similar flags when unknown flags are used (Levenshtein distance ≤ 3)
+  - `levenshtein()` — edit distance function for flag name similarity matching
+  - All global flags confirmed registered as persistent flags with correct Viper bindings
+  - All short flags working: `-o` (output), `-t` (table), `-v` (verbose), `-q` (quiet), `-f` (force), `-V` (version)
+- Files changed:
+  - internal/cmd/root.go — added `-V` version flag, `-t`/`--table` flag, `PersistentPreRunE` with format validation, `flagErrorWithSuggestion()`, `levenshtein()`, `validOutputFormats`, `pflag` import
+  - internal/cmd/root_test.go — added 18 new tests: `-V` shorthand, `-t`/`--table` flag, format validation (valid/invalid), unknown flag suggestion (with/without match), Viper binding per flag, flag inheritance by subcommands, `--plan` persistent flag, `levenshtein()` unit tests
+  - .chief/prds/main/prd.json — marked US-010 passes
+  - progress.md — added codebase patterns and progress entry
+- **Learnings for future iterations:**
+  - Cobra's `InitDefaultVersionFlag()` auto-creates `--version` with `-v` shorthand, but skips `-v` if already taken. To add `-V` instead, pre-register the `version` flag with `rootCmd.Flags().BoolP("version", "V", ...)` before `Execute()`.
+  - `PersistentPreRunE` on the root command runs for ALL subcommands but NOT for `--help` or `--version`. This is the right place for flag validation.
+  - Cobra does NOT chain `PersistentPreRunE` — if a subcommand defines its own, the parent's is skipped. Future subcommands that need their own pre-run must call the parent's manually.
+  - `SetFlagErrorFunc` on root is inherited by all subcommands — it's the right hook for custom unknown-flag error messages.
+  - The `levenshtein` edit distance of ≤ 3 is a good threshold for flag name suggestions — matches common typos like `--verbos`, `--debuf`, `--queit` while avoiding false positives.
 ---

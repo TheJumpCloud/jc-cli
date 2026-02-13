@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/config"
@@ -53,7 +54,7 @@ func TestRootHelp(t *testing.T) {
 func TestGlobalFlags(t *testing.T) {
 	rootCmd := NewRootCmd()
 
-	flags := []string{"output", "verbose", "debug", "quiet", "force", "non-interactive", "no-cache", "no-color", "plan", "org", "api-key"}
+	flags := []string{"output", "table", "verbose", "debug", "quiet", "force", "non-interactive", "no-cache", "no-color", "plan", "org", "api-key", "ids"}
 	for _, flag := range flags {
 		if rootCmd.PersistentFlags().Lookup(flag) == nil {
 			t.Errorf("expected persistent flag %q to be registered", flag)
@@ -66,6 +67,7 @@ func TestShortFlags(t *testing.T) {
 
 	shorts := map[string]string{
 		"output":  "o",
+		"table":   "t",
 		"verbose": "v",
 		"quiet":   "q",
 		"force":   "f",
@@ -79,6 +81,22 @@ func TestShortFlags(t *testing.T) {
 		if f.Shorthand != short {
 			t.Errorf("flag %q: expected shorthand %q, got %q", name, short, f.Shorthand)
 		}
+	}
+}
+
+func TestVersionShortFlag(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"-V"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.HasPrefix(got, "jc v") {
+		t.Errorf("expected -V output to start with 'jc v', got %q", got)
 	}
 }
 
@@ -114,6 +132,218 @@ func TestCompletionCommand(t *testing.T) {
 				t.Errorf("completion %s: expected output, got empty", shell)
 			}
 		})
+	}
+}
+
+// --- Global Flags Framework Tests (US-010) ---
+
+// newTestRootWithSub creates a root command with a test subcommand that
+// records which Viper keys are set when it executes. This triggers
+// PersistentPreRunE which only fires for actual command execution.
+func newTestRootWithSub() (*cobra.Command, *bytes.Buffer) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+
+	sub := &cobra.Command{
+		Use: "testcmd",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Just succeed — the PersistentPreRunE does the validation.
+			return nil
+		},
+	}
+	rootCmd.AddCommand(sub)
+	return rootCmd, buf
+}
+
+func TestTableShortFlag(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"-t", "testcmd"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := viper.GetString("defaults.output"); got != "table" {
+		t.Errorf("defaults.output = %q, want %q (-t should set output to table)", got, "table")
+	}
+}
+
+func TestTableLongFlag(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"--table", "testcmd"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := viper.GetString("defaults.output"); got != "table" {
+		t.Errorf("defaults.output = %q, want %q (--table should set output to table)", got, "table")
+	}
+}
+
+func TestOutputFormatValidation_Valid(t *testing.T) {
+	for _, format := range validOutputFormats {
+		t.Run(format, func(t *testing.T) {
+			viper.Reset()
+			defer viper.Reset()
+
+			rootCmd, _ := newTestRootWithSub()
+			rootCmd.SetArgs([]string{"--output", format, "testcmd"})
+
+			if err := rootCmd.Execute(); err != nil {
+				t.Errorf("valid format %q should not error, got: %v", format, err)
+			}
+		})
+	}
+}
+
+func TestOutputFormatValidation_Invalid(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"--output", "xml", "testcmd"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid output format 'xml'")
+	}
+	if !strings.Contains(err.Error(), "unknown output format") {
+		t.Errorf("expected 'unknown output format' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "json, table, csv, human, yaml, ndjson") {
+		t.Errorf("expected valid formats listed in error, got: %v", err)
+	}
+}
+
+func TestUnknownFlagSuggestion(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"--verbos"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown flag --verbos")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Did you mean") {
+		t.Errorf("expected suggestion in error, got: %v", errMsg)
+	}
+	if !strings.Contains(errMsg, "--verbose") {
+		t.Errorf("expected --verbose suggestion, got: %v", errMsg)
+	}
+}
+
+func TestUnknownFlagNoSuggestion(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"--zzzzzzz"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown flag --zzzzzzz")
+	}
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "Did you mean") {
+		t.Errorf("should not suggest anything for --zzzzzzz, got: %v", errMsg)
+	}
+}
+
+func TestFlagsViperBinding(t *testing.T) {
+	// Verify that each persistent flag is correctly bound to a Viper key.
+	tests := []struct {
+		flag     string
+		viperKey string
+		args     []string
+		expected string
+	}{
+		{"output", "defaults.output", []string{"--output", "table", "--help"}, "table"},
+		{"verbose", "verbose", []string{"--verbose", "--help"}, ""},
+		{"debug", "debug", []string{"--debug", "--help"}, ""},
+		{"quiet", "quiet", []string{"--quiet", "--help"}, ""},
+		{"force", "force", []string{"--force", "--help"}, ""},
+		{"org", "org", []string{"--org", "myorg", "--help"}, "myorg"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.flag, func(t *testing.T) {
+			viper.Reset()
+			defer viper.Reset()
+
+			rootCmd := NewRootCmd()
+			buf := new(bytes.Buffer)
+			rootCmd.SetOut(buf)
+			rootCmd.SetArgs(tc.args)
+
+			if err := rootCmd.Execute(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tc.expected != "" {
+				if got := viper.GetString(tc.viperKey); got != tc.expected {
+					t.Errorf("viper key %q = %q, want %q", tc.viperKey, got, tc.expected)
+				}
+			} else {
+				// Boolean flags: just check they're set to true.
+				if !viper.GetBool(tc.viperKey) {
+					t.Errorf("viper key %q should be true when flag is set", tc.viperKey)
+				}
+			}
+		})
+	}
+}
+
+func TestLevenshtein(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0},
+		{"", "abc", 3},
+		{"abc", "", 3},
+		{"abc", "abc", 0},
+		{"verbose", "verbos", 1},
+		{"debug", "debuf", 1},
+		{"output", "outpu", 1},
+		{"force", "fource", 1},
+		{"abc", "xyz", 3},
+	}
+	for _, tc := range tests {
+		if got := levenshtein(tc.a, tc.b); got != tc.want {
+			t.Errorf("levenshtein(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func TestFlagsInheritedBySubcommands(t *testing.T) {
+	rootCmd := NewRootCmd()
+
+	// auth is a subcommand — its inherited flags should include all persistent flags.
+	authCmd, _, _ := rootCmd.Find([]string{"auth"})
+	if authCmd == nil {
+		t.Fatal("expected to find 'auth' subcommand")
+	}
+
+	// Check that persistent flags are inherited.
+	inherited := authCmd.InheritedFlags()
+	for _, name := range []string{"output", "verbose", "debug", "quiet", "force", "plan", "org"} {
+		if inherited.Lookup(name) == nil {
+			t.Errorf("auth command should inherit persistent flag %q", name)
+		}
+	}
+}
+
+func TestPlanFlagIsPersistent(t *testing.T) {
+	rootCmd := NewRootCmd()
+	flag := rootCmd.PersistentFlags().Lookup("plan")
+	if flag == nil {
+		t.Fatal("expected --plan to be a persistent flag")
 	}
 }
 

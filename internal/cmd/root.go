@@ -4,13 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/version"
 )
+
+// validOutputFormats lists the accepted --output values.
+var validOutputFormats = []string{"json", "table", "csv", "human", "yaml", "ndjson"}
 
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
@@ -24,9 +29,33 @@ interface.`,
 		Version:       version.Number,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// -t is a convenience shorthand for --output table.
+			if t, _ := cmd.Flags().GetBool("table"); t {
+				viper.Set("defaults.output", "table")
+			}
+
+			// Validate the output format.
+			format := viper.GetString("defaults.output")
+			for _, valid := range validOutputFormats {
+				if format == valid {
+					return nil
+				}
+			}
+			return fmt.Errorf("unknown output format %q. Valid formats: %s",
+				format, strings.Join(validOutputFormats, ", "))
+		},
 	}
 
 	rootCmd.SetVersionTemplate("jc v{{.Version}}\n")
+
+	// Provide helpful suggestions when unknown flags are used.
+	rootCmd.SetFlagErrorFunc(flagErrorWithSuggestion)
+
+	// Register --version with -V shorthand before Cobra's auto-creation.
+	// Cobra skips its own version flag when Lookup("version") already exists.
+	// We use -V (uppercase) because -v is taken by --verbose.
+	rootCmd.Flags().BoolP("version", "V", false, "Print version information")
 
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newCompletionCmd())
@@ -34,6 +63,7 @@ interface.`,
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
+	rootCmd.PersistentFlags().BoolP("table", "t", false, "Shorthand for --output table")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose HTTP logging")
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress output, exit code only")
@@ -116,6 +146,75 @@ Fish:
 		},
 	}
 	return cmd
+}
+
+// flagErrorWithSuggestion wraps Cobra's flag parsing errors to suggest
+// similar valid flags when an unknown flag is used.
+func flagErrorWithSuggestion(cmd *cobra.Command, err error) error {
+	msg := err.Error()
+	// Extract the unknown flag name from error messages like:
+	// "unknown flag: --foo" or "unknown shorthand flag: 'x' in -x"
+	var unknown string
+	if strings.HasPrefix(msg, "unknown flag: --") {
+		unknown = strings.TrimPrefix(msg, "unknown flag: --")
+	} else if strings.Contains(msg, "unknown shorthand flag") {
+		// Can't suggest for single-char shorthand misses.
+		return err
+	} else {
+		return err
+	}
+
+	// Collect all persistent flag names from the command and its parents.
+	var candidates []string
+	cmd.Root().PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		candidates = append(candidates, f.Name)
+	})
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		candidates = append(candidates, f.Name)
+	})
+
+	// Find closest matches (edit distance <= 3).
+	var suggestions []string
+	for _, c := range candidates {
+		if levenshtein(unknown, c) <= 3 {
+			suggestions = append(suggestions, "--"+c)
+		}
+	}
+
+	if len(suggestions) > 0 {
+		return fmt.Errorf("%s\n\nDid you mean one of these?\n\t%s", msg, strings.Join(suggestions, "\n\t"))
+	}
+	return err
+}
+
+// levenshtein computes the edit distance between two strings.
+func levenshtein(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
 }
 
 // Execute initializes config and runs the root command.

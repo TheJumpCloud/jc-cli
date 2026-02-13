@@ -215,7 +215,8 @@
         "Short flags (-o, -t, -q, -v, -f, -V) work correctly"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use Cobra persistent flags on root command for truly global flags. Resource-specific flags (--filter, --limit, --sort, --fields) will be added per-command in later stories but the pattern should be established here.",
       "dependsOn": ["US-001", "US-009"]
     },
