@@ -8,7 +8,10 @@
 - `--api-key` flag binds to Viper key `api_key` (underscore) to share priority with `JC_API_KEY`
 - Build version injected via `-ldflags` at build time
 - Makefile targets: build, test, lint (vet), install, clean
-- API client in `internal/api/` — `authTransport` (custom RoundTripper) injects x-api-key, Content-Type, Accept, User-Agent on every request
+- API client in `internal/api/` — transport chain: `authTransport` → `loggingTransport` → `baseTransport` (TLS 1.2+, connection pooling)
+- `loggingTransport` reads `viper.GetBool("verbose")` / `viper.GetBool("debug")` for --verbose/--debug flag state
+- `logWriter` var defaults to `os.Stderr`; override in tests to capture log output
+- Transport chain order matters: auth wraps logging so logging sees injected headers and can redact API keys
 - `api.NewClient()` reads key from `config.APIKey()`, `api.NewClientWithKey(key)` for explicit key
 - `api.RedactKey(key)` shows only last 4 chars — use this everywhere API keys are logged
 - `api.ValidateAPIKey()` calls `GET /api/organizations` to verify credentials
@@ -128,4 +131,27 @@
   - `term.ReadPassword()` reads from fd 0 (stdin) — can't be tested without pseudo-terminals. Use an `InputReader` interface and inject mocks.
   - `overrideAPIClient()` test helper + `newAPIClient` package var is the cleanest way to redirect API calls to httptest servers from command-level tests.
   - `ExitError` with `errors.As` is much better than `os.Exit()` in command handlers — keeps commands testable.
+---
+
+## 2026-02-13 - US-007
+- What was implemented:
+  - `loggingTransport` — RoundTripper that logs HTTP request/response details based on --verbose and --debug flags
+  - --verbose logs: method, URL, status code, and duration for each request (to stderr)
+  - --debug logs: full request/response headers with API key redacted (to stderr)
+  - TLS 1.2+ enforcement via `crypto/tls.Config{MinVersion: tls.VersionTLS12}` on base transport
+  - Connection pooling: MaxIdleConns=100, MaxIdleConnsPerHost=10, IdleConnTimeout=90s
+  - Transport chain: `authTransport` → `loggingTransport` → `baseTransport` (custom `http.Transport`)
+  - All requests use HTTPS (BaseURL is https://), User-Agent set to `jc/<version> (Go; <os>/<arch>)`
+  - Content-Type and Accept headers set to `application/json` on all requests
+  - Default timeout remains 30 seconds (configurable via DefaultTimeout constant)
+  - API key never appears in verbose/debug output — redacted to last 4 chars via `RedactKey()`
+- Files changed:
+  - internal/api/client.go — added `loggingTransport`, `baseTransport()`, refactored `NewClientWithKey()` transport chain, added `logWriter` var, `maxDebugBodySize` const
+  - internal/api/client_test.go — added 11 new tests: TLS minimum, connection pooling, verbose/debug logging, API key redaction in debug, error logging, HTTPS enforcement, timeout, transport chain order
+- **Learnings for future iterations:**
+  - Transport chain ordering is critical: `authTransport` must wrap `loggingTransport` (not vice versa) so that logging sees the injected headers (x-api-key, Content-Type, etc.) and can redact the API key.
+  - Use a package-level `logWriter io.Writer = os.Stderr` variable to make logging testable — tests swap in a `bytes.Buffer` and restore afterwards.
+  - `viper.GetBool()` reads directly from viper state, which includes flag bindings — no need to pass flags through the transport chain.
+  - `http.Transport` supports `TLSClientConfig` for TLS settings. Setting `MinVersion: tls.VersionTLS12` enforces TLS 1.2+ for all connections.
+  - Connection pooling is enabled by default in `http.DefaultTransport` but we create a custom `http.Transport` for TLS config, so we must explicitly set pool sizes.
 ---

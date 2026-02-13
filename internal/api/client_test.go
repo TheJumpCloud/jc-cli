@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -242,5 +244,252 @@ func TestUserAgent_Format(t *testing.T) {
 	}
 	if !strings.Contains(ua, "Go;") {
 		t.Errorf("userAgent() should contain 'Go;', got %q", ua)
+	}
+}
+
+// --- Transport layer tests (US-007) ---
+
+func TestBaseTransport_TLS12Minimum(t *testing.T) {
+	bt := baseTransport()
+	if bt.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig is nil")
+	}
+	if bt.TLSClientConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %d, want %d (TLS 1.2)", bt.TLSClientConfig.MinVersion, tls.VersionTLS12)
+	}
+}
+
+func TestBaseTransport_ConnectionPooling(t *testing.T) {
+	bt := baseTransport()
+	if bt.MaxIdleConns != 100 {
+		t.Errorf("MaxIdleConns = %d, want 100", bt.MaxIdleConns)
+	}
+	if bt.MaxIdleConnsPerHost != 10 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 10", bt.MaxIdleConnsPerHost)
+	}
+	if bt.IdleConnTimeout != 90*1e9 {
+		t.Errorf("IdleConnTimeout = %v, want 90s", bt.IdleConnTimeout)
+	}
+}
+
+func TestLoggingTransport_NoLogWhenSilent(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	var buf bytes.Buffer
+	origWriter := logWriter
+	logWriter = &buf
+	defer func() { logWriter = origWriter }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClientWithKey("test-key-1234")
+	c.BaseURL = ts.URL
+
+	resp, err := c.HTTP.Get(ts.URL + "/test")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	resp.Body.Close()
+
+	if buf.Len() != 0 {
+		t.Errorf("expected no log output when verbose/debug disabled, got: %q", buf.String())
+	}
+}
+
+func TestLoggingTransport_VerboseOutput(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	viper.Set("verbose", true)
+
+	var buf bytes.Buffer
+	origWriter := logWriter
+	logWriter = &buf
+	defer func() { logWriter = origWriter }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClientWithKey("test-key-1234")
+	c.BaseURL = ts.URL
+
+	resp, err := c.HTTP.Get(ts.URL + "/test")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	resp.Body.Close()
+
+	output := buf.String()
+
+	// Verbose should log: method, URL, status code, duration.
+	if !strings.Contains(output, "GET") {
+		t.Errorf("verbose output should contain method, got: %q", output)
+	}
+	if !strings.Contains(output, "/test") {
+		t.Errorf("verbose output should contain URL path, got: %q", output)
+	}
+	if !strings.Contains(output, "200") {
+		t.Errorf("verbose output should contain status code 200, got: %q", output)
+	}
+	// Should contain a duration like "(Xms)".
+	if !strings.Contains(output, "ms)") && !strings.Contains(output, "µs)") && !strings.Contains(output, "s)") {
+		t.Errorf("verbose output should contain duration, got: %q", output)
+	}
+	// Should NOT contain request/response headers (that's debug-only).
+	if strings.Contains(output, "Request Headers:") {
+		t.Errorf("verbose output should not contain request headers, got: %q", output)
+	}
+}
+
+func TestLoggingTransport_DebugOutput(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	viper.Set("debug", true)
+
+	var buf bytes.Buffer
+	origWriter := logWriter
+	logWriter = &buf
+	defer func() { logWriter = origWriter }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Custom-Response", "test-value")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClientWithKey("secret-api-key-9999")
+	c.BaseURL = ts.URL
+
+	resp, err := c.HTTP.Get(ts.URL + "/debug-test")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	resp.Body.Close()
+
+	output := buf.String()
+
+	// Debug should contain request headers.
+	if !strings.Contains(output, "Request Headers:") {
+		t.Errorf("debug output should contain 'Request Headers:', got: %q", output)
+	}
+	// Debug should contain response headers.
+	if !strings.Contains(output, "Response Headers:") {
+		t.Errorf("debug output should contain 'Response Headers:', got: %q", output)
+	}
+	// Debug should also log the verbose line (method, URL, status).
+	if !strings.Contains(output, "GET") {
+		t.Errorf("debug output should contain method, got: %q", output)
+	}
+	if !strings.Contains(output, "200") {
+		t.Errorf("debug output should contain status code 200, got: %q", output)
+	}
+}
+
+func TestLoggingTransport_DebugRedactsAPIKey(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	viper.Set("debug", true)
+
+	var buf bytes.Buffer
+	origWriter := logWriter
+	logWriter = &buf
+	defer func() { logWriter = origWriter }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	apiKey := "super-secret-api-key-ABCD"
+	c := NewClientWithKey(apiKey)
+	c.BaseURL = ts.URL
+
+	resp, err := c.HTTP.Get(ts.URL + "/test")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	resp.Body.Close()
+
+	output := buf.String()
+
+	// The full API key should NEVER appear in debug output.
+	if strings.Contains(output, apiKey) {
+		t.Errorf("debug output should NOT contain the full API key %q, got: %q", apiKey, output)
+	}
+	// The redacted version should appear.
+	if !strings.Contains(output, "****ABCD") {
+		t.Errorf("debug output should contain redacted key '****ABCD', got: %q", output)
+	}
+}
+
+func TestLoggingTransport_VerboseLogsError(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	viper.Set("verbose", true)
+
+	var buf bytes.Buffer
+	origWriter := logWriter
+	logWriter = &buf
+	defer func() { logWriter = origWriter }()
+
+	c := NewClientWithKey("test-key")
+	c.BaseURL = "http://127.0.0.1:1" // Port 1 should be unreachable.
+
+	_, err := c.HTTP.Get(c.BaseURL + "/fail")
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "ERROR") {
+		t.Errorf("verbose output should contain 'ERROR' on connection failure, got: %q", output)
+	}
+	if !strings.Contains(output, "GET") {
+		t.Errorf("verbose output should contain method on error, got: %q", output)
+	}
+}
+
+func TestNewClientWithKey_UsesHTTPS(t *testing.T) {
+	c := NewClientWithKey("test-key")
+	if !strings.HasPrefix(c.BaseURL, "https://") {
+		t.Errorf("BaseURL should use HTTPS, got: %q", c.BaseURL)
+	}
+}
+
+func TestNewClientWithKey_DefaultTimeout(t *testing.T) {
+	c := NewClientWithKey("test-key")
+	if c.HTTP.Timeout != DefaultTimeout {
+		t.Errorf("Timeout = %v, want %v", c.HTTP.Timeout, DefaultTimeout)
+	}
+}
+
+func TestNewClientWithKey_TransportChain(t *testing.T) {
+	c := NewClientWithKey("test-key")
+
+	// The outer transport should be authTransport.
+	at, ok := c.HTTP.Transport.(*authTransport)
+	if !ok {
+		t.Fatalf("expected outer transport to be *authTransport, got %T", c.HTTP.Transport)
+	}
+
+	// The next transport should be loggingTransport.
+	lt, ok := at.base.(*loggingTransport)
+	if !ok {
+		t.Fatalf("expected inner transport to be *loggingTransport, got %T", at.base)
+	}
+
+	// The innermost transport should be *http.Transport (the base).
+	_, ok = lt.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected base transport to be *http.Transport, got %T", lt.base)
 	}
 }

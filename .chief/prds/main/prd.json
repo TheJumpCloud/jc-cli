@@ -145,7 +145,8 @@
         "Accept header set to 'application/json'"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use net/http with a custom RoundTripper for auth injection and logging. Consider go-resty for convenience. The transport is the foundation for both V1 and V2 API clients.",
       "dependsOn": ["US-004"]
     },
