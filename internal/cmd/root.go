@@ -78,6 +78,11 @@ interface.`,
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
 
+	// Register flag completion functions for flags with a fixed set of values.
+	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return validOutputFormats, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	// Bind flags to Viper so the priority chain works:
 	// flags > env vars > config file > built-in defaults.
 	//

@@ -406,7 +406,8 @@
         "Cobra's built-in completion generation used as foundation"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Cobra generates completions natively. Dynamic completions (e.g., completing usernames) can be added later. Focus on static command/flag completions first.",
       "dependsOn": ["US-001"]
     },

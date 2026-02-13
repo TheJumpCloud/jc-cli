@@ -135,6 +135,199 @@ func TestCompletionCommand(t *testing.T) {
 	}
 }
 
+// --- Shell Completions Tests (US-019) ---
+
+func TestCompletionBash_ContainsShellFunctions(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "bash"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "jc") {
+		t.Error("bash completion should reference 'jc' command")
+	}
+	if !strings.Contains(out, "__jc_handle_go_custom_completion") {
+		t.Error("bash completion should contain custom completion handler function")
+	}
+}
+
+func TestCompletionZsh_ContainsCompdef(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "zsh"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	// Zsh completions should contain compdef directive.
+	if !strings.Contains(out, "compdef") {
+		t.Error("zsh completion should contain 'compdef' directive")
+	}
+}
+
+func TestCompletionFish_ContainsComplete(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "fish"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	// Fish completions use 'complete' command for registration.
+	if !strings.Contains(out, "complete") {
+		t.Error("fish completion should contain 'complete' command")
+	}
+}
+
+func TestCompletionInvalidShell(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "powershell"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unsupported shell 'powershell'")
+	}
+	if !strings.Contains(err.Error(), "unsupported shell") {
+		t.Errorf("expected 'unsupported shell' error, got: %v", err)
+	}
+}
+
+func TestCompletionMissingArg(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when no shell argument provided")
+	}
+}
+
+func TestCompletionIncludesSubcommands(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "bash"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	// Completion scripts should include all registered subcommands.
+	for _, sub := range []string{"users", "devices", "auth", "version", "completion"} {
+		if !strings.Contains(out, sub) {
+			t.Errorf("bash completion should include subcommand %q", sub)
+		}
+	}
+}
+
+func TestCompletionIncludesGlobalFlags(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "bash"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	// Completion scripts should include global flags.
+	for _, flag := range []string{"--output", "--verbose", "--debug", "--quiet", "--force"} {
+		if !strings.Contains(out, flag) {
+			t.Errorf("bash completion should include global flag %q", flag)
+		}
+	}
+}
+
+func TestCompletionOutputFlagValues(t *testing.T) {
+	// Cobra's bash completion uses the __complete binary mechanism at runtime
+	// to resolve flag values. Verify this works via Cobra's __complete command.
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"__complete", "--output", ""})
+
+	_ = rootCmd.Execute()
+	out := buf.String()
+	for _, format := range validOutputFormats {
+		if !strings.Contains(out, format) {
+			t.Errorf("--output completion should suggest %q, got:\n%s", format, out)
+		}
+	}
+}
+
+func TestCompletionHelp_ShowsInstallInstructions(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"completion", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	for _, expect := range []string{"Bash:", "Zsh:", "Fish:", ".bashrc"} {
+		if !strings.Contains(out, expect) {
+			t.Errorf("completion help should contain %q, got:\n%s", expect, out)
+		}
+	}
+}
+
+func TestCompletionValidArgs(t *testing.T) {
+	rootCmd := NewRootCmd()
+	completionCmd, _, _ := rootCmd.Find([]string{"completion"})
+	if completionCmd == nil {
+		t.Fatal("expected to find 'completion' subcommand")
+	}
+
+	expected := []string{"bash", "zsh", "fish"}
+	if len(completionCmd.ValidArgs) != len(expected) {
+		t.Fatalf("expected %d valid args, got %d", len(expected), len(completionCmd.ValidArgs))
+	}
+	for i, want := range expected {
+		if completionCmd.ValidArgs[i] != want {
+			t.Errorf("ValidArgs[%d] = %q, want %q", i, completionCmd.ValidArgs[i], want)
+		}
+	}
+}
+
+func TestOutputFlagCompletionRegistered(t *testing.T) {
+	// Verify that the output flag has a completion function by using
+	// Cobra's __complete mechanism which invokes registered completions.
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	// Cobra's built-in __complete command triggers completion.
+	rootCmd.SetArgs([]string{"__complete", "--output", ""})
+
+	// __complete may return error for incomplete commands, but output should
+	// contain the format values.
+	_ = rootCmd.Execute()
+	out := buf.String()
+	for _, format := range validOutputFormats {
+		if !strings.Contains(out, format) {
+			t.Errorf("output flag completion should suggest %q, got:\n%s", format, out)
+		}
+	}
+}
+
 // --- Global Flags Framework Tests (US-010) ---
 
 // newTestRootWithSub creates a root command with a test subcommand that

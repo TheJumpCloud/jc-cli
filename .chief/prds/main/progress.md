@@ -102,3 +102,18 @@
   - Thin `resolveUser()`/`resolveDevice()` helpers in command files keep resolver integration minimal
   - When updating test IDs, must also update: mock server path handlers, inline JSON strings, expected API path assertions, and ID comparison values
 ---
+
+## 2026-02-13 - US-019
+- Implemented shell completions (Bash, Zsh, Fish) with output format flag completions
+- Files changed:
+  - `internal/cmd/root.go` — added `RegisterFlagCompletionFunc` for `--output` flag with all valid output formats and `ShellCompDirectiveNoFileComp`
+  - `internal/cmd/root_test.go` — added 12 new completion tests: shell-specific script validation (bash functions, zsh compdef, fish complete), invalid shell error, missing arg error, subcommand inclusion, global flag inclusion, output format completion via `__complete`, help installation instructions, ValidArgs verification, output flag completion function registration
+  - `.chief/prds/main/prd.json` — marked US-019 as complete
+- **Learnings for future iterations:**
+  - Cobra's bash/zsh/fish completions use the `__complete` binary mechanism at runtime — flag values are NOT inlined in the completion script
+  - `RegisterFlagCompletionFunc` on a persistent flag must be called on the command where the flag is defined (root), not on subcommands
+  - `cobra.ShellCompDirectiveNoFileComp` prevents file path suggestions when completing flag values — important for enum-style flags
+  - Test flag completions via `__complete` command: `rootCmd.SetArgs([]string{"__complete", "--flag", ""})` triggers Cobra's internal completion
+  - `ValidArgs` on a command automatically provides shell completion for positional arguments — no extra registration needed
+  - The existing `newCompletionCmd()` already had good structure (ValidArgs, Long help with install instructions) — just needed flag completion enhancement
+---
