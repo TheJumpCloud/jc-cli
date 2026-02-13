@@ -19,8 +19,8 @@
         "Running 'jc --help' prints root help with command groups listed"
       ],
       "priority": 0,
-      "passes": false,
-      "inProgress": true,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use Go 1.22+. Structure: cmd/jc/main.go as entry point, internal/cmd/ for Cobra commands, internal/config/ for Viper setup. Consider using goreleaser config for future releases.",
       "dependsOn": []
     },
