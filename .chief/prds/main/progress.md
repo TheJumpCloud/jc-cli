@@ -23,6 +23,14 @@
 - `V2ListResult` has no `TotalCount` field (unlike V1's `ListResult`) — V2 API doesn't expose it
 - `NewV2ClientWithKey(key)` / `NewV2Client()` constructors mirror V1 pattern
 - V2 client includes `Patch()` method (V2 APIs often use PATCH for partial updates)
+- `newV2Client` var in `groups.go` for V2 test injection (separate from `newV1Client`)
+- `overrideV2Client(t, serverURL)` pattern for V2 resource command tests
+- `V2Resolver` in resolve package mirrors `Resolver` but uses `V2Client`; V2 uses `id` field (not `_id`)
+- Groups command hierarchy: `jc groups user list/get/create/update/delete`
+- V2 list footer shows `── N items ──` (no totalCount available unlike V1)
+- `ToV2Query()` / `ToV2Queries()` in filter package: `field:op:value` (no `$` prefix)
+- User group default fields: id, name, description, type
+- `UserGroupConfig` / `DeviceGroupConfig` in resolve package for V2 name-to-ID resolution
 
 ---
 
@@ -164,4 +172,26 @@
   - V2 client adds `Patch()` method since V2 APIs commonly use PATCH for partial updates (V1 uses PUT exclusively)
   - V2 filter format is different from V1: V2 uses `name:eq:value` (no `$` prefix on operators)
   - `V2Client` embeds `*Client` with overridden `BaseURL` — shares the entire transport chain (auth, logging, retry) with V1
+---
+
+## 2026-02-13 - US-024
+- Implemented User Groups CRUD commands using V2 API
+- Files created:
+  - `internal/cmd/groups.go` — `newGroupsCmd()` parent + `newGroupsUserCmd()` + list/get/create/update/delete subcommands; `newV2Client` var for test injection; `resolveUserGroup()` using V2Resolver; V2 filter support
+  - `internal/cmd/groups_test.go` — 30 tests covering: list (JSON, table, CSV, IDs, quiet, footer, empty, filter, sort, limit, invalid filter), get (by ID, by name, not found, missing arg), create (full, name-only, missing name, API endpoint), update (by ID, by name, no fields, API endpoint), delete (force, force by name, confirm yes/no, empty input, not found, missing arg, prompt shows name), help structure
+- Files changed:
+  - `internal/cmd/root.go` — registered `newGroupsCmd()` in root command
+  - `internal/resolve/resolve.go` — added `V2Resolver` struct with Resolve/cache methods; added `UserGroupConfig` and `DeviceGroupConfig` resource configs (V2 uses `id` not `_id`)
+  - `internal/filter/filter.go` — added `ToV2Query()` and `ToV2Queries()` for V2 filter format (`field:op:value`, no `$` prefix)
+  - `internal/filter/filter_test.go` — added `TestToV2Query` and `TestToV2Queries` tests
+  - `.chief/prds/main/prd.json` — marked US-024 as complete
+- **Learnings for future iterations:**
+  - V2 resources use `id` (not `_id`) as the ID field — requires separate resolver config
+  - V2 resolver (`V2Resolver`) mirrors V1 resolver pattern but takes `*api.V2Client` — shares cache infrastructure
+  - `newV2Client` var is separate from `newV1Client` since group commands use V2 API while users/devices use V1
+  - V2 test server returns bare JSON arrays — `json.NewEncoder(w).Encode(groups)` directly, no wrapper
+  - V2 list footer omits totalCount — just shows `── N items ──` since V2 API doesn't expose total
+  - Group commands nest under `jc groups user` (not `jc usergroups`) — prepares for `jc groups device` in US-025
+  - `startUserGroupsServer` handles GET list, POST create, GET/PUT/DELETE by ID — similar to V1 test servers but simpler (no pagination needed for basic tests)
+  - Confirmation prompts reuse shared `getConfirmReader()` and `overrideConfirmReader(t, input)` from users.go/users_test.go
 ---

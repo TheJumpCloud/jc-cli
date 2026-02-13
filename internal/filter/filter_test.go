@@ -189,3 +189,37 @@ func containsAt(s, substr string) bool {
 	}
 	return false
 }
+
+func TestToV2Query(t *testing.T) {
+	tests := []struct {
+		expr Expression
+		want string
+	}{
+		{Expression{"name", "eq", "Engineering"}, "name:eq:Engineering"},
+		{Expression{"type", "ne", "custom"}, "type:ne:custom"},
+		{Expression{"created", "gte", "2026-01-01"}, "created:gte:2026-01-01"},
+	}
+	for _, tt := range tests {
+		got := tt.expr.ToV2Query()
+		if got != tt.want {
+			t.Errorf("ToV2Query(%+v) = %q, want %q", tt.expr, got, tt.want)
+		}
+	}
+}
+
+func TestToV2Queries(t *testing.T) {
+	exprs := []Expression{
+		{"name", "eq", "Engineering"},
+		{"type", "ne", "custom"},
+	}
+	queries := ToV2Queries(exprs)
+	if len(queries) != 2 {
+		t.Fatalf("got %d queries, want 2", len(queries))
+	}
+	if queries[0] != "name:eq:Engineering" {
+		t.Errorf("queries[0] = %q, want %q", queries[0], "name:eq:Engineering")
+	}
+	if queries[1] != "type:ne:custom" {
+		t.Errorf("queries[1] = %q, want %q", queries[1], "type:ne:custom")
+	}
+}

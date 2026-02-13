@@ -513,7 +513,8 @@
         "Delete shows group name, member count, and associated resources in confirmation"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 User Groups API: GET/POST /api/v2/usergroups, GET/PUT/DELETE /api/v2/usergroups/{id}. Group commands nest under 'jc groups user' and 'jc groups device'.",
       "dependsOn": ["US-023", "US-018"]
     },

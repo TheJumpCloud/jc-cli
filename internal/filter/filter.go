@@ -75,3 +75,19 @@ func ToV1Queries(exprs []Expression) []string {
 	}
 	return result
 }
+
+// ToV2Query converts a filter expression to the JumpCloud V2 API
+// filter format: "field:op:value" (no $ prefix on operator).
+func (e Expression) ToV2Query() string {
+	return fmt.Sprintf("%s:%s:%s", e.Field, e.Operator, e.Value)
+}
+
+// ToV2Queries converts multiple filter expressions to V2 API filter
+// query parameter values.
+func ToV2Queries(exprs []Expression) []string {
+	result := make([]string, len(exprs))
+	for i, e := range exprs {
+		result[i] = e.ToV2Query()
+	}
+	return result
+}

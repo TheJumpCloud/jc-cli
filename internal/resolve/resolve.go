@@ -77,6 +77,22 @@ var DeviceConfig = ResourceConfig{
 	IDField:      "_id",
 }
 
+// UserGroupConfig is the resolution config for JumpCloud user groups (V2 API).
+var UserGroupConfig = ResourceConfig{
+	CacheKey:     "usergroups",
+	ListEndpoint: "/usergroups",
+	NameField:    "name",
+	IDField:      "id",
+}
+
+// DeviceGroupConfig is the resolution config for JumpCloud device/system groups (V2 API).
+var DeviceGroupConfig = ResourceConfig{
+	CacheKey:     "systemgroups",
+	ListEndpoint: "/systemgroups",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
 //
 // Resolution order:
@@ -222,6 +238,172 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 type match struct {
 	ID   string
 	Name string
+}
+
+// V2Resolver resolves human-friendly names to JumpCloud IDs using the V2 API.
+type V2Resolver struct {
+	Client *api.V2Client
+	nowFn  func() time.Time
+}
+
+// NewV2Resolver creates a resolver with the given V2 client.
+func NewV2Resolver(client *api.V2Client) *V2Resolver {
+	return &V2Resolver{
+		Client: client,
+		nowFn:  time.Now,
+	}
+}
+
+// Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID
+// using the V2 API for lookup.
+func (r *V2Resolver) Resolve(ctx context.Context, identifier string, cfg ResourceConfig) (string, error) {
+	if IsID(identifier) {
+		return identifier, nil
+	}
+
+	noCache := viper.GetBool("no-cache")
+	cacheEnabled := viper.GetBool("cache.enabled")
+
+	if cacheEnabled && !noCache {
+		if id, ok := r.lookupCache(identifier, cfg.CacheKey); ok {
+			return id, nil
+		}
+	}
+
+	id, err := r.resolveViaV2API(ctx, identifier, cfg)
+	if err != nil {
+		return "", err
+	}
+
+	if cacheEnabled && !noCache {
+		r.storeCache(identifier, id, cfg.CacheKey)
+	}
+
+	return id, nil
+}
+
+// resolveViaV2API searches the V2 API for a resource matching the given name.
+func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg ResourceConfig) (string, error) {
+	result, err := r.Client.ListAll(ctx, cfg.ListEndpoint, api.V2ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
+	}
+
+	var matches []match
+	lowerName := strings.ToLower(name)
+
+	for _, raw := range result.Data {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			continue
+		}
+
+		nameRaw, ok := obj[cfg.NameField]
+		if !ok {
+			continue
+		}
+		var nameVal string
+		if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
+			continue
+		}
+
+		if strings.ToLower(nameVal) != lowerName {
+			continue
+		}
+
+		idRaw, ok := obj[cfg.IDField]
+		if !ok {
+			continue
+		}
+		var idVal string
+		if err := json.Unmarshal(idRaw, &idVal); err != nil {
+			continue
+		}
+
+		matches = append(matches, match{ID: idVal, Name: nameVal})
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("%s %q not found", cfg.NameField, name)
+	case 1:
+		return matches[0].ID, nil
+	default:
+		lines := make([]string, len(matches))
+		for i, m := range matches {
+			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
+		}
+		return "", fmt.Errorf("ambiguous %s %q matched %d resources:\n%s",
+			cfg.NameField, name, len(matches), strings.Join(lines, "\n"))
+	}
+}
+
+// lookupCache checks the on-disk cache (reuses the same cache infrastructure as V1).
+func (r *V2Resolver) lookupCache(name, cacheKey string) (string, bool) {
+	cf := r.readCacheFile(cacheKey)
+	if cf == nil {
+		return "", false
+	}
+
+	entry, ok := cf[strings.ToLower(name)]
+	if !ok {
+		return "", false
+	}
+
+	ttl := time.Duration(viper.GetInt("cache.ttl")) * time.Second
+	if ttl <= 0 {
+		ttl = 300 * time.Second
+	}
+	if r.nowFn().Sub(entry.Timestamp) > ttl {
+		return "", false
+	}
+
+	return entry.ID, true
+}
+
+// storeCache persists a name→ID mapping to the on-disk cache.
+func (r *V2Resolver) storeCache(name, id, cacheKey string) {
+	cf := r.readCacheFile(cacheKey)
+	if cf == nil {
+		cf = make(cacheFile)
+	}
+
+	cf[strings.ToLower(name)] = cacheEntry{
+		ID:        id,
+		Timestamp: r.nowFn(),
+	}
+
+	r.writeCacheFile(cacheKey, cf)
+}
+
+// readCacheFile reads and parses a cache file for the given resource type.
+func (r *V2Resolver) readCacheFile(cacheKey string) cacheFile {
+	path := filepath.Join(cacheDir(), cacheKey+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var cf cacheFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		return nil
+	}
+	return cf
+}
+
+// writeCacheFile writes the cache file for the given resource type.
+func (r *V2Resolver) writeCacheFile(cacheKey string, cf cacheFile) {
+	dir := cacheDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+
+	data, err := json.MarshalIndent(cf, "", "  ")
+	if err != nil {
+		return
+	}
+
+	path := filepath.Join(dir, cacheKey+".json")
+	_ = os.WriteFile(path, data, 0600)
 }
 
 // cacheDir returns the cache directory path.

@@ -74,6 +74,7 @@ interface.`,
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newUsersCmd())
 	rootCmd.AddCommand(newDevicesCmd())
+	rootCmd.AddCommand(newGroupsCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
