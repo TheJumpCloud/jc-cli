@@ -1,0 +1,1218 @@
+{
+  "name": "jc — JumpCloud CLI",
+  "description": "A modern, LLM-friendly CLI for JumpCloud written in Go. Covers the full JumpCloud API surface (v1, v2, Directory Insights) with built-in MCP server support, recipe system, plan mode, and conversational interface. Targets macOS/Linux administrators who need native CLI tooling for JumpCloud management.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Go Module Setup with Cobra and Viper",
+      "description": "As a developer, I want the Go project scaffolded with module initialization, Cobra for command routing, and Viper for configuration binding so that all subsequent commands and config features build on a solid foundation.",
+      "acceptanceCriteria": [
+        "Go module initialized with appropriate module path (e.g., github.com/klaassen-consulting/jc)",
+        "Cobra root command (jc) created with version, help, and completion subcommands",
+        "Viper integrated for config file reading and environment variable binding",
+        "Project structure follows Go standard layout: cmd/, internal/, pkg/ directories",
+        "Makefile or Taskfile with build, test, lint, and install targets",
+        "go.sum committed with all dependencies resolved",
+        "Running 'go build ./...' succeeds with zero errors",
+        "Running 'jc --version' prints version string (e.g., jc v0.1.0-dev)",
+        "Running 'jc --help' prints root help with command groups listed"
+      ],
+      "priority": 0,
+      "passes": false,
+      "inProgress": true,
+      "notes": "Use Go 1.22+. Structure: cmd/jc/main.go as entry point, internal/cmd/ for Cobra commands, internal/config/ for Viper setup. Consider using goreleaser config for future releases.",
+      "dependsOn": []
+    },
+    {
+      "id": "US-002",
+      "title": "Configuration File System",
+      "description": "As an administrator, I want jc to read configuration from ~/.config/jc/config.yaml so that I can persist defaults like output format, pagination limits, and active profile without repeating flags.",
+      "acceptanceCriteria": [
+        "Config file loaded from ~/.config/jc/config.yaml by default",
+        "JC_CONFIG environment variable overrides config file path",
+        "Config file auto-created with sensible defaults on first run if missing",
+        "Config directory created with 0700 permissions, config file with 0600",
+        "Config supports 'defaults' section with output, limit, confirm_destructive, color, pager fields",
+        "Config supports 'cache' section with enabled, ttl, directory fields",
+        "Config supports 'profiles' section (map of named profiles)",
+        "Config supports 'active_profile' top-level field",
+        "Invalid YAML produces clear error message with line number",
+        "Config values accessible throughout the application via Viper"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use XDG Base Directory spec. Viper handles YAML natively. Ensure config file permissions are restrictive since it may reference secrets.",
+      "dependsOn": ["US-001"]
+    },
+    {
+      "id": "US-003",
+      "title": "Environment Variable Support",
+      "description": "As an administrator, I want jc to read configuration from environment variables so that I can configure behavior in CI/CD pipelines, containers, and scripts without config files.",
+      "acceptanceCriteria": [
+        "JC_API_KEY sets the API key (highest priority over config file)",
+        "JC_ORG_ID sets the organization ID",
+        "JC_PROFILE selects the active profile",
+        "JC_OUTPUT sets the default output format",
+        "JC_CONFIG overrides the config file path",
+        "JC_NO_COLOR disables color output when set to any non-empty value",
+        "Environment variables take priority over config file values",
+        "Command-line flags take priority over environment variables",
+        "Priority chain verified: flags > env vars > config file > built-in defaults",
+        "Running with JC_OUTPUT=table produces table output without --output flag"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Viper supports env var binding natively. Use JC_ prefix for all env vars. Document all env vars in --help output.",
+      "dependsOn": ["US-002"]
+    },
+    {
+      "id": "US-004",
+      "title": "API Key Authentication from Config and Environment",
+      "description": "As an administrator, I want to authenticate to JumpCloud using an API key provided via environment variable or config file so that all API calls are authenticated.",
+      "acceptanceCriteria": [
+        "API key read from JC_API_KEY environment variable (highest priority)",
+        "API key read from active profile in config file if env var not set",
+        "API key injected as x-api-key header on all API requests",
+        "Missing API key produces clear error: 'No API key configured. Run jc auth login or set JC_API_KEY'",
+        "API key validated on first use by calling GET /api/organizations",
+        "Invalid API key produces clear error with suggestion to re-authenticate",
+        "--api-key flag allows one-off override for a single command",
+        "API key never appears in --verbose or --debug output (redacted to last 4 chars)"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Plaintext api_key field in config is allowed for this story as a fallback; keychain integration comes in US-005. Always redact API keys in logs.",
+      "dependsOn": ["US-003"]
+    },
+    {
+      "id": "US-005",
+      "title": "OS Keychain Integration for Secret Storage",
+      "description": "As a security-conscious administrator, I want API keys stored in the OS keychain (macOS Keychain / Linux secret-tool) so that secrets are never stored as plaintext on disk.",
+      "acceptanceCriteria": [
+        "On macOS, API keys stored in Keychain via Security framework or keychain CLI",
+        "On Linux, API keys stored via secret-tool (freedesktop Secret Service)",
+        "Config file references keychain entries as 'keychain://jc/<profile-name>'",
+        "jc auth login stores the key in keychain and writes reference to config",
+        "API key retrieval from keychain works transparently for all commands",
+        "Graceful fallback to plaintext config if keychain unavailable (with warning)",
+        "jc auth logout removes the key from keychain",
+        "Keychain service name is 'jc' with account name matching profile name"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use go-keyring or zalando/go-keyring package for cross-platform keychain access. Test on both macOS and Linux.",
+      "dependsOn": ["US-004"]
+    },
+    {
+      "id": "US-006",
+      "title": "Auth Login and Auth Status Commands",
+      "description": "As an administrator, I want jc auth login to interactively set up my API key and jc auth status to verify my authentication so that I can easily configure and verify credentials.",
+      "acceptanceCriteria": [
+        "'jc auth login' prompts for API key with masked input",
+        "'jc auth login' optionally prompts for org ID if not already set",
+        "'jc auth login' validates the API key by calling GET /api/organizations",
+        "'jc auth login' stores key in keychain and updates config profile",
+        "'jc auth login --profile <name>' creates or updates a named profile",
+        "'jc auth status' displays: authenticated (yes/no), profile name, org name, org ID, user role",
+        "'jc auth status' returns exit code 0 if authenticated, 3 if not",
+        "'jc auth logout' removes credentials from keychain and clears profile",
+        "'jc auth status --output json' returns structured JSON for scripting"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use survey or huh for interactive prompts. Masked input critical for API key entry. The login flow should feel similar to 'gh auth login'.",
+      "dependsOn": ["US-005"]
+    },
+    {
+      "id": "US-007",
+      "title": "Base HTTP Transport Layer",
+      "description": "As a developer, I want a reusable HTTP transport layer that handles authentication injection, TLS, request/response logging, and user-agent headers so that all API clients build on consistent, secure HTTP behavior.",
+      "acceptanceCriteria": [
+        "HTTP client automatically injects x-api-key header from active credentials",
+        "All requests use HTTPS (TLS 1.2+)",
+        "User-Agent header set to 'jc/<version> (Go; <os>/<arch>)'",
+        "Content-Type header set to 'application/json' for all requests",
+        "--verbose flag logs: method, URL, status code, and duration for each request",
+        "--debug flag logs: full request/response headers and body (with API key redacted)",
+        "Request timeout configurable (default 30 seconds)",
+        "Connection pooling enabled for multiple sequential requests",
+        "Accept header set to 'application/json'"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use net/http with a custom RoundTripper for auth injection and logging. Consider go-resty for convenience. The transport is the foundation for both V1 and V2 API clients.",
+      "dependsOn": ["US-004"]
+    },
+    {
+      "id": "US-008",
+      "title": "V1 API Client with Pagination, Rate Limiting, and Retry",
+      "description": "As a developer, I want a V1 API client that handles automatic pagination, rate limit detection with backoff, and retry logic so that all V1 resource commands work reliably against large datasets.",
+      "acceptanceCriteria": [
+        "V1 API base URL: https://console.jumpcloud.com/api",
+        "Automatic pagination: list endpoints iterate through all pages transparently",
+        "Pagination uses skip/limit parameters for V1 endpoints",
+        "Rate limit detection: HTTP 429 triggers exponential backoff with jitter",
+        "Retry logic: up to 3 retries for transient errors (429, 500, 502, 503, 504)",
+        "Error mapping: HTTP status codes mapped to structured error types",
+        "--limit flag caps total results returned (stops pagination early)",
+        "--page-size flag controls per-request page size (default 100)",
+        "API errors include HTTP status, endpoint, and JumpCloud error message",
+        "Context cancellation (Ctrl+C) stops in-flight pagination immediately"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "V1 API uses skip-based pagination. Rate limit is 200 requests/minute per API key. Backoff formula: min(2^attempt * 1s + jitter, 30s).",
+      "dependsOn": ["US-007"]
+    },
+    {
+      "id": "US-009",
+      "title": "Output Engine with JSON, Table, and CSV Formatters",
+      "description": "As an administrator, I want command output in JSON (default), table, or CSV format so that I can pipe results to other tools, read them visually, or import into spreadsheets.",
+      "acceptanceCriteria": [
+        "JSON output (default): pretty-printed with 2-space indent to stdout",
+        "JSON output: list commands always produce arrays (even for single results or empty)",
+        "JSON output: single-resource commands produce objects (not arrays)",
+        "JSON output: field order is consistent and alphabetical",
+        "JSON output: timestamps in RFC 3339 UTC, booleans as true/false, nulls explicit",
+        "Table output (--output table or -t): ASCII table with column headers and alignment",
+        "Table output: long values truncated with ellipsis, columns auto-sized to terminal width",
+        "CSV output (--output csv): standard CSV with header row, proper escaping",
+        "Human output (--output human or -h): key-value pairs for single resources",
+        "--quiet flag (-q): suppresses all output, exit code only",
+        "--ids flag: outputs one ID per line (for piping to other jc commands)",
+        "Output format selectable via --output flag, JC_OUTPUT env var, or config default"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use tablewriter for ASCII tables. JSON is the LLM-friendly default. Table is for human scanning. CSV for export. The output engine should be a shared package used by all commands.",
+      "dependsOn": ["US-001"]
+    },
+    {
+      "id": "US-010",
+      "title": "Global Flags Framework",
+      "description": "As an administrator, I want consistent global flags across all commands (--output, --filter, --limit, --sort, --fields, --verbose, --debug, --org, --force, --plan) so that the CLI behaves predictably regardless of which resource I'm working with.",
+      "acceptanceCriteria": [
+        "--output / -o flag registered on root command, inherited by all subcommands",
+        "--verbose / -v flag enables HTTP request/response logging",
+        "--debug flag enables full debug logging",
+        "--quiet / -q flag suppresses output",
+        "--force / -f flag skips confirmation prompts",
+        "--non-interactive flag disables all interactive prompts",
+        "--org flag overrides active profile for one command",
+        "--no-cache flag bypasses name-to-ID cache",
+        "--plan flag registered as persistent flag (available on all mutating commands)",
+        "Flags correctly bound to Viper for env var and config file override",
+        "Unknown flags produce clear error with suggestion of similar valid flags",
+        "Short flags (-o, -t, -q, -v, -f, -V) work correctly"
+      ],
+      "priority": 0,
+      "passes": false,
+      "notes": "Use Cobra persistent flags on root command for truly global flags. Resource-specific flags (--filter, --limit, --sort, --fields) will be added per-command in later stories but the pattern should be established here.",
+      "dependsOn": ["US-001", "US-009"]
+    },
+    {
+      "id": "US-011",
+      "title": "Users List and Get Commands",
+      "description": "As an administrator, I want to list all users and get a specific user by username or ID so that I can view my JumpCloud user directory from the command line.",
+      "acceptanceCriteria": [
+        "'jc users list' returns all system users as a JSON array",
+        "'jc users list' shows default field subset: username, email, firstname, lastname, activated, suspended",
+        "'jc users list --output table' renders a readable ASCII table",
+        "'jc users list --limit 10' returns at most 10 users",
+        "'jc users list --sort username' sorts by username ascending",
+        "'jc users list --sort -created' sorts by created descending",
+        "'jc users get <username>' returns a single user JSON object by username",
+        "'jc users get <id>' returns a single user JSON object by ID",
+        "User not found returns exit code 1 with helpful error message",
+        "List footer shows '── N of TOTAL items ──' count information",
+        "V1 API endpoint: GET /api/systemusers used correctly"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "V1 System Users API: GET /api/systemusers (list), GET /api/systemusers/{id} (get). Name resolution (username → ID) will be handled in US-018.",
+      "dependsOn": ["US-008", "US-009", "US-010"]
+    },
+    {
+      "id": "US-012",
+      "title": "Users Create, Update, and Delete Commands",
+      "description": "As an administrator, I want to create, update, and delete JumpCloud users from the CLI so that I can manage the user lifecycle without the web console.",
+      "acceptanceCriteria": [
+        "'jc users create --username jdoe --email jdoe@acme.com --firstname John --lastname Doe' creates a user",
+        "Required fields validated before API call: username and email",
+        "Create returns the newly created user object",
+        "'jc users update <user> --department Sales --jobTitle Manager' updates specified fields only",
+        "Update returns the updated user object showing new values",
+        "'jc users delete <user>' deletes the user after confirmation prompt",
+        "'jc users delete <user> --force' deletes without confirmation",
+        "Delete returns exit code 0 on success with brief confirmation message",
+        "Deleting a non-existent user returns clear error",
+        "V1 API endpoints used: POST /api/systemusers, PUT /api/systemusers/{id}, DELETE /api/systemusers/{id}"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Confirmation prompt for delete should show username and email. Update should accept any valid user field as a flag.",
+      "dependsOn": ["US-011"]
+    },
+    {
+      "id": "US-013",
+      "title": "Users Search Command",
+      "description": "As an administrator, I want to search for users by keyword so that I can quickly find users when I don't know their exact username.",
+      "acceptanceCriteria": [
+        "'jc users search <term>' searches across username, email, firstname, lastname fields",
+        "Search uses the V1 POST /api/search/systemusers endpoint",
+        "Results returned as JSON array matching standard list format",
+        "Search supports --output table for visual scanning",
+        "Empty results return empty array with exit code 0",
+        "Search term is case-insensitive",
+        "Results can be filtered further with --filter flag",
+        "Results can be limited with --limit flag"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "V1 Search API uses POST with JSON body containing search filter. This is different from the list+filter approach.",
+      "dependsOn": ["US-011"]
+    },
+    {
+      "id": "US-014",
+      "title": "Users Lock, Unlock, Reset-MFA, and Reset-Password",
+      "description": "As an administrator, I want to lock/unlock user accounts, reset MFA enrollment, and trigger password resets so that I can handle common security operations from the CLI.",
+      "acceptanceCriteria": [
+        "'jc users lock <user>' sets account_locked=true on the user",
+        "'jc users unlock <user>' sets account_locked=false on the user",
+        "'jc users reset-mfa <user>' resets TOTP/MFA enrollment for the user",
+        "'jc users reset-password <user>' triggers a password reset email",
+        "Lock/unlock commands confirm action and show resulting account state",
+        "All four commands accept username or user ID as positional argument",
+        "Lock shows confirmation: 'User jdoe locked successfully'",
+        "Unlock shows confirmation: 'User jdoe unlocked successfully'",
+        "reset-mfa shows confirmation with warning about user re-enrollment",
+        "These commands respect --plan flag (showing what would change)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Lock/unlock use PUT /api/systemusers/{id} with account_locked field. MFA reset and password reset have specific V1 endpoints.",
+      "dependsOn": ["US-011"]
+    },
+    {
+      "id": "US-015",
+      "title": "Devices List and Get Commands",
+      "description": "As an administrator, I want to list all devices (systems) and get a specific device by hostname or ID so that I can manage the device fleet from the CLI.",
+      "acceptanceCriteria": [
+        "'jc devices list' returns all systems as a JSON array",
+        "'jc devices list' shows default fields: displayName, hostname, os, osVersion, lastContact, agentVersion",
+        "'jc devices list --output table' renders a readable device table",
+        "'jc devices list --filter \"os=Mac OS X\"' filters by operating system",
+        "'jc devices list --limit 20' limits results",
+        "'jc devices list --sort -lastContact' sorts by last contact descending",
+        "'jc devices get <hostname>' returns a single device JSON object",
+        "'jc devices get <id>' returns a single device JSON object by ID",
+        "Device not found returns exit code 1 with helpful error",
+        "V1 API endpoint: GET /api/systems used correctly"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "V1 Systems API: GET /api/systems (list), GET /api/systems/{id} (get). Hostname-to-ID resolution will use the same caching mechanism as username resolution (US-018).",
+      "dependsOn": ["US-008", "US-009", "US-010"]
+    },
+    {
+      "id": "US-016",
+      "title": "Devices Delete Command",
+      "description": "As an administrator, I want to delete a device record from JumpCloud so that I can remove decommissioned or stale systems.",
+      "acceptanceCriteria": [
+        "'jc devices delete <device>' deletes the device after confirmation prompt",
+        "Confirmation shows device hostname, OS, and last contact date",
+        "'jc devices delete <device> --force' skips confirmation",
+        "Delete returns exit code 0 with brief confirmation message",
+        "Deleting a non-existent device returns clear error",
+        "Accepts hostname or device ID as positional argument",
+        "V1 API endpoint: DELETE /api/systems/{id}"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Device deletion is destructive and should warn about agent removal implications.",
+      "dependsOn": ["US-015"]
+    },
+    {
+      "id": "US-017",
+      "title": "Devices MDM Commands (Lock, Restart, Erase)",
+      "description": "As an administrator, I want to send MDM commands to devices (lock, restart, erase) so that I can remotely manage devices for security incidents or maintenance.",
+      "acceptanceCriteria": [
+        "'jc devices lock <device>' sends MDM lock command",
+        "'jc devices restart <device>' sends MDM restart command",
+        "'jc devices erase <device>' sends MDM erase command",
+        "'jc devices erase' REQUIRES --confirm-erase flag (safety gate)",
+        "Erase without --confirm-erase shows error explaining the requirement",
+        "All MDM commands show confirmation prompt before execution",
+        "Lock shows device hostname and brief result",
+        "Commands accept hostname or device ID",
+        "Appropriate V1 API MDM endpoints used for each command"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Device erase is extremely destructive — the double confirmation (prompt + --confirm-erase flag) is intentional. MDM commands may not apply to all device types.",
+      "dependsOn": ["US-015"]
+    },
+    {
+      "id": "US-018",
+      "title": "Name-to-ID Resolution with Caching",
+      "description": "As an administrator, I want to reference users by username and devices by hostname instead of raw IDs, with results cached for performance, so that the CLI is human-friendly.",
+      "acceptanceCriteria": [
+        "Users can be referenced by username (e.g., 'jc users get jdoe')",
+        "Devices can be referenced by hostname (e.g., 'jc devices get JDOE-MBP')",
+        "Resolution checks if input looks like an ID (24-char hex) and uses it directly",
+        "Non-ID input triggers a search/filter API call to resolve to ID",
+        "Resolved name→ID mappings cached in ~/.cache/jc/ with configurable TTL (default 300s)",
+        "Cache stored as JSON files (one per resource type)",
+        "--no-cache flag bypasses cache and forces fresh resolution",
+        "Cache miss triggers API lookup transparently",
+        "Ambiguous name (multiple matches) produces error listing matches",
+        "Cache directory created with 0700 permissions"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Cache key format: resource_type:name → id. Use file-based cache under ~/.cache/jc/. Consider bolt or badger for future, but JSON files are fine for v1.",
+      "dependsOn": ["US-011", "US-015"]
+    },
+    {
+      "id": "US-019",
+      "title": "Shell Completions (Bash, Zsh, Fish)",
+      "description": "As an administrator, I want shell completions for commands, subcommands, flags, and resource names so that I can use tab completion for faster CLI usage.",
+      "acceptanceCriteria": [
+        "'jc completion bash' outputs Bash completion script",
+        "'jc completion zsh' outputs Zsh completion script",
+        "'jc completion fish' outputs Fish completion script",
+        "Completions include all command groups and subcommands",
+        "Completions include all global and command-specific flags",
+        "Completions include --output format values (json, table, csv, human, yaml, ndjson)",
+        "Instructions printed for adding completions to shell RC file",
+        "Cobra's built-in completion generation used as foundation"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Cobra generates completions natively. Dynamic completions (e.g., completing usernames) can be added later. Focus on static command/flag completions first.",
+      "dependsOn": ["US-001"]
+    },
+    {
+      "id": "US-020",
+      "title": "Filtering Engine",
+      "description": "As an administrator, I want to filter list results using --filter 'field=value' syntax with comparison operators so that I can narrow down results without post-processing.",
+      "acceptanceCriteria": [
+        "--filter 'field=value' filters by exact equality",
+        "--filter 'field!=value' filters by inequality",
+        "--filter 'field>=value' filters by greater-than-or-equal (dates and numbers)",
+        "--filter 'field<=value' filters by less-than-or-equal",
+        "--filter 'field>value' and --filter 'field<value' for strict comparison",
+        "Multiple --filter flags combine with AND logic",
+        "Filters translated to appropriate API query parameters (V1: filter param, V2: query params)",
+        "--search flag provides full-text search across fields",
+        "Invalid filter syntax produces clear error with expected format",
+        "Filters work consistently across users, devices, and all future resource commands"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "V1 API filter format: 'field:$eq:value', 'field:$gte:value'. V2 uses query string parameters. The filter parser should be a shared utility that translates the user-friendly syntax to API-specific format.",
+      "dependsOn": ["US-011", "US-015"]
+    },
+    {
+      "id": "US-021",
+      "title": "Field Selection (--fields, --exclude, --all)",
+      "description": "As an administrator, I want to select which fields appear in output so that I can focus on relevant data and reduce noise.",
+      "acceptanceCriteria": [
+        "--fields 'username,email,department' outputs only specified fields",
+        "--exclude 'password_date,totp_enabled' outputs all default fields except those excluded",
+        "--all includes all available fields including nested objects",
+        "Field selection works with all output formats (JSON, table, CSV)",
+        "Invalid field names produce warning but don't fail the command",
+        "Fields flag accepts comma-separated list without spaces requirement",
+        "Default field set per resource type defined (not all fields shown by default)",
+        "--fields and --exclude are mutually exclusive (error if both provided)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Each resource type should define its default field set and full field set. Field selection happens client-side after API response (not all APIs support server-side field selection).",
+      "dependsOn": ["US-009"]
+    },
+    {
+      "id": "US-022",
+      "title": "Config View and Set Commands",
+      "description": "As an administrator, I want jc config view and jc config set commands so that I can inspect and modify configuration from the CLI without editing YAML manually.",
+      "acceptanceCriteria": [
+        "'jc config view' displays the full config (with secrets redacted)",
+        "'jc config view --output json' outputs config as JSON",
+        "'jc config view --output yaml' outputs config as YAML",
+        "'jc config set defaults.output table' sets a config value using dot notation",
+        "'jc config set defaults.limit 50' handles numeric values",
+        "'jc config set defaults.confirm_destructive true' handles boolean values",
+        "Config changes written atomically to config file",
+        "Invalid config key produces error with list of valid keys",
+        "'jc config view' shows active profile highlighted",
+        "API keys shown as '****<last4>' in config view output"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Use Viper's WriteConfig after updates. Atomic write via temp file + rename. Dot notation allows setting nested keys like 'defaults.output'.",
+      "dependsOn": ["US-002"]
+    },
+    {
+      "id": "US-023",
+      "title": "V2 API Client Layer",
+      "description": "As a developer, I want a V2 API client that handles the different pagination, header format, and endpoint structure of JumpCloud's V2 API so that group, policy, and other V2 resources can be implemented.",
+      "acceptanceCriteria": [
+        "V2 API base URL: https://console.jumpcloud.com/api/v2",
+        "V2 pagination uses Link headers (next/prev) instead of skip/limit",
+        "V2 API accepts same x-api-key authentication header",
+        "V2 content-type is application/json",
+        "Rate limiting and retry logic shared with V1 client",
+        "V2 client handles query parameter-based filtering",
+        "V2 pagination automatically follows Link headers to fetch all pages",
+        "--limit flag works correctly with V2 pagination",
+        "V2 error responses parsed and mapped to structured error types",
+        "V2 client reuses the same HTTP transport layer as V1"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 API differences: pagination via Link headers, different filter syntax, different endpoint paths. The V2 client should share the transport layer from US-007 but have its own pagination logic.",
+      "dependsOn": ["US-008"]
+    },
+    {
+      "id": "US-024",
+      "title": "User Groups CRUD Commands",
+      "description": "As an administrator, I want to list, get, create, update, and delete user groups so that I can manage group-based access policies from the CLI.",
+      "acceptanceCriteria": [
+        "'jc groups user list' lists all user groups",
+        "'jc groups user get <group-name-or-id>' returns a single user group",
+        "'jc groups user create --name Engineering --description \"Engineering team\"' creates a user group",
+        "'jc groups user update <group> --description \"Updated desc\"' updates a group",
+        "'jc groups user delete <group>' deletes a group after confirmation",
+        "Group name-to-ID resolution works (reference groups by name)",
+        "All commands support standard output formats (JSON, table)",
+        "V2 API endpoints: /api/v2/usergroups used correctly",
+        "Delete shows group name, member count, and associated resources in confirmation"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 User Groups API: GET/POST /api/v2/usergroups, GET/PUT/DELETE /api/v2/usergroups/{id}. Group commands nest under 'jc groups user' and 'jc groups device'.",
+      "dependsOn": ["US-023", "US-018"]
+    },
+    {
+      "id": "US-025",
+      "title": "Device Groups CRUD Commands",
+      "description": "As an administrator, I want to list, get, create, update, and delete device (system) groups so that I can manage device grouping from the CLI.",
+      "acceptanceCriteria": [
+        "'jc groups device list' lists all system groups",
+        "'jc groups device get <group-name-or-id>' returns a single system group",
+        "'jc groups device create --name \"macOS Fleet\" --description \"All macOS devices\"' creates a group",
+        "'jc groups device update <group> --name \"macOS Devices\"' updates a group",
+        "'jc groups device delete <group>' deletes after confirmation",
+        "Group name-to-ID resolution works for device groups",
+        "V2 API endpoints: /api/v2/systemgroups used correctly",
+        "All standard output formats supported"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 System Groups API: GET/POST /api/v2/systemgroups, GET/PUT/DELETE /api/v2/systemgroups/{id}.",
+      "dependsOn": ["US-023", "US-018"]
+    },
+    {
+      "id": "US-026",
+      "title": "Group Membership Management (Add/Remove Members)",
+      "description": "As an administrator, I want to add and remove members from user and device groups so that I can manage group membership from the CLI.",
+      "acceptanceCriteria": [
+        "'jc groups add-member <group> --user <username>' adds a user to a user group",
+        "'jc groups add-member <group> --device <hostname>' adds a device to a device group",
+        "'jc groups remove-member <group> --user <username>' removes a user from a group",
+        "'jc groups remove-member <group> --device <hostname>' removes a device from a group",
+        "'jc groups remove-member --all --user <username>' removes user from ALL groups",
+        "Membership changes confirmed with brief message showing group and member",
+        "Adding an already-existing member returns informative message (not error)",
+        "Removing a non-member returns informative message",
+        "V2 Graph/membership API endpoints used correctly"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Group membership uses V2 Graph API: POST /api/v2/usergroups/{id}/members and /api/v2/systemgroups/{id}/membership.",
+      "dependsOn": ["US-024", "US-025"]
+    },
+    {
+      "id": "US-027",
+      "title": "Commands CRUD",
+      "description": "As an administrator, I want to list, get, create, update, and delete JumpCloud commands so that I can manage remote commands from the CLI.",
+      "acceptanceCriteria": [
+        "'jc commands list' lists all commands with name, type, schedule info",
+        "'jc commands get <command-name-or-id>' returns command details",
+        "'jc commands create --name \"Update Agents\" --command \"apt update\" --type linux' creates a command",
+        "'jc commands update <command> --command \"apt upgrade -y\"' updates command body",
+        "'jc commands delete <command>' deletes after confirmation",
+        "Command name-to-ID resolution works",
+        "V1 API endpoints: /api/commands used correctly",
+        "Standard output formats supported"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V1 Commands API: GET/POST /api/commands, GET/PUT/DELETE /api/commands/{id}.",
+      "dependsOn": ["US-008", "US-018"]
+    },
+    {
+      "id": "US-028",
+      "title": "Commands Trigger and Results",
+      "description": "As an administrator, I want to trigger command execution on devices/groups and view results so that I can run remote operations and check their outcomes.",
+      "acceptanceCriteria": [
+        "'jc commands run <command> --on <device>' triggers command on a specific device",
+        "'jc commands run <command> --on <group>' triggers command on a device group",
+        "'jc commands results <command>' lists execution results for a command",
+        "Results show: device, exit code, stdout, stderr, timestamp",
+        "Results support --output table for quick scanning",
+        "Run command confirms target count before execution",
+        "'jc commands run <command> --on <device> --force' skips confirmation",
+        "V1 API endpoints: POST /api/commands/{id}/trigger, GET /api/commandresults"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Command trigger API uses POST /api/runcommand. Results via GET /api/commandresults with command filter.",
+      "dependsOn": ["US-027"]
+    },
+    {
+      "id": "US-029",
+      "title": "Policies List, Get, and Results",
+      "description": "As an administrator, I want to list policies, get policy details, and view policy results so that I can manage and audit configuration policies from the CLI.",
+      "acceptanceCriteria": [
+        "'jc policies list' lists all policies with name, type, and OS target",
+        "'jc policies get <policy-name-or-id>' returns full policy details",
+        "'jc policies results <policy>' lists policy application results per device",
+        "Results show: device, status (applied/pending/failed), timestamp",
+        "Policy name-to-ID resolution works",
+        "V2 API endpoints: /api/v2/policies used correctly",
+        "Standard output formats and filtering supported"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 Policies API: GET /api/v2/policies, GET /api/v2/policies/{id}, GET /api/v2/policies/{id}/policystatuses.",
+      "dependsOn": ["US-023", "US-018"]
+    },
+    {
+      "id": "US-030",
+      "title": "Apps List, Get, and Associations",
+      "description": "As an administrator, I want to list SSO applications, get app details, and view associated groups/users so that I can manage application access from the CLI.",
+      "acceptanceCriteria": [
+        "'jc apps list' lists all SSO applications with name, type, and status",
+        "'jc apps get <app-name-or-id>' returns full application details",
+        "App name-to-ID resolution works",
+        "App details include associated user groups and device groups",
+        "V1/V2 application API endpoints used correctly",
+        "Standard output formats and filtering supported"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Applications span V1 (GET /api/applications) and V2 graph associations.",
+      "dependsOn": ["US-023", "US-018"]
+    },
+    {
+      "id": "US-031",
+      "title": "Graph Association Traversal",
+      "description": "As an administrator, I want to traverse JumpCloud graph associations between resources so that I can understand relationships (user→groups, device→groups, app→groups, etc.).",
+      "acceptanceCriteria": [
+        "'jc graph traverse --from user:<username> --to user_group' shows groups a user belongs to",
+        "'jc graph traverse --from device:<hostname> --to system_group' shows device group memberships",
+        "'jc graph traverse --from user_group:<group> --to application' shows apps associated with a group",
+        "Output is a list of associated resource objects with type and ID",
+        "V2 Graph API: /api/v2/{resource_type}/{id}/associations used correctly",
+        "Standard output formats supported (JSON default, table for visual)",
+        "Association types validated (error on invalid from→to combinations)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 Graph API enables traversal between all resource types. The graph command is powerful for auditing access relationships. Support common traversals first.",
+      "dependsOn": ["US-023", "US-018"]
+    },
+    {
+      "id": "US-032",
+      "title": "Admins List Command",
+      "description": "As an administrator, I want to list JumpCloud administrators so that I can audit admin access to the organization.",
+      "acceptanceCriteria": [
+        "'jc admins list' lists all administrators with email, role, and MFA status",
+        "Output supports standard formats (JSON, table)",
+        "Filtering by role or email supported",
+        "V2 API endpoint: /api/v2/administrators used correctly",
+        "Results include admin role (e.g., Administrator, Manager, Read Only)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "V2 Administrators API: GET /api/v2/administrators. Read-only for now (list/get).",
+      "dependsOn": ["US-023"]
+    },
+    {
+      "id": "US-033",
+      "title": "Bulk Operations",
+      "description": "As an administrator, I want bulk user operations (create, update, delete from file) so that I can manage large-scale user changes efficiently.",
+      "acceptanceCriteria": [
+        "'jc bulk users --file users.csv' processes bulk user operations from CSV",
+        "CSV format: each row is an operation (create/update/delete based on context or column)",
+        "Progress shown during bulk operations (N of TOTAL processed)",
+        "Failed operations logged but don't stop remaining operations",
+        "Summary report at end: N succeeded, N failed, N skipped",
+        "Failed operations detail available with --verbose",
+        "Bulk operations support --plan to preview all changes",
+        "'jc bulk users --file users.csv --force' skips confirmation",
+        "Rate limiting respected during bulk operations"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Bulk uses a combination of individual API calls with rate limiting. Consider using JumpCloud's bulk job API where available (POST /api/v2/bulk/users).",
+      "dependsOn": ["US-012", "US-008"]
+    },
+    {
+      "id": "US-034",
+      "title": "Plan Mode Engine",
+      "description": "As an administrator, I want --plan on all mutating commands to preview what would happen before execution so that I can verify changes (especially those generated by LLMs) before they take effect.",
+      "acceptanceCriteria": [
+        "'jc users delete jdoe --plan' shows plan without executing",
+        "Plan displays: action, target (with resolved name + ID), and effects",
+        "Plan for delete shows group memberships and device bindings that would be removed",
+        "Plan for update shows field changes as 'field: old_value → new_value'",
+        "Plan for create shows all fields that would be set",
+        "'--plan --output json' returns structured plan JSON with action, resource, target, effects, reversible",
+        "Plan mode makes read-only API calls only (never modifies)",
+        "Plan exit code is 10 (no changes made, distinct from success)",
+        "Plan mode renders a visual box in terminal for human consumption",
+        "Plan mode works on: users create/update/delete/lock/unlock, devices delete/lock/erase, groups create/update/delete/add-member/remove-member"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Plan mode is critical for LLM safety — it lets agents preview commands before execution. Plan JSON format must be deterministic for machine consumption. Visual box uses lipgloss/glamour.",
+      "dependsOn": ["US-012", "US-016", "US-017", "US-026"]
+    },
+    {
+      "id": "US-035",
+      "title": "Multi-Org Profile Switching",
+      "description": "As an MSP administrator managing multiple JumpCloud organizations, I want to switch between org profiles so that I can manage all clients from a single CLI installation.",
+      "acceptanceCriteria": [
+        "'jc auth switch <profile-name>' switches the active profile",
+        "'jc auth switch' without argument shows interactive profile picker",
+        "Profile switch updates active_profile in config file",
+        "Each profile has its own org_id, API key reference, and optional defaults",
+        "'jc --org <profile>' allows one-off override without switching",
+        "'jc auth status' shows current active profile and org name",
+        "Tab completion works for profile names",
+        "Non-existent profile name produces error with list of available profiles"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Profile switching is essential for MSP workflows. The --org flag is a per-command override that doesn't persist. Each profile can have different auth methods.",
+      "dependsOn": ["US-006", "US-002"]
+    },
+    {
+      "id": "US-036",
+      "title": "OAuth 2.0 Service Account Authentication",
+      "description": "As an administrator, I want to authenticate using OAuth 2.0 service accounts (client ID + client secret) so that I can use scoped, rotatable credentials for automation.",
+      "acceptanceCriteria": [
+        "'jc auth login --service-account' prompts for client ID and client secret",
+        "Service account credentials exchange for a bearer token via JumpCloud OAuth endpoint",
+        "Bearer token cached and auto-refreshed on expiry",
+        "Config profile stores auth_method: service_account, client_id, and client_secret_ref (keychain)",
+        "Bearer token injected as Authorization header instead of x-api-key",
+        "Token refresh happens transparently before API calls",
+        "'jc auth status' shows auth method as 'service_account' with token expiry info",
+        "Expired token with failed refresh produces clear re-authentication message"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "OAuth 2.0 is JumpCloud's newer auth method. Service accounts provide scoped access and credential rotation. Client secret stored in keychain like API keys.",
+      "dependsOn": ["US-006", "US-005"]
+    },
+    {
+      "id": "US-037",
+      "title": "Directory Insights API Client",
+      "description": "As a developer, I want a Directory Insights API client that handles the event query POST endpoints so that insight commands can query audit and activity events.",
+      "acceptanceCriteria": [
+        "Client targets POST /insights/directory/v1/events endpoint",
+        "Client targets POST /insights/directory/v1/events/count endpoint",
+        "Client targets POST /insights/directory/v1/events/distinct endpoint",
+        "Request body includes: service, start_time, end_time, fields, filter, limit, skip, sort",
+        "Timestamps parsed from human-friendly formats: '2026-02-01', 'last 24h', 'last 7d', 'last 30d'",
+        "Multiple services supported as comma-separated list",
+        "Pagination handled automatically for large result sets",
+        "Rate limiting and retry logic applied consistently",
+        "API base URL: https://console.jumpcloud.com/insights/directory/v1"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Directory Insights uses a POST-based query API (not GET). The request body contains query parameters. Time parsing from '24h', '7d', '30d' shortcuts is a nice UX feature.",
+      "dependsOn": ["US-007"]
+    },
+    {
+      "id": "US-038",
+      "title": "Insights Query Command",
+      "description": "As an administrator, I want to query Directory Insights events so that I can audit user activity, authentication events, and system changes.",
+      "acceptanceCriteria": [
+        "'jc insights query --service sso --last 24h' returns SSO events from the last 24 hours",
+        "'jc insights query --service sso,ldap --start 2026-02-01 --end 2026-02-13' queries date range",
+        "'jc insights query --service all --last 7d' queries all services",
+        "'jc insights query --service sso --event-type sso_auth_failed --last 24h' filters by event type",
+        "Results returned as JSON array by default",
+        "Results support table output for scanning",
+        "--limit flag controls maximum events returned",
+        "Event fields include: timestamp, event_type, initiated_by, client_ip, success",
+        "Service categories validated: sso, radius, ldap, user_portal, admin, mdm, etc.",
+        "Invalid service name produces error with list of valid services"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Directory Insights is JumpCloud's audit/event API. Services map to event sources. The --last shortcut is ergonomic for common time ranges.",
+      "dependsOn": ["US-037"]
+    },
+    {
+      "id": "US-039",
+      "title": "Insights Count and Distinct Commands",
+      "description": "As an administrator, I want to count events and get distinct field values so that I can quickly aggregate audit data without retrieving full event records.",
+      "acceptanceCriteria": [
+        "'jc insights count --service sso --last 7d' returns event count",
+        "'jc insights count --service sso --event-type sso_auth_failed --last 24h' counts filtered events",
+        "'jc insights distinct --service sso --field initiated_by.username --last 30d' returns unique values",
+        "Count returns a single number (or JSON object with count field)",
+        "Distinct returns an array of unique values",
+        "Both commands support the same --service, --last, --start, --end, --event-type flags",
+        "Standard output formats supported"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Count and distinct are lightweight aggregation queries. Distinct is useful for finding unique actors, IP addresses, event types.",
+      "dependsOn": ["US-037"]
+    },
+    {
+      "id": "US-040",
+      "title": "Saved Searches for Insights",
+      "description": "As an administrator, I want to save, list, and re-run frequently used insight queries so that I can quickly execute common audit searches.",
+      "acceptanceCriteria": [
+        "'jc insights save \"failed-sso-24h\" --service sso --event-type sso_auth_failed --last 24h' saves a search",
+        "'jc insights run \"failed-sso-24h\"' executes a saved search",
+        "'jc insights saved' lists all saved searches with name and description",
+        "Saved searches stored in config file under 'insights.saved_searches' key",
+        "Saved search captures all query parameters (service, time range, event type, filters)",
+        "'jc insights saved --output json' returns saved searches as JSON",
+        "Time-relative searches (--last 24h) re-calculate from current time when re-run",
+        "Non-existent saved search name produces error with list of available searches"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Saved searches are local to the config file. Time-relative queries (--last 24h) are recalculated each run, not stored as absolute timestamps.",
+      "dependsOn": ["US-038"]
+    },
+    {
+      "id": "US-041",
+      "title": "NDJSON and YAML Output Formats",
+      "description": "As an administrator, I want NDJSON output for SIEM integration and YAML output for configuration workflows so that I have format options for every use case.",
+      "acceptanceCriteria": [
+        "--output ndjson produces one JSON object per line (Newline Delimited JSON)",
+        "NDJSON format works with all list commands",
+        "NDJSON is streamable (records emitted as received, not buffered)",
+        "--output yaml produces YAML document output",
+        "YAML output works with both list and single-resource commands",
+        "YAML lists produce YAML sequences, single resources produce YAML mappings",
+        "Output format 'ndjson' and 'yaml' registered in the output engine",
+        "Both formats respect --fields and --exclude flags"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "NDJSON is critical for SIEM tools (Splunk, Elastic) that ingest one event per line. YAML is useful for IaC workflows. Both are simple additions to the output engine.",
+      "dependsOn": ["US-009"]
+    },
+    {
+      "id": "US-042",
+      "title": "Recipe Engine Core (YAML Parser, Template Engine, Step Execution)",
+      "description": "As a developer, I want a recipe engine that parses YAML recipe definitions, renders Go templates in step commands, and executes steps sequentially so that multi-step workflows can be automated.",
+      "acceptanceCriteria": [
+        "Recipe YAML parsed with fields: name, description, author, version, tags, parameters, steps, on_success, on_failure",
+        "Parameters support: name, description, required, type (string/bool/int), default",
+        "Step commands rendered using Go text/template with parameter values ({{ .paramName }})",
+        "Steps executed sequentially in order defined",
+        "Step 'when' conditional evaluated (template expression returning truthy/falsy)",
+        "Step 'capture' field stores step output in a named variable for later steps",
+        "on_success.message rendered and displayed on successful completion",
+        "on_failure.message rendered with {{ .failed_step }} on failure",
+        "Recipe execution stops on first step failure (unless continue_on_error set)",
+        "Each step's command dispatched to the existing CLI command tree (not shell exec)",
+        "Recipe files loaded from ~/.config/jc/recipes/ and built-in locations"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "The recipe engine executes jc commands internally, not via shell. This means recipes are safe, auditable, and get plan mode support. Go text/template is the template engine.",
+      "dependsOn": ["US-001"]
+    },
+    {
+      "id": "US-043",
+      "title": "Built-In Recipe Library",
+      "description": "As an administrator, I want 10+ built-in recipes for common workflows (onboarding, offboarding, auditing, compliance) so that I have ready-to-use automation from day one.",
+      "acceptanceCriteria": [
+        "onboard-user recipe: create user, add to groups, optional device bind, send welcome email",
+        "offboard-user recipe: lock account, remove all group memberships, unbind devices, reset MFA, optional delete",
+        "audit-inactive-users recipe: find users with no login in N days, export report",
+        "audit-unmanaged-devices recipe: find devices not in any group",
+        "mfa-enforcement-check recipe: list users without MFA enabled",
+        "compliance-report recipe: generate compliance snapshot (MFA adoption, inactive users, unmanaged devices)",
+        "stale-device-cleanup recipe: find devices not seen in N days, optional delete",
+        "password-expiry-report recipe: list users with passwords expiring in N days",
+        "bulk-create-users recipe: create users from CSV file",
+        "group-sync recipe: sync group membership from CSV",
+        "All recipes have clear descriptions, documented parameters, and tested execution",
+        "Built-in recipes bundled into the binary (embedded via go:embed)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Embed recipe YAML files in the binary using Go embed. Each recipe should be well-documented with parameter descriptions and example usage.",
+      "dependsOn": ["US-042"]
+    },
+    {
+      "id": "US-044",
+      "title": "Recipe Commands (list, show, run, validate)",
+      "description": "As an administrator, I want CLI commands to discover, inspect, run, and validate recipes so that I can use and trust the recipe system.",
+      "acceptanceCriteria": [
+        "'jc recipe list' lists all available recipes (built-in + user-defined) with name and description",
+        "'jc recipe list --output table' shows recipes in a scannable table",
+        "'jc recipe show <name>' displays full recipe details: steps, parameters, tags",
+        "'jc recipe run <name> --param value' executes a recipe with parameters",
+        "'jc recipe run <name> --plan' previews all steps without executing",
+        "'jc recipe validate <file.yaml>' validates a recipe YAML file for syntax and semantic errors",
+        "Missing required parameters produce error listing which parameters are needed",
+        "Recipe execution shows progress per step: [1/N] step-name... done",
+        "Recipe failure shows which step failed and the error",
+        "Recipe plan mode shows all steps with resolved commands"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Recipe commands are the user-facing interface to the recipe engine (US-042). Plan mode for recipes shows the expanded commands for each step.",
+      "dependsOn": ["US-042", "US-043"]
+    },
+    {
+      "id": "US-045",
+      "title": "Recipe Create, Import, and Export",
+      "description": "As an administrator, I want to create new recipes interactively, import recipes from URLs or files, and export recipes for sharing so that I can build and share custom workflows.",
+      "acceptanceCriteria": [
+        "'jc recipe create' starts interactive recipe builder (name, description, parameters, steps)",
+        "'jc recipe create' outputs valid YAML to ~/.config/jc/recipes/<name>.yaml",
+        "'jc recipe import <url>' downloads and saves a recipe from a URL",
+        "'jc recipe import <path>' copies a local YAML file to the recipes directory",
+        "'jc recipe export <name>' outputs recipe YAML to stdout",
+        "'jc recipe export <name> --file output.yaml' writes recipe to specified file",
+        "Import validates the recipe before saving",
+        "Import from URL requires user confirmation (shows recipe name and steps)",
+        "Duplicate recipe name prompts for overwrite confirmation"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Interactive recipe builder uses survey/huh for step-by-step prompts. Import from URL should validate before saving to prevent malicious recipes.",
+      "dependsOn": ["US-042"]
+    },
+    {
+      "id": "US-046",
+      "title": "MCP Server — Stdio Transport",
+      "description": "As an AI integration developer, I want jc mcp serve to start an MCP server over stdio so that Claude Desktop, Claude Code, and other MCP clients can manage JumpCloud resources through tool calls.",
+      "acceptanceCriteria": [
+        "'jc mcp serve' starts MCP server on stdio transport (stdin/stdout JSON-RPC)",
+        "Server implements MCP protocol: initialize, tools/list, tools/call, resources/list, resources/read",
+        "Server reuses CLI authentication, API client, caching, and resolution engine",
+        "Server responds to initialize with server name, version, and capabilities",
+        "Server logs to stderr (not stdout) to avoid corrupting the JSON-RPC stream",
+        "Server handles Ctrl+C/SIGTERM gracefully",
+        "Claude Desktop integration works with mcpServers config: {\"command\": \"jc\", \"args\": [\"mcp\", \"serve\"]}",
+        "JC_PROFILE env var respected for multi-org MCP sessions",
+        "Server rate limits tool calls (configurable, default 60/minute)",
+        "All tool calls logged to ~/.config/jc/mcp-audit.log"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "MCP uses JSON-RPC 2.0 over stdio. The server wraps the existing CLI command infrastructure. Use an established Go MCP library if available, otherwise implement the protocol directly.",
+      "dependsOn": ["US-001", "US-008", "US-023"]
+    },
+    {
+      "id": "US-047",
+      "title": "MCP Tools — All Command Groups as Tools",
+      "description": "As an AI agent, I want MCP tools for all major JumpCloud operations (users, devices, groups, insights, commands, policies, apps, recipes) so that I can fully manage JumpCloud through natural language.",
+      "acceptanceCriteria": [
+        "users_list, users_get, users_create, users_update, users_delete tools registered",
+        "users_lock, users_unlock, users_reset_mfa, users_reset_password tools registered",
+        "devices_list, devices_get, devices_lock, devices_restart, devices_erase tools registered",
+        "groups_list, groups_add_member, groups_remove_member tools registered",
+        "insights_query, insights_count tools registered",
+        "commands_list, commands_run tools registered",
+        "policies_list tools registered",
+        "recipe_run tool registered",
+        "plan tool: previews any command string (plan-first safety)",
+        "explain tool: describes what a command would do",
+        "Each tool has proper JSON Schema for inputSchema describing all parameters",
+        "Destructive tools (delete, lock, erase) have destructiveHint annotation",
+        "Destructive tools default to plan mode (return plan unless execute=true)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "40+ tools total. Each tool maps to a CLI command. Destructive tools are plan-first by default — the agent must explicitly pass execute: true to actually perform the action. This is the core LLM safety mechanism.",
+      "dependsOn": ["US-046"]
+    },
+    {
+      "id": "US-048",
+      "title": "MCP Resources — Schema, Org Info, and Recipes",
+      "description": "As an AI agent, I want MCP resources that expose JumpCloud schemas, org information, and recipe definitions so that I have context for intelligent tool usage.",
+      "acceptanceCriteria": [
+        "jc://schema/users resource returns user field schema (fields, types, filters, sort_fields)",
+        "jc://schema/devices resource returns device field schema",
+        "jc://schema/groups resource returns group field schema",
+        "jc://schema/commands resource returns full CLI command manifest (all commands, flags, examples)",
+        "jc://schema/{resource} pattern works for any resource type",
+        "jc://org/info resource returns current org name, ID, user count, device count",
+        "jc://org/stats resource returns org statistics (MFA adoption, active users, etc.)",
+        "jc://recipes/list resource returns available recipes with descriptions and parameters",
+        "jc://recipes/{name} resource returns full recipe YAML definition",
+        "jc://config/profiles resource returns available profile names (no secrets)",
+        "Resources respond with proper MIME types (application/json)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "MCP Resources provide context that helps LLMs use tools correctly. Schema resources are especially important — they tell the LLM which fields exist and what filters are available.",
+      "dependsOn": ["US-046"]
+    },
+    {
+      "id": "US-049",
+      "title": "MCP Prompts and Safety Model",
+      "description": "As an AI agent, I want pre-built MCP prompts for common workflows and a safety model that prevents accidental destructive actions so that AI-assisted JumpCloud management is both capable and safe.",
+      "acceptanceCriteria": [
+        "onboard_user prompt guides through complete onboarding flow",
+        "offboard_user prompt guides through offboarding with recipe preview",
+        "security_audit prompt checks MFA adoption, inactive users, auth failures",
+        "find_user_info prompt does deep user lookup (profile, groups, devices, auth events)",
+        "troubleshoot_auth prompt diagnoses authentication issues",
+        "compliance_check prompt queries across users, devices, and policies",
+        "Safety: destructive operations return plan by default (agent must confirm)",
+        "Safety: MCP audit log captures all tool calls with timestamp, tool, parameters, result",
+        "'jc mcp serve --read-only' mode disables all mutation tools",
+        "Rate limiting enforced (default 60 calls/minute, configurable)",
+        "MCP config section in config.yaml controls: transport, rate_limit, read_only, audit_log, plan_first"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Prompts are pre-built guidance templates. The safety model is critical — plan-first for destructive ops, audit logging, rate limiting, and read-only mode give admins control over AI agent behavior.",
+      "dependsOn": ["US-047", "US-048"]
+    },
+    {
+      "id": "US-050",
+      "title": "Schema System (jc schema commands)",
+      "description": "As an LLM or developer, I want jc schema commands to return machine-readable descriptions of all resources, fields, and CLI commands so that tools can auto-discover the CLI's capabilities.",
+      "acceptanceCriteria": [
+        "'jc schema resources' returns list of all resource types as JSON array",
+        "'jc schema users' returns user schema: resource name, API versions, verbs, fields (name/type/description/required), filters, sort_fields",
+        "'jc schema devices' returns device schema in same format",
+        "'jc schema commands' returns full command manifest: all commands with paths, descriptions, flags (type/default/description), and examples",
+        "Schema output is always JSON (deterministic, machine-parseable)",
+        "Schema is generated from command definitions (single source of truth)",
+        "Schema includes all registered resource types dynamically",
+        "Schema includes field types: string, bool, int, datetime, array, object"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "The schema system is what makes jc truly LLM-friendly — it provides self-describing metadata. Schema should be auto-generated from Cobra command definitions and resource type metadata.",
+      "dependsOn": ["US-011", "US-015"]
+    },
+    {
+      "id": "US-051",
+      "title": "Structured Machine-Readable Errors",
+      "description": "As an LLM or script author, I want all errors returned as structured JSON with error codes, messages, and suggestions so that automated error handling is reliable.",
+      "acceptanceCriteria": [
+        "All errors include: code (string), message (string), suggestion (string), http_status (int if applicable), api_endpoint (string if applicable)",
+        "Error codes follow pattern: RESOURCE_ERROR (e.g., USER_NOT_FOUND, AUTH_FAILED, RATE_LIMITED)",
+        "Specific exit codes: 0=success, 1=general, 2=usage, 3=auth, 4=permission, 5=rate_limit, 10=plan, 130=interrupted",
+        "Error JSON output on stderr, command output on stdout (clean separation)",
+        "--output json errors are always valid JSON (not mixed with text)",
+        "Common errors have specific codes: USER_NOT_FOUND, DEVICE_NOT_FOUND, GROUP_NOT_FOUND, INVALID_FILTER, AUTH_EXPIRED, PERMISSION_DENIED, RATE_LIMITED",
+        "Suggestion field provides actionable next step (e.g., 'Run jc auth login to re-authenticate')",
+        "Validation errors include the specific field and expected format"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Structured errors are essential for LLM consumption — the error code and suggestion let an LLM diagnose and recover from failures programmatically.",
+      "dependsOn": ["US-009"]
+    },
+    {
+      "id": "US-052",
+      "title": "Explain Command",
+      "description": "As an administrator, I want jc explain to describe what a command would do in plain English so that I can understand LLM-generated commands before running them.",
+      "acceptanceCriteria": [
+        "'jc explain \"users delete jdoe\"' outputs a plain-English description of the command's effects",
+        "Explanation includes: action type, target resource, affected entities, reversibility",
+        "Explanation warns about destructive or irreversible actions",
+        "Explanation mentions side effects (e.g., group removal on user delete)",
+        "Works for any valid jc command string",
+        "Invalid command string produces parsing error with suggestion",
+        "--output json returns structured explanation for LLM consumption",
+        "Explain does NOT execute the command (read-only, similar to plan mode)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Explain is a lighter version of plan mode — it describes the command without making API calls. Useful for LLM-generated commands where the user wants to understand intent before even planning.",
+      "dependsOn": ["US-034"]
+    },
+    {
+      "id": "US-053",
+      "title": "Conversational Mode (jc ask)",
+      "description": "As an administrator, I want to type natural language queries like 'jc ask \"which users haven't logged in for 90 days?\"' and get translated CLI commands so that I can use JumpCloud without memorizing syntax.",
+      "acceptanceCriteria": [
+        "'jc ask \"which users haven't logged in for 90 days?\"' translates to and shows the equivalent jc command",
+        "Translated commands shown to user before execution (confirm_before_execute default true)",
+        "User can approve or reject the proposed command(s)",
+        "LLM provider configurable: anthropic, openai, ollama, disabled",
+        "LLM API key stored in keychain (ask.api_key_ref in config)",
+        "Schema context (jc schema commands output) sent to LLM for accurate translation",
+        "Multi-step queries translated to recipe-like sequences",
+        "Maximum commands per query configurable (default 10)",
+        "All proposed commands logged to ~/.config/jc/ask-history.log",
+        "LLM never has direct API access — only generates command strings"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "jc ask is the conversational interface. Architecture: user input → LLM (with schema context) → proposed commands → plan mode → user confirmation → execution. The LLM is sandboxed — it can only suggest commands, not execute them.",
+      "dependsOn": ["US-050", "US-034"]
+    },
+    {
+      "id": "US-054",
+      "title": "User-Defined Aliases in Config",
+      "description": "As an administrator, I want to define custom command aliases in my config file so that I can create shortcuts for frequently used commands.",
+      "acceptanceCriteria": [
+        "Config 'aliases' section maps alias names to full command strings",
+        "Example: inactive: \"users list --filter 'last_login<=2025-11-15' -t\"",
+        "'jc inactive' expands to the aliased command",
+        "Aliases can include flags and arguments",
+        "Alias expansion happens before command parsing",
+        "Alias conflicts with built-in commands produce warning",
+        "'jc config set aliases.inactive \"users list --filter ...\"' can create aliases",
+        "Aliases visible in 'jc config view'"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Aliases provide personalization. They expand early in the command parsing pipeline. Built-in commands always take precedence over aliases.",
+      "dependsOn": ["US-002"]
+    },
+    {
+      "id": "US-055",
+      "title": "Stdin Support for Batch Operations",
+      "description": "As an administrator, I want to pipe data into jc commands via stdin so that I can compose multi-step operations using Unix pipes.",
+      "acceptanceCriteria": [
+        "'cat users.txt | jc users delete --stdin --force' reads usernames/IDs from stdin (one per line)",
+        "'jc users list --filter \"suspended=true\" --ids | jc users delete --stdin' pipes IDs between commands",
+        "--stdin flag enables reading from stdin",
+        "--params-stdin reads recipe parameters as JSON from stdin",
+        "Pipe detection: when stdin is not a terminal, --stdin behavior is implied for compatible commands",
+        "Empty stdin produces no error (zero items processed)",
+        "Progress shown for multi-item stdin operations",
+        "Each line from stdin processed as a separate operation"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Stdin support enables Unix philosophy composability. Combined with --ids output, enables powerful pipelines: list → filter → act.",
+      "dependsOn": ["US-012", "US-009"]
+    },
+    {
+      "id": "US-056",
+      "title": "Pipe Detection and Auto-Disable Color/Pager",
+      "description": "As a script author, I want jc to automatically disable color output and pager when output is piped so that piped output is clean and machine-readable.",
+      "acceptanceCriteria": [
+        "When stdout is not a TTY, color output automatically disabled",
+        "When stdout is not a TTY, pager automatically disabled",
+        "JC_NO_COLOR env var forces color off regardless of TTY",
+        "NO_COLOR env var (standard) also respected",
+        "--no-color flag explicitly disables color",
+        "Color auto-detection works correctly with | pipe, > redirect, and $() substitution",
+        "Table output adjusts column widths to unbounded when piped (no terminal width constraint)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Follow the NO_COLOR standard (https://no-color.org/). Use isatty to detect terminal. This is important for scripting reliability.",
+      "dependsOn": ["US-009"]
+    },
+    {
+      "id": "US-057",
+      "title": "MCP SSE Transport",
+      "description": "As a remote AI integration developer, I want jc mcp serve --transport sse to start an HTTP+SSE MCP server so that remote MCP clients can connect over the network.",
+      "acceptanceCriteria": [
+        "'jc mcp serve --transport sse' starts HTTP server with SSE transport",
+        "Default port: 8080, configurable via --port or config mcp.sse_port",
+        "SSE transport implements MCP protocol over HTTP Server-Sent Events",
+        "Server responds to /sse endpoint for event stream",
+        "Server accepts POST to /message endpoint for client-to-server messages",
+        "Authentication required for SSE transport (API key header or bearer token)",
+        "CORS headers configurable for browser-based clients",
+        "TLS support via --tls-cert and --tls-key flags"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "SSE transport enables remote MCP access. This is useful for centralized JumpCloud management where the jc binary runs on a server. Security is critical — always require authentication for network transport.",
+      "dependsOn": ["US-046"]
+    },
+    {
+      "id": "US-058",
+      "title": "MCP Tool Allow/Block Lists",
+      "description": "As an administrator, I want to configure which MCP tools are available using allow/block lists so that I can restrict what AI agents can do in my JumpCloud org.",
+      "acceptanceCriteria": [
+        "Config mcp.allowed_tools: list of tool patterns that are allowed (whitelist)",
+        "Config mcp.blocked_tools: list of tool patterns that are blocked (blacklist)",
+        "Wildcard support: 'users_*' allows all user tools, 'devices_erase' blocks specific tool",
+        "Block list takes precedence over allow list",
+        "Blocked tool calls return MCP error response (not silently ignored)",
+        "jc mcp serve --read-only is equivalent to blocking all mutation tools",
+        "'jc mcp tools' lists available tools (respecting allow/block configuration)",
+        "Changes to allow/block lists take effect on server restart"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Allow/block lists give admins fine-grained control over AI agent capabilities. Example: allow read-only queries but block device erase. Wildcard patterns use glob-style matching.",
+      "dependsOn": ["US-046", "US-047"]
+    },
+    {
+      "id": "US-059",
+      "title": "Command Aliases (Short Forms)",
+      "description": "As an administrator, I want short command aliases (jc u for users, jc d for devices, etc.) so that I can type commands faster in interactive use.",
+      "acceptanceCriteria": [
+        "'jc u' is an alias for 'jc users'",
+        "'jc d' is an alias for 'jc devices'",
+        "'jc g' is an alias for 'jc groups'",
+        "'jc i' is an alias for 'jc insights'",
+        "Verb aliases: 'ls' for 'list', 'rm' for 'delete'",
+        "'jc u ls' is equivalent to 'jc users list'",
+        "'jc u rm jdoe' is equivalent to 'jc users delete jdoe'",
+        "Aliases registered in Cobra (appear in help and completion)",
+        "Help text shows aliases: 'Aliases: u, users'"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Use Cobra's Aliases field on commands. These are built-in aliases distinct from user-defined aliases in config.",
+      "dependsOn": ["US-011", "US-015"]
+    },
+    {
+      "id": "US-060",
+      "title": "JMESPath Query Post-Processing",
+      "description": "As a power user, I want to apply JMESPath expressions to command output for advanced filtering and transformation so that I can extract exactly the data I need without external tools.",
+      "acceptanceCriteria": [
+        "--query flag accepts a JMESPath expression",
+        "'jc users list --query \"[?department=='Engineering'].{name:username,email:email}\"' filters and reshapes output",
+        "JMESPath applied after API response and field selection",
+        "JMESPath errors produce clear error with expression and position",
+        "Works with all output formats (JMESPath applied first, then formatting)",
+        "Works with all resource commands that return JSON",
+        "Empty JMESPath result returns empty array/null (not error)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "JMESPath is the same query language used by AWS CLI. Use the go-jmespath package. This is a power-user feature for advanced data extraction.",
+      "dependsOn": ["US-009"]
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-02-13T12:00:00Z",
+    "sourceDocument": "JumpCloud-CLI-PRD.md",
+    "totalStories": 60,
+    "priorityBreakdown": {
+      "priority0_foundation": "US-001 through US-010 (10 stories)",
+      "priority1_coreResources": "US-011 through US-022 (12 stories)",
+      "priority2_v2ApiAndPlanMode": "US-023 through US-036 (14 stories)",
+      "priority3_insightsRecipesMcp": "US-037 through US-049 (13 stories)",
+      "priority4_conversationalAndPolish": "US-050 through US-060 (11 stories)"
+    }
+  }
+}
