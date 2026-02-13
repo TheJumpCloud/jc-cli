@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -86,6 +87,27 @@ func setDefaults() {
 	viper.SetDefault("cache.directory", "")
 }
 
+// bindEnvVars registers explicit mappings from environment variable names
+// to Viper config keys. This allows user-friendly env var names like
+// JC_OUTPUT to map to nested keys like defaults.output, and ensures
+// keys like api_key and org_id are accessible even without config file entries.
+func bindEnvVars() {
+	// JC_API_KEY → api_key (top-level override, highest priority for auth)
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	// JC_ORG_ID → org_id (top-level override)
+	_ = viper.BindEnv("org_id", "JC_ORG_ID")
+
+	// JC_PROFILE → active_profile
+	_ = viper.BindEnv("active_profile", "JC_PROFILE")
+
+	// JC_OUTPUT → defaults.output (shortcut so users don't need JC_DEFAULTS_OUTPUT)
+	_ = viper.BindEnv("defaults.output", "JC_OUTPUT")
+
+	// JC_NO_COLOR → no_color
+	_ = viper.BindEnv("no_color", "JC_NO_COLOR")
+}
+
 // Init sets up Viper with defaults, creates the config file if missing,
 // and reads it. Returns an error only for invalid YAML; a missing file
 // is handled by auto-creation.
@@ -94,6 +116,7 @@ func Init() error {
 
 	viper.SetEnvPrefix("JC")
 	viper.AutomaticEnv()
+	bindEnvVars()
 
 	// Create config file on first run if it doesn't exist.
 	if err := ensureConfigFile(); err != nil {
@@ -113,4 +136,71 @@ func Init() error {
 	}
 
 	return nil
+}
+
+// ActiveProfile returns the name of the currently active profile.
+// Priority: JC_PROFILE env var > config file active_profile > "default".
+func ActiveProfile() string {
+	return viper.GetString("active_profile")
+}
+
+// APIKey returns the API key to use for authentication.
+// Priority: JC_API_KEY env var > active profile's api_key in config.
+func APIKey() string {
+	// JC_API_KEY (bound to "api_key") takes highest priority.
+	if key := viper.GetString("api_key"); key != "" {
+		return key
+	}
+	// Fall back to the active profile's api_key.
+	profile := ActiveProfile()
+	return viper.GetString("profiles." + profile + ".api_key")
+}
+
+// OrgID returns the organization ID.
+// Priority: JC_ORG_ID env var > active profile's org_id in config.
+func OrgID() string {
+	if id := viper.GetString("org_id"); id != "" {
+		return id
+	}
+	profile := ActiveProfile()
+	return viper.GetString("profiles." + profile + ".org_id")
+}
+
+// Output returns the configured output format.
+// Priority: --output flag > JC_OUTPUT env var > config defaults.output > "json".
+func Output() string {
+	return viper.GetString("defaults.output")
+}
+
+// NoColor returns true if color output should be disabled.
+// Color is disabled if JC_NO_COLOR or NO_COLOR is set to any non-empty value,
+// or if the --no-color flag is passed.
+func NoColor() bool {
+	// Check standard NO_COLOR env var (https://no-color.org/)
+	if v := os.Getenv("NO_COLOR"); v != "" {
+		return true
+	}
+	// Check JC_NO_COLOR (bound to "no_color" via BindEnv)
+	if v := viper.GetString("no_color"); v != "" {
+		return true
+	}
+	// Check --no-color flag (bound to "no-color" via flag binding or direct check)
+	if viper.GetBool("no-color") {
+		return true
+	}
+	// Check config defaults.color (inverted: color=false means no-color=true)
+	if !viper.GetBool("defaults.color") {
+		return true
+	}
+	return false
+}
+
+// NoColorFromEnv returns true if color is disabled via environment variables
+// (JC_NO_COLOR or NO_COLOR). This is useful for checking env-only state
+// before flags are parsed.
+func NoColorFromEnv() bool {
+	if v := os.Getenv("NO_COLOR"); v != "" {
+		return true
+	}
+	return strings.TrimSpace(os.Getenv("JC_NO_COLOR")) != ""
 }

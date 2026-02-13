@@ -63,7 +63,8 @@
         "Running with JC_OUTPUT=table produces table output without --output flag"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Viper supports env var binding natively. Use JC_ prefix for all env vars. Document all env vars in --help output.",
       "dependsOn": ["US-002"]
     },

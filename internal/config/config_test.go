@@ -323,3 +323,295 @@ func TestInit_JCConfigEnvOverridesPath(t *testing.T) {
 		t.Errorf("defaults.output = %q, want %q", got, "csv")
 	}
 }
+
+// --- Environment Variable Tests (US-003) ---
+
+func TestEnv_JCOutputOverridesConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_OUTPUT", "table")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("defaults:\n  output: csv\n"), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := Output(); got != "table" {
+		t.Errorf("Output() = %q, want %q (JC_OUTPUT should override config)", got, "table")
+	}
+}
+
+func TestEnv_JCAPIKeyOverridesConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "env-key-1234")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("active_profile: default\nprofiles:\n  default:\n    api_key: config-key-5678\n"), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := APIKey(); got != "env-key-1234" {
+		t.Errorf("APIKey() = %q, want %q (JC_API_KEY should override config)", got, "env-key-1234")
+	}
+}
+
+func TestEnv_JCOrgIDOverridesConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_ORG_ID", "env-org-abc")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("active_profile: default\nprofiles:\n  default:\n    org_id: config-org-xyz\n"), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := OrgID(); got != "env-org-abc" {
+		t.Errorf("OrgID() = %q, want %q (JC_ORG_ID should override config)", got, "env-org-abc")
+	}
+}
+
+func TestEnv_JCProfileOverridesConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_PROFILE", "staging")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("active_profile: production\n"), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := ActiveProfile(); got != "staging" {
+		t.Errorf("ActiveProfile() = %q, want %q (JC_PROFILE should override config)", got, "staging")
+	}
+}
+
+func TestEnv_JCNoColorDisablesColor(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_NO_COLOR", "1")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if !NoColor() {
+		t.Error("NoColor() should return true when JC_NO_COLOR is set")
+	}
+}
+
+func TestEnv_StandardNoColorEnv(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "true")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if !NoColor() {
+		t.Error("NoColor() should return true when NO_COLOR is set")
+	}
+}
+
+func TestEnv_NoColorFromEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		jcColor  string
+		noColor  string
+		wantBool bool
+	}{
+		{"JC_NO_COLOR set", "1", "", true},
+		{"NO_COLOR set", "", "1", true},
+		{"both set", "true", "true", true},
+		{"neither set", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("JC_NO_COLOR", tt.jcColor)
+			t.Setenv("NO_COLOR", tt.noColor)
+			if got := NoColorFromEnv(); got != tt.wantBool {
+				t.Errorf("NoColorFromEnv() = %v, want %v", got, tt.wantBool)
+			}
+		})
+	}
+}
+
+func TestEnv_ConfigFallbackWhenNoEnv(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	// Clear all JC env vars to test config fallback.
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_ORG_ID", "")
+	t.Setenv("JC_PROFILE", "")
+	t.Setenv("JC_OUTPUT", "")
+	t.Setenv("JC_NO_COLOR", "")
+	t.Setenv("NO_COLOR", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: myprofile
+defaults:
+  output: csv
+  color: true
+profiles:
+  myprofile:
+    api_key: "from-config"
+    org_id: "org-from-config"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := ActiveProfile(); got != "myprofile" {
+		t.Errorf("ActiveProfile() = %q, want %q", got, "myprofile")
+	}
+	if got := APIKey(); got != "from-config" {
+		t.Errorf("APIKey() = %q, want %q", got, "from-config")
+	}
+	if got := OrgID(); got != "org-from-config" {
+		t.Errorf("OrgID() = %q, want %q", got, "org-from-config")
+	}
+	if got := Output(); got != "csv" {
+		t.Errorf("Output() = %q, want %q", got, "csv")
+	}
+	if NoColor() {
+		t.Error("NoColor() should be false when no env var set and config has color: true")
+	}
+}
+
+func TestEnv_DefaultsFallbackWhenNoConfigOrEnv(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	// Clear all JC env vars.
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_ORG_ID", "")
+	t.Setenv("JC_PROFILE", "")
+	t.Setenv("JC_OUTPUT", "")
+	t.Setenv("JC_NO_COLOR", "")
+	t.Setenv("NO_COLOR", "")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Should get built-in defaults.
+	if got := ActiveProfile(); got != "default" {
+		t.Errorf("ActiveProfile() = %q, want %q", got, "default")
+	}
+	if got := Output(); got != "json" {
+		t.Errorf("Output() = %q, want %q", got, "json")
+	}
+	if got := APIKey(); got != "" {
+		t.Errorf("APIKey() = %q, want empty string", got)
+	}
+	if got := OrgID(); got != "" {
+		t.Errorf("OrgID() = %q, want empty string", got)
+	}
+}
+
+func TestEnv_PriorityChain_EnvOverridesConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	// Config says csv, env says table.
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("defaults:\n  output: csv\n"), 0600)
+	t.Setenv("JC_OUTPUT", "table")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Env should win over config.
+	if got := Output(); got != "table" {
+		t.Errorf("Output() = %q, want %q (env should override config)", got, "table")
+	}
+}
+
+func TestEnv_JCProfileSelectsCorrectAPIKey(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_PROFILE", "staging")
+	t.Setenv("JC_API_KEY", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: production
+profiles:
+  production:
+    api_key: "prod-key"
+    org_id: "prod-org"
+  staging:
+    api_key: "staging-key"
+    org_id: "staging-org"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// JC_PROFILE=staging should select the staging profile's API key.
+	if got := APIKey(); got != "staging-key" {
+		t.Errorf("APIKey() = %q, want %q", got, "staging-key")
+	}
+	if got := OrgID(); got != "staging-org" {
+		t.Errorf("OrgID() = %q, want %q", got, "staging-org")
+	}
+}

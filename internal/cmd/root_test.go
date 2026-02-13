@@ -2,8 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
+
+	"github.com/klaassen-consulting/jc/internal/config"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -108,5 +114,113 @@ func TestCompletionCommand(t *testing.T) {
 				t.Errorf("completion %s: expected output, got empty", shell)
 			}
 		})
+	}
+}
+
+// --- Priority Chain Tests (US-003) ---
+
+// TestPriorityChain_FlagOverridesEnvOverridesConfig verifies the full
+// priority chain: flags > env vars > config file > built-in defaults.
+func TestPriorityChain_FlagOverridesEnvOverridesConfig(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	// Config file says csv.
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("defaults:\n  output: csv\n"), 0600)
+
+	// Env var says table.
+	t.Setenv("JC_OUTPUT", "table")
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+
+	// Flag says yaml — this should win over everything.
+	rootCmd.SetArgs([]string{"--output", "yaml", "--help"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// After flag parsing, the Viper value should reflect the flag.
+	if got := viper.GetString("defaults.output"); got != "yaml" {
+		t.Errorf("defaults.output = %q, want %q (flag should override env and config)", got, "yaml")
+	}
+}
+
+func TestPriorityChain_EnvOverridesConfig(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	// Config file says csv.
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("defaults:\n  output: csv\n"), 0600)
+
+	// Env var says table.
+	t.Setenv("JC_OUTPUT", "table")
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+
+	// Run with --help (no --output flag) to trigger flag parsing without the output flag.
+	rootCmd.SetArgs([]string{"--help"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Without flag, env should win over config.
+	if got := viper.GetString("defaults.output"); got != "table" {
+		t.Errorf("defaults.output = %q, want %q (env should override config)", got, "table")
+	}
+}
+
+func TestPriorityChain_ConfigOverridesDefaults(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_OUTPUT", "")
+
+	// Config file says csv (not the default "json").
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte("defaults:\n  output: csv\n"), 0600)
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"--help"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Config should win over built-in defaults.
+	if got := viper.GetString("defaults.output"); got != "csv" {
+		t.Errorf("defaults.output = %q, want %q (config should override default)", got, "csv")
 	}
 }

@@ -45,11 +45,22 @@ interface.`,
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 
-	// Bind flags to Viper
-	_ = viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
+	// Bind flags to Viper so the priority chain works:
+	// flags > env vars > config file > built-in defaults.
+	//
+	// Note: "output" flag maps to "defaults.output" in Viper. We bind
+	// both the flag key and the nested config key so they stay in sync.
+	_ = viper.BindPFlag("defaults.output", rootCmd.PersistentFlags().Lookup("output"))
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
+	_ = viper.BindPFlag("force", rootCmd.PersistentFlags().Lookup("force"))
+	_ = viper.BindPFlag("non-interactive", rootCmd.PersistentFlags().Lookup("non-interactive"))
+	_ = viper.BindPFlag("no-cache", rootCmd.PersistentFlags().Lookup("no-cache"))
+	_ = viper.BindPFlag("no-color", rootCmd.PersistentFlags().Lookup("no-color"))
+	_ = viper.BindPFlag("plan", rootCmd.PersistentFlags().Lookup("plan"))
+	_ = viper.BindPFlag("org", rootCmd.PersistentFlags().Lookup("org"))
+	_ = viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 
 	return rootCmd
 }
