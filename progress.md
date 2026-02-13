@@ -14,6 +14,8 @@
 - V1Client mutation methods: `Create(ctx, endpoint, body)`, `Update(ctx, endpoint, body)`, `Delete(ctx, endpoint)` — all return `json.RawMessage`
 - Shared `runDevicesMDMCommand(cmd, identifier, action)` handles lock/restart/erase via `POST /systems/{id}/command/builtin/{action}`
 - Double safety gate for destructive ops: `--confirm-erase` flag + confirmation prompt — flag checked first, before any API calls
+- Field selection: `--fields`, `--exclude`, `--all` are persistent flags; `resolveEffectiveFields()` + `filterFields()` in output engine handle data transformation before format rendering
+- `splitCommaFlag()` parses comma-separated flag values with space trimming — used for `--fields` and `--exclude`
 - Cobra `MarkFlagRequired()` validates required flags before RunE — produces clear "required flag" errors
 - Viper env prefix is `JC_` — all env vars start with `JC_`
 - Use `viper.BindEnv("config.key", "JC_ENV_VAR")` for explicit env-to-key mappings (especially for nested keys where AutomaticEnv would require JC_DEFAULTS_OUTPUT instead of JC_OUTPUT)
@@ -410,4 +412,31 @@
   - Double safety gate for destructive operations: `--confirm-erase` flag checked BEFORE the confirmation prompt. If the flag is missing, the command errors before any API calls or prompts. This is a good pattern for extremely dangerous operations.
   - Test server routing for deeper sub-resource paths (e.g., `/systems/{id}/command/builtin/lock`) uses `strings.Cut(rest, "/")` to cleanly separate the ID from the sub-path.
   - `strings.Title()` is deprecated in Go — use `strings.ToUpper(s[:1]) + s[1:]` for simple first-letter capitalization.
+---
+
+## 2026-02-13 - US-021
+- What was implemented:
+  - `--fields 'username,email,department'` — outputs only specified fields across all formats (JSON, table, CSV, human)
+  - `--exclude 'password_date,totp_enabled'` — outputs all default fields except those excluded
+  - `--all` — includes all available fields in output (overrides DefaultFields)
+  - Field selection works as a data transformation step before format rendering — `filterFields()` rewrites JSON objects to only include selected keys
+  - `--fields` and `--exclude` are mutually exclusive (validated in `PersistentPreRunE`)
+  - Invalid field names produce no error — they just don't match any data (warning-free behavior)
+  - Fields flag accepts comma-separated list with spaces trimmed
+  - Priority chain: `--fields` > `--exclude` > `--all` > `DefaultFields` > all fields
+  - `resolveEffectiveFields()` method on Options determines the active field set
+  - `CurrentOptions()` updated to read `fields`, `exclude`, `all` from Viper
+- Files changed:
+  - internal/output/output.go — added `Fields`, `Exclude`, `All` to Options struct; `resolveEffectiveFields()`, `filterFields()`, `splitCommaFlag()`; updated `WriteList()` and `WriteSingle()` to apply field selection before formatting
+  - internal/output/output_test.go — added 22 new tests: --fields with JSON/table/CSV, --exclude with JSON/table/no-defaults, --all with JSON/table/human, fields overrides all, splitCommaFlag, resolveEffectiveFields, filterFields
+  - internal/cmd/root.go — registered `--fields`, `--exclude`, `--all` persistent flags with Viper bindings; added mutual exclusivity validation in `PersistentPreRunE`
+  - internal/cmd/root_test.go — updated global flags list, Viper binding tests, inherited flags test; added `TestFieldsAndExcludeMutuallyExclusive`
+  - internal/cmd/users_test.go — added 10 integration tests: --fields JSON/table/CSV, --exclude JSON/table, --all JSON/table, mutual exclusivity, get with --fields
+  - .chief/prds/main/prd.json — marked US-021 passes
+- **Learnings for future iterations:**
+  - Field selection as a data transformation (rewriting JSON objects) before format rendering means all formats benefit automatically — no per-format changes needed.
+  - Using `resolveEffectiveFields()` as a method on `Options` keeps the priority logic self-contained and testable.
+  - `splitCommaFlag()` handles user-friendly comma-separated input with space trimming — users can type `--fields "username, email"` naturally.
+  - The `--fields`/`--exclude` mutual exclusivity check in `PersistentPreRunE` fires before any command runs, giving consistent behavior across all commands.
+  - `filterFields()` preserves non-objects (returns them unchanged) — defensive against edge cases.
 ---

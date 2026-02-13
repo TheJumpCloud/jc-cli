@@ -54,7 +54,7 @@ func TestRootHelp(t *testing.T) {
 func TestGlobalFlags(t *testing.T) {
 	rootCmd := NewRootCmd()
 
-	flags := []string{"output", "table", "verbose", "debug", "quiet", "force", "non-interactive", "no-cache", "no-color", "plan", "org", "api-key", "ids"}
+	flags := []string{"output", "table", "verbose", "debug", "quiet", "force", "non-interactive", "no-cache", "no-color", "plan", "org", "api-key", "ids", "fields", "exclude", "all"}
 	for _, flag := range flags {
 		if rootCmd.PersistentFlags().Lookup(flag) == nil {
 			t.Errorf("expected persistent flag %q to be registered", flag)
@@ -417,6 +417,22 @@ func TestOutputFormatValidation_Invalid(t *testing.T) {
 	}
 }
 
+func TestFieldsAndExcludeMutuallyExclusive(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"--fields", "username", "--exclude", "email", "testcmd"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --fields and --exclude are set")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusivity, got: %v", err)
+	}
+}
+
 func TestUnknownFlagSuggestion(t *testing.T) {
 	rootCmd := NewRootCmd()
 	rootCmd.SetArgs([]string{"--verbos"})
@@ -462,6 +478,9 @@ func TestFlagsViperBinding(t *testing.T) {
 		{"quiet", "quiet", []string{"--quiet", "--help"}, ""},
 		{"force", "force", []string{"--force", "--help"}, ""},
 		{"org", "org", []string{"--org", "myorg", "--help"}, "myorg"},
+		{"fields", "fields", []string{"--fields", "username,email", "--help"}, "username,email"},
+		{"exclude", "exclude", []string{"--exclude", "password_date", "--help"}, "password_date"},
+		{"all", "all", []string{"--all", "--help"}, ""},
 	}
 
 	for _, tc := range tests {
@@ -525,7 +544,7 @@ func TestFlagsInheritedBySubcommands(t *testing.T) {
 
 	// Check that persistent flags are inherited.
 	inherited := authCmd.InheritedFlags()
-	for _, name := range []string{"output", "verbose", "debug", "quiet", "force", "plan", "org"} {
+	for _, name := range []string{"output", "verbose", "debug", "quiet", "force", "plan", "org", "fields", "exclude", "all"} {
 		if inherited.Lookup(name) == nil {
 			t.Errorf("auth command should inherit persistent flag %q", name)
 		}

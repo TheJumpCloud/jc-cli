@@ -448,7 +448,8 @@
         "--fields and --exclude are mutually exclusive (error if both provided)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Each resource type should define its default field set and full field set. Field selection happens client-side after API response (not all APIs support server-side field selection).",
       "dependsOn": ["US-009"]
     },

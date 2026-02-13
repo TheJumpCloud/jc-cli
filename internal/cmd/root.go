@@ -37,13 +37,24 @@ interface.`,
 
 			// Validate the output format.
 			format := viper.GetString("defaults.output")
+			validFormat := false
 			for _, valid := range validOutputFormats {
 				if format == valid {
-					return nil
+					validFormat = true
+					break
 				}
 			}
-			return fmt.Errorf("unknown output format %q. Valid formats: %s",
-				format, strings.Join(validOutputFormats, ", "))
+			if !validFormat {
+				return fmt.Errorf("unknown output format %q. Valid formats: %s",
+					format, strings.Join(validOutputFormats, ", "))
+			}
+
+			// Validate --fields and --exclude are mutually exclusive.
+			if viper.GetString("fields") != "" && viper.GetString("exclude") != "" {
+				return fmt.Errorf("--fields and --exclude are mutually exclusive")
+			}
+
+			return nil
 		},
 	}
 
@@ -77,6 +88,9 @@ interface.`,
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
+	rootCmd.PersistentFlags().String("fields", "", "Comma-separated list of fields to include (e.g. 'username,email,department')")
+	rootCmd.PersistentFlags().String("exclude", "", "Comma-separated list of fields to exclude (e.g. 'password_date,totp_enabled')")
+	rootCmd.PersistentFlags().Bool("all", false, "Include all available fields in output")
 
 	// Register flag completion functions for flags with a fixed set of values.
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -100,6 +114,9 @@ interface.`,
 	_ = viper.BindPFlag("org", rootCmd.PersistentFlags().Lookup("org"))
 	_ = viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	_ = viper.BindPFlag("ids", rootCmd.PersistentFlags().Lookup("ids"))
+	_ = viper.BindPFlag("fields", rootCmd.PersistentFlags().Lookup("fields"))
+	_ = viper.BindPFlag("exclude", rootCmd.PersistentFlags().Lookup("exclude"))
+	_ = viper.BindPFlag("all", rootCmd.PersistentFlags().Lookup("all"))
 
 	return rootCmd
 }

@@ -2565,3 +2565,266 @@ func TestRootHelp_IncludesUsers(t *testing.T) {
 		t.Errorf("root help should list 'users' command:\n%s", out.String())
 	}
 }
+
+// --- Field Selection integration tests (US-021) ---
+
+func TestUsersList_FieldsFlag_JSON(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--fields", "username,email"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if len(arr) == 0 {
+		t.Fatal("expected at least 1 user")
+	}
+	for i, item := range arr {
+		if _, ok := item["_id"]; ok {
+			t.Errorf("item %d: _id should be filtered out by --fields", i)
+		}
+		if _, ok := item["activated"]; ok {
+			t.Errorf("item %d: activated should be filtered out by --fields", i)
+		}
+		if _, ok := item["username"]; !ok {
+			t.Errorf("item %d: username should be present", i)
+		}
+		if _, ok := item["email"]; !ok {
+			t.Errorf("item %d: email should be present", i)
+		}
+	}
+}
+
+func TestUsersList_FieldsFlag_Table(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--fields", "username,email", "-t"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "USERNAME") {
+		t.Error("table should have USERNAME header")
+	}
+	if !strings.Contains(output, "EMAIL") {
+		t.Error("table should have EMAIL header")
+	}
+	if strings.Contains(output, "ACTIVATED") {
+		t.Error("ACTIVATED should not appear when --fields restricts columns")
+	}
+}
+
+func TestUsersList_ExcludeFlag_JSON(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--exclude", "activated,suspended"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	for i, item := range arr {
+		if _, ok := item["activated"]; ok {
+			t.Errorf("item %d: activated should be excluded", i)
+		}
+		if _, ok := item["suspended"]; ok {
+			t.Errorf("item %d: suspended should be excluded", i)
+		}
+		if _, ok := item["username"]; !ok {
+			t.Errorf("item %d: username should be present", i)
+		}
+	}
+}
+
+func TestUsersList_AllFlag_JSON(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--all"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	// --all should include all fields from the API response.
+	for i, item := range arr {
+		if _, ok := item["_id"]; !ok {
+			t.Errorf("item %d: _id should be present with --all", i)
+		}
+		if _, ok := item["username"]; !ok {
+			t.Errorf("item %d: username should be present with --all", i)
+		}
+	}
+}
+
+func TestUsersList_AllFlag_Table(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--all", "-t"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	// --all on table should show columns beyond the default set.
+	if !strings.Contains(output, "_ID") {
+		t.Errorf("--all table should include _ID column:\n%s", output)
+	}
+}
+
+func TestUsersList_FieldsAndExclude_MutuallyExclusive(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"users", "list", "--fields", "username", "--exclude", "email"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --fields and --exclude are set")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusivity, got: %v", err)
+	}
+}
+
+func TestUsersGet_FieldsFlag_JSON(t *testing.T) {
+	setupUsersTest(t)
+	users := sampleUsers()
+	ts := startUsersServer(t, users)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "get", "aaa111aaa111aaa111aaa111", "--fields", "username,email"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &m); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if _, ok := m["_id"]; ok {
+		t.Error("_id should be filtered out by --fields")
+	}
+	if _, ok := m["username"]; !ok {
+		t.Error("username should be present")
+	}
+	if _, ok := m["email"]; !ok {
+		t.Error("email should be present")
+	}
+}
+
+func TestUsersList_FieldsFlag_CSV(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--fields", "username,email", "--output", "csv"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) < 1 {
+		t.Fatal("expected at least header line")
+	}
+	if lines[0] != "username,email" {
+		t.Errorf("CSV header = %q, want %q", lines[0], "username,email")
+	}
+}
+
+func TestUsersList_ExcludeFlag_Table(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--exclude", "suspended,activated", "-t"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if strings.Contains(output, "SUSPENDED") {
+		t.Error("SUSPENDED should be excluded from table")
+	}
+	if strings.Contains(output, "ACTIVATED") {
+		t.Error("ACTIVATED should be excluded from table")
+	}
+	if !strings.Contains(output, "USERNAME") {
+		t.Error("USERNAME should still be present")
+	}
+}

@@ -541,3 +541,475 @@ func TestWriteList_InvalidFormatDefaultsToJSON(t *testing.T) {
 		t.Fatalf("invalid format should fall through to JSON: %v", err)
 	}
 }
+
+// --- Field selection (--fields) ---
+
+func TestWriteList_Fields_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatJSON,
+		Fields: []string{"username", "email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(arr))
+	}
+	// Should only have username and email.
+	for i, item := range arr {
+		if _, ok := item["_id"]; ok {
+			t.Errorf("item %d: _id should be filtered out", i)
+		}
+		if _, ok := item["activated"]; ok {
+			t.Errorf("item %d: activated should be filtered out", i)
+		}
+		if _, ok := item["username"]; !ok {
+			t.Errorf("item %d: username should be present", i)
+		}
+		if _, ok := item["email"]; !ok {
+			t.Errorf("item %d: email should be present", i)
+		}
+	}
+}
+
+func TestWriteList_Fields_Table(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatTable,
+		DefaultFields: []string{"username", "email", "activated"},
+		Fields:        []string{"username", "email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// --fields overrides DefaultFields.
+	if strings.Contains(got, "ACTIVATED") {
+		t.Error("--fields should override DefaultFields; activated should not appear")
+	}
+	if !strings.Contains(got, "USERNAME") {
+		t.Error("username should appear in table")
+	}
+	if !strings.Contains(got, "EMAIL") {
+		t.Error("email should appear in table")
+	}
+}
+
+func TestWriteList_Fields_CSV(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatCSV,
+		DefaultFields: []string{"username", "email", "activated"},
+		Fields:        []string{"email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) < 1 {
+		t.Fatal("expected at least header line")
+	}
+	if lines[0] != "email" {
+		t.Errorf("CSV header = %q, want %q", lines[0], "email")
+	}
+}
+
+func TestWriteSingle_Fields_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{
+		Format: FormatJSON,
+		Fields: []string{"username"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if len(m) != 1 {
+		t.Errorf("expected 1 field, got %d: %v", len(m), m)
+	}
+	if _, ok := m["username"]; !ok {
+		t.Error("username should be present")
+	}
+}
+
+func TestWriteList_Fields_InvalidFieldWarning(t *testing.T) {
+	// Invalid field names should not cause errors — they just don't match any data.
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatJSON,
+		Fields: []string{"nonexistent_field"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	// Each item should be empty since the field doesn't exist.
+	for i, item := range arr {
+		if len(item) != 0 {
+			t.Errorf("item %d: expected empty object, got %v", i, item)
+		}
+	}
+}
+
+func TestWriteList_Fields_CommaSeparated(t *testing.T) {
+	// Fields flag accepts comma-separated list.
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatJSON,
+		Fields: []string{"username", "email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	for _, item := range arr {
+		if len(item) != 2 {
+			t.Errorf("expected 2 fields, got %d: %v", len(item), item)
+		}
+	}
+}
+
+// --- Field exclusion (--exclude) ---
+
+func TestWriteList_Exclude_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatJSON,
+		DefaultFields: []string{"username", "email", "activated"},
+		Exclude:       []string{"activated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	for i, item := range arr {
+		if _, ok := item["activated"]; ok {
+			t.Errorf("item %d: activated should be excluded", i)
+		}
+		if _, ok := item["username"]; !ok {
+			t.Errorf("item %d: username should be present", i)
+		}
+		if _, ok := item["email"]; !ok {
+			t.Errorf("item %d: email should be present", i)
+		}
+	}
+}
+
+func TestWriteList_Exclude_Table(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatTable,
+		DefaultFields: []string{"username", "email", "activated"},
+		Exclude:       []string{"email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if strings.Contains(got, "EMAIL") {
+		t.Error("email should be excluded from table")
+	}
+	if !strings.Contains(got, "USERNAME") {
+		t.Error("username should appear in table")
+	}
+	if !strings.Contains(got, "ACTIVATED") {
+		t.Error("activated should appear in table")
+	}
+}
+
+func TestWriteSingle_Exclude_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{
+		Format:        FormatJSON,
+		DefaultFields: []string{"_id", "username", "email", "activated"},
+		Exclude:       []string{"_id", "activated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if _, ok := m["_id"]; ok {
+		t.Error("_id should be excluded")
+	}
+	if _, ok := m["activated"]; ok {
+		t.Error("activated should be excluded")
+	}
+	if _, ok := m["username"]; !ok {
+		t.Error("username should be present")
+	}
+}
+
+func TestWriteList_Exclude_NoDefaultFields(t *testing.T) {
+	// When no DefaultFields, exclude removes from all fields.
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"a":"1","b":"2","c":"3"}`)}
+	err := WriteList(&buf, data, Options{
+		Format:  FormatJSON,
+		Exclude: []string{"b"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if _, ok := arr[0]["b"]; ok {
+		t.Error("b should be excluded")
+	}
+	if _, ok := arr[0]["a"]; !ok {
+		t.Error("a should be present")
+	}
+	if _, ok := arr[0]["c"]; !ok {
+		t.Error("c should be present")
+	}
+}
+
+// --- All fields (--all) ---
+
+func TestWriteList_All_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatJSON,
+		DefaultFields: []string{"username"},
+		All:           true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	// --all should include all fields, not just DefaultFields.
+	if _, ok := arr[0]["_id"]; !ok {
+		t.Error("--all should include _id")
+	}
+	if _, ok := arr[0]["email"]; !ok {
+		t.Error("--all should include email")
+	}
+	if _, ok := arr[0]["activated"]; !ok {
+		t.Error("--all should include activated")
+	}
+}
+
+func TestWriteList_All_Table(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatTable,
+		DefaultFields: []string{"username"},
+		All:           true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// --all should show all columns in table, not just the default "username".
+	if !strings.Contains(got, "EMAIL") {
+		t.Error("--all table should include EMAIL column")
+	}
+	if !strings.Contains(got, "_ID") {
+		t.Error("--all table should include _ID column")
+	}
+}
+
+func TestWriteSingle_All_Human(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{
+		Format:        FormatHuman,
+		DefaultFields: []string{"username"},
+		All:           true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// --all should show all key-value pairs.
+	if !strings.Contains(got, "_id:") {
+		t.Error("--all human should include _id")
+	}
+	if !strings.Contains(got, "email:") {
+		t.Error("--all human should include email")
+	}
+}
+
+// --- Fields priority over --all ---
+
+func TestWriteList_Fields_OverridesAll(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatJSON,
+		Fields: []string{"username"},
+		All:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	// --fields takes priority over --all.
+	if len(arr[0]) != 1 {
+		t.Errorf("--fields should take priority over --all, got %d fields", len(arr[0]))
+	}
+}
+
+// --- splitCommaFlag ---
+
+func TestSplitCommaFlag(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", nil},
+		{"  ", nil},
+		{"username", []string{"username"}},
+		{"username,email", []string{"username", "email"}},
+		{"username, email, department", []string{"username", "email", "department"}},
+		{" username , email ", []string{"username", "email"}},
+	}
+	for _, tt := range tests {
+		got := splitCommaFlag(tt.input)
+		if tt.want == nil && got != nil {
+			t.Errorf("splitCommaFlag(%q) = %v, want nil", tt.input, got)
+			continue
+		}
+		if len(got) != len(tt.want) {
+			t.Errorf("splitCommaFlag(%q) = %v, want %v", tt.input, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("splitCommaFlag(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+// --- resolveEffectiveFields ---
+
+func TestResolveEffectiveFields_FieldsTakesPriority(t *testing.T) {
+	opts := Options{
+		DefaultFields: []string{"username", "email"},
+		Fields:        []string{"_id"},
+	}
+	data := sampleUsers()
+	got := opts.resolveEffectiveFields(data)
+	if len(got) != 1 || got[0] != "_id" {
+		t.Errorf("Fields should take priority, got %v", got)
+	}
+}
+
+func TestResolveEffectiveFields_ExcludeFromDefaults(t *testing.T) {
+	opts := Options{
+		DefaultFields: []string{"username", "email", "activated"},
+		Exclude:       []string{"activated"},
+	}
+	data := sampleUsers()
+	got := opts.resolveEffectiveFields(data)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 fields, got %v", got)
+	}
+	for _, f := range got {
+		if f == "activated" {
+			t.Error("activated should be excluded")
+		}
+	}
+}
+
+func TestResolveEffectiveFields_AllOverridesDefaults(t *testing.T) {
+	opts := Options{
+		DefaultFields: []string{"username"},
+		All:           true,
+	}
+	data := sampleUsers()
+	got := opts.resolveEffectiveFields(data)
+	if len(got) <= 1 {
+		t.Errorf("--all should return all fields, got %v", got)
+	}
+}
+
+func TestResolveEffectiveFields_FallbackToDefaults(t *testing.T) {
+	opts := Options{
+		DefaultFields: []string{"username", "email"},
+	}
+	data := sampleUsers()
+	got := opts.resolveEffectiveFields(data)
+	if len(got) != 2 || got[0] != "username" || got[1] != "email" {
+		t.Errorf("should fall back to DefaultFields, got %v", got)
+	}
+}
+
+// --- filterFields ---
+
+func TestFilterFields(t *testing.T) {
+	data := []json.RawMessage{rawMsg(`{"a":"1","b":"2","c":"3"}`)}
+	got := filterFields(data, []string{"a", "c"})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(got))
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(got[0], &m); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if len(m) != 2 {
+		t.Errorf("expected 2 fields, got %d: %v", len(m), m)
+	}
+	if _, ok := m["b"]; ok {
+		t.Error("b should be filtered out")
+	}
+}
+
+func TestFilterFields_NilFields(t *testing.T) {
+	data := sampleUsers()
+	got := filterFields(data, nil)
+	// Nil fields means no filtering.
+	if len(got) != len(data) {
+		t.Errorf("nil fields should return data unchanged, got %d items", len(got))
+	}
+}
+
+func TestFilterFields_NonObject(t *testing.T) {
+	data := []json.RawMessage{rawMsg(`"just a string"`)}
+	got := filterFields(data, []string{"a"})
+	// Non-objects should pass through unchanged.
+	if string(got[0]) != `"just a string"` {
+		t.Errorf("non-object should pass through, got %s", string(got[0]))
+	}
+}

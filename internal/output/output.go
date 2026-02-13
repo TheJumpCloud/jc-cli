@@ -52,6 +52,17 @@ type Options struct {
 	// DefaultFields is the ordered set of fields shown by default in table/CSV.
 	// If empty, all top-level fields are shown.
 	DefaultFields []string
+
+	// Fields is the user-specified set of fields to include (--fields flag).
+	// When set, only these fields appear in output. Mutually exclusive with Exclude.
+	Fields []string
+
+	// Exclude is the user-specified set of fields to exclude (--exclude flag).
+	// When set, all default fields except these appear. Mutually exclusive with Fields.
+	Exclude []string
+
+	// All overrides DefaultFields to show all available fields (--all flag).
+	All bool
 }
 
 // CurrentOptions reads output options from Viper flags and config.
@@ -60,7 +71,31 @@ func CurrentOptions() Options {
 		Format:  Format(viper.GetString("defaults.output")),
 		Quiet:   viper.GetBool("quiet"),
 		IDsOnly: viper.GetBool("ids"),
+		Fields:  splitCommaFlag(viper.GetString("fields")),
+		Exclude: splitCommaFlag(viper.GetString("exclude")),
+		All:     viper.GetBool("all"),
 	}
+}
+
+// splitCommaFlag splits a comma-separated flag value into a slice.
+// Returns nil for empty strings.
+func splitCommaFlag(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // WriteList formats a list of resources to w.
@@ -75,13 +110,21 @@ func WriteList(w io.Writer, data []json.RawMessage, opts Options) error {
 		return writeIDs(w, data)
 	}
 
+	// Resolve the effective field set based on --fields, --exclude, --all, and DefaultFields.
+	effectiveFields := opts.resolveEffectiveFields(data)
+
+	// Apply field selection to data when explicit field constraints are active.
+	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All {
+		data = filterFields(data, effectiveFields)
+	}
+
 	switch opts.Format {
 	case FormatTable:
-		return writeTable(w, data, opts.DefaultFields)
+		return writeTable(w, data, effectiveFields)
 	case FormatCSV:
-		return writeCSV(w, data, opts.DefaultFields)
+		return writeCSV(w, data, effectiveFields)
 	case FormatHuman:
-		return writeHumanList(w, data, opts.DefaultFields)
+		return writeHumanList(w, data, effectiveFields)
 	default:
 		return writeJSONList(w, data)
 	}
@@ -98,16 +141,109 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 		return writeIDs(w, []json.RawMessage{data})
 	}
 
+	// Resolve the effective field set based on --fields, --exclude, --all, and DefaultFields.
+	effectiveFields := opts.resolveEffectiveFields([]json.RawMessage{data})
+
+	// Apply field selection to data when explicit field constraints are active.
+	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All {
+		filtered := filterFields([]json.RawMessage{data}, effectiveFields)
+		if len(filtered) > 0 {
+			data = filtered[0]
+		}
+	}
+
 	switch opts.Format {
 	case FormatTable:
-		return writeTable(w, []json.RawMessage{data}, opts.DefaultFields)
+		return writeTable(w, []json.RawMessage{data}, effectiveFields)
 	case FormatCSV:
-		return writeCSV(w, []json.RawMessage{data}, opts.DefaultFields)
+		return writeCSV(w, []json.RawMessage{data}, effectiveFields)
 	case FormatHuman:
 		return writeHumanSingle(w, data)
 	default:
 		return writeJSONSingle(w, data)
 	}
+}
+
+// resolveEffectiveFields determines the active field set based on the combination
+// of --fields, --exclude, --all flags and DefaultFields.
+// Priority: --fields > --exclude > --all > DefaultFields > all fields.
+func (opts Options) resolveEffectiveFields(data []json.RawMessage) []string {
+	if len(opts.Fields) > 0 {
+		return opts.Fields
+	}
+
+	if opts.All {
+		// Show all fields from the data, in sorted order.
+		if len(data) > 0 {
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(data[0], &m); err == nil {
+				return sortedKeys(m)
+			}
+		}
+		return nil
+	}
+
+	if len(opts.Exclude) > 0 {
+		// Start with DefaultFields (or all fields if no defaults), then remove excluded.
+		base := opts.DefaultFields
+		if len(base) == 0 && len(data) > 0 {
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(data[0], &m); err == nil {
+				base = sortedKeys(m)
+			}
+		}
+		excludeSet := make(map[string]bool, len(opts.Exclude))
+		for _, e := range opts.Exclude {
+			excludeSet[e] = true
+		}
+		var result []string
+		for _, f := range base {
+			if !excludeSet[f] {
+				result = append(result, f)
+			}
+		}
+		return result
+	}
+
+	// No field selection flags — use DefaultFields as-is (may be nil).
+	return opts.DefaultFields
+}
+
+// filterFields filters each JSON object in data to include only the specified fields.
+// If fields is nil, data is returned unchanged.
+func filterFields(data []json.RawMessage, fields []string) []json.RawMessage {
+	if len(fields) == 0 {
+		return data
+	}
+
+	fieldSet := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		fieldSet[f] = true
+	}
+
+	result := make([]json.RawMessage, 0, len(data))
+	for _, raw := range data {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			result = append(result, raw)
+			continue
+		}
+
+		filtered := make(map[string]json.RawMessage)
+		for k, v := range m {
+			if fieldSet[k] {
+				filtered[k] = v
+			}
+		}
+
+		out, err := json.Marshal(filtered)
+		if err != nil {
+			result = append(result, raw)
+			continue
+		}
+		result = append(result, out)
+	}
+	return result
 }
 
 // --- JSON formatter ---
