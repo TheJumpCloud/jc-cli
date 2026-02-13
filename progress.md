@@ -5,7 +5,11 @@
 - List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
 - `--limit` and `--sort` are local flags on `list` subcommands (not global)
 - `overrideV1Client(t, serverURL)` test helper redirects V1 client to httptest servers
-- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests
+- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests (handles GET/POST/PUT/DELETE)
+- `confirmReader` package-level var + `overrideConfirmReader(t, input)` for testable confirmation prompts
+- `cmd.Flags().Changed("flag")` to detect explicitly set flags — only send changed fields in update requests
+- V1Client mutation methods: `Create(ctx, endpoint, body)`, `Update(ctx, endpoint, body)`, `Delete(ctx, endpoint)` — all return `json.RawMessage`
+- Cobra `MarkFlagRequired()` validates required flags before RunE — produces clear "required flag" errors
 - Viper env prefix is `JC_` — all env vars start with `JC_`
 - Use `viper.BindEnv("config.key", "JC_ENV_VAR")` for explicit env-to-key mappings (especially for nested keys where AutomaticEnv would require JC_DEFAULTS_OUTPUT instead of JC_OUTPUT)
 - Config file path: `~/.config/jc/config.yaml` (XDG-compliant)
@@ -294,4 +298,35 @@
   - `--limit` and `--sort` are local flags on `list` (not global) because they don't apply to `get` or future `create`/`update`/`delete` subcommands.
   - JumpCloud V1 API supports `sort` as a native query parameter — no client-side sorting needed. Descending uses `-` prefix (e.g., `sort=-created`).
   - The `TestV1Client_ListAll_ContextCancellation` test from US-008 has a race condition — spin-waiting on `atomic.Int32` then calling `cancel()` sometimes misses the window. A channel-based approach would be more reliable, but the existing test was not modified to minimize scope.
+---
+
+## 2026-02-13 - US-012
+- What was implemented:
+  - `jc users create --username jdoe --email jdoe@acme.com [--firstname John] [--lastname Doe]` — creates user via POST /api/systemusers, returns created user object
+  - Required field validation via `MarkFlagRequired()` — username and email are required; produces clear error if missing
+  - `jc users update <user-id> [--email] [--firstname] [--lastname] [--department] [--jobTitle]` — updates specified fields only via PUT /api/systemusers/{id}
+  - Update uses `cmd.Flags().Changed()` to detect which flags were explicitly set — only changed fields are sent in the PUT body
+  - Update with no flags produces clear error: "no fields to update"
+  - `jc users delete <user-id>` — fetches user first to show details, prompts "Delete user X (email)? [y/N]", then deletes via DELETE /api/systemusers/{id}
+  - `jc users delete <user-id> --force` — skips confirmation prompt
+  - Confirmation defaults to N (empty input cancels)
+  - Delete shows confirmation message: "User X deleted successfully."
+  - Deleting non-existent user returns clear 404 error
+  - V1Client `Create(ctx, endpoint, body)`, `Update(ctx, endpoint, body)`, `Delete(ctx, endpoint)` methods added — all return `json.RawMessage`, handle 200/201/204 success codes, map errors to `APIError`
+  - `confirmReader` package-level var with `overrideConfirmReader(t, input)` test helper for testable confirmation prompts
+  - Updated `startUsersServer()` to handle POST, PUT, DELETE in addition to GET
+- Files changed:
+  - internal/api/v1.go — added `Create()`, `Update()`, `Delete()` methods, added `bytes` import
+  - internal/api/v1_test.go — added 8 tests for Create/Update/Delete success, error cases, 201/204 handling
+  - internal/cmd/users.go — added `newUsersCreateCmd()`, `newUsersUpdateCmd()`, `newUsersDeleteCmd()`, `confirmReader` var, `getConfirmReader()`, registered subcommands
+  - internal/cmd/users_test.go — added 20 new tests: create success/required-only/missing-fields/endpoint/error, update success/single-field/no-fields/missing-arg/not-found/endpoint/only-changed-fields, delete force/confirm-yes/confirm-no/not-found/missing-arg/endpoint/empty-input, help tests for create/update
+  - .chief/prds/main/prd.json — marked US-012 passes
+  - progress.md — added codebase patterns and progress entry
+- **Learnings for future iterations:**
+  - `cmd.Flags().Changed("flag")` is the correct way to detect whether a flag was explicitly set vs. just having its default value. This prevents sending empty strings for unset fields in update requests.
+  - `bufio.Reader` with a package-level `confirmReader` var is a clean pattern for testable confirmation prompts — same approach as `newV1Client`, `newAPIClient`, `retrySleepFn`.
+  - JumpCloud V1 API returns 200 for POST create (not 201), but both are handled to be safe.
+  - Cobra's `MarkFlagRequired()` validates before RunE runs — it produces "required flag(s) \"username\" not set" errors automatically, no custom validation needed.
+  - DELETE endpoint fetches the user first (GET) to show username/email in the confirmation prompt. This means a non-existent user errors before the prompt even appears — good UX.
+  - The test server now routes by both path AND method — important when POST /systemusers (create) and GET /systemusers (list) share the same path.
 ---

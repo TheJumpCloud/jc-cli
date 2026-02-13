@@ -391,6 +391,195 @@ func TestV1Client_BaseURL(t *testing.T) {
 	}
 }
 
+// --- Create Tests ---
+
+func TestV1Client_Create_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/systemusers" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"_id":"new123","username":"jdoe","email":"jdoe@acme.com"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	body := map[string]string{"username": "jdoe", "email": "jdoe@acme.com"}
+	result, err := c.Create(context.Background(), "/systemusers", body)
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+
+	var user map[string]any
+	if err := json.Unmarshal(result, &user); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if user["_id"] != "new123" {
+		t.Errorf("_id = %v, want new123", user["_id"])
+	}
+}
+
+func TestV1Client_Create_APIError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"message":"User already exists"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Create(context.Background(), "/systemusers", map[string]string{"username": "dup"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusConflict {
+		t.Errorf("StatusCode = %d, want 409", apiErr.StatusCode)
+	}
+}
+
+func TestV1Client_Create_201Created(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"_id":"new456","username":"newuser"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.Create(context.Background(), "/systemusers", map[string]string{"username": "newuser"})
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+
+	var user map[string]any
+	json.Unmarshal(result, &user)
+	if user["_id"] != "new456" {
+		t.Errorf("_id = %v, want new456", user["_id"])
+	}
+}
+
+// --- Update Tests ---
+
+func TestV1Client_Update_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.URL.Path != "/systemusers/abc123" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"_id":"abc123","username":"alice","department":"Sales"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	body := map[string]string{"department": "Sales"}
+	result, err := c.Update(context.Background(), "/systemusers/abc123", body)
+	if err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	var user map[string]any
+	json.Unmarshal(result, &user)
+	if user["department"] != "Sales" {
+		t.Errorf("department = %v, want Sales", user["department"])
+	}
+}
+
+func TestV1Client_Update_NotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Update(context.Background(), "/systemusers/nonexistent", map[string]string{"dept": "X"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want 404", apiErr.StatusCode)
+	}
+}
+
+// --- Delete Tests ---
+
+func TestV1Client_Delete_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/systemusers/abc123" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"_id":"abc123","username":"alice"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.Delete(context.Background(), "/systemusers/abc123")
+	if err != nil {
+		t.Fatalf("Delete error: %v", err)
+	}
+
+	var user map[string]any
+	json.Unmarshal(result, &user)
+	if user["_id"] != "abc123" {
+		t.Errorf("_id = %v, want abc123", user["_id"])
+	}
+}
+
+func TestV1Client_Delete_204NoContent(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Delete(context.Background(), "/systemusers/abc123")
+	if err != nil {
+		t.Fatalf("Delete error: %v", err)
+	}
+}
+
+func TestV1Client_Delete_NotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Delete(context.Background(), "/systemusers/nonexistent")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want 404", apiErr.StatusCode)
+	}
+}
+
 func TestNewV1Client_NoAPIKey(t *testing.T) {
 	resetViper()
 	defer resetViper()

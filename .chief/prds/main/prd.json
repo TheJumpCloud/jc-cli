@@ -260,7 +260,8 @@
         "V1 API endpoints used: POST /api/systemusers, PUT /api/systemusers/{id}, DELETE /api/systemusers/{id}"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Confirmation prompt for delete should show username and email. Update should accept any valid user field as a flag.",
       "dependsOn": ["US-011"]
     },

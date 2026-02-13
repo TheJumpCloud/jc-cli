@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -183,6 +184,98 @@ func (c *V1Client) Get(ctx context.Context, endpoint string) (json.RawMessage, e
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		return nil, NewAPIError(resp.StatusCode, endpoint, body)
+	}
+
+	return body, nil
+}
+
+// Create sends a POST request to create a new resource at the given V1 endpoint.
+// The body should be a JSON-serializable object. Returns the created resource.
+func (c *V1Client) Create(ctx context.Context, endpoint string, body any) (json.RawMessage, error) {
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling request body: %w", err)
+	}
+
+	reqURL := c.BaseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
+	}
+
+	return respBody, nil
+}
+
+// Update sends a PUT request to update an existing resource at the given V1 endpoint.
+// The body should be a JSON-serializable object. Returns the updated resource.
+func (c *V1Client) Update(ctx context.Context, endpoint string, body any) (json.RawMessage, error) {
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling request body: %w", err)
+	}
+
+	reqURL := c.BaseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
+	}
+
+	return respBody, nil
+}
+
+// Delete sends a DELETE request to remove a resource at the given V1 endpoint.
+// Returns the response body (JumpCloud typically returns the deleted resource).
+func (c *V1Client) Delete(ctx context.Context, endpoint string) (json.RawMessage, error) {
+	reqURL := c.BaseURL + endpoint
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return nil, NewAPIError(resp.StatusCode, endpoint, body)
 	}
 
