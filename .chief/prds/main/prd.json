@@ -343,7 +343,8 @@
         "V1 API endpoint: DELETE /api/systems/{id}"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Device deletion is destructive and should warn about agent removal implications.",
       "dependsOn": ["US-015"]
     },

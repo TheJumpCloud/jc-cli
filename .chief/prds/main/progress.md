@@ -67,3 +67,17 @@
   - `overrideV1Client(t, serverURL)` works for all resource commands since they share `newV1Client`
   - Adding a new resource command is straightforward: new file, register in root, write test server + tests
 ---
+
+## 2026-02-13 - US-016
+- Implemented devices delete command with confirmation prompt
+- Files changed:
+  - `internal/cmd/devices.go` — added `newDevicesDeleteCmd()` + `runDevicesDelete()`, updated parent cmd to register delete, added imports for encoding/json, fmt, strings, viper
+  - `internal/cmd/devices_test.go` — added 8 delete tests (force, confirm yes/no, empty input, not found, missing arg, API endpoint, help includes delete), updated `startDevicesServer` to handle DELETE method
+  - `.chief/prds/main/prd.json` — marked US-016 as complete
+- **Learnings for future iterations:**
+  - Device delete follows same pattern as users delete: GET first to show details, prompt, then DELETE
+  - Confirmation prompt shows hostname, OS, and last contact date (truncated at 'T' for readability)
+  - `getConfirmReader()` and `confirmReader` var are shared across users.go and devices.go — no duplication needed
+  - `startDevicesServer` needed to be updated to switch on HTTP method (GET/DELETE) for `/systems/{id}` routes
+  - `overrideDevicesConfirmReader` is a thin wrapper around the shared `confirmReader` — same pattern as `overrideConfirmReader` in users_test.go
+---

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -45,18 +46,33 @@ func startDevicesServer(t *testing.T, devices []map[string]any) *httptest.Server
 			return
 		}
 
-		// GET /systems/{id} — get endpoint.
-		if strings.HasPrefix(r.URL.Path, "/systems/") && r.Method == http.MethodGet {
+		// Routes under /systems/{id}.
+		if strings.HasPrefix(r.URL.Path, "/systems/") {
 			id := strings.TrimPrefix(r.URL.Path, "/systems/")
-			for _, d := range devices {
-				if d["_id"] == id {
-					json.NewEncoder(w).Encode(d)
-					return
+
+			switch r.Method {
+			case http.MethodGet:
+				for _, d := range devices {
+					if d["_id"] == id {
+						json.NewEncoder(w).Encode(d)
+						return
+					}
 				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+
+			case http.MethodDelete:
+				for _, d := range devices {
+					if d["_id"] == id {
+						json.NewEncoder(w).Encode(d)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
 			}
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"message":"Not Found"}`))
-			return
 		}
 
 		w.WriteHeader(http.StatusNotFound)
@@ -751,5 +767,216 @@ func TestRootHelp_IncludesDevices(t *testing.T) {
 
 	if !strings.Contains(out.String(), "devices") {
 		t.Errorf("root help should list 'devices' command:\n%s", out.String())
+	}
+}
+
+// --- Devices Delete Tests ---
+
+// overrideDevicesConfirmReader injects a bufio.Reader for device confirmation prompts.
+func overrideDevicesConfirmReader(t *testing.T, input string) {
+	t.Helper()
+	orig := confirmReader
+	confirmReader = bufio.NewReader(strings.NewReader(input))
+	t.Cleanup(func() { confirmReader = orig })
+}
+
+func TestDevicesDelete_WithForce(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "alice-mbp.local deleted successfully") {
+		t.Errorf("output should confirm deletion: %q", out.String())
+	}
+}
+
+func TestDevicesDelete_WithConfirmYes(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "y\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "delete", "dev-bbb222"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should show the confirmation prompt with hostname, OS, and last contact.
+	if !strings.Contains(errOut.String(), "Delete device bob-linux.local") {
+		t.Errorf("stderr should show confirmation prompt with hostname, got: %q", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "Ubuntu") {
+		t.Errorf("confirmation should show OS, got: %q", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "2026-02-12") {
+		t.Errorf("confirmation should show last contact date, got: %q", errOut.String())
+	}
+	// Should confirm deletion.
+	if !strings.Contains(out.String(), "bob-linux.local deleted successfully") {
+		t.Errorf("output should confirm deletion: %q", out.String())
+	}
+}
+
+func TestDevicesDelete_WithConfirmNo(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should be cancelled, no deletion message.
+	if strings.Contains(out.String(), "deleted") {
+		t.Errorf("should not have deleted, got: %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Cancelled") {
+		t.Errorf("stderr should show 'Cancelled', got: %q", errOut.String())
+	}
+}
+
+func TestDevicesDelete_ConfirmEmptyInput(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideDevicesConfirmReader(t, "\n") // Just hitting enter
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Default is N — should be cancelled.
+	if strings.Contains(out.String(), "deleted") {
+		t.Errorf("empty input should cancel delete, got: %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Cancelled") {
+		t.Errorf("stderr should show 'Cancelled', got: %q", errOut.String())
+	}
+}
+
+func TestDevicesDelete_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "delete", "nonexistent", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent device, got nil")
+	}
+	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
+		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	}
+}
+
+func TestDevicesDelete_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "delete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+func TestDevicesDelete_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedDeletePath string
+	var capturedDeleteMethod string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
+			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local","os":"Mac OS X","lastContact":"2026-02-13T10:00:00Z"}`))
+			return
+		}
+		if r.Method == http.MethodDelete {
+			capturedDeletePath = r.URL.Path
+			capturedDeleteMethod = r.Method
+			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "delete", "dev-abc123", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedDeletePath != "/systems/dev-abc123" {
+		t.Errorf("DELETE path = %q, want %q", capturedDeletePath, "/systems/dev-abc123")
+	}
+	if capturedDeleteMethod != http.MethodDelete {
+		t.Errorf("HTTP method = %q, want DELETE", capturedDeleteMethod)
+	}
+}
+
+func TestDevicesCmd_Help_IncludesDelete(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	if !strings.Contains(help, "delete") {
+		t.Errorf("devices help should mention 'delete' subcommand:\n%s", help)
 	}
 }
