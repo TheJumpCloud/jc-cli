@@ -302,7 +302,8 @@
         "These commands respect --plan flag (showing what would change)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Lock/unlock use PUT /api/systemusers/{id} with account_locked field. MFA reset and password reset have specific V1 endpoints.",
       "dependsOn": ["US-011"]
     },

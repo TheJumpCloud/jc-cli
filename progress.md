@@ -5,7 +5,9 @@
 - List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
 - `--limit` and `--sort` are local flags on `list` subcommands (not global)
 - `overrideV1Client(t, serverURL)` test helper redirects V1 client to httptest servers
-- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests (handles GET/POST/PUT/DELETE, and POST /search/systemusers)
+- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests (handles GET/POST/PUT/DELETE, POST /search/systemusers, and POST /{id}/resetmfa, /{id}/expire)
+- V1Client `Post(ctx, endpoint, body)` for fire-and-forget action endpoints (e.g., `/resetmfa`, `/expire`) — accepts nil body
+- Lock/unlock share `runUsersLockUnlock(cmd, id, lock bool)` — fetch user, PUT `account_locked`, print confirmation
 - V1Client `Search(ctx, endpoint, searchBody, SearchOptions)` for POST-based search endpoints — injects pagination (skip/limit/sort) into request body
 - `confirmReader` package-level var + `overrideConfirmReader(t, input)` for testable confirmation prompts
 - `cmd.Flags().Changed("flag")` to detect explicitly set flags — only send changed fields in update requests
@@ -358,4 +360,28 @@
   - The `Search()` method injects pagination params (skip, limit, sort) directly into the search request body by marshalling to a map, adding fields, then re-marshalling. This preserves the original search filter while adding pagination.
   - Test server for search matches by iterating users and checking each search field with `strings.Contains(strings.ToLower(...))` — simple case-insensitive substring matching that mirrors the API behavior.
   - The search command reuses the exact same output pattern as `users list` (WriteList + writeListFooter) since both return the same data shape.
+---
+
+## 2026-02-13 - US-014
+- What was implemented:
+  - `jc users lock <user-id>` — locks a user account by setting `account_locked=true` via PUT /api/systemusers/{id}
+  - `jc users unlock <user-id>` — unlocks a user account by setting `account_locked=false` via PUT /api/systemusers/{id}
+  - `jc users reset-mfa <user-id>` — resets TOTP/MFA enrollment via POST /api/systemusers/{id}/resetmfa, warns about re-enrollment
+  - `jc users reset-password <user-id>` — triggers password reset via POST /api/systemusers/{id}/expire
+  - All four commands fetch the user first to display username in confirmation messages
+  - Lock/unlock reuse `V1Client.Update()` since they're simple field changes
+  - Reset-MFA/reset-password use new `V1Client.Post()` method for action endpoints
+  - `V1Client.Post(ctx, endpoint, body)` — new generic POST method for fire-and-forget V1 endpoints
+  - Test server updated to handle sub-resource POST endpoints: `/{id}/resetmfa` and `/{id}/expire`
+- Files changed:
+  - internal/cmd/users.go — added `newUsersLockCmd()`, `newUsersUnlockCmd()`, `newUsersResetMFACmd()`, `newUsersResetPasswordCmd()`, `runUsersLockUnlock()`, `runUsersResetMFA()`, `runUsersResetPassword()`, registered all 4 subcommands
+  - internal/cmd/users_test.go — added 18 new tests: lock success/endpoint/not-found/missing-arg, unlock success/endpoint/not-found/missing-arg, reset-mfa success/re-enrollment-warning/endpoint/not-found/missing-arg, reset-password success/endpoint/not-found/missing-arg, help includes new commands; updated `startUsersServer` for sub-resource routes
+  - internal/api/v1.go — added `Post()` method for generic POST endpoints
+  - .chief/prds/main/prd.json — marked US-014 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - Lock/unlock are just field updates (`account_locked`) — reuse `Update()` rather than creating new methods. The pattern: fetch user (for display), update field, print confirmation.
+  - JumpCloud V1 has sub-resource action endpoints like `/systemusers/{id}/resetmfa` and `/systemusers/{id}/expire`. These are POST endpoints that return `{}` — a new `Post()` method on V1Client handles them cleanly.
+  - The test server routing needed to handle sub-resource paths (`/{id}/resetmfa`). Used `strings.SplitN(rest, "/", 2)` to distinguish `/systemusers/{id}` from `/systemusers/{id}/{action}`.
+  - The shared `runUsersLockUnlock()` function handles both lock and unlock with a boolean parameter — keeps code DRY since the only difference is the `account_locked` value and the confirmation message verb.
 ---

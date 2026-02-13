@@ -282,6 +282,43 @@ func (c *V1Client) Delete(ctx context.Context, endpoint string) (json.RawMessage
 	return body, nil
 }
 
+// Post sends a POST request to a V1 endpoint with an optional body.
+// Used for action endpoints like /systemusers/{id}/resetmfa that don't return
+// a meaningful resource. Returns the raw response body.
+func (c *V1Client) Post(ctx context.Context, endpoint string, body any) (json.RawMessage, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		jsonBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(jsonBody)
+	}
+
+	reqURL := c.BaseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
+	}
+
+	return respBody, nil
+}
+
 // SearchOptions controls search behavior for V1 search endpoints.
 type SearchOptions struct {
 	// Limit is the maximum total number of results to return (0 = no limit).

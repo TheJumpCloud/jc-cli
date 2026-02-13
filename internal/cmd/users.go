@@ -36,7 +36,7 @@ func newUsersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "users",
 		Short: "Manage JumpCloud users",
-		Long:  "List, get, search, create, update, and delete JumpCloud system users.",
+		Long:  "List, get, search, create, update, delete, lock, unlock, reset MFA, and reset password for JumpCloud system users.",
 	}
 
 	cmd.AddCommand(newUsersListCmd())
@@ -45,6 +45,10 @@ func newUsersCmd() *cobra.Command {
 	cmd.AddCommand(newUsersCreateCmd())
 	cmd.AddCommand(newUsersUpdateCmd())
 	cmd.AddCommand(newUsersDeleteCmd())
+	cmd.AddCommand(newUsersLockCmd())
+	cmd.AddCommand(newUsersUnlockCmd())
+	cmd.AddCommand(newUsersResetMFACmd())
+	cmd.AddCommand(newUsersResetPasswordCmd())
 
 	return cmd
 }
@@ -376,6 +380,151 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "User %s deleted successfully.\n", user.Username)
+	return nil
+}
+
+func newUsersLockCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lock <user-id>",
+		Short: "Lock a user account",
+		Long:  "Lock a JumpCloud user account by setting account_locked=true.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersLockUnlock(cmd, args[0], true)
+		},
+	}
+	return cmd
+}
+
+func newUsersUnlockCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "unlock <user-id>",
+		Short: "Unlock a user account",
+		Long:  "Unlock a JumpCloud user account by setting account_locked=false.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersLockUnlock(cmd, args[0], false)
+		},
+	}
+	return cmd
+}
+
+func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	// Fetch user to get username for confirmation message.
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	if err != nil {
+		return err
+	}
+
+	var user struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(userData, &user); err != nil {
+		return fmt.Errorf("parsing user data: %w", err)
+	}
+
+	body := map[string]any{
+		"account_locked": lock,
+	}
+	_, err = client.Update(cmd.Context(), "/systemusers/"+identifier, body)
+	if err != nil {
+		return err
+	}
+
+	action := "locked"
+	if !lock {
+		action = "unlocked"
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "User %s %s successfully.\n", user.Username, action)
+	return nil
+}
+
+func newUsersResetMFACmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reset-mfa <user-id>",
+		Short: "Reset MFA enrollment for a user",
+		Long: `Reset TOTP/MFA enrollment for a JumpCloud user.
+
+The user will need to re-enroll in MFA on their next login.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersResetMFA(cmd, args[0])
+		},
+	}
+	return cmd
+}
+
+func runUsersResetMFA(cmd *cobra.Command, identifier string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	// Fetch user to get username for confirmation message.
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	if err != nil {
+		return err
+	}
+
+	var user struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(userData, &user); err != nil {
+		return fmt.Errorf("parsing user data: %w", err)
+	}
+
+	_, err = client.Post(cmd.Context(), "/systemusers/"+identifier+"/resetmfa", nil)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "User %s MFA reset successfully. The user will need to re-enroll in MFA.\n", user.Username)
+	return nil
+}
+
+func newUsersResetPasswordCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reset-password <user-id>",
+		Short: "Trigger a password reset for a user",
+		Long:  "Trigger a password reset email for a JumpCloud user. The user's password will expire and they will be prompted to set a new one.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersResetPassword(cmd, args[0])
+		},
+	}
+	return cmd
+}
+
+func runUsersResetPassword(cmd *cobra.Command, identifier string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	// Fetch user to get username for confirmation message.
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	if err != nil {
+		return err
+	}
+
+	var user struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(userData, &user); err != nil {
+		return fmt.Errorf("parsing user data: %w", err)
+	}
+
+	_, err = client.Post(cmd.Context(), "/systemusers/"+identifier+"/expire", nil)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "User %s password reset triggered successfully.\n", user.Username)
 	return nil
 }
 

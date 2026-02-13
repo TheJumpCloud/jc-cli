@@ -153,7 +153,44 @@ func startUsersServer(t *testing.T, users []map[string]any) *httptest.Server {
 
 		// Routes under /systemusers/{id}.
 		if strings.HasPrefix(r.URL.Path, "/systemusers/") {
-			id := strings.TrimPrefix(r.URL.Path, "/systemusers/")
+			rest := strings.TrimPrefix(r.URL.Path, "/systemusers/")
+
+			// Check for sub-resource endpoints: /{id}/resetmfa, /{id}/expire
+			if parts := strings.SplitN(rest, "/", 2); len(parts) == 2 {
+				id := parts[0]
+				action := parts[1]
+
+				// Find the user first.
+				var found bool
+				for _, u := range users {
+					if u["_id"] == id {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.WriteHeader(http.StatusNotFound)
+					w.Write([]byte(`{"message":"Not Found"}`))
+					return
+				}
+
+				if r.Method == http.MethodPost {
+					switch action {
+					case "resetmfa":
+						w.WriteHeader(http.StatusOK)
+						w.Write([]byte(`{}`))
+						return
+					case "expire":
+						w.WriteHeader(http.StatusOK)
+						w.Write([]byte(`{}`))
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			id := rest
 
 			switch r.Method {
 			case http.MethodGet:
@@ -1828,6 +1865,432 @@ func TestUsersList_Pagination(t *testing.T) {
 	}
 	if len(result) != 15 {
 		t.Errorf("got %d users, want 15", len(result))
+	}
+}
+
+// --- Users Lock Tests ---
+
+func TestUsersLock_Success(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"users", "lock", "aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "alice locked successfully") {
+		t.Errorf("output should confirm lock: %q", out.String())
+	}
+}
+
+func TestUsersLock_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	var capturedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com","account_locked":false}`))
+			return
+		}
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &capturedBody)
+		w.Write([]byte(`{"_id":"abc123","username":"testuser","account_locked":true}`))
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "lock", "abc123"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systemusers/abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	}
+	if capturedMethod != http.MethodPut {
+		t.Errorf("HTTP method = %q, want PUT", capturedMethod)
+	}
+	if capturedBody["account_locked"] != true {
+		t.Errorf("body account_locked = %v, want true", capturedBody["account_locked"])
+	}
+}
+
+func TestUsersLock_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "lock", "nonexistent"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent user, got nil")
+	}
+}
+
+func TestUsersLock_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "lock"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+// --- Users Unlock Tests ---
+
+func TestUsersUnlock_Success(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "unlock", "bbb222"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "bob unlocked successfully") {
+		t.Errorf("output should confirm unlock: %q", out.String())
+	}
+}
+
+func TestUsersUnlock_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	var capturedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com","account_locked":true}`))
+			return
+		}
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &capturedBody)
+		w.Write([]byte(`{"_id":"abc123","username":"testuser","account_locked":false}`))
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "unlock", "abc123"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systemusers/abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	}
+	if capturedMethod != http.MethodPut {
+		t.Errorf("HTTP method = %q, want PUT", capturedMethod)
+	}
+	if capturedBody["account_locked"] != false {
+		t.Errorf("body account_locked = %v, want false", capturedBody["account_locked"])
+	}
+}
+
+func TestUsersUnlock_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "unlock", "nonexistent"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent user, got nil")
+	}
+}
+
+func TestUsersUnlock_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "unlock"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+// --- Users Reset-MFA Tests ---
+
+func TestUsersResetMFA_Success(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "alice") {
+		t.Errorf("output should mention username 'alice': %q", output)
+	}
+	if !strings.Contains(output, "MFA reset successfully") {
+		t.Errorf("output should confirm MFA reset: %q", output)
+	}
+}
+
+func TestUsersResetMFA_ShowsReEnrollmentWarning(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Warning about re-enrollment should appear on stderr.
+	combined := out.String() + errOut.String()
+	if !strings.Contains(strings.ToLower(combined), "re-enroll") {
+		t.Errorf("should warn about MFA re-enrollment, got stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
+func TestUsersResetMFA_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com"}`))
+			return
+		}
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-mfa", "abc123"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systemusers/abc123/resetmfa" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123/resetmfa")
+	}
+	if capturedMethod != http.MethodPost {
+		t.Errorf("HTTP method = %q, want POST", capturedMethod)
+	}
+}
+
+func TestUsersResetMFA_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-mfa", "nonexistent"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent user, got nil")
+	}
+}
+
+func TestUsersResetMFA_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-mfa"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+// --- Users Reset-Password Tests ---
+
+func TestUsersResetPassword_Success(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-password", "bbb222"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "bob") {
+		t.Errorf("output should mention username 'bob': %q", output)
+	}
+	if !strings.Contains(output, "password reset") {
+		t.Errorf("output should confirm password reset: %q", output)
+	}
+}
+
+func TestUsersResetPassword_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com"}`))
+			return
+		}
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-password", "abc123"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systemusers/abc123/expire" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123/expire")
+	}
+	if capturedMethod != http.MethodPost {
+		t.Errorf("HTTP method = %q, want POST", capturedMethod)
+	}
+}
+
+func TestUsersResetPassword_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-password", "nonexistent"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent user, got nil")
+	}
+}
+
+func TestUsersResetPassword_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "reset-password"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument, got nil")
+	}
+}
+
+// --- Users Help Tests for New Commands ---
+
+func TestUsersCmd_Help_IncludesNewCommands(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	for _, sub := range []string{"lock", "unlock", "reset-mfa", "reset-password"} {
+		if !strings.Contains(help, sub) {
+			t.Errorf("users help should mention '%s' subcommand:\n%s", sub, help)
+		}
 	}
 }
 
