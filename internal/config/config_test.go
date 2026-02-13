@@ -778,3 +778,120 @@ profiles:
 		t.Errorf("APIKey() = %q, want %q (JC_PROFILE=staging should select staging keychain entry)", got, "staging-secret")
 	}
 }
+
+// --- Config Set / Validation Tests (US-022) ---
+
+func TestIsValidConfigKey(t *testing.T) {
+	validKeys := []string{
+		"active_profile",
+		"defaults.output",
+		"defaults.limit",
+		"defaults.confirm_destructive",
+		"defaults.color",
+		"defaults.pager",
+		"cache.enabled",
+		"cache.ttl",
+		"cache.directory",
+	}
+	for _, k := range validKeys {
+		if !IsValidConfigKey(k) {
+			t.Errorf("IsValidConfigKey(%q) = false, want true", k)
+		}
+	}
+
+	invalidKeys := []string{"invalid", "foo.bar", "profiles.default.api_key", "defaults", "cache"}
+	for _, k := range invalidKeys {
+		if IsValidConfigKey(k) {
+			t.Errorf("IsValidConfigKey(%q) = true, want false", k)
+		}
+	}
+}
+
+func TestSetConfigValue_String(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetConfigValue("defaults.output", "table"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	if got := viper.GetString("defaults.output"); got != "table" {
+		t.Errorf("defaults.output = %q, want %q", got, "table")
+	}
+}
+
+func TestSetConfigValue_Int(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetConfigValue("defaults.limit", "50"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	if got := viper.GetInt("defaults.limit"); got != 50 {
+		t.Errorf("defaults.limit = %d, want 50", got)
+	}
+}
+
+func TestSetConfigValue_Bool(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetConfigValue("defaults.confirm_destructive", "false"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	if got := viper.GetBool("defaults.confirm_destructive"); got != false {
+		t.Errorf("defaults.confirm_destructive = %v, want false", got)
+	}
+}
+
+func TestSetConfigValue_Persists(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetConfigValue("defaults.pager", "less"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	// Read the file to verify persistence.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("cannot read config: %v", err)
+	}
+	if !strings.Contains(string(data), "less") {
+		t.Errorf("config file should contain 'less', got: %s", string(data))
+	}
+}

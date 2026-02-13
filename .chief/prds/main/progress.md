@@ -66,6 +66,10 @@
   - `setupUsersTest(t)` is reusable across all resource test files — no need for per-resource setup
   - `overrideV1Client(t, serverURL)` works for all resource commands since they share `newV1Client`
   - Adding a new resource command is straightforward: new file, register in root, write test server + tests
+- Filter parser in `internal/filter/` — `Parse()`, `ParseAll()`, `ToV1Queries()` for translating user syntax to V1 API format
+- Use `StringArrayVar` (not `StringSliceVar`) for `--filter` flag — preserves values with commas/spaces
+- V1 API `filter` query param format: `field:$op:value` where `$op` is `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
+- `buildListURL()` in v1.go accepts full `ListOptions` struct — extensible for future query params
 ---
 
 ## 2026-02-13 - US-016
@@ -116,4 +120,24 @@
   - Test flag completions via `__complete` command: `rootCmd.SetArgs([]string{"__complete", "--flag", ""})` triggers Cobra's internal completion
   - `ValidArgs` on a command automatically provides shell completion for positional arguments — no extra registration needed
   - The existing `newCompletionCmd()` already had good structure (ValidArgs, Long help with install instructions) — just needed flag completion enhancement
+---
+
+## 2026-02-13 - US-020
+- Implemented filtering engine with shared filter parser and --filter/--search flags
+- Files created:
+  - `internal/filter/filter.go` — `Parse()`, `ParseAll()`, `ToV1Queries()`, `Expression` struct, operator mapping (=, !=, >=, <=, >, <) to V1 API format ($eq, $ne, $gte, $lte, $gt, $lt)
+  - `internal/filter/filter_test.go` — 15 tests covering all operators, whitespace trimming, empty values, invalid syntax, multiple filters, V1 query conversion
+- Files changed:
+  - `internal/api/v1.go` — extended `ListOptions` with `Filter []string` and `Search string` fields; updated `buildListURL()` to accept full `ListOptions` and append `filter` and `search` query params
+  - `internal/cmd/users.go` — added `--filter` (StringArrayVar) and `--search` flags to `newUsersListCmd()` and `--filter` to `newUsersSearchCmd()`; filter parsing/validation in `runUsersList()` and `runUsersSearch()`
+  - `internal/cmd/devices.go` — added `--filter` (StringArrayVar) and `--search` flags to `newDevicesListCmd()`; filter parsing/validation in `runDevicesList()`
+  - `internal/cmd/users_test.go` — 8 new tests: filter API query param, multiple filters, comparison operators, invalid syntax, search param, filter+sort combo, search with filter, help includes filter/search
+  - `internal/cmd/devices_test.go` — 6 new tests: filter API query param, multiple filters, invalid syntax, search param, filter+sort+limit combo, help includes filter/search
+  - `.chief/prds/main/prd.json` — marked US-020 as complete
+- **Learnings for future iterations:**
+  - `StringArrayVar` is critical for `--filter` — `StringSliceVar` would split on commas inside values like `os=Mac OS X`
+  - V1 API accepts multiple `filter` query params: `?filter=field:$eq:value&filter=field2:$ne:value2` — these combine with AND logic
+  - `buildListURL()` was refactored to accept the full `ListOptions` struct instead of individual params — cleaner and extensible
+  - Filter parsing happens before API client creation in the command layer — fast validation before network calls
+  - Operator ordering in the parser matters: `>=` must be matched before `>` to avoid false matches
 ---

@@ -62,6 +62,8 @@
 - `validOutputFormats` in `root.go` is the authoritative list of accepted `--output` values; validated in `PersistentPreRunE`
 - `flagErrorWithSuggestion()` + `levenshtein()` in `root.go` provides "Did you mean?" for unknown flags (edit distance ≤ 3)
 - When adding subcommands that need their own `PersistentPreRunE`, chain to parent's pre-run manually (Cobra does not auto-chain)
+- Config commands in `internal/cmd/config.go`: `config view` uses `viper.AllSettings()` + redaction; `config set` validates against `ValidConfigKeys` with `coerceValue()` for type safety
+- `config.SetConfigValue(key, value)` is the general-purpose config setter; `coerceValue()` handles string→int/bool coercion for known keys
 ---
 
 ## 2026-02-13 - US-001
@@ -439,4 +441,32 @@
   - `splitCommaFlag()` handles user-friendly comma-separated input with space trimming — users can type `--fields "username, email"` naturally.
   - The `--fields`/`--exclude` mutual exclusivity check in `PersistentPreRunE` fires before any command runs, giving consistent behavior across all commands.
   - `filterFields()` preserves non-objects (returns them unchanged) — defensive against edge cases.
+---
+
+## 2026-02-13 - US-022
+- What was implemented:
+  - `jc config view` — displays full config with secrets redacted, active profile highlighted with `_active: true`
+  - `jc config view --output json` — pretty-printed JSON output (default)
+  - `jc config view --output yaml` — YAML output via `go.yaml.in/yaml/v3`
+  - API keys redacted to `****<last4>` via `api.RedactKey()` — keychain refs shown as-is
+  - `jc config set <key> <value>` — sets config values using dot notation with type coercion
+  - Type coercion: `defaults.limit`/`cache.ttl` → int, `defaults.confirm_destructive`/`defaults.color`/`cache.enabled` → bool
+  - Invalid config key produces error with full list of valid keys
+  - Config changes written atomically via existing `writeConfig()` (temp file + rename)
+  - `ValidConfigKeys` list and `IsValidConfigKey()` for key validation
+  - `SetConfigValue()` in config package as general-purpose setter with type coercion
+- Files changed:
+  - internal/cmd/config.go — new config command group with view and set subcommands
+  - internal/cmd/config_test.go — 22 tests: view JSON/YAML/redaction/keychain-ref/active-profile/empty-key/help/output-flags, set string/int/bool/active-profile/invalid-key/missing-args/cache-ttl/cache-enabled/atomic-write/help/subcommands
+  - internal/config/config.go — added `ValidConfigKeys`, `SetConfigValue()`, `IsValidConfigKey()`, `coerceValue()`
+  - internal/config/config_test.go — added 5 tests: IsValidConfigKey, SetConfigValue string/int/bool/persist
+  - internal/cmd/root.go — registered `newConfigCmd()`
+  - .chief/prds/main/prd.json — marked US-022 passes
+- **Learnings for future iterations:**
+  - `viper.AllSettings()` returns the full merged config (defaults + file + env + flags) as `map[string]interface{}` — perfect for `config view`.
+  - `go.yaml.in/yaml/v3` is already an indirect dependency (via Viper) — no new dependency needed for YAML output.
+  - Type coercion in `coerceValue()` ensures YAML output has proper types (`limit: 50` not `limit: "50"`). The switch on known keys is explicit and safe.
+  - `config view` redacts plaintext API keys but shows `keychain://jc/<profile>` refs as-is since they're not secrets.
+  - Active profile highlighting uses an `_active: true` field in the profile map — visible in both JSON and YAML output.
+  - `ValidConfigKeys` is a flat list of dot-notation paths — simple to validate against and display in error messages.
 ---

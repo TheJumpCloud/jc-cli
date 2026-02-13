@@ -71,6 +71,7 @@ interface.`,
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newCompletionCmd())
 	rootCmd.AddCommand(newAuthCmd())
+	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newUsersCmd())
 	rootCmd.AddCommand(newDevicesCmd())
 

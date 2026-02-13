@@ -470,7 +470,8 @@
         "API keys shown as '****<last4>' in config view output"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use Viper's WriteConfig after updates. Atomic write via temp file + rename. Dot notation allows setting nested keys like 'defaults.output'.",
       "dependsOn": ["US-002"]
     },

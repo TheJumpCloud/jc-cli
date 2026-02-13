@@ -240,6 +240,62 @@ func RemoveProfileField(profile, key string) error {
 	return SetProfileField(profile, key, "")
 }
 
+// ValidConfigKeys lists all known dot-notation config keys that can be set
+// via "jc config set". Profile-specific keys are excluded since they use
+// SetProfileField directly.
+var ValidConfigKeys = []string{
+	"active_profile",
+	"defaults.output",
+	"defaults.limit",
+	"defaults.confirm_destructive",
+	"defaults.color",
+	"defaults.pager",
+	"cache.enabled",
+	"cache.ttl",
+	"cache.directory",
+}
+
+// SetConfigValue sets a config key using dot notation and writes the config
+// file atomically. It coerces string values to the appropriate type (bool/int)
+// based on the key.
+func SetConfigValue(key, value string) error {
+	viper.Set(key, coerceValue(key, value))
+	return writeConfig()
+}
+
+// coerceValue converts a string value to the appropriate Go type for known
+// config keys. This ensures booleans are stored as true/false (not "true")
+// and integers as numbers.
+func coerceValue(key, value string) interface{} {
+	switch key {
+	case "defaults.limit", "cache.ttl":
+		// Attempt int conversion.
+		var n int
+		if _, err := fmt.Sscanf(value, "%d", &n); err == nil {
+			return n
+		}
+	case "defaults.confirm_destructive", "defaults.color", "cache.enabled":
+		// Attempt bool conversion.
+		switch strings.ToLower(value) {
+		case "true", "1", "yes":
+			return true
+		case "false", "0", "no":
+			return false
+		}
+	}
+	return value
+}
+
+// IsValidConfigKey returns true if key is a known config key.
+func IsValidConfigKey(key string) bool {
+	for _, k := range ValidConfigKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
 // writeConfig writes the current Viper config to the config file atomically.
 func writeConfig() error {
 	cfgPath := ConfigPath()
