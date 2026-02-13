@@ -428,7 +428,8 @@
         "Filters work consistently across users, devices, and all future resource commands"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V1 API filter format: 'field:$eq:value', 'field:$gte:value'. V2 uses query string parameters. The filter parser should be a shared utility that translates the user-friendly syntax to API-specific format.",
       "dependsOn": ["US-011", "US-015"]
     },

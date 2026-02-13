@@ -2294,6 +2294,259 @@ func TestUsersCmd_Help_IncludesNewCommands(t *testing.T) {
 	}
 }
 
+// --- Users Filter Tests ---
+
+func TestUsersList_Filter_APIQueryParam(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--filter", "activated=true"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 1 {
+		t.Fatalf("got %d filter params, want 1", len(capturedFilters))
+	}
+	if capturedFilters[0] != "activated:$eq:true" {
+		t.Errorf("filter param = %q, want %q", capturedFilters[0], "activated:$eq:true")
+	}
+}
+
+func TestUsersList_Filter_MultipleFilters(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--filter", "activated=true", "--filter", "suspended!=true"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 2 {
+		t.Fatalf("got %d filter params, want 2", len(capturedFilters))
+	}
+	if capturedFilters[0] != "activated:$eq:true" {
+		t.Errorf("filter[0] = %q, want %q", capturedFilters[0], "activated:$eq:true")
+	}
+	if capturedFilters[1] != "suspended:$ne:true" {
+		t.Errorf("filter[1] = %q, want %q", capturedFilters[1], "suspended:$ne:true")
+	}
+}
+
+func TestUsersList_Filter_ComparisonOperators(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--filter", "created>=2026-01-01", "--filter", "created<=2026-02-01"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 2 {
+		t.Fatalf("got %d filter params, want 2", len(capturedFilters))
+	}
+	if capturedFilters[0] != "created:$gte:2026-01-01" {
+		t.Errorf("filter[0] = %q, want %q", capturedFilters[0], "created:$gte:2026-01-01")
+	}
+	if capturedFilters[1] != "created:$lte:2026-02-01" {
+		t.Errorf("filter[1] = %q, want %q", capturedFilters[1], "created:$lte:2026-02-01")
+	}
+}
+
+func TestUsersList_Filter_InvalidSyntax(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--filter", "badfilter"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid filter syntax, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid filter") {
+		t.Errorf("error should mention 'invalid filter', got: %v", err)
+	}
+}
+
+func TestUsersList_Search_APIQueryParam(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedSearch string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedSearch = r.URL.Query().Get("search")
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--search", "alice"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedSearch != "alice" {
+		t.Errorf("search param = %q, want %q", capturedSearch, "alice")
+	}
+}
+
+func TestUsersList_FilterWithSort(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	var capturedSort string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		capturedSort = r.URL.Query().Get("sort")
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--filter", "activated=true", "--sort", "username"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 1 || capturedFilters[0] != "activated:$eq:true" {
+		t.Errorf("filter params = %v, want [activated:$eq:true]", capturedFilters)
+	}
+	if capturedSort != "username" {
+		t.Errorf("sort param = %q, want %q", capturedSort, "username")
+	}
+}
+
+func TestUsersSearch_WithFilter(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "john", "--filter", "activated=true"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Verify searchFilter is present.
+	if _, ok := capturedBody["searchFilter"]; !ok {
+		t.Fatal("searchFilter missing from request body")
+	}
+	// Verify filter is present.
+	f, ok := capturedBody["filter"].([]any)
+	if !ok || len(f) != 1 {
+		t.Fatalf("filter in body = %v, want slice of 1", capturedBody["filter"])
+	}
+	if f[0] != "activated:$eq:true" {
+		t.Errorf("filter[0] = %v, want %q", f[0], "activated:$eq:true")
+	}
+}
+
+func TestUsersListCmd_Help_IncludesFilterAndSearch(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "list", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	if !strings.Contains(help, "--filter") {
+		t.Errorf("list help should mention --filter flag:\n%s", help)
+	}
+	if !strings.Contains(help, "--search") {
+		t.Errorf("list help should mention --search flag:\n%s", help)
+	}
+}
+
 // Verify that the users command appears in root help.
 func TestRootHelp_IncludesUsers(t *testing.T) {
 	setupUsersTest(t)

@@ -44,6 +44,10 @@ type ListOptions struct {
 	PageSize int
 	// Sort is the field to sort by. Prefix with "-" for descending order.
 	Sort string
+	// Filter is a list of V1 filter expressions (e.g., "os:$eq:Mac OS X").
+	Filter []string
+	// Search is a full-text search term to apply server-side.
+	Search string
 }
 
 // ListResult holds the results from a list operation along with metadata.
@@ -96,7 +100,7 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 		}
 
 		// Build URL with pagination parameters.
-		reqURL, err := c.buildListURL(endpoint, skip, pageSize, opts.Sort)
+		reqURL, err := c.buildListURL(endpoint, skip, pageSize, opts)
 		if err != nil {
 			return nil, fmt.Errorf("building URL: %w", err)
 		}
@@ -425,7 +429,7 @@ func (c *V1Client) Search(ctx context.Context, endpoint string, searchBody any, 
 }
 
 // buildListURL constructs the full URL for a V1 list request with pagination params.
-func (c *V1Client) buildListURL(endpoint string, skip, limit int, sort string) (string, error) {
+func (c *V1Client) buildListURL(endpoint string, skip, limit int, opts ListOptions) (string, error) {
 	u, err := url.Parse(c.BaseURL + endpoint)
 	if err != nil {
 		return "", err
@@ -433,8 +437,14 @@ func (c *V1Client) buildListURL(endpoint string, skip, limit int, sort string) (
 	q := u.Query()
 	q.Set("skip", strconv.Itoa(skip))
 	q.Set("limit", strconv.Itoa(limit))
-	if sort != "" {
-		q.Set("sort", sort)
+	if opts.Sort != "" {
+		q.Set("sort", opts.Sort)
+	}
+	for _, f := range opts.Filter {
+		q.Add("filter", f)
+	}
+	if opts.Search != "" {
+		q.Set("search", opts.Search)
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil

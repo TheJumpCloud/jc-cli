@@ -1443,6 +1443,187 @@ func TestDevicesCmd_Help_IncludesMDMCommands(t *testing.T) {
 	}
 }
 
+// --- Devices Filter Tests ---
+
+func TestDevicesList_Filter_APIQueryParam(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--filter", "os=Mac OS X"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 1 {
+		t.Fatalf("got %d filter params, want 1", len(capturedFilters))
+	}
+	if capturedFilters[0] != "os:$eq:Mac OS X" {
+		t.Errorf("filter param = %q, want %q", capturedFilters[0], "os:$eq:Mac OS X")
+	}
+}
+
+func TestDevicesList_Filter_MultipleFilters(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--filter", "os=Mac OS X", "--filter", "active=true"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 2 {
+		t.Fatalf("got %d filter params, want 2", len(capturedFilters))
+	}
+	if capturedFilters[0] != "os:$eq:Mac OS X" {
+		t.Errorf("filter[0] = %q, want %q", capturedFilters[0], "os:$eq:Mac OS X")
+	}
+	if capturedFilters[1] != "active:$eq:true" {
+		t.Errorf("filter[1] = %q, want %q", capturedFilters[1], "active:$eq:true")
+	}
+}
+
+func TestDevicesList_Filter_InvalidSyntax(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--filter", "badfilter"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid filter syntax, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid filter") {
+		t.Errorf("error should mention 'invalid filter', got: %v", err)
+	}
+}
+
+func TestDevicesList_Search_APIQueryParam(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedSearch string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedSearch = r.URL.Query().Get("search")
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--search", "macbook"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedSearch != "macbook" {
+		t.Errorf("search param = %q, want %q", capturedSearch, "macbook")
+	}
+}
+
+func TestDevicesList_FilterWithSortAndLimit(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedFilters []string
+	var capturedSort string
+	var capturedLimit string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedFilters = r.URL.Query()["filter"]
+		capturedSort = r.URL.Query().Get("sort")
+		capturedLimit = r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--filter", "os=Mac OS X", "--sort", "-lastContact", "--limit", "10"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(capturedFilters) != 1 || capturedFilters[0] != "os:$eq:Mac OS X" {
+		t.Errorf("filter params = %v, want [os:$eq:Mac OS X]", capturedFilters)
+	}
+	if capturedSort != "-lastContact" {
+		t.Errorf("sort param = %q, want %q", capturedSort, "-lastContact")
+	}
+	if capturedLimit != "10" {
+		t.Errorf("limit param = %q, want %q", capturedLimit, "10")
+	}
+}
+
+func TestDevicesListCmd_Help_IncludesFilterAndSearch(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "list", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	if !strings.Contains(help, "--filter") {
+		t.Errorf("list help should mention --filter flag:\n%s", help)
+	}
+	if !strings.Contains(help, "--search") {
+		t.Errorf("list help should mention --search flag:\n%s", help)
+	}
+}
+
 func TestDevicesEraseCmd_Help(t *testing.T) {
 	setupUsersTest(t)
 

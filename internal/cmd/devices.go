@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
@@ -42,8 +43,10 @@ func newDevicesCmd() *cobra.Command {
 
 func newDevicesListCmd() *cobra.Command {
 	var (
-		limitFlag int
-		sortFlag  string
+		limitFlag  int
+		sortFlag   string
+		filterFlag []string
+		searchFlag string
 	)
 
 	cmd := &cobra.Command{
@@ -52,27 +55,43 @@ func newDevicesListCmd() *cobra.Command {
 		Long: `List all JumpCloud systems (devices).
 
 Default fields: displayName, hostname, os, osVersion, lastContact, agentVersion.
-Use --output table for a readable ASCII table.`,
+Use --output table for a readable ASCII table.
+
+Filter examples:
+  --filter 'os=Mac OS X'                  Exact match
+  --filter 'active!=true'                 Inequality
+  --filter 'lastContact>=2026-01-01'      Greater than or equal
+  --filter 'os=Mac OS X' --filter 'active=true'   Multiple filters (AND)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDevicesList(cmd, limitFlag, sortFlag)
+			return runDevicesList(cmd, limitFlag, sortFlag, filterFlag, searchFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -lastContact)")
+	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'field=value', 'field!=value', 'field>=value')")
+	cmd.Flags().StringVar(&searchFlag, "search", "", "Full-text search across fields")
 
 	return cmd
 }
 
-func runDevicesList(cmd *cobra.Command, limit int, sort string) error {
+func runDevicesList(cmd *cobra.Command, limit int, sort string, filters []string, search string) error {
+	// Parse and validate filter expressions.
+	exprs, err := filter.ParseAll(filters)
+	if err != nil {
+		return err
+	}
+
 	client, err := newV1Client()
 	if err != nil {
 		return err
 	}
 
 	result, err := client.ListAll(cmd.Context(), "/systems", api.ListOptions{
-		Limit: limit,
-		Sort:  sort,
+		Limit:  limit,
+		Sort:   sort,
+		Filter: filter.ToV1Queries(exprs),
+		Search: search,
 	})
 	if err != nil {
 		return err

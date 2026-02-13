@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
@@ -63,8 +64,10 @@ func newUsersCmd() *cobra.Command {
 
 func newUsersListCmd() *cobra.Command {
 	var (
-		limitFlag int
-		sortFlag  string
+		limitFlag  int
+		sortFlag   string
+		filterFlag []string
+		searchFlag string
 	)
 
 	cmd := &cobra.Command{
@@ -73,27 +76,43 @@ func newUsersListCmd() *cobra.Command {
 		Long: `List all JumpCloud system users.
 
 Default fields: username, email, firstname, lastname, activated, suspended.
-Use --output table for a readable ASCII table.`,
+Use --output table for a readable ASCII table.
+
+Filter examples:
+  --filter 'activated=true'               Exact match
+  --filter 'suspended!=true'              Inequality
+  --filter 'created>=2026-01-01'          Greater than or equal
+  --filter 'activated=true' --filter 'suspended!=true'   Multiple filters (AND)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersList(cmd, limitFlag, sortFlag)
+			return runUsersList(cmd, limitFlag, sortFlag, filterFlag, searchFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -created)")
+	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'field=value', 'field!=value', 'field>=value')")
+	cmd.Flags().StringVar(&searchFlag, "search", "", "Full-text search across fields")
 
 	return cmd
 }
 
-func runUsersList(cmd *cobra.Command, limit int, sort string) error {
+func runUsersList(cmd *cobra.Command, limit int, sort string, filters []string, search string) error {
+	// Parse and validate filter expressions.
+	exprs, err := filter.ParseAll(filters)
+	if err != nil {
+		return err
+	}
+
 	client, err := newV1Client()
 	if err != nil {
 		return err
 	}
 
 	result, err := client.ListAll(cmd.Context(), "/systemusers", api.ListOptions{
-		Limit: limit,
-		Sort:  sort,
+		Limit:  limit,
+		Sort:   sort,
+		Filter: filter.ToV1Queries(exprs),
+		Search: search,
 	})
 	if err != nil {
 		return err
@@ -116,7 +135,8 @@ func runUsersList(cmd *cobra.Command, limit int, sort string) error {
 
 func newUsersSearchCmd() *cobra.Command {
 	var (
-		limitFlag int
+		limitFlag  int
+		filterFlag []string
 	)
 
 	cmd := &cobra.Command{
@@ -126,19 +146,29 @@ func newUsersSearchCmd() *cobra.Command {
 
 Uses the V1 POST /api/search/systemusers endpoint for case-insensitive searching.
 Default fields: username, email, firstname, lastname, activated, suspended.
-Use --output table for a readable ASCII table.`,
+Use --output table for a readable ASCII table.
+
+Results can be further filtered with --filter:
+  jc users search john --filter 'activated=true'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersSearch(cmd, args[0], limitFlag)
+			return runUsersSearch(cmd, args[0], limitFlag, filterFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
+	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'field=value', 'field!=value', 'field>=value')")
 
 	return cmd
 }
 
-func runUsersSearch(cmd *cobra.Command, term string, limit int) error {
+func runUsersSearch(cmd *cobra.Command, term string, limit int, filters []string) error {
+	// Parse and validate filter expressions.
+	exprs, err := filter.ParseAll(filters)
+	if err != nil {
+		return err
+	}
+
 	client, err := newV1Client()
 	if err != nil {
 		return err
@@ -151,6 +181,11 @@ func runUsersSearch(cmd *cobra.Command, term string, limit int) error {
 			"searchTerm": term,
 			"fields":     []string{"username", "email", "firstname", "lastname"},
 		},
+	}
+
+	// Add V1-style filter expressions to the search body if provided.
+	if len(exprs) > 0 {
+		searchBody["filter"] = filter.ToV1Queries(exprs)
 	}
 
 	result, err := client.Search(cmd.Context(), "/search/systemusers", searchBody, api.SearchOptions{
