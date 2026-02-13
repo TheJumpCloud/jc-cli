@@ -492,7 +492,8 @@
         "V2 client reuses the same HTTP transport layer as V1"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 API differences: pagination via Link headers, different filter syntax, different endpoint paths. The V2 client should share the transport layer from US-007 but have its own pagination logic.",
       "dependsOn": ["US-008"]
     },

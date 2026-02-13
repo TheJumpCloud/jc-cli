@@ -16,6 +16,13 @@
 - `writeListFooter()` is a shared utility for "── N of TOTAL items ──" footers
 - Test servers: `startXxxServer(t, data)` returns `*httptest.Server` matching V1 API response shape
 - `setupUsersTest(t)` reusable across resource test files (keyring, viper, config init)
+- V2 API: `V2Client` embeds `*Client` (same as V1), base URL `https://console.jumpcloud.com/api/v2`
+- V2 pagination: Link headers with `rel="next"` (RFC 5988), no totalCount in response body
+- V2 responses: bare JSON arrays `[{...}]` (not wrapped like V1 `{"results":..., "totalCount":...}`)
+- `parseLinkNext()` extracts next URL from Link header — handles multiple relations, whitespace
+- `V2ListResult` has no `TotalCount` field (unlike V1's `ListResult`) — V2 API doesn't expose it
+- `NewV2ClientWithKey(key)` / `NewV2Client()` constructors mirror V1 pattern
+- V2 client includes `Patch()` method (V2 APIs often use PATCH for partial updates)
 
 ---
 
@@ -140,4 +147,21 @@
   - `buildListURL()` was refactored to accept the full `ListOptions` struct instead of individual params — cleaner and extensible
   - Filter parsing happens before API client creation in the command layer — fast validation before network calls
   - Operator ordering in the parser matters: `>=` must be matched before `>` to avoid false matches
+---
+
+## 2026-02-13 - US-023
+- Implemented V2 API client layer with Link header pagination
+- Files created:
+  - `internal/api/v2.go` — `V2Client` struct with `ListAll()` (Link header pagination), `Get()`, `Create()`, `Update()`, `Delete()`, `Patch()` methods; `V2ListOptions`, `V2ListResult` types; `parseLinkNext()` for RFC 5988 Link header parsing; `buildV2ListURL()` with filter/sort/search/limit query params
+  - `internal/api/v2_test.go` — 27 tests covering: single/multi-page pagination, limit capping, limit < page size, empty results, context cancellation, API errors, sort/filter/search params, Link header following, Get/Create/Update/Delete/Patch success and error cases, constructors, transport sharing with V1, x-api-key auth, parseLinkNext edge cases, multi-relation Link headers
+- Files changed:
+  - `.chief/prds/main/prd.json` — marked US-023 as complete
+  - `.chief/prds/main/progress.md` — added codebase patterns for V2 client
+- **Learnings for future iterations:**
+  - V2 pagination via Link headers means the client follows opaque URLs — first request uses `buildV2ListURL()`, subsequent requests use the `nextURL` from the Link header directly
+  - V2 responses are bare JSON arrays — no wrapper object, no totalCount — so `V2ListResult` intentionally omits `TotalCount` (unlike V1's `ListResult`)
+  - `parseLinkNext()` must handle comma-separated multiple Link relations (e.g., `<prev>; rel="prev", <next>; rel="next"`)
+  - V2 client adds `Patch()` method since V2 APIs commonly use PATCH for partial updates (V1 uses PUT exclusively)
+  - V2 filter format is different from V1: V2 uses `name:eq:value` (no `$` prefix on operators)
+  - `V2Client` embeds `*Client` with overridden `BaseURL` — shares the entire transport chain (auth, logging, retry) with V1
 ---
