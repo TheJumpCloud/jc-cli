@@ -386,7 +386,8 @@
         "Cache directory created with 0700 permissions"
       ],
       "priority": 1,
-      "passes": false,
+      "inProgress": false,
+      "passes": true,
       "notes": "Cache key format: resource_type:name → id. Use file-based cache under ~/.cache/jc/. Consider bolt or badger for future, but JSON files are fine for v1.",
       "dependsOn": ["US-011", "US-015"]
     },

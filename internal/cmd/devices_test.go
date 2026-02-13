@@ -100,7 +100,7 @@ func startDevicesServer(t *testing.T, devices []map[string]any) *httptest.Server
 func sampleDevices() []map[string]any {
 	return []map[string]any{
 		{
-			"_id":          "dev-aaa111",
+			"_id":          "aaa111aaa111aaa111aaa111",
 			"displayName":  "ALICE-MBP",
 			"hostname":     "alice-mbp.local",
 			"os":           "Mac OS X",
@@ -109,7 +109,7 @@ func sampleDevices() []map[string]any {
 			"agentVersion": "3.1.0",
 		},
 		{
-			"_id":          "dev-bbb222",
+			"_id":          "bbb222bbb222bbb222bbb222",
 			"displayName":  "BOB-LINUX",
 			"hostname":     "bob-linux.local",
 			"os":           "Ubuntu",
@@ -118,7 +118,7 @@ func sampleDevices() []map[string]any {
 			"agentVersion": "3.0.5",
 		},
 		{
-			"_id":          "dev-ccc333",
+			"_id":          "ccc333ccc333ccc333ccc333",
 			"displayName":  "CHARLIE-WIN",
 			"hostname":     "charlie-win.local",
 			"os":           "Windows",
@@ -334,8 +334,8 @@ func TestDevicesList_IDs(t *testing.T) {
 	if len(lines) != 3 {
 		t.Errorf("got %d IDs, want 3: %v", len(lines), lines)
 	}
-	if lines[0] != "dev-aaa111" {
-		t.Errorf("first ID = %q, want %q", lines[0], "dev-aaa111")
+	if lines[0] != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("first ID = %q, want %q", lines[0], "aaa111aaa111aaa111aaa111")
 	}
 }
 
@@ -436,7 +436,7 @@ func TestDevicesList_DefaultFields(t *testing.T) {
 
 	devices := []map[string]any{
 		{
-			"_id":            "dev-aaa111",
+			"_id":            "aaa111aaa111aaa111aaa111",
 			"displayName":    "ALICE-MBP",
 			"hostname":       "alice-mbp.local",
 			"os":             "Mac OS X",
@@ -531,7 +531,7 @@ func TestDevicesList_Pagination(t *testing.T) {
 	devices := make([]map[string]any, 15)
 	for i := range devices {
 		devices[i] = map[string]any{
-			"_id":          fmt.Sprintf("dev-%02d", i),
+			"_id":          fmt.Sprintf("dddddddddddddddddddd%04x", i),
 			"displayName":  fmt.Sprintf("DEVICE-%02d", i),
 			"hostname":     fmt.Sprintf("device-%02d.local", i),
 			"os":           "Mac OS X",
@@ -576,7 +576,7 @@ func TestDevicesGet_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "get", "dev-aaa111"})
+	cmd.SetArgs([]string{"devices", "get", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -611,8 +611,8 @@ func TestDevicesGet_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent device, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -641,7 +641,7 @@ func TestDevicesGet_TableOutput(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "get", "dev-bbb222", "--output", "table"})
+	cmd.SetArgs([]string{"devices", "get", "bbb222bbb222bbb222bbb222", "--output", "table"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -662,7 +662,7 @@ func TestDevicesGet_HumanOutput(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "get", "dev-aaa111", "--output", "human"})
+	cmd.SetArgs([]string{"devices", "get", "aaa111aaa111aaa111aaa111", "--output", "human"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -686,14 +686,14 @@ func TestDevicesGet_IDs(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "get", "dev-aaa111", "--ids"})
+	cmd.SetArgs([]string{"devices", "get", "aaa111aaa111aaa111aaa111", "--ids"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if strings.TrimSpace(out.String()) != "dev-aaa111" {
-		t.Errorf("--ids output = %q, want %q", strings.TrimSpace(out.String()), "dev-aaa111")
+	if strings.TrimSpace(out.String()) != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("--ids output = %q, want %q", strings.TrimSpace(out.String()), "aaa111aaa111aaa111aaa111")
 	}
 }
 
@@ -704,7 +704,7 @@ func TestDevicesGet_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local","displayName":"TEST"}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local","displayName":"TEST"}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -712,14 +712,14 @@ func TestDevicesGet_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "get", "dev-abc123"})
+	cmd.SetArgs([]string{"devices", "get", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systems/dev-abc123" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systems/dev-abc123")
+	if capturedPath != "/systems/abc123abc123abc123abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systems/abc123abc123abc123abc123")
 	}
 }
 
@@ -807,7 +807,7 @@ func TestDevicesDelete_WithForce(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111", "--force"})
+	cmd.SetArgs([]string{"devices", "delete", "aaa111aaa111aaa111aaa111", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -830,7 +830,7 @@ func TestDevicesDelete_WithConfirmYes(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "delete", "dev-bbb222"})
+	cmd.SetArgs([]string{"devices", "delete", "bbb222bbb222bbb222bbb222"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -864,7 +864,7 @@ func TestDevicesDelete_WithConfirmNo(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111"})
+	cmd.SetArgs([]string{"devices", "delete", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -891,7 +891,7 @@ func TestDevicesDelete_ConfirmEmptyInput(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "delete", "dev-aaa111"})
+	cmd.SetArgs([]string{"devices", "delete", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -921,8 +921,8 @@ func TestDevicesDelete_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent device, got nil")
 	}
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -947,14 +947,14 @@ func TestDevicesDelete_APIEndpoint(t *testing.T) {
 	var capturedDeleteMethod string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
-			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local","os":"Mac OS X","lastContact":"2026-02-13T10:00:00Z"}`))
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/abc123abc123abc123abc123" {
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local","os":"Mac OS X","lastContact":"2026-02-13T10:00:00Z"}`))
 			return
 		}
 		if r.Method == http.MethodDelete {
 			capturedDeletePath = r.URL.Path
 			capturedDeleteMethod = r.Method
-			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local"}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -965,14 +965,14 @@ func TestDevicesDelete_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "delete", "dev-abc123", "--force"})
+	cmd.SetArgs([]string{"devices", "delete", "abc123abc123abc123abc123", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedDeletePath != "/systems/dev-abc123" {
-		t.Errorf("DELETE path = %q, want %q", capturedDeletePath, "/systems/dev-abc123")
+	if capturedDeletePath != "/systems/abc123abc123abc123abc123" {
+		t.Errorf("DELETE path = %q, want %q", capturedDeletePath, "/systems/abc123abc123abc123abc123")
 	}
 	if capturedDeleteMethod != http.MethodDelete {
 		t.Errorf("HTTP method = %q, want DELETE", capturedDeleteMethod)
@@ -1010,7 +1010,7 @@ func TestDevicesLock_WithForce(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111", "--force"})
+	cmd.SetArgs([]string{"devices", "lock", "aaa111aaa111aaa111aaa111", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1033,7 +1033,7 @@ func TestDevicesLock_WithConfirmYes(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111"})
+	cmd.SetArgs([]string{"devices", "lock", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1059,7 +1059,7 @@ func TestDevicesLock_WithConfirmNo(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "lock", "dev-aaa111"})
+	cmd.SetArgs([]string{"devices", "lock", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1088,8 +1088,8 @@ func TestDevicesLock_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent device, got nil")
 	}
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -1114,8 +1114,8 @@ func TestDevicesLock_APIEndpoint(t *testing.T) {
 	var capturedMethod string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
-			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/abc123abc123abc123abc123" {
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local"}`))
 			return
 		}
 		if r.Method == http.MethodPost {
@@ -1132,14 +1132,14 @@ func TestDevicesLock_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "lock", "dev-abc123", "--force"})
+	cmd.SetArgs([]string{"devices", "lock", "abc123abc123abc123abc123", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systems/dev-abc123/command/builtin/lock" {
-		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/lock")
+	if capturedPath != "/systems/abc123abc123abc123abc123/command/builtin/lock" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/abc123abc123abc123abc123/command/builtin/lock")
 	}
 	if capturedMethod != http.MethodPost {
 		t.Errorf("HTTP method = %q, want POST", capturedMethod)
@@ -1158,7 +1158,7 @@ func TestDevicesRestart_WithForce(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "restart", "dev-bbb222", "--force"})
+	cmd.SetArgs([]string{"devices", "restart", "bbb222bbb222bbb222bbb222", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1181,7 +1181,7 @@ func TestDevicesRestart_WithConfirmYes(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "restart", "dev-bbb222"})
+	cmd.SetArgs([]string{"devices", "restart", "bbb222bbb222bbb222bbb222"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1232,8 +1232,8 @@ func TestDevicesRestart_APIEndpoint(t *testing.T) {
 	var capturedPath string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
-			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/abc123abc123abc123abc123" {
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local"}`))
 			return
 		}
 		if r.Method == http.MethodPost {
@@ -1249,14 +1249,14 @@ func TestDevicesRestart_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "restart", "dev-abc123", "--force"})
+	cmd.SetArgs([]string{"devices", "restart", "abc123abc123abc123abc123", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systems/dev-abc123/command/builtin/restart" {
-		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/restart")
+	if capturedPath != "/systems/abc123abc123abc123abc123/command/builtin/restart" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/abc123abc123abc123abc123/command/builtin/restart")
 	}
 }
 
@@ -1272,7 +1272,7 @@ func TestDevicesErase_WithForceAndConfirmErase(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "erase", "dev-ccc333", "--confirm-erase", "--force"})
+	cmd.SetArgs([]string{"devices", "erase", "ccc333ccc333ccc333ccc333", "--confirm-erase", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1292,7 +1292,7 @@ func TestDevicesErase_WithoutConfirmEraseFlag(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--force"})
+	cmd.SetArgs([]string{"devices", "erase", "aaa111aaa111aaa111aaa111", "--force"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -1315,7 +1315,7 @@ func TestDevicesErase_WithConfirmPrompt(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--confirm-erase"})
+	cmd.SetArgs([]string{"devices", "erase", "aaa111aaa111aaa111aaa111", "--confirm-erase"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1341,7 +1341,7 @@ func TestDevicesErase_ConfirmNo(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"devices", "erase", "dev-aaa111", "--confirm-erase"})
+	cmd.SetArgs([]string{"devices", "erase", "aaa111aaa111aaa111aaa111", "--confirm-erase"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1392,8 +1392,8 @@ func TestDevicesErase_APIEndpoint(t *testing.T) {
 	var capturedPath string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/systems/dev-abc123" {
-			w.Write([]byte(`{"_id":"dev-abc123","hostname":"test.local"}`))
+		if r.Method == http.MethodGet && r.URL.Path == "/systems/abc123abc123abc123abc123" {
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","hostname":"test.local"}`))
 			return
 		}
 		if r.Method == http.MethodPost {
@@ -1409,14 +1409,14 @@ func TestDevicesErase_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"devices", "erase", "dev-abc123", "--confirm-erase", "--force"})
+	cmd.SetArgs([]string{"devices", "erase", "abc123abc123abc123abc123", "--confirm-erase", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systems/dev-abc123/command/builtin/erase" {
-		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/dev-abc123/command/builtin/erase")
+	if capturedPath != "/systems/abc123abc123abc123abc123/command/builtin/erase" {
+		t.Errorf("POST path = %q, want %q", capturedPath, "/systems/abc123abc123abc123abc123/command/builtin/erase")
 	}
 }
 

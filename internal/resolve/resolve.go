@@ -1,0 +1,268 @@
+package resolve
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/spf13/viper"
+)
+
+// idPattern matches JumpCloud 24-character hex IDs (MongoDB ObjectIDs).
+var idPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+
+// IsID returns true if the input looks like a JumpCloud ID (24-char hex).
+func IsID(s string) bool {
+	return idPattern.MatchString(s)
+}
+
+// cacheEntry holds a cached name→ID mapping with a timestamp.
+type cacheEntry struct {
+	ID        string    `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// cacheFile represents the on-disk cache for a single resource type.
+type cacheFile map[string]cacheEntry
+
+// Resolver resolves human-friendly names (usernames, hostnames) to JumpCloud IDs.
+// It checks if the input is already an ID, then consults a file-based cache,
+// and finally falls back to API search.
+type Resolver struct {
+	Client *api.V1Client
+
+	// nowFn returns the current time. Overridable for tests.
+	nowFn func() time.Time
+}
+
+// NewResolver creates a resolver with the given V1 client.
+func NewResolver(client *api.V1Client) *Resolver {
+	return &Resolver{
+		Client: client,
+		nowFn:  time.Now,
+	}
+}
+
+// ResourceConfig defines how to resolve names for a specific resource type.
+type ResourceConfig struct {
+	// CacheKey is the filename stem for the cache file (e.g., "users", "systems").
+	CacheKey string
+	// ListEndpoint is the V1 API endpoint for listing (e.g., "/systemusers").
+	ListEndpoint string
+	// NameField is the JSON field name used for matching (e.g., "username", "hostname").
+	NameField string
+	// IDField is the JSON field that contains the resource ID (typically "_id").
+	IDField string
+}
+
+// UserConfig is the resolution config for JumpCloud users.
+var UserConfig = ResourceConfig{
+	CacheKey:     "users",
+	ListEndpoint: "/systemusers",
+	NameField:    "username",
+	IDField:      "_id",
+}
+
+// DeviceConfig is the resolution config for JumpCloud devices (systems).
+var DeviceConfig = ResourceConfig{
+	CacheKey:     "systems",
+	ListEndpoint: "/systems",
+	NameField:    "hostname",
+	IDField:      "_id",
+}
+
+// Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
+//
+// Resolution order:
+//  1. If input matches 24-char hex pattern → return as-is (it's already an ID)
+//  2. If cache enabled and not bypassed → check cache for name→ID mapping
+//  3. Fall back to API list with name matching
+//  4. Cache the result if caching is enabled
+//
+// Returns an error if:
+//   - No match found
+//   - Multiple matches found (ambiguous)
+//   - API error occurs
+func (r *Resolver) Resolve(ctx context.Context, identifier string, cfg ResourceConfig) (string, error) {
+	// Step 1: If it looks like an ID, use it directly.
+	if IsID(identifier) {
+		return identifier, nil
+	}
+
+	noCache := viper.GetBool("no-cache")
+	cacheEnabled := viper.GetBool("cache.enabled")
+
+	// Step 2: Check the cache (if enabled and not bypassed).
+	if cacheEnabled && !noCache {
+		if id, ok := r.lookupCache(identifier, cfg.CacheKey); ok {
+			return id, nil
+		}
+	}
+
+	// Step 3: Resolve via API.
+	id, err := r.resolveViaAPI(ctx, identifier, cfg)
+	if err != nil {
+		return "", err
+	}
+
+	// Step 4: Store in cache.
+	if cacheEnabled && !noCache {
+		r.storeCache(identifier, id, cfg.CacheKey)
+	}
+
+	return id, nil
+}
+
+// lookupCache checks the on-disk cache for a name→ID mapping.
+// Returns the ID and true if found and not expired, empty string and false otherwise.
+func (r *Resolver) lookupCache(name, cacheKey string) (string, bool) {
+	cf := r.readCacheFile(cacheKey)
+	if cf == nil {
+		return "", false
+	}
+
+	entry, ok := cf[strings.ToLower(name)]
+	if !ok {
+		return "", false
+	}
+
+	// Check TTL.
+	ttl := time.Duration(viper.GetInt("cache.ttl")) * time.Second
+	if ttl <= 0 {
+		ttl = 300 * time.Second
+	}
+	if r.nowFn().Sub(entry.Timestamp) > ttl {
+		return "", false // expired
+	}
+
+	return entry.ID, true
+}
+
+// storeCache persists a name→ID mapping to the on-disk cache.
+func (r *Resolver) storeCache(name, id, cacheKey string) {
+	cf := r.readCacheFile(cacheKey)
+	if cf == nil {
+		cf = make(cacheFile)
+	}
+
+	cf[strings.ToLower(name)] = cacheEntry{
+		ID:        id,
+		Timestamp: r.nowFn(),
+	}
+
+	r.writeCacheFile(cacheKey, cf)
+}
+
+// resolveViaAPI searches the API for a resource matching the given name.
+func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceConfig) (string, error) {
+	// Fetch all resources and filter client-side by name field.
+	// We use a generous limit — name resolution typically matches 0 or 1 items.
+	result, err := r.Client.ListAll(ctx, cfg.ListEndpoint, api.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
+	}
+
+	var matches []match
+	lowerName := strings.ToLower(name)
+
+	for _, raw := range result.Data {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			continue
+		}
+
+		// Extract the name field.
+		nameRaw, ok := obj[cfg.NameField]
+		if !ok {
+			continue
+		}
+		var nameVal string
+		if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
+			continue
+		}
+
+		if strings.ToLower(nameVal) != lowerName {
+			continue
+		}
+
+		// Extract the ID field.
+		idRaw, ok := obj[cfg.IDField]
+		if !ok {
+			continue
+		}
+		var idVal string
+		if err := json.Unmarshal(idRaw, &idVal); err != nil {
+			continue
+		}
+
+		matches = append(matches, match{ID: idVal, Name: nameVal})
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("%s %q not found", cfg.NameField, name)
+	case 1:
+		return matches[0].ID, nil
+	default:
+		lines := make([]string, len(matches))
+		for i, m := range matches {
+			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
+		}
+		return "", fmt.Errorf("ambiguous %s %q matched %d resources:\n%s",
+			cfg.NameField, name, len(matches), strings.Join(lines, "\n"))
+	}
+}
+
+type match struct {
+	ID   string
+	Name string
+}
+
+// cacheDir returns the cache directory path.
+// Priority: config cache.directory → XDG_CACHE_HOME/jc → ~/.cache/jc.
+func cacheDir() string {
+	if dir := viper.GetString("cache.directory"); dir != "" {
+		return dir
+	}
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "jc")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "jc")
+}
+
+// readCacheFile reads and parses a cache file for the given resource type.
+func (r *Resolver) readCacheFile(cacheKey string) cacheFile {
+	path := filepath.Join(cacheDir(), cacheKey+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var cf cacheFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		return nil
+	}
+	return cf
+}
+
+// writeCacheFile writes the cache file for the given resource type.
+func (r *Resolver) writeCacheFile(cacheKey string, cf cacheFile) {
+	dir := cacheDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return // silently fail on cache write errors
+	}
+
+	data, err := json.MarshalIndent(cf, "", "  ")
+	if err != nil {
+		return
+	}
+
+	path := filepath.Join(dir, cacheKey+".json")
+	_ = os.WriteFile(path, data, 0600)
+}

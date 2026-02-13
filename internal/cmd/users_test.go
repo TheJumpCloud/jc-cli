@@ -143,7 +143,7 @@ func startUsersServer(t *testing.T, users []map[string]any) *httptest.Server {
 			json.Unmarshal(body, &input)
 
 			// Simulate API response — echo back fields with a generated _id.
-			input["_id"] = "new-user-id-123"
+			input["_id"] = "new123new123new123new123"
 			input["activated"] = false
 			input["suspended"] = false
 			w.WriteHeader(http.StatusOK)
@@ -271,7 +271,7 @@ func setupUsersTest(t *testing.T) {
 func sampleUsers() []map[string]any {
 	return []map[string]any{
 		{
-			"_id":       "aaa111",
+			"_id":       "aaa111aaa111aaa111aaa111",
 			"username":  "alice",
 			"email":     "alice@example.com",
 			"firstname": "Alice",
@@ -280,7 +280,7 @@ func sampleUsers() []map[string]any {
 			"suspended": false,
 		},
 		{
-			"_id":       "bbb222",
+			"_id":       "bbb222bbb222bbb222bbb222",
 			"username":  "bob",
 			"email":     "bob@example.com",
 			"firstname": "Bob",
@@ -289,7 +289,7 @@ func sampleUsers() []map[string]any {
 			"suspended": true,
 		},
 		{
-			"_id":       "ccc333",
+			"_id":       "ccc333ccc333ccc333ccc333",
 			"username":  "charlie",
 			"email":     "charlie@example.com",
 			"firstname": "Charlie",
@@ -508,8 +508,8 @@ func TestUsersList_IDs(t *testing.T) {
 	if len(lines) != 3 {
 		t.Errorf("got %d IDs, want 3: %v", len(lines), lines)
 	}
-	if lines[0] != "aaa111" {
-		t.Errorf("first ID = %q, want %q", lines[0], "aaa111")
+	if lines[0] != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("first ID = %q, want %q", lines[0], "aaa111aaa111aaa111aaa111")
 	}
 }
 
@@ -612,7 +612,7 @@ func TestUsersList_DefaultFields(t *testing.T) {
 	// User with extra fields that should not appear in default table output.
 	users := []map[string]any{
 		{
-			"_id":            "aaa111",
+			"_id":            "aaa111aaa111aaa111aaa111",
 			"username":       "alice",
 			"email":          "alice@example.com",
 			"firstname":      "Alice",
@@ -693,7 +693,7 @@ func TestUsersGet_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "get", "aaa111"})
+	cmd.SetArgs([]string{"users", "get", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -725,8 +725,8 @@ func TestUsersGet_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent user, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -755,7 +755,7 @@ func TestUsersGet_TableOutput(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "get", "bbb222", "--output", "table"})
+	cmd.SetArgs([]string{"users", "get", "bbb222bbb222bbb222bbb222", "--output", "table"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -776,7 +776,7 @@ func TestUsersGet_HumanOutput(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "get", "aaa111", "--output", "human"})
+	cmd.SetArgs([]string{"users", "get", "aaa111aaa111aaa111aaa111", "--output", "human"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -801,14 +801,14 @@ func TestUsersGet_IDs(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "get", "aaa111", "--ids"})
+	cmd.SetArgs([]string{"users", "get", "aaa111aaa111aaa111aaa111", "--ids"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if strings.TrimSpace(out.String()) != "aaa111" {
-		t.Errorf("--ids output = %q, want %q", strings.TrimSpace(out.String()), "aaa111")
+	if strings.TrimSpace(out.String()) != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("--ids output = %q, want %q", strings.TrimSpace(out.String()), "aaa111aaa111aaa111aaa111")
 	}
 }
 
@@ -819,7 +819,7 @@ func TestUsersGet_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"_id":"abc123","username":"test"}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"test"}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -827,14 +827,14 @@ func TestUsersGet_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "get", "abc123"})
+	cmd.SetArgs([]string{"users", "get", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123")
 	}
 }
 
@@ -872,7 +872,7 @@ func TestUsersCreate_Success(t *testing.T) {
 	if result["lastname"] != "Doe" {
 		t.Errorf("lastname = %v, want Doe", result["lastname"])
 	}
-	if result["_id"] != "new-user-id-123" {
+	if result["_id"] != "new123new123new123new123" {
 		t.Errorf("_id = %v, want new-user-id-123", result["_id"])
 	}
 }
@@ -952,7 +952,7 @@ func TestUsersCreate_APIEndpoint(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &capturedBody)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"_id":"new123","username":"test","email":"test@example.com"}`))
+		w.Write([]byte(`{"_id":"new123new123new123new123","username":"test","email":"test@example.com"}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -1016,7 +1016,7 @@ func TestUsersUpdate_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "update", "aaa111", "--department", "Sales", "--jobTitle", "Manager"})
+	cmd.SetArgs([]string{"users", "update", "aaa111aaa111aaa111aaa111", "--department", "Sales", "--jobTitle", "Manager"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1049,7 +1049,7 @@ func TestUsersUpdate_SingleField(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "update", "bbb222", "--email", "bob.new@example.com"})
+	cmd.SetArgs([]string{"users", "update", "bbb222bbb222bbb222bbb222", "--email", "bob.new@example.com"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1070,7 +1070,7 @@ func TestUsersUpdate_NoFields(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "update", "aaa111"})
+	cmd.SetArgs([]string{"users", "update", "aaa111aaa111aaa111aaa111"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -1110,8 +1110,8 @@ func TestUsersUpdate_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent user, got nil")
 	}
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -1127,7 +1127,7 @@ func TestUsersUpdate_APIEndpoint(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &capturedBody)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"_id":"abc123","username":"test","department":"Engineering"}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"test","department":"Engineering"}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -1135,14 +1135,14 @@ func TestUsersUpdate_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "update", "abc123", "--department", "Engineering"})
+	cmd.SetArgs([]string{"users", "update", "abc123abc123abc123abc123", "--department", "Engineering"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123")
 	}
 	if capturedMethod != http.MethodPut {
 		t.Errorf("HTTP method = %q, want PUT", capturedMethod)
@@ -1160,7 +1160,7 @@ func TestUsersUpdate_OnlySendsChangedFields(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &capturedBody)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"_id":"abc123","username":"test","department":"Sales"}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"test","department":"Sales"}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -1168,7 +1168,7 @@ func TestUsersUpdate_OnlySendsChangedFields(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "update", "abc123", "--department", "Sales"})
+	cmd.SetArgs([]string{"users", "update", "abc123abc123abc123abc123", "--department", "Sales"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1195,7 +1195,7 @@ func TestUsersDelete_WithForce(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "delete", "aaa111", "--force"})
+	cmd.SetArgs([]string{"users", "delete", "aaa111aaa111aaa111aaa111", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1218,7 +1218,7 @@ func TestUsersDelete_WithConfirmYes(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"users", "delete", "bbb222"})
+	cmd.SetArgs([]string{"users", "delete", "bbb222bbb222bbb222bbb222"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1249,7 +1249,7 @@ func TestUsersDelete_WithConfirmNo(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"users", "delete", "aaa111"})
+	cmd.SetArgs([]string{"users", "delete", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1279,8 +1279,8 @@ func TestUsersDelete_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent user, got nil")
 	}
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "Not Found") {
-		t.Errorf("error should mention 404 or Not Found, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
@@ -1305,14 +1305,14 @@ func TestUsersDelete_APIEndpoint(t *testing.T) {
 	var capturedDeleteMethod string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/systemusers/abc123" {
-			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com"}`))
+		if r.Method == http.MethodGet && r.URL.Path == "/systemusers/abc123abc123abc123abc123" {
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","email":"test@example.com"}`))
 			return
 		}
 		if r.Method == http.MethodDelete {
 			capturedDeletePath = r.URL.Path
 			capturedDeleteMethod = r.Method
-			w.Write([]byte(`{"_id":"abc123","username":"testuser"}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser"}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -1323,14 +1323,14 @@ func TestUsersDelete_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "delete", "abc123", "--force"})
+	cmd.SetArgs([]string{"users", "delete", "abc123abc123abc123abc123", "--force"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedDeletePath != "/systemusers/abc123" {
-		t.Errorf("DELETE path = %q, want %q", capturedDeletePath, "/systemusers/abc123")
+	if capturedDeletePath != "/systemusers/abc123abc123abc123abc123" {
+		t.Errorf("DELETE path = %q, want %q", capturedDeletePath, "/systemusers/abc123abc123abc123abc123")
 	}
 	if capturedDeleteMethod != http.MethodDelete {
 		t.Errorf("HTTP method = %q, want DELETE", capturedDeleteMethod)
@@ -1349,7 +1349,7 @@ func TestUsersDelete_ConfirmEmptyInput(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"users", "delete", "aaa111"})
+	cmd.SetArgs([]string{"users", "delete", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1536,8 +1536,8 @@ func TestUsersSearch_IDsOutput(t *testing.T) {
 	if len(lines) != 1 {
 		t.Errorf("got %d IDs, want 1: %v", len(lines), lines)
 	}
-	if lines[0] != "bbb222" {
-		t.Errorf("ID = %q, want %q", lines[0], "bbb222")
+	if lines[0] != "bbb222bbb222bbb222bbb222" {
+		t.Errorf("ID = %q, want %q", lines[0], "bbb222bbb222bbb222bbb222")
 	}
 }
 
@@ -1835,7 +1835,7 @@ func TestUsersList_Pagination(t *testing.T) {
 	users := make([]map[string]any, 15)
 	for i := range users {
 		users[i] = map[string]any{
-			"_id":       fmt.Sprintf("id-%02d", i),
+			"_id":       fmt.Sprintf("aaaaaaaaaaaaaaaaaa00%04x", i),
 			"username":  fmt.Sprintf("user-%02d", i),
 			"email":     fmt.Sprintf("user%02d@example.com", i),
 			"firstname": fmt.Sprintf("First%02d", i),
@@ -1881,7 +1881,7 @@ func TestUsersLock_Success(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"users", "lock", "aaa111"})
+	cmd.SetArgs([]string{"users", "lock", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1901,14 +1901,14 @@ func TestUsersLock_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
-			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com","account_locked":false}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","email":"test@example.com","account_locked":false}`))
 			return
 		}
 		capturedPath = r.URL.Path
 		capturedMethod = r.Method
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &capturedBody)
-		w.Write([]byte(`{"_id":"abc123","username":"testuser","account_locked":true}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","account_locked":true}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -1916,14 +1916,14 @@ func TestUsersLock_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "lock", "abc123"})
+	cmd.SetArgs([]string{"users", "lock", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123")
 	}
 	if capturedMethod != http.MethodPut {
 		t.Errorf("HTTP method = %q, want PUT", capturedMethod)
@@ -1976,7 +1976,7 @@ func TestUsersUnlock_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "unlock", "bbb222"})
+	cmd.SetArgs([]string{"users", "unlock", "bbb222bbb222bbb222bbb222"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -1996,14 +1996,14 @@ func TestUsersUnlock_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
-			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com","account_locked":true}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","email":"test@example.com","account_locked":true}`))
 			return
 		}
 		capturedPath = r.URL.Path
 		capturedMethod = r.Method
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &capturedBody)
-		w.Write([]byte(`{"_id":"abc123","username":"testuser","account_locked":false}`))
+		w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","account_locked":false}`))
 	}))
 	defer ts.Close()
 	overrideV1Client(t, ts.URL)
@@ -2011,14 +2011,14 @@ func TestUsersUnlock_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "unlock", "abc123"})
+	cmd.SetArgs([]string{"users", "unlock", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123")
 	}
 	if capturedMethod != http.MethodPut {
 		t.Errorf("HTTP method = %q, want PUT", capturedMethod)
@@ -2071,7 +2071,7 @@ func TestUsersResetMFA_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111"})
+	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -2097,7 +2097,7 @@ func TestUsersResetMFA_ShowsReEnrollmentWarning(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
-	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111"})
+	cmd.SetArgs([]string{"users", "reset-mfa", "aaa111aaa111aaa111aaa111"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -2118,7 +2118,7 @@ func TestUsersResetMFA_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
-			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com"}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","email":"test@example.com"}`))
 			return
 		}
 		capturedPath = r.URL.Path
@@ -2132,14 +2132,14 @@ func TestUsersResetMFA_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "reset-mfa", "abc123"})
+	cmd.SetArgs([]string{"users", "reset-mfa", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123/resetmfa" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123/resetmfa")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123/resetmfa" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123/resetmfa")
 	}
 	if capturedMethod != http.MethodPost {
 		t.Errorf("HTTP method = %q, want POST", capturedMethod)
@@ -2189,7 +2189,7 @@ func TestUsersResetPassword_Success(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "reset-password", "bbb222"})
+	cmd.SetArgs([]string{"users", "reset-password", "bbb222bbb222bbb222bbb222"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -2212,7 +2212,7 @@ func TestUsersResetPassword_APIEndpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
-			w.Write([]byte(`{"_id":"abc123","username":"testuser","email":"test@example.com"}`))
+			w.Write([]byte(`{"_id":"abc123abc123abc123abc123","username":"testuser","email":"test@example.com"}`))
 			return
 		}
 		capturedPath = r.URL.Path
@@ -2226,14 +2226,14 @@ func TestUsersResetPassword_APIEndpoint(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"users", "reset-password", "abc123"})
+	cmd.SetArgs([]string{"users", "reset-password", "abc123abc123abc123abc123"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if capturedPath != "/systemusers/abc123/expire" {
-		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123/expire")
+	if capturedPath != "/systemusers/abc123abc123abc123abc123/expire" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/systemusers/abc123abc123abc123abc123/expire")
 	}
 	if capturedMethod != http.MethodPost {
 		t.Errorf("HTTP method = %q, want POST", capturedMethod)

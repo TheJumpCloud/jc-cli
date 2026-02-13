@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,7 +11,14 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/resolve"
 )
+
+// resolveDevice resolves a hostname or ID to a JumpCloud device (system) ID.
+func resolveDevice(ctx context.Context, client *api.V1Client, identifier string) (string, error) {
+	r := resolve.NewResolver(client)
+	return r.Resolve(ctx, identifier, resolve.DeviceConfig)
+}
 
 // deviceDefaultFields is the default field subset shown for device list/table output.
 var deviceDefaultFields = []string{"displayName", "hostname", "os", "osVersion", "lastContact", "agentVersion"}
@@ -88,10 +96,10 @@ func newDevicesGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <hostname-or-id>",
 		Short: "Get a device by hostname or ID",
-		Long: `Get a single JumpCloud system (device) by ID.
+		Long: `Get a single JumpCloud system (device) by hostname or ID.
 
-Accepts a 24-character hex system ID. Name resolution (hostname → ID)
-will be available in a future release.`,
+Accepts a hostname (e.g., "JDOE-MBP") or a 24-character hex system ID.
+Hostnames are resolved to IDs automatically with caching (use --no-cache to bypass).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDevicesGet(cmd, args[0])
@@ -107,7 +115,12 @@ func runDevicesGet(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	result, err := client.Get(cmd.Context(), "/systems/"+identifier)
+	id, err := resolveDevice(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Get(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
 	}
@@ -118,10 +131,11 @@ func runDevicesGet(cmd *cobra.Command, identifier string) error {
 
 func newDevicesDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <device-id>",
+		Use:   "delete <hostname-or-id>",
 		Short: "Delete a device",
 		Long: `Delete a JumpCloud system (device).
 
+Accepts a hostname or 24-character hex system ID.
 Shows the device's hostname, OS, and last contact date before prompting for
 confirmation. Use --force to skip the confirmation prompt.`,
 		Args: cobra.ExactArgs(1),
@@ -139,8 +153,13 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
+	id, err := resolveDevice(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch the device first so we can show details in the confirmation prompt.
-	deviceData, err := client.Get(cmd.Context(), "/systems/"+identifier)
+	deviceData, err := client.Get(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
 	}
@@ -174,7 +193,7 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 		}
 	}
 
-	_, err = client.Delete(cmd.Context(), "/systems/"+identifier)
+	_, err = client.Delete(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
 	}
@@ -185,9 +204,9 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 
 func newDevicesLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "lock <device-id>",
+		Use:   "lock <hostname-or-id>",
 		Short: "Send MDM lock command to a device",
-		Long:  "Send an MDM lock command to a JumpCloud device. The device will be locked remotely.",
+		Long:  "Send an MDM lock command to a JumpCloud device. Accepts a hostname or ID. The device will be locked remotely.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDevicesMDMCommand(cmd, args[0], "lock")
@@ -198,9 +217,9 @@ func newDevicesLockCmd() *cobra.Command {
 
 func newDevicesRestartCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "restart <device-id>",
+		Use:   "restart <hostname-or-id>",
 		Short: "Send MDM restart command to a device",
-		Long:  "Send an MDM restart command to a JumpCloud device. The device will be restarted remotely.",
+		Long:  "Send an MDM restart command to a JumpCloud device. Accepts a hostname or ID. The device will be restarted remotely.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDevicesMDMCommand(cmd, args[0], "restart")
@@ -211,10 +230,11 @@ func newDevicesRestartCmd() *cobra.Command {
 
 func newDevicesEraseCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "erase <device-id>",
+		Use:   "erase <hostname-or-id>",
 		Short: "Send MDM erase command to a device",
 		Long: `Send an MDM erase command to a JumpCloud device.
 
+Accepts a hostname or 24-character hex system ID.
 WARNING: This will WIPE ALL DATA on the device. This action is irreversible.
 The --confirm-erase flag is REQUIRED as a safety measure.`,
 		Args: cobra.ExactArgs(1),
@@ -237,8 +257,13 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 		return err
 	}
 
+	id, err := resolveDevice(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch device to get hostname for confirmation message.
-	deviceData, err := client.Get(cmd.Context(), "/systems/"+identifier)
+	deviceData, err := client.Get(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
 	}
@@ -269,7 +294,7 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 		}
 	}
 
-	_, err = client.Post(cmd.Context(), "/systems/"+identifier+"/command/builtin/"+action, nil)
+	_, err = client.Post(cmd.Context(), "/systems/"+id+"/command/builtin/"+action, nil)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
 // userDefaultFields is the default field subset shown for user list/table output.
@@ -30,6 +32,12 @@ func getConfirmReader() *bufio.Reader {
 		return confirmReader
 	}
 	return bufio.NewReader(os.Stdin)
+}
+
+// resolveUser resolves a username or ID to a JumpCloud user ID.
+func resolveUser(ctx context.Context, client *api.V1Client, identifier string) (string, error) {
+	r := resolve.NewResolver(client)
+	return r.Resolve(ctx, identifier, resolve.UserConfig)
 }
 
 func newUsersCmd() *cobra.Command {
@@ -170,10 +178,10 @@ func newUsersGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <username-or-id>",
 		Short: "Get a user by username or ID",
-		Long: `Get a single JumpCloud user by ID.
+		Long: `Get a single JumpCloud user by username or ID.
 
-Accepts a 24-character hex user ID. Name resolution (username → ID)
-will be available in a future release.`,
+Accepts a username (e.g., "jdoe") or a 24-character hex user ID.
+Usernames are resolved to IDs automatically with caching (use --no-cache to bypass).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersGet(cmd, args[0])
@@ -189,7 +197,12 @@ func runUsersGet(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	result, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -264,10 +277,11 @@ func newUsersUpdateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "update <user-id>",
+		Use:   "update <username-or-id>",
 		Short: "Update a user",
 		Long: `Update an existing JumpCloud system user.
 
+Accepts a username or 24-character hex user ID.
 Specify only the fields you want to change. The updated user object is returned.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -313,7 +327,12 @@ func runUsersUpdate(cmd *cobra.Command, identifier, email, firstname, lastname, 
 		return err
 	}
 
-	result, err := client.Update(cmd.Context(), "/systemusers/"+identifier, body)
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/systemusers/"+id, body)
 	if err != nil {
 		return err
 	}
@@ -324,10 +343,11 @@ func runUsersUpdate(cmd *cobra.Command, identifier, email, firstname, lastname, 
 
 func newUsersDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <user-id>",
+		Use:   "delete <username-or-id>",
 		Short: "Delete a user",
 		Long: `Delete a JumpCloud system user.
 
+Accepts a username or 24-character hex user ID.
 Shows the user's username and email before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args: cobra.ExactArgs(1),
@@ -345,8 +365,13 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch the user first so we can show details in the confirmation prompt.
-	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -374,7 +399,7 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 		}
 	}
 
-	_, err = client.Delete(cmd.Context(), "/systemusers/"+identifier)
+	_, err = client.Delete(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -385,9 +410,9 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 
 func newUsersLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "lock <user-id>",
+		Use:   "lock <username-or-id>",
 		Short: "Lock a user account",
-		Long:  "Lock a JumpCloud user account by setting account_locked=true.",
+		Long:  "Lock a JumpCloud user account by setting account_locked=true. Accepts a username or ID.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersLockUnlock(cmd, args[0], true)
@@ -398,9 +423,9 @@ func newUsersLockCmd() *cobra.Command {
 
 func newUsersUnlockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "unlock <user-id>",
+		Use:   "unlock <username-or-id>",
 		Short: "Unlock a user account",
-		Long:  "Unlock a JumpCloud user account by setting account_locked=false.",
+		Long:  "Unlock a JumpCloud user account by setting account_locked=false. Accepts a username or ID.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersLockUnlock(cmd, args[0], false)
@@ -415,8 +440,13 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 		return err
 	}
 
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch user to get username for confirmation message.
-	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -431,7 +461,7 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 	body := map[string]any{
 		"account_locked": lock,
 	}
-	_, err = client.Update(cmd.Context(), "/systemusers/"+identifier, body)
+	_, err = client.Update(cmd.Context(), "/systemusers/"+id, body)
 	if err != nil {
 		return err
 	}
@@ -446,10 +476,11 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 
 func newUsersResetMFACmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset-mfa <user-id>",
+		Use:   "reset-mfa <username-or-id>",
 		Short: "Reset MFA enrollment for a user",
 		Long: `Reset TOTP/MFA enrollment for a JumpCloud user.
 
+Accepts a username or 24-character hex user ID.
 The user will need to re-enroll in MFA on their next login.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -465,8 +496,13 @@ func runUsersResetMFA(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch user to get username for confirmation message.
-	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -478,7 +514,7 @@ func runUsersResetMFA(cmd *cobra.Command, identifier string) error {
 		return fmt.Errorf("parsing user data: %w", err)
 	}
 
-	_, err = client.Post(cmd.Context(), "/systemusers/"+identifier+"/resetmfa", nil)
+	_, err = client.Post(cmd.Context(), "/systemusers/"+id+"/resetmfa", nil)
 	if err != nil {
 		return err
 	}
@@ -489,9 +525,9 @@ func runUsersResetMFA(cmd *cobra.Command, identifier string) error {
 
 func newUsersResetPasswordCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset-password <user-id>",
+		Use:   "reset-password <username-or-id>",
 		Short: "Trigger a password reset for a user",
-		Long:  "Trigger a password reset email for a JumpCloud user. The user's password will expire and they will be prompted to set a new one.",
+		Long:  "Trigger a password reset email for a JumpCloud user. Accepts a username or ID. The user's password will expire and they will be prompted to set a new one.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersResetPassword(cmd, args[0])
@@ -506,8 +542,13 @@ func runUsersResetPassword(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
 	// Fetch user to get username for confirmation message.
-	userData, err := client.Get(cmd.Context(), "/systemusers/"+identifier)
+	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
 	}
@@ -519,7 +560,7 @@ func runUsersResetPassword(cmd *cobra.Command, identifier string) error {
 		return fmt.Errorf("parsing user data: %w", err)
 	}
 
-	_, err = client.Post(cmd.Context(), "/systemusers/"+identifier+"/expire", nil)
+	_, err = client.Post(cmd.Context(), "/systemusers/"+id+"/expire", nil)
 	if err != nil {
 		return err
 	}

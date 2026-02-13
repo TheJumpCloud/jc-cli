@@ -81,3 +81,24 @@
   - `startDevicesServer` needed to be updated to switch on HTTP method (GET/DELETE) for `/systems/{id}` routes
   - `overrideDevicesConfirmReader` is a thin wrapper around the shared `confirmReader` — same pattern as `overrideConfirmReader` in users_test.go
 ---
+
+## 2026-02-13 - US-018
+- Implemented name-to-ID resolution with file-based caching
+- Files created:
+  - `internal/resolve/resolve.go` — `Resolver` struct with `Resolve()`, `IsID()` (24-char hex detection), `ResourceConfig` for users/devices, JSON file cache with configurable TTL, `--no-cache` bypass, ambiguous match error handling, cache dir created with 0700 permissions
+  - `internal/resolve/resolve_test.go` — 14 tests covering IsID valid/invalid, ID passthrough, user by username, device by hostname, case-insensitive, not found, ambiguous, cache hit, cache expired, cache stored, --no-cache flag, cache disabled, cache dir creation
+- Files changed:
+  - `internal/cmd/users.go` — added `resolveUser()` helper, integrated resolver into get/update/delete/lock/unlock/reset-mfa/reset-password commands, updated Use/Long descriptions to show `<username-or-id>`
+  - `internal/cmd/devices.go` — added `resolveDevice()` helper, integrated resolver into get/delete/MDM commands, updated Use/Long descriptions to show `<hostname-or-id>`
+  - `internal/cmd/users_test.go` — migrated all IDs to 24-char hex strings (required by IsID), updated "not found" error assertions from HTTP 404 to resolver error format
+  - `internal/cmd/devices_test.go` — same ID migration and error assertion updates as users_test.go
+  - `.chief/prds/main/prd.json` — marked US-018 as complete
+- **Learnings for future iterations:**
+  - `IsID()` uses `regexp.MustCompile("^[0-9a-fA-F]{24}$")` — all test IDs must be exactly 24 hex chars or the resolver tries API lookup
+  - Resolver uses `ListAll()` to fetch all resources, then filters client-side by name field — maximally compatible with V1 API
+  - `ResourceConfig` pattern makes resolver resource-agnostic: just specify CacheKey, ListEndpoint, NameField, IDField
+  - File-based JSON cache: one file per resource type (users.json, systems.json) under `~/.cache/jc/`
+  - Cache uses lowercase name keys for case-insensitive matching
+  - Thin `resolveUser()`/`resolveDevice()` helpers in command files keep resolver integration minimal
+  - When updating test IDs, must also update: mock server path handlers, inline JSON strings, expected API path assertions, and ID comparison values
+---
