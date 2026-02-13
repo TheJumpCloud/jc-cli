@@ -282,6 +282,111 @@ func (c *V1Client) Delete(ctx context.Context, endpoint string) (json.RawMessage
 	return body, nil
 }
 
+// SearchOptions controls search behavior for V1 search endpoints.
+type SearchOptions struct {
+	// Limit is the maximum total number of results to return (0 = no limit).
+	Limit int
+	// Sort is the field to sort by. Prefix with "-" for descending order.
+	Sort string
+}
+
+// Search sends a POST request to a V1 search endpoint and returns all matching results.
+// The endpoint should be a path like "/search/systemusers" (appended to BaseURL).
+// The searchBody is the JSON request body containing search filters.
+// Results are accumulated with automatic pagination and returned as a ListResult.
+func (c *V1Client) Search(ctx context.Context, endpoint string, searchBody any, opts SearchOptions) (*ListResult, error) {
+	pageSize := DefaultPageSize
+	if opts.Limit > 0 && opts.Limit < pageSize {
+		pageSize = opts.Limit
+	}
+
+	var allResults []json.RawMessage
+	var totalCount int
+	skip := 0
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		// Marshal the search body and inject pagination fields.
+		rawBody, err := json.Marshal(searchBody)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling search body: %w", err)
+		}
+
+		// Parse into a map to inject pagination params.
+		var bodyMap map[string]any
+		if err := json.Unmarshal(rawBody, &bodyMap); err != nil {
+			return nil, fmt.Errorf("parsing search body: %w", err)
+		}
+		bodyMap["skip"] = skip
+		bodyMap["limit"] = pageSize
+		if opts.Sort != "" {
+			bodyMap["sort"] = opts.Sort
+		}
+
+		paginatedBody, err := json.Marshal(bodyMap)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling paginated body: %w", err)
+		}
+
+		reqURL := c.BaseURL + endpoint
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(paginatedBody))
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, NewAPIError(resp.StatusCode, endpoint, body)
+		}
+
+		var listResp v1ListResponse
+		if err := json.Unmarshal(body, &listResp); err != nil {
+			return nil, fmt.Errorf("parsing response: %w", err)
+		}
+
+		totalCount = listResp.TotalCount
+
+		var pageItems []json.RawMessage
+		if err := json.Unmarshal(listResp.Results, &pageItems); err != nil {
+			return nil, fmt.Errorf("parsing results array: %w", err)
+		}
+
+		allResults = append(allResults, pageItems...)
+
+		if opts.Limit > 0 && len(allResults) >= opts.Limit {
+			allResults = allResults[:opts.Limit]
+			break
+		}
+
+		skip += len(pageItems)
+		if skip >= listResp.TotalCount || len(pageItems) == 0 {
+			break
+		}
+
+		if opts.Limit > 0 {
+			remaining := opts.Limit - len(allResults)
+			if remaining < pageSize {
+				pageSize = remaining
+			}
+		}
+	}
+
+	return &ListResult{Data: allResults, TotalCount: totalCount}, nil
+}
+
 // buildListURL constructs the full URL for a V1 list request with pagination params.
 func (c *V1Client) buildListURL(endpoint string, skip, limit int, sort string) (string, error) {
 	u, err := url.Parse(c.BaseURL + endpoint)

@@ -49,6 +49,64 @@ func startUsersServer(t *testing.T, users []map[string]any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		// POST /search/systemusers — search endpoint.
+		if r.URL.Path == "/search/systemusers" && r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var searchReq map[string]any
+			json.Unmarshal(body, &searchReq)
+
+			skip := 0
+			limit := 100
+			if v, ok := searchReq["skip"].(float64); ok {
+				skip = int(v)
+			}
+			if v, ok := searchReq["limit"].(float64); ok {
+				limit = int(v)
+			}
+
+			// Extract search term and filter users by matching across fields.
+			var matched []map[string]any
+			term := ""
+			if sf, ok := searchReq["searchFilter"].(map[string]any); ok {
+				if st, ok := sf["searchTerm"].(string); ok {
+					term = strings.ToLower(st)
+				}
+			}
+			for _, u := range users {
+				if term == "" {
+					matched = append(matched, u)
+					continue
+				}
+				// Case-insensitive search across username, email, firstname, lastname.
+				for _, field := range []string{"username", "email", "firstname", "lastname"} {
+					if v, ok := u[field].(string); ok && strings.Contains(strings.ToLower(v), term) {
+						matched = append(matched, u)
+						break
+					}
+				}
+			}
+
+			total := len(matched)
+			end := skip + limit
+			if end > total {
+				end = total
+			}
+			var page []map[string]any
+			if skip < total {
+				page = matched[skip:end]
+			}
+			if page == nil {
+				page = []map[string]any{}
+			}
+
+			resp := map[string]any{
+				"results":    page,
+				"totalCount": total,
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
 		// GET /systemusers — list endpoint.
 		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
 			skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
@@ -1269,6 +1327,321 @@ func TestUsersDelete_ConfirmEmptyInput(t *testing.T) {
 	}
 }
 
+// --- Users Search Tests ---
+
+func TestUsersSearch_Success(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "alice"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, out.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d results, want 1 (only alice matches)", len(result))
+	}
+	if len(result) > 0 && result[0]["username"] != "alice" {
+		t.Errorf("username = %v, want alice", result[0]["username"])
+	}
+}
+
+func TestUsersSearch_MultipleMatches(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	// "example.com" appears in all users' emails.
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "example.com"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 3 {
+		t.Errorf("got %d results, want 3 (all users match 'example.com')", len(result))
+	}
+}
+
+func TestUsersSearch_NoResults(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "zzznomatch"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if strings.TrimSpace(out.String()) != "[]" {
+		t.Errorf("expected empty JSON array, got: %q", out.String())
+	}
+}
+
+func TestUsersSearch_CaseInsensitive(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "ALICE"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d results, want 1 (case-insensitive match for ALICE)", len(result))
+	}
+}
+
+func TestUsersSearch_WithLimit(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "example.com", "--limit", "1"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d results, want 1 (limit=1)", len(result))
+	}
+}
+
+func TestUsersSearch_TableOutput(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "bob", "--output", "table"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "USERNAME") {
+		t.Errorf("table output missing USERNAME header:\n%s", output)
+	}
+	if !strings.Contains(output, "bob") {
+		t.Errorf("table output missing user 'bob':\n%s", output)
+	}
+}
+
+func TestUsersSearch_IDsOutput(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "bob", "--ids"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 1 {
+		t.Errorf("got %d IDs, want 1: %v", len(lines), lines)
+	}
+	if lines[0] != "bbb222" {
+		t.Errorf("ID = %q, want %q", lines[0], "bbb222")
+	}
+}
+
+func TestUsersSearch_Footer(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"users", "search", "example.com"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	footer := errOut.String()
+	if !strings.Contains(footer, "3 items") {
+		t.Errorf("footer missing count info: %q", footer)
+	}
+}
+
+func TestUsersSearch_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing search term, got nil")
+	}
+}
+
+func TestUsersSearch_APIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	var capturedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "findme"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/search/systemusers" {
+		t.Errorf("API path = %q, want %q", capturedPath, "/search/systemusers")
+	}
+	if capturedMethod != http.MethodPost {
+		t.Errorf("HTTP method = %q, want POST", capturedMethod)
+	}
+
+	// Verify search filter is in the request body.
+	sf, ok := capturedBody["searchFilter"].(map[string]any)
+	if !ok {
+		t.Fatalf("searchFilter missing from request body: %v", capturedBody)
+	}
+	if sf["searchTerm"] != "findme" {
+		t.Errorf("searchTerm = %v, want findme", sf["searchTerm"])
+	}
+	fields, ok := sf["fields"].([]any)
+	if !ok || len(fields) == 0 {
+		t.Fatalf("fields missing from searchFilter: %v", sf)
+	}
+	expectedFields := map[string]bool{"username": true, "email": true, "firstname": true, "lastname": true}
+	for _, f := range fields {
+		if !expectedFields[f.(string)] {
+			t.Errorf("unexpected search field: %v", f)
+		}
+	}
+}
+
+func TestUsersSearch_APIError(t *testing.T) {
+	setupUsersTest(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"message":"Unauthorized"}`))
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "test"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected auth error, got nil")
+	}
+}
+
+func TestUsersSearch_FooterWithLimit(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"users", "search", "example.com", "--limit", "2"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	footer := errOut.String()
+	if !strings.Contains(footer, "2 of 3 items") {
+		t.Errorf("footer should show '2 of 3 items', got: %q", footer)
+	}
+}
+
 // --- Help Output Tests ---
 
 func TestUsersCmd_Help(t *testing.T) {
@@ -1290,6 +1663,9 @@ func TestUsersCmd_Help(t *testing.T) {
 	}
 	if !strings.Contains(help, "get") {
 		t.Errorf("users help should mention 'get' subcommand:\n%s", help)
+	}
+	if !strings.Contains(help, "search") {
+		t.Errorf("users help should mention 'search' subcommand:\n%s", help)
 	}
 	if !strings.Contains(help, "create") {
 		t.Errorf("users help should mention 'create' subcommand:\n%s", help)
@@ -1321,6 +1697,28 @@ func TestUsersListCmd_Help(t *testing.T) {
 	}
 	if !strings.Contains(help, "--sort") {
 		t.Errorf("list help should mention --sort flag:\n%s", help)
+	}
+}
+
+func TestUsersSearchCmd_Help(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "search", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	help := out.String()
+	if !strings.Contains(help, "--limit") {
+		t.Errorf("search help should mention --limit flag:\n%s", help)
+	}
+	if !strings.Contains(help, "search") {
+		t.Errorf("search help should mention 'search':\n%s", help)
 	}
 }
 

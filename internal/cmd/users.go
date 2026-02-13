@@ -36,11 +36,12 @@ func newUsersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "users",
 		Short: "Manage JumpCloud users",
-		Long:  "List, get, create, update, and delete JumpCloud system users.",
+		Long:  "List, get, search, create, update, and delete JumpCloud system users.",
 	}
 
 	cmd.AddCommand(newUsersListCmd())
 	cmd.AddCommand(newUsersGetCmd())
+	cmd.AddCommand(newUsersSearchCmd())
 	cmd.AddCommand(newUsersCreateCmd())
 	cmd.AddCommand(newUsersUpdateCmd())
 	cmd.AddCommand(newUsersDeleteCmd())
@@ -94,6 +95,66 @@ func runUsersList(cmd *cobra.Command, limit int, sort string) error {
 	}
 
 	// Print footer with count info (only in non-quiet, non-IDs mode).
+	if !opts.Quiet && !opts.IDsOnly {
+		writeListFooter(cmd, len(result.Data), result.TotalCount)
+	}
+
+	return nil
+}
+
+func newUsersSearchCmd() *cobra.Command {
+	var (
+		limitFlag int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "search <term>",
+		Short: "Search for users by keyword",
+		Long: `Search for JumpCloud users by keyword across username, email, firstname, and lastname fields.
+
+Uses the V1 POST /api/search/systemusers endpoint for case-insensitive searching.
+Default fields: username, email, firstname, lastname, activated, suspended.
+Use --output table for a readable ASCII table.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersSearch(cmd, args[0], limitFlag)
+		},
+	}
+
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
+
+	return cmd
+}
+
+func runUsersSearch(cmd *cobra.Command, term string, limit int) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	// Build the V1 search request body.
+	// The searchFilter uses $or to match across multiple fields with case-insensitive regex.
+	searchBody := map[string]any{
+		"searchFilter": map[string]any{
+			"searchTerm": term,
+			"fields":     []string{"username", "email", "firstname", "lastname"},
+		},
+	}
+
+	result, err := client.Search(cmd.Context(), "/search/systemusers", searchBody, api.SearchOptions{
+		Limit: limit,
+	})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = userDefaultFields
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
 	if !opts.Quiet && !opts.IDsOnly {
 		writeListFooter(cmd, len(result.Data), result.TotalCount)
 	}

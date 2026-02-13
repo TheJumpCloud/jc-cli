@@ -5,7 +5,8 @@
 - List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
 - `--limit` and `--sort` are local flags on `list` subcommands (not global)
 - `overrideV1Client(t, serverURL)` test helper redirects V1 client to httptest servers
-- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests (handles GET/POST/PUT/DELETE)
+- `startUsersServer(t, users)` pattern for creating mock JumpCloud API servers in tests (handles GET/POST/PUT/DELETE, and POST /search/systemusers)
+- V1Client `Search(ctx, endpoint, searchBody, SearchOptions)` for POST-based search endpoints — injects pagination (skip/limit/sort) into request body
 - `confirmReader` package-level var + `overrideConfirmReader(t, input)` for testable confirmation prompts
 - `cmd.Flags().Changed("flag")` to detect explicitly set flags — only send changed fields in update requests
 - V1Client mutation methods: `Create(ctx, endpoint, body)`, `Update(ctx, endpoint, body)`, `Delete(ctx, endpoint)` — all return `json.RawMessage`
@@ -329,4 +330,32 @@
   - Cobra's `MarkFlagRequired()` validates before RunE runs — it produces "required flag(s) \"username\" not set" errors automatically, no custom validation needed.
   - DELETE endpoint fetches the user first (GET) to show username/email in the confirmation prompt. This means a non-existent user errors before the prompt even appears — good UX.
   - The test server now routes by both path AND method — important when POST /systemusers (create) and GET /systemusers (list) share the same path.
+---
+
+## 2026-02-13 - US-013
+- What was implemented:
+  - `jc users search <term>` — searches JumpCloud users by keyword via POST /api/search/systemusers
+  - Search matches across username, email, firstname, and lastname fields (case-insensitive)
+  - Results returned as JSON array matching standard list format with same default fields
+  - `--limit N` flag on search — caps total results returned
+  - `--output table` works for visual scanning
+  - `--ids` mode outputs one ID per line
+  - Empty results return empty array with exit code 0
+  - List footer shows "── N items ──" or "── N of TOTAL items ──" (to stderr)
+  - V1Client `Search(ctx, endpoint, searchBody, SearchOptions)` — POST-based search with automatic pagination
+  - Search method injects skip/limit/sort into request body alongside the original search filter
+  - Reuses same `v1ListResponse` parser since search and list APIs share the response format
+  - Updated test server `startUsersServer()` to handle POST /search/systemusers with case-insensitive matching
+- Files changed:
+  - internal/api/v1.go — added `SearchOptions` struct, `Search()` method with automatic pagination
+  - internal/api/v1_test.go — added 6 tests: search success, limit, empty results, API error, pagination params, sort
+  - internal/cmd/users.go — added `newUsersSearchCmd()`, `runUsersSearch()`, registered search subcommand
+  - internal/cmd/users_test.go — added 13 new tests: search success, multiple matches, no results, case-insensitive, limit, table output, IDs output, footer, missing arg, API endpoint verification, API error, footer with limit, search help
+  - .chief/prds/main/prd.json — marked US-013 passes
+  - progress.md — added codebase patterns and progress entry
+- **Learnings for future iterations:**
+  - JumpCloud V1 search API (`POST /api/search/systemusers`) uses a `searchFilter` object with `searchTerm` and `fields` array in the request body. The response format is identical to list endpoints (`{"results": [...], "totalCount": N}`).
+  - The `Search()` method injects pagination params (skip, limit, sort) directly into the search request body by marshalling to a map, adding fields, then re-marshalling. This preserves the original search filter while adding pagination.
+  - Test server for search matches by iterating users and checking each search field with `strings.Contains(strings.ToLower(...))` — simple case-insensitive substring matching that mirrors the API behavior.
+  - The search command reuses the exact same output pattern as `users list` (WriteList + writeListFooter) since both return the same data shape.
 ---

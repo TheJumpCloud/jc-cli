@@ -580,6 +580,185 @@ func TestV1Client_Delete_NotFound(t *testing.T) {
 	}
 }
 
+// --- Search Tests ---
+
+func TestV1Client_Search_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/search/systemusers" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response([]map[string]any{
+			{"_id": "1", "username": "alice"},
+			{"_id": "2", "username": "alicia"},
+		}, 2))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	searchBody := map[string]any{
+		"searchFilter": map[string]any{
+			"searchTerm": "ali",
+			"fields":     []string{"username"},
+		},
+	}
+	result, err := c.Search(context.Background(), "/search/systemusers", searchBody, SearchOptions{})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(result.Data) != 2 {
+		t.Errorf("got %d results, want 2", len(result.Data))
+	}
+	if result.TotalCount != 2 {
+		t.Errorf("TotalCount = %d, want 2", result.TotalCount)
+	}
+}
+
+func TestV1Client_Search_WithLimit(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response([]map[string]any{
+			{"_id": "1", "username": "alice"},
+			{"_id": "2", "username": "alicia"},
+			{"_id": "3", "username": "alex"},
+		}, 3))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.Search(context.Background(), "/search/systemusers", map[string]any{}, SearchOptions{Limit: 2})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(result.Data) != 2 {
+		t.Errorf("got %d results, want 2 (limit=2)", len(result.Data))
+	}
+}
+
+func TestV1Client_Search_EmptyResults(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response([]map[string]any{}, 0))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.Search(context.Background(), "/search/systemusers", map[string]any{}, SearchOptions{})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(result.Data) != 0 {
+		t.Errorf("got %d results, want 0", len(result.Data))
+	}
+}
+
+func TestV1Client_Search_APIError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"message":"Unauthorized"}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Search(context.Background(), "/search/systemusers", map[string]any{}, SearchOptions{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestV1Client_Search_PaginationParams(t *testing.T) {
+	var capturedBodies []map[string]any
+	totalItems := 5
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		capturedBodies = append(capturedBodies, body)
+
+		skip := 0
+		limit := 100
+		if v, ok := body["skip"].(float64); ok {
+			skip = int(v)
+		}
+		if v, ok := body["limit"].(float64); ok {
+			limit = int(v)
+		}
+
+		var items []map[string]any
+		end := skip + limit
+		if end > totalItems {
+			end = totalItems
+		}
+		for i := skip; i < end; i++ {
+			items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response(items, totalItems))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.Search(context.Background(), "/search/systemusers", map[string]any{
+		"searchFilter": map[string]any{"searchTerm": "test"},
+	}, SearchOptions{})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+
+	if len(result.Data) != 5 {
+		t.Errorf("got %d results, want 5", len(result.Data))
+	}
+
+	// Verify pagination params were injected into request bodies.
+	if len(capturedBodies) < 1 {
+		t.Fatalf("expected at least 1 request, got %d", len(capturedBodies))
+	}
+	if capturedBodies[0]["skip"] != float64(0) {
+		t.Errorf("first request skip = %v, want 0", capturedBodies[0]["skip"])
+	}
+	// Verify that original search filter is preserved.
+	if sf, ok := capturedBodies[0]["searchFilter"].(map[string]any); ok {
+		if sf["searchTerm"] != "test" {
+			t.Errorf("searchTerm = %v, want test", sf["searchTerm"])
+		}
+	} else {
+		t.Error("searchFilter missing from paginated request")
+	}
+}
+
+func TestV1Client_Search_WithSort(t *testing.T) {
+	var capturedBody map[string]any
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response([]map[string]any{}, 0))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.Search(context.Background(), "/search/systemusers", map[string]any{}, SearchOptions{Sort: "-username"})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+
+	if capturedBody["sort"] != "-username" {
+		t.Errorf("sort = %v, want -username", capturedBody["sort"])
+	}
+}
+
 func TestNewV1Client_NoAPIKey(t *testing.T) {
 	resetViper()
 	defer resetViper()

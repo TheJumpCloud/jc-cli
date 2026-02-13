@@ -280,7 +280,8 @@
         "Results can be limited with --limit flag"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V1 Search API uses POST with JSON body containing search filter. This is different from the list+filter approach.",
       "dependsOn": ["US-011"]
     },
