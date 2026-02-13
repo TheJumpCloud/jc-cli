@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -8,10 +9,8 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/klaassen-consulting/jc/internal/version"
 )
-
-// Version is set at build time via -ldflags.
-var Version = "dev"
 
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
@@ -22,7 +21,7 @@ func NewRootCmd() *cobra.Command {
 It covers the full JumpCloud API surface (v1, v2, Directory Insights) with
 built-in MCP server support, a recipe system, plan mode, and conversational
 interface.`,
-		Version:       Version,
+		Version:       version.Number,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -31,6 +30,7 @@ interface.`,
 
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newCompletionCmd())
+	rootCmd.AddCommand(newAuthCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -70,7 +70,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the jc version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", Version)
+			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", version.Number)
 		},
 	}
 }
@@ -125,6 +125,11 @@ func Execute() {
 
 	rootCmd := NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {
+		// Check for ExitError with a specific exit code.
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.Code)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

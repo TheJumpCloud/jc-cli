@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/cmd"
+	"github.com/klaassen-consulting/jc/internal/version"
 	"github.com/klaassen-consulting/jc/internal/config"
 )
 
@@ -64,7 +64,7 @@ func RedactKey(key string) string {
 
 // userAgent returns the User-Agent string for API requests.
 func userAgent() string {
-	return fmt.Sprintf("jc/%s (Go; %s/%s)", cmd.Version, runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("jc/%s (Go; %s/%s)", version.Number, runtime.GOOS, runtime.GOARCH)
 }
 
 // authTransport is an http.RoundTripper that injects authentication headers

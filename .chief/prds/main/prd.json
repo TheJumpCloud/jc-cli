@@ -124,7 +124,8 @@
         "'jc auth status --output json' returns structured JSON for scripting"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use survey or huh for interactive prompts. Masked input critical for API key entry. The login flow should feel similar to 'gh auth login'.",
       "dependsOn": ["US-005"]
     },

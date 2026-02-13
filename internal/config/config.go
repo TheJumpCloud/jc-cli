@@ -219,3 +219,54 @@ func NoColorFromEnv() bool {
 	}
 	return strings.TrimSpace(os.Getenv("JC_NO_COLOR")) != ""
 }
+
+// SetProfileField sets a single field in a profile's config section and writes
+// the config file. It reads the existing YAML, updates the specific field, and
+// writes back atomically (via temp file + rename) to preserve file structure.
+func SetProfileField(profile, key, value string) error {
+	viperKey := fmt.Sprintf("profiles.%s.%s", profile, key)
+	viper.Set(viperKey, value)
+	return writeConfig()
+}
+
+// SetActiveProfile sets the active_profile field in the config file.
+func SetActiveProfile(profile string) error {
+	viper.Set("active_profile", profile)
+	return writeConfig()
+}
+
+// RemoveProfileField removes a field from a profile by setting it to empty.
+func RemoveProfileField(profile, key string) error {
+	return SetProfileField(profile, key, "")
+}
+
+// writeConfig writes the current Viper config to the config file atomically.
+func writeConfig() error {
+	cfgPath := ConfigPath()
+
+	// Ensure the directory exists.
+	dir := filepath.Dir(cfgPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("cannot create config directory: %w", err)
+	}
+
+	// Write to a temp file first, then rename for atomicity.
+	// Use .yaml extension so Viper recognizes the config format.
+	tmp := cfgPath + ".tmp.yaml"
+	if err := viper.WriteConfigAs(tmp); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Set restrictive permissions on the temp file.
+	if err := os.Chmod(tmp, 0600); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to set config permissions: %w", err)
+	}
+
+	if err := os.Rename(tmp, cfgPath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return nil
+}

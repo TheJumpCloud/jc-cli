@@ -18,6 +18,13 @@
 - `config.APIKey()` resolves keychain refs — all consumers (api.Client, auth commands) get keychain support automatically
 - Use `keyring.MockInit()` in tests to avoid real keychain access; `keyring.MockInitWithError(err)` to simulate failures
 - Config stores `keychain://jc/<profile>` as the `api_key` value to indicate the real key lives in the OS keychain
+- Version string lives in `internal/version/version.go` (shared by cmd and api packages to avoid circular imports)
+- Ldflags target: `-X 'module/internal/version.Number=$(VERSION)'`
+- Auth commands in `internal/cmd/auth.go`; `newAPIClient` var enables test overrides of the API base URL
+- `ExitError{Code: N}` type for non-standard exit codes (e.g., exit 3 for auth failure); handled in `Execute()`
+- `config.SetProfileField(profile, key, value)` and `config.SetActiveProfile(profile)` for config writes
+- `viper.WriteConfigAs()` requires a `.yaml` extension — use `.tmp.yaml` for atomic writes, not `.tmp`
+- `InputReader` interface abstracts stdin for auth commands; tests inject `mockInput`
 ---
 
 ## 2026-02-13 - US-001
@@ -94,4 +101,31 @@
   - The `keychain` package intentionally has NO import of `config` to avoid circular dependencies. Config depends on keychain, not vice versa.
   - Keychain service name is "jc" and account name is the profile name — this matches the acceptance criteria.
   - `jc auth login` (US-006) will use `keychain.Set()` + write `keychain://jc/<profile>` to config. `jc auth logout` will use `keychain.Delete()`.
+---
+
+## 2026-02-13 - US-006
+- What was implemented:
+  - `jc auth login` — interactive API key entry with masked input via `golang.org/x/term`, validates key via GET /api/organizations, stores in OS keychain, writes `keychain://jc/<profile>` ref to config. Falls back to plaintext config if keychain unavailable. Optionally sets org_id from API response.
+  - `jc auth login --profile <name>` — creates or updates a named profile and switches active_profile.
+  - `jc auth status` — shows authenticated (yes/no), profile, org name, org ID, redacted API key. Returns exit code 3 via `ExitError` when not authenticated. Supports `--output json` for structured output.
+  - `jc auth logout` — removes key from keychain, clears api_key in config.
+  - `ExitError` type for non-standard exit codes, handled in `Execute()`.
+  - `config.SetProfileField()`, `config.SetActiveProfile()`, `config.writeConfig()` — atomic config writes using Viper.
+  - Moved `Version` from `internal/cmd` to `internal/version` package to break circular dependency (api→cmd→api).
+  - `newAPIClient` package-level var in auth.go for test injection of mock API servers.
+- Files changed:
+  - internal/version/version.go — new package for build-time version string
+  - internal/cmd/auth.go — auth login/status/logout commands, ExitError, InputReader
+  - internal/cmd/auth_test.go — 21 tests covering login success, profile switching, empty key, invalid key, read error, non-interactive, org ID setting, status authenticated/not/JSON, logout success/no-keychain, ExitError, help output, config writes
+  - internal/cmd/root.go — registered auth command, ExitError handling in Execute(), migrated to version package
+  - internal/config/config.go — SetProfileField(), SetActiveProfile(), writeConfig() with atomic temp file
+  - Makefile — updated ldflags to target internal/version.Number
+  - internal/api/client.go — migrated from cmd.Version to version.Number
+  - go.mod, go.sum — added golang.org/x/term
+- **Learnings for future iterations:**
+  - `viper.WriteConfigAs(path)` determines config type from file extension — `.tmp` fails. Use `.tmp.yaml` for atomic writes.
+  - Circular imports in Go: `api` needed `cmd.Version` but `cmd` needs `api.Client`. Solution: extract shared state to a leaf package (`internal/version`).
+  - `term.ReadPassword()` reads from fd 0 (stdin) — can't be tested without pseudo-terminals. Use an `InputReader` interface and inject mocks.
+  - `overrideAPIClient()` test helper + `newAPIClient` package var is the cleanest way to redirect API calls to httptest servers from command-level tests.
+  - `ExitError` with `errors.As` is much better than `os.Exit()` in command handlers — keeps commands testable.
 ---
