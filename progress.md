@@ -8,6 +8,13 @@
 - `--api-key` flag binds to Viper key `api_key` (underscore) to share priority with `JC_API_KEY`
 - Build version injected via `-ldflags` at build time
 - Makefile targets: build, test, lint (vet), install, clean
+- Output engine in `internal/output/` — `WriteList()` for arrays, `WriteSingle()` for objects
+- Output accepts `[]json.RawMessage` (same type V1Client returns) — resource-agnostic
+- `Options{Format, Quiet, IDsOnly, DefaultFields}` controls output behavior
+- `CurrentOptions()` reads from Viper (flags/env/config priority chain)
+- `sortedJSON()` re-marshals JSON objects with alphabetical key order
+- `formatValue()` unquotes strings, renders booleans/numbers/null literally
+- `--ids` flag registered on root command, bound to Viper key `ids`
 - API client in `internal/api/` — transport chain: `authTransport` → `loggingTransport` → `retryTransport` → `baseTransport` (TLS 1.2+, connection pooling)
 - `loggingTransport` reads `viper.GetBool("verbose")` / `viper.GetBool("debug")` for --verbose/--debug flag state
 - `logWriter` var defaults to `os.Stderr`; override in tests to capture log output
@@ -193,4 +200,35 @@
   - When `Limit < PageSize`, the effective page size should be reduced to `Limit` to avoid fetching unnecessary data.
   - Transport chain ordering: auth → logging → retry → base. Retry wraps base so that logging sees each individual attempt.
   - Pre-existing tests that trigger retryable errors (500, connection errors) became slow with retry transport — use `retrySleepFn` override in those tests.
+---
+
+## 2026-02-13 - US-009
+- What was implemented:
+  - New `internal/output/` package — shared output engine for all CLI commands
+  - `WriteList(w, data, opts)` — formats `[]json.RawMessage` as JSON array, table, CSV, or human-readable
+  - `WriteSingle(w, data, opts)` — formats single `json.RawMessage` as JSON object, table row, CSV, or key-value pairs
+  - JSON formatter: pretty-printed with 2-space indent, alphabetically sorted keys, arrays for lists, objects for single resources
+  - Table formatter: uses stdlib `text/tabwriter` for tab-aligned columns with uppercase headers
+  - CSV formatter: uses stdlib `encoding/csv` with proper escaping (commas, quotes)
+  - Human formatter: key-value pairs with aligned labels for single resources, block-separated for lists
+  - `--quiet` flag suppresses all output (already registered on root; now consumed by output engine)
+  - `--ids` flag outputs one ID per line (looks for `_id`, `id`, `ID` fields) — registered on root command
+  - `Options{Format, Quiet, IDsOnly, DefaultFields}` struct controls behavior
+  - `CurrentOptions()` reads from Viper (flags > env > config priority chain)
+  - `sortedJSON()` re-marshals objects with alphabetical key order for consistent output
+  - `formatValue()` renders strings unquoted, booleans/numbers/null as literals
+  - Format validation: `FormatJSON`, `FormatTable`, `FormatCSV`, `FormatHuman` constants with `IsValid()` check
+  - Empty lists produce `[]` in JSON, no output in table/CSV
+  - Invalid/unknown format falls through to JSON (safe default)
+- Files changed:
+  - internal/output/output.go — new output engine package (320 lines)
+  - internal/output/output_test.go — 30 tests covering all formats, edge cases, quiet/IDs modes
+  - internal/cmd/root.go — added `--ids` flag, bound to Viper key `ids`
+  - .chief/prds/main/prd.json — marked US-009 inProgress then passes
+- **Learnings for future iterations:**
+  - `json.Unmarshal([]byte("null"), &s)` succeeds and sets `s = ""` — must check for `null` explicitly before trying string unmarshal in `formatValue()`.
+  - `text/tabwriter` from stdlib is sufficient for aligned table output — no need for external `tablewriter` dependency. Tab characters between columns, `tabwriter` handles alignment.
+  - The output engine is resource-agnostic by design: it receives `json.RawMessage` from the API layer and formats without knowing field names. `DefaultFields` in `Options` lets each command define which fields to show by default.
+  - `sortedJSON()` manually rebuilds the JSON object with sorted keys. `encoding/json` doesn't guarantee key order from `map[string]interface{}` on Go < 1.12 and uses insertion order, not alphabetical.
+  - The `--ids` flag is separate from `--output` — it overrides format entirely. This follows the pattern where `--ids` is a convenience for `| jq -r '.[].id'`.
 ---

@@ -44,6 +44,7 @@ interface.`,
 	rootCmd.PersistentFlags().Bool("plan", false, "Preview changes without executing")
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
+	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
 
 	// Bind flags to Viper so the priority chain works:
 	// flags > env vars > config file > built-in defaults.
@@ -61,6 +62,7 @@ interface.`,
 	_ = viper.BindPFlag("plan", rootCmd.PersistentFlags().Lookup("plan"))
 	_ = viper.BindPFlag("org", rootCmd.PersistentFlags().Lookup("org"))
 	_ = viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
+	_ = viper.BindPFlag("ids", rootCmd.PersistentFlags().Lookup("ids"))
 
 	return rootCmd
 }

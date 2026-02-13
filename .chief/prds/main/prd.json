@@ -191,7 +191,8 @@
         "Output format selectable via --output flag, JC_OUTPUT env var, or config default"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use tablewriter for ASCII tables. JSON is the LLM-friendly default. Table is for human scanning. CSV for export. The output engine should be a shared package used by all commands.",
       "dependsOn": ["US-001"]
     },
