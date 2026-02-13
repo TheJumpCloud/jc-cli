@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/klaassen-consulting/jc/internal/keychain"
 	"github.com/spf13/viper"
 )
 
@@ -146,14 +147,28 @@ func ActiveProfile() string {
 
 // APIKey returns the API key to use for authentication.
 // Priority: JC_API_KEY env var > active profile's api_key in config.
+// If the config value is a keychain reference (keychain://jc/<profile>),
+// the actual key is retrieved from the OS keychain transparently.
 func APIKey() string {
 	// JC_API_KEY (bound to "api_key") takes highest priority.
+	// Env var values are always plaintext, never keychain refs.
 	if key := viper.GetString("api_key"); key != "" {
 		return key
 	}
 	// Fall back to the active profile's api_key.
 	profile := ActiveProfile()
-	return viper.GetString("profiles." + profile + ".api_key")
+	value := viper.GetString("profiles." + profile + ".api_key")
+	if value == "" {
+		return ""
+	}
+
+	// Resolve keychain references transparently.
+	resolved, err := keychain.Resolve(value)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not retrieve API key from keychain: %v\n", err)
+		return ""
+	}
+	return resolved
 }
 
 // OrgID returns the organization ID.

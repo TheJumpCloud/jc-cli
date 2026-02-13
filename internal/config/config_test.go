@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
+
+	kc "github.com/klaassen-consulting/jc/internal/keychain"
 )
 
 // resetViper clears Viper's global state between tests.
@@ -613,5 +617,164 @@ profiles:
 	}
 	if got := OrgID(); got != "staging-org" {
 		t.Errorf("OrgID() = %q, want %q", got, "staging-org")
+	}
+}
+
+// --- Keychain Integration Tests (US-005) ---
+
+func TestAPIKey_KeychainRef(t *testing.T) {
+	resetViper()
+	defer resetViper()
+	keyring.MockInit()
+
+	// Store a key in the mock keychain.
+	if err := kc.Set("myprofile", "secret-from-keychain"); err != nil {
+		t.Fatalf("keychain.Set() error: %v", err)
+	}
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+
+	// Config references keychain.
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: myprofile
+profiles:
+  myprofile:
+    api_key: "keychain://jc/myprofile"
+    org_id: "org-123"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	got := APIKey()
+	if got != "secret-from-keychain" {
+		t.Errorf("APIKey() = %q, want %q (should resolve keychain ref)", got, "secret-from-keychain")
+	}
+}
+
+func TestAPIKey_KeychainRefFallsBackGracefully(t *testing.T) {
+	resetViper()
+	defer resetViper()
+	// Simulate keychain unavailable.
+	keyring.MockInitWithError(fmt.Errorf("keychain unavailable"))
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: "keychain://jc/default"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Should return empty string (graceful fallback) when keychain fails.
+	got := APIKey()
+	if got != "" {
+		t.Errorf("APIKey() = %q, want empty string (keychain unavailable should fallback)", got)
+	}
+}
+
+func TestAPIKey_PlaintextStillWorks(t *testing.T) {
+	resetViper()
+	defer resetViper()
+	keyring.MockInit()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: "plaintext-key-abcd"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	got := APIKey()
+	if got != "plaintext-key-abcd" {
+		t.Errorf("APIKey() = %q, want %q (plaintext key should pass through)", got, "plaintext-key-abcd")
+	}
+}
+
+func TestAPIKey_EnvOverridesKeychainRef(t *testing.T) {
+	resetViper()
+	defer resetViper()
+	keyring.MockInit()
+
+	_ = kc.Set("default", "keychain-secret")
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "env-override-key")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: "keychain://jc/default"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	got := APIKey()
+	if got != "env-override-key" {
+		t.Errorf("APIKey() = %q, want %q (env var should take priority over keychain ref)", got, "env-override-key")
+	}
+}
+
+func TestAPIKey_KeychainRefWithProfileSwitch(t *testing.T) {
+	resetViper()
+	defer resetViper()
+	keyring.MockInit()
+
+	_ = kc.Set("prod", "prod-secret")
+	_ = kc.Set("staging", "staging-secret")
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_PROFILE", "staging")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: prod
+profiles:
+  prod:
+    api_key: "keychain://jc/prod"
+  staging:
+    api_key: "keychain://jc/staging"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	got := APIKey()
+	if got != "staging-secret" {
+		t.Errorf("APIKey() = %q, want %q (JC_PROFILE=staging should select staging keychain entry)", got, "staging-secret")
 	}
 }

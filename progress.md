@@ -13,6 +13,11 @@
 - `api.RedactKey(key)` shows only last 4 chars — use this everywhere API keys are logged
 - `api.ValidateAPIKey()` calls `GET /api/organizations` to verify credentials
 - JumpCloud organizations endpoint returns `{"results": [...]}` wrapper; fallback to direct object parse
+- Keychain package in `internal/keychain/` wraps `zalando/go-keyring` with service name "jc"
+- `keychain.Resolve(value)` transparently resolves `keychain://jc/<profile>` URIs or returns plaintext as-is
+- `config.APIKey()` resolves keychain refs — all consumers (api.Client, auth commands) get keychain support automatically
+- Use `keyring.MockInit()` in tests to avoid real keychain access; `keyring.MockInitWithError(err)` to simulate failures
+- Config stores `keychain://jc/<profile>` as the `api_key` value to indicate the real key lives in the OS keychain
 ---
 
 ## 2026-02-13 - US-001
@@ -63,4 +68,30 @@
   - Use `req.Clone(req.Context())` in custom RoundTrippers to avoid mutating the caller's request.
   - `httptest.NewServer` is the standard Go pattern for testing HTTP clients — no mocking libraries needed.
   - The `--api-key` flag was already wired from US-003; US-004 only needed to build the consumer (api.Client).
+---
+
+## 2026-02-13 - US-005
+- What was implemented:
+  - New `internal/keychain/` package wrapping `zalando/go-keyring` for cross-platform keychain access
+  - `keychain.Set(profile, key)` — stores API key in OS keychain (macOS Keychain / Linux secret-tool)
+  - `keychain.Get(profile)` — retrieves API key from keychain
+  - `keychain.Delete(profile)` — removes API key from keychain
+  - `keychain.IsAvailable()` — checks if OS keychain is usable
+  - `keychain.URI(profile)` — generates `keychain://jc/<profile>` reference URI
+  - `keychain.IsKeychainRef(value)` / `keychain.ProfileFromURI(value)` — URI parsing utilities
+  - `keychain.Resolve(value)` — transparently resolves keychain refs or returns plaintext
+  - Updated `config.APIKey()` to resolve `keychain://jc/<profile>` references from config
+  - Graceful fallback: if keychain is unavailable, warns on stderr and returns empty string
+  - JC_API_KEY env var always takes priority over keychain refs (env is never a keychain ref)
+- Files changed:
+  - internal/keychain/keychain.go — new keychain wrapper package
+  - internal/keychain/keychain_test.go — 17 tests covering all keychain operations
+  - internal/config/config.go — updated APIKey() to resolve keychain refs, added keychain import
+  - internal/config/config_test.go — added 5 keychain integration tests
+  - go.mod, go.sum — added `github.com/zalando/go-keyring v0.2.6`
+- **Learnings for future iterations:**
+  - `go-keyring` provides `MockInit()` and `MockInitWithError(err)` for testing — no real keychain access needed in tests.
+  - The `keychain` package intentionally has NO import of `config` to avoid circular dependencies. Config depends on keychain, not vice versa.
+  - Keychain service name is "jc" and account name is the profile name — this matches the acceptance criteria.
+  - `jc auth login` (US-006) will use `keychain.Set()` + write `keychain://jc/<profile>` to config. `jc auth logout` will use `keychain.Delete()`.
 ---

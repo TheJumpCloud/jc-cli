@@ -103,7 +103,8 @@
         "Keychain service name is 'jc' with account name matching profile name"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use go-keyring or zalando/go-keyring package for cross-platform keychain access. Test on both macOS and Linux.",
       "dependsOn": ["US-004"]
     },
