@@ -107,7 +107,10 @@ Fish:
 
 // Execute initializes config and runs the root command.
 func Execute() {
-	config.Init()
+	if err := config.Init(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	rootCmd := NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {

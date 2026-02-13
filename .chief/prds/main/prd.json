@@ -41,7 +41,8 @@
         "Config values accessible throughout the application via Viper"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use XDG Base Directory spec. Viper handles YAML natively. Ensure config file permissions are restrictive since it may reference secrets.",
       "dependsOn": ["US-001"]
     },
