@@ -55,10 +55,12 @@ func NewClient() (*Client, error) {
 func NewClientWithKey(apiKey string) *Client {
 	base := baseTransport()
 
-	// Build the transport chain: auth → logging → base (TLS-enforced HTTP transport).
+	// Build the transport chain: auth → logging → retry → base (TLS-enforced HTTP transport).
 	// Auth wraps logging so that logging sees the injected headers (x-api-key, etc.)
 	// and can redact the API key in debug output.
-	var transport http.RoundTripper = &loggingTransport{base: base, apiKey: apiKey}
+	// Retry wraps base so transient errors (429, 5xx) are retried with backoff.
+	var transport http.RoundTripper = newRetryTransport(base)
+	transport = &loggingTransport{base: transport, apiKey: apiKey}
 	transport = &authTransport{apiKey: apiKey, base: transport}
 
 	return &Client{

@@ -8,7 +8,7 @@
 - `--api-key` flag binds to Viper key `api_key` (underscore) to share priority with `JC_API_KEY`
 - Build version injected via `-ldflags` at build time
 - Makefile targets: build, test, lint (vet), install, clean
-- API client in `internal/api/` — transport chain: `authTransport` → `loggingTransport` → `baseTransport` (TLS 1.2+, connection pooling)
+- API client in `internal/api/` — transport chain: `authTransport` → `loggingTransport` → `retryTransport` → `baseTransport` (TLS 1.2+, connection pooling)
 - `loggingTransport` reads `viper.GetBool("verbose")` / `viper.GetBool("debug")` for --verbose/--debug flag state
 - `logWriter` var defaults to `os.Stderr`; override in tests to capture log output
 - Transport chain order matters: auth wraps logging so logging sees injected headers and can redact API keys
@@ -28,6 +28,11 @@
 - `config.SetProfileField(profile, key, value)` and `config.SetActiveProfile(profile)` for config writes
 - `viper.WriteConfigAs()` requires a `.yaml` extension — use `.tmp.yaml` for atomic writes, not `.tmp`
 - `InputReader` interface abstracts stdin for auth commands; tests inject `mockInput`
+- `retryTransport` retries 429/5xx with exponential backoff; `retrySleepFn` var overrides sleep in tests
+- `V1Client` wraps `Client` for V1-specific pagination (skip/limit) via `ListAll(ctx, endpoint, opts)`
+- `APIError` struct has `StatusCode`, `Endpoint`, `Message`; use `NewAPIError()` for HTTP error responses
+- V1 list endpoints return `{"results": [...], "totalCount": N}` — parsed by `v1ListResponse`
+- `ListOptions{Limit, PageSize}` controls pagination behavior; `effectivePageSize()` optimizes request size
 ---
 
 ## 2026-02-13 - US-001
@@ -154,4 +159,38 @@
   - `viper.GetBool()` reads directly from viper state, which includes flag bindings — no need to pass flags through the transport chain.
   - `http.Transport` supports `TLSClientConfig` for TLS settings. Setting `MinVersion: tls.VersionTLS12` enforces TLS 1.2+ for all connections.
   - Connection pooling is enabled by default in `http.DefaultTransport` but we create a custom `http.Transport` for TLS config, so we must explicitly set pool sizes.
+---
+
+## 2026-02-13 - US-008
+- What was implemented:
+  - `V1Client` struct — wraps `Client` with V1-specific pagination and list operations
+  - `ListAll(ctx, endpoint, opts)` — automatic skip/limit pagination, fetches all pages transparently
+  - `Get(ctx, endpoint)` — single resource fetch with structured error handling
+  - `ListOptions{Limit, PageSize}` — controls result cap and per-request page size (default 100)
+  - `retryTransport` — RoundTripper that retries transient errors (429, 500, 502, 503, 504) with exponential backoff + jitter
+  - Backoff formula: `min(2^attempt * 1s + jitter, 30s)`, max 3 retries
+  - `APIError` struct — structured error with StatusCode, Endpoint, and Message fields
+  - `APIError.IsRetryable()` / `APIError.IsRateLimit()` for error categorization
+  - `NewAPIError()` maps HTTP status codes to human-readable messages
+  - Transport chain updated: auth → logging → retry → base
+  - Context cancellation respected at every pagination step and retry attempt
+  - `retrySleepFn` package-level var for testability (like `logWriter` pattern)
+- Files changed:
+  - internal/api/v1.go — new V1Client with ListAll, Get, pagination logic
+  - internal/api/v1_test.go — 16 tests covering pagination, limits, errors, context cancellation
+  - internal/api/retry.go — retryTransport with exponential backoff and jitter
+  - internal/api/retry_test.go — 10 tests covering retry on 429/5xx, no retry on 4xx, backoff durations, context
+  - internal/api/errors.go — APIError struct, NewAPIError, httpStatusMessage
+  - internal/api/errors_test.go — 7 tests for error creation, categorization, truncation
+  - internal/api/client.go — updated transport chain to include retryTransport
+  - internal/api/client_test.go — updated transport chain test, added retrySleepFn override
+  - internal/api/auth_test.go — added retrySleepFn override for server error and connection error tests
+- **Learnings for future iterations:**
+  - Retry logic belongs at the transport layer (as a RoundTripper), not at the API client level — this makes it transparent to all HTTP calls.
+  - `retrySleepFn` package-level var (like `logWriter`) is the cleanest way to make retry delays testable without changing production code.
+  - Always `drainAndClose(resp)` before retry — Go's `http.Transport` only reuses connections when the body is fully read.
+  - V1 list responses wrap results in `{"results": [...], "totalCount": N}` — use `json.RawMessage` to defer unmarshalling individual items so the V1 client stays resource-agnostic.
+  - When `Limit < PageSize`, the effective page size should be reduced to `Limit` to avoid fetching unnecessary data.
+  - Transport chain ordering: auth → logging → retry → base. Retry wraps base so that logging sees each individual attempt.
+  - Pre-existing tests that trigger retryable errors (500, connection errors) became slow with retry transport — use `retrySleepFn` override in those tests.
 ---

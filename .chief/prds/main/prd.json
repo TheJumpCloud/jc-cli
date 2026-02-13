@@ -167,7 +167,8 @@
         "Context cancellation (Ctrl+C) stops in-flight pagination immediately"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V1 API uses skip-based pagination. Rate limit is 200 requests/minute per API key. Backoff formula: min(2^attempt * 1s + jitter, 30s).",
       "dependsOn": ["US-007"]
     },

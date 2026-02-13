@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateAPIKey_Success(t *testing.T) {
@@ -117,6 +118,10 @@ func TestValidateAPIKey_Forbidden(t *testing.T) {
 }
 
 func TestValidateAPIKey_ServerError(t *testing.T) {
+	origSleep := retrySleepFn
+	retrySleepFn = func(d time.Duration) {} // no-op for fast tests
+	defer func() { retrySleepFn = origSleep }()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"message":"Internal Server Error"}`))
@@ -158,6 +163,10 @@ func TestValidateAPIKey_EmptyResults(t *testing.T) {
 }
 
 func TestValidateAPIKey_ConnectionError(t *testing.T) {
+	origSleep := retrySleepFn
+	retrySleepFn = func(d time.Duration) {} // no-op for fast tests
+	defer func() { retrySleepFn = origSleep }()
+
 	// Use a non-existent URL to simulate connection failure.
 	c := NewClientWithKey("some-key")
 	c.BaseURL = "http://127.0.0.1:1" // Port 1 should be closed

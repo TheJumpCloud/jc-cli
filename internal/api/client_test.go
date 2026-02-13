@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -434,6 +435,10 @@ func TestLoggingTransport_VerboseLogsError(t *testing.T) {
 	resetViper()
 	defer resetViper()
 
+	origSleep := retrySleepFn
+	retrySleepFn = func(d time.Duration) {}
+	defer func() { retrySleepFn = origSleep }()
+
 	viper.Set("verbose", true)
 
 	var buf bytes.Buffer
@@ -487,9 +492,15 @@ func TestNewClientWithKey_TransportChain(t *testing.T) {
 		t.Fatalf("expected inner transport to be *loggingTransport, got %T", at.base)
 	}
 
-	// The innermost transport should be *http.Transport (the base).
-	_, ok = lt.base.(*http.Transport)
+	// The next transport should be retryTransport.
+	rt, ok := lt.base.(*retryTransport)
 	if !ok {
-		t.Fatalf("expected base transport to be *http.Transport, got %T", lt.base)
+		t.Fatalf("expected retry transport to be *retryTransport, got %T", lt.base)
+	}
+
+	// The innermost transport should be *http.Transport (the base).
+	_, ok = rt.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected base transport to be *http.Transport, got %T", rt.base)
 	}
 }
