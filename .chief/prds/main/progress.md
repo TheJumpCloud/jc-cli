@@ -11,6 +11,11 @@
 - Config tests use `t.Setenv()` + `t.TempDir()` + `viper.Reset()` for isolation
 - `config.Init()` returns `error` — caller (`Execute()`) must handle it
 - Default config written as `const DefaultConfig` string in `config.go`
+- Resource commands follow pattern: `newXxxCmd()` parent + `newXxxListCmd()`/`newXxxGetCmd()` subcommands
+- `newV1Client` var is shared across resource commands (users, devices) — single test override point
+- `writeListFooter()` is a shared utility for "── N of TOTAL items ──" footers
+- Test servers: `startXxxServer(t, data)` returns `*httptest.Server` matching V1 API response shape
+- `setupUsersTest(t)` reusable across resource test files (keyring, viper, config init)
 
 ---
 
@@ -46,4 +51,19 @@
   - `os.MkdirAll` with 0700 is idempotent — safe to call even if directory exists
   - Config file format: YAML with `active_profile`, `defaults`, `cache`, `profiles` top-level sections
   - Invalid YAML errors from Viper include parse details — wrap with file path for user-friendly messages
+---
+
+## 2026-02-13 - US-015
+- Implemented devices list and get commands (V1 Systems API)
+- Files changed:
+  - `internal/cmd/devices.go` — new: `newDevicesCmd()` parent + `newDevicesListCmd()` + `newDevicesGetCmd()`
+  - `internal/cmd/devices_test.go` — new: 25 tests covering JSON, table, CSV, --ids, --quiet, --limit, --sort, pagination, get, not-found, help
+  - `internal/cmd/root.go` — added `newDevicesCmd()` registration
+  - `.chief/prds/main/prd.json` — marked US-015 as complete
+- **Learnings for future iterations:**
+  - V1 Systems API endpoint is `/systems` (list) and `/systems/{id}` (get) — analogous to `/systemusers`
+  - Device default fields: displayName, hostname, os, osVersion, lastContact, agentVersion
+  - `setupUsersTest(t)` is reusable across all resource test files — no need for per-resource setup
+  - `overrideV1Client(t, serverURL)` works for all resource commands since they share `newV1Client`
+  - Adding a new resource command is straightforward: new file, register in root, write test server + tests
 ---
