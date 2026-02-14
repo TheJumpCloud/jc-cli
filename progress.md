@@ -897,3 +897,25 @@
   - Separate `stdinParamsReader` for recipe `--params-stdin` avoids interference with line-based `stdinSource`
   - Batch progress follows bulk.go pattern: `N of M` progress to stderr, summary at end
 ---
+
+## 2026-02-14 - Bugfix: JMESPath + Table, Graph Flattening, Graph Target Mapping
+- **Status:** COMPLETE (verified against live JumpCloud org)
+- What was fixed:
+  - **JMESPath + table empty rows**: When `--query` reshapes data (e.g., `[].{host:hostname}`), the recursive `WriteList`/`WriteSingle` call carried stale `DefaultFields` from the resource command. Since reshaped field names don't match original defaults, `resolveFields()` returned `[]` → empty table rows. Fix: clear `DefaultFields`, `Fields`, and `Exclude` alongside `Query` in both `applyJMESPathAndWrite()` and `applyJMESPathSingleAndWrite()`.
+  - **Graph table formatting**: Association objects `{"to":{"type":"...","id":"..."}}` rendered as raw JSON in a single `TO` column. Fix: added `flattenAssociations()` to promote `to.type` and `to.id` to top-level fields. Changed `graphDefaultFields` from `["to"]` to `["type", "id"]`.
+  - **Graph target mapping**: CLI passed `--to` value directly as `?targets=` API param. Users expect `device`/`device_group` (matching other CLI commands) but API requires `system`/`system_group`. Fix: added `targetToAPIParam` map for alias translation, added `device`/`device_group` to `validTargetTypes`.
+- Files changed:
+  - internal/output/output.go — clear DefaultFields/Fields/Exclude after JMESPath query (2 locations)
+  - internal/cmd/graph.go — added `flattenAssociations()`, `targetToAPIParam` map, updated `graphDefaultFields`, help text, and `runGraphTraverse()` to apply mapping and flattening
+  - internal/cmd/graph_test.go — updated table test for TYPE/ID headers, added flattened structure assertions, added `TestGraphTraverse_TargetAliasMapping` (4 subtests), added `TestFlattenAssociations` unit test
+- **Live verification:**
+  - `jc users list --query "[?activated==\`true\`].{name:username,email:email}" --table` → NAME + EMAIL columns (was empty rows)
+  - `jc devices list --query "[?os=='Mac OS X'].{host:hostname,agent:agentVersion}" --table` → HOST + AGENT columns, 4 rows
+  - `jc graph traverse --from application:<id> --to user_group --table` → clean TYPE + ID columns (was raw JSON)
+  - `jc graph traverse --from user_group:<id> --to application --table` → TYPE + ID columns
+- **Learnings for future iterations:**
+  - When JMESPath reshapes output, ALL field-selection state must be cleared — not just `Query`. The recursive call needs to discover fields fresh from the reshaped data.
+  - The output engine `filterFields()` only works on top-level keys. Nested structures must be flattened before output to get clean table/CSV rendering.
+  - User-facing CLI names should match the resource command vocabulary (device/device_group), not the internal API vocabulary (system/system_group). A simple alias map at the command boundary keeps the rest of the code clean.
+  - Previous US-031 learnings noted the nested `to` issue as a known limitation — this fix resolves it properly by flattening at the command layer rather than trying to add nested field support to the output engine.
+---
