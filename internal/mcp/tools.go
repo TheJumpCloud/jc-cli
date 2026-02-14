@@ -193,6 +193,100 @@ type explainInput struct {
 	Command string `json:"command" jsonschema:"A jc command string to explain (e.g. users delete jdoe)"`
 }
 
+type searchInput struct {
+	Term  string `json:"term" jsonschema:"Search term to match across multiple fields"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+	Sort  string `json:"sort,omitempty" jsonschema:"Field to sort by. Prefix with - for descending"`
+}
+
+type deviceUpdateInput struct {
+	Identifier                     string `json:"identifier" jsonschema:"Device hostname or ID to update"`
+	DisplayName                    string `json:"displayName,omitempty" jsonschema:"New display name"`
+	AllowSshPasswordAuthentication *bool  `json:"allowSshPasswordAuthentication,omitempty" jsonschema:"Allow SSH password auth"`
+	AllowSshRootLogin              *bool  `json:"allowSshRootLogin,omitempty" jsonschema:"Allow SSH root login"`
+	AllowMultiFactorAuthentication *bool  `json:"allowMultiFactorAuthentication,omitempty" jsonschema:"Allow multi-factor auth"`
+	AllowPublicKeyAuthentication   *bool  `json:"allowPublicKeyAuthentication,omitempty" jsonschema:"Allow public key auth"`
+	Execute                        bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type commandCreateInput struct {
+	Name        string `json:"name" jsonschema:"Command name"`
+	Command     string `json:"command" jsonschema:"Command body to execute"`
+	CommandType string `json:"command_type" jsonschema:"Command type: linux, mac, windows"`
+}
+
+type commandUpdateInput struct {
+	Identifier  string `json:"identifier" jsonschema:"Command name or ID to update"`
+	Name        string `json:"name,omitempty" jsonschema:"New command name"`
+	Command     string `json:"command,omitempty" jsonschema:"New command body"`
+	CommandType string `json:"command_type,omitempty" jsonschema:"New command type: linux, mac, windows"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type resultsInput struct {
+	Identifier string `json:"identifier" jsonschema:"Name or ID of the resource to get results for"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+	Sort       string `json:"sort,omitempty" jsonschema:"Field to sort by. Prefix with - for descending"`
+}
+
+type policyCreateInput struct {
+	Name       string `json:"name" jsonschema:"Policy name"`
+	TemplateID string `json:"template_id" jsonschema:"Policy template ID"`
+	Values     string `json:"values,omitempty" jsonschema:"Policy values as raw JSON object"`
+}
+
+type policyUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Policy name or ID to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New policy name"`
+	Values     string `json:"values,omitempty" jsonschema:"New policy values as raw JSON object"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type groupCreateInput struct {
+	Name        string `json:"name" jsonschema:"Group name"`
+	Description string `json:"description,omitempty" jsonschema:"Group description"`
+}
+
+type groupUpdateInput struct {
+	Identifier  string `json:"identifier" jsonschema:"Group name or ID to update"`
+	Name        string `json:"name,omitempty" jsonschema:"New group name"`
+	Description string `json:"description,omitempty" jsonschema:"New group description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type appCreateInput struct {
+	Name    string `json:"name" jsonschema:"Application name"`
+	SsoType string `json:"sso_type,omitempty" jsonschema:"SSO type (e.g. saml, oidc, bookmark)"`
+	Config  string `json:"config,omitempty" jsonschema:"Application configuration as raw JSON"`
+}
+
+type appUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Application name or ID to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New application name"`
+	Config     string `json:"config,omitempty" jsonschema:"New configuration as raw JSON"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type graphTraverseInput struct {
+	From string `json:"from" jsonschema:"Source resource as type:name-or-id (e.g. user:jdoe, user_group:Engineering). Types: user, device, user_group, device_group, application"`
+	To   string `json:"to" jsonschema:"Target resource type (e.g. application, system, user_group, active_directory, ldap_server)"`
+}
+
+type graphBindInput struct {
+	From    string `json:"from" jsonschema:"Source resource as type:name-or-id (e.g. user_group:Engineering)"`
+	To      string `json:"to" jsonschema:"Target resource as type:name-or-id (e.g. application:Slack)"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type insightsDistinctInput struct {
+	Service   string `json:"service" jsonschema:"Event service to query (sso/radius/ldap/user_portal/admin/mdm/directory/software/systems/password_manager/all)"`
+	Field     string `json:"field" jsonschema:"Field to get distinct values for (e.g. event_type, initiated_by)"`
+	Last      string `json:"last,omitempty" jsonschema:"Time range shortcut (24h/7d/30d/1m)"`
+	Start     string `json:"start,omitempty" jsonschema:"Start time (RFC 3339 or YYYY-MM-DD)"`
+	End       string `json:"end,omitempty" jsonschema:"End time (RFC 3339 or YYYY-MM-DD)"`
+	EventType string `json:"event_type,omitempty" jsonschema:"Filter by event type"`
+}
+
 // registerTools adds MCP tools to the server.
 func (s *Server) registerTools() {
 	// ping: A simple health-check tool.
@@ -240,6 +334,12 @@ func (s *Server) registerTools() {
 
 	// --- Admin tools ---
 	s.registerAdminTools()
+
+	// --- Apps tools ---
+	s.registerAppsTools()
+
+	// --- Graph tools ---
+	s.registerGraphTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -474,6 +574,21 @@ func (s *Server) registerUserTools() {
 			return textResult(fmt.Sprintf("Password reset email sent to user %s.", args.Identifier)), nil, nil
 		},
 	)
+
+	addTypedTool(s, "users_search", "Search for JumpCloud users by keyword across username, email, firstname, lastname.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			body := map[string]any{"searchTerm": map[string]string{"op": "or", "searchTerm": args.Term}}
+			result, err := client.Search(ctx, "/search/systemusers", body, api.SearchOptions{Limit: args.Limit, Sort: args.Sort})
+			if err != nil {
+				return errorResult(fmt.Sprintf("searching users: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
 }
 
 func (s *Server) registerDeviceTools() {
@@ -528,6 +643,88 @@ func (s *Server) registerDeviceTools() {
 	addTypedTool(s, "devices_erase", "Send MDM erase (wipe) command to a device. THIS IS EXTREMELY DESTRUCTIVE — it will wipe all data. Set execute=true to erase; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			return s.runDeviceMDMTool(ctx, args, "erase")
+		},
+	)
+
+	addTypedTool(s, "devices_update", "Update settings on an existing JumpCloud device. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args deviceUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{}
+			if args.DisplayName != "" {
+				body["displayName"] = args.DisplayName
+			}
+			if args.AllowSshPasswordAuthentication != nil {
+				body["allowSshPasswordAuthentication"] = *args.AllowSshPasswordAuthentication
+			}
+			if args.AllowSshRootLogin != nil {
+				body["allowSshRootLogin"] = *args.AllowSshRootLogin
+			}
+			if args.AllowMultiFactorAuthentication != nil {
+				body["allowMultiFactorAuthentication"] = *args.AllowMultiFactorAuthentication
+			}
+			if args.AllowPublicKeyAuthentication != nil {
+				body["allowPublicKeyAuthentication"] = *args.AllowPublicKeyAuthentication
+			}
+			if len(body) == 0 {
+				return errorResult("no fields to update — provide at least one field"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.DeviceConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "device", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/systems/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating device: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "devices_delete", "Delete a JumpCloud device. Set execute=true to delete; otherwise returns a plan. This is destructive and irreversible.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.DeviceConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "device", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/systems/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting device: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Device %s deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			body := map[string]any{"searchTerm": map[string]string{"op": "or", "searchTerm": args.Term}}
+			result, err := client.Search(ctx, "/search/systems", body, api.SearchOptions{Limit: args.Limit, Sort: args.Sort})
+			if err != nil {
+				return errorResult(fmt.Sprintf("searching devices: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
 		},
 	)
 }
@@ -587,6 +784,244 @@ func (s *Server) registerGroupTools() {
 	addTypedTool(s, "groups_remove_member", "Remove a user or device from a group. Set execute=true to remove; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args membershipInput) (*mcp.CallToolResult, any, error) {
 			return s.runMembershipTool(ctx, args, "remove")
+		},
+	)
+
+	// --- User group CRUD ---
+
+	addTypedTool(s, "groups_user_list", "List all JumpCloud user groups. Returns group objects with id, name, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/usergroups", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing user groups: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "groups_user_get", "Get a single JumpCloud user group by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.UserGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/usergroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting user group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_user_create", "Create a new JumpCloud user group.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/usergroups", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating user group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_user_update", "Update a JumpCloud user group. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args groupUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.UserGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			if !args.Execute {
+				return planResult("update", "user group", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/usergroups/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating user group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_user_delete", "Delete a JumpCloud user group. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.UserGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "user group", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/usergroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting user group: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("User group %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	// --- Device group CRUD ---
+
+	addTypedTool(s, "groups_device_list", "List all JumpCloud device (system) groups. Returns group objects with id, name, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/systemgroups", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing device groups: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "groups_device_get", "Get a single JumpCloud device (system) group by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DeviceGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/systemgroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting device group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_device_create", "Create a new JumpCloud device (system) group.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/systemgroups", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating device group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_device_update", "Update a JumpCloud device (system) group. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args groupUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DeviceGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			if !args.Execute {
+				return planResult("update", "device group", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/systemgroups/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating device group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "groups_device_delete", "Delete a JumpCloud device (system) group. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DeviceGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "device group", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/systemgroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting device group: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Device group %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
 }
@@ -737,6 +1172,35 @@ func (s *Server) registerInsightsTools() {
 			return res, nil, nil
 		},
 	)
+
+	addTypedTool(s, "insights_distinct", "Get distinct values for a field from JumpCloud Directory Insights events.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args insightsDistinctInput) (*mcp.CallToolResult, any, error) {
+			client, err := newInsightsClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Insights client: %v", err)), nil, nil
+			}
+			if err := api.ValidateService(args.Service); err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			startTime, endTime, err := resolveTimeRange(args.Last, args.Start, args.End)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			query := api.InsightsQuery{
+				Service:   args.Service,
+				StartTime: startTime,
+				EndTime:   endTime,
+			}
+			if args.EventType != "" {
+				query.SearchTermFilter = map[string]any{"event_type": args.EventType}
+			}
+			data, err := client.DistinctEvents(ctx, query, args.Field)
+			if err != nil {
+				return errorResult(fmt.Sprintf("querying distinct values: %v", err)), nil, nil
+			}
+			return rawListResult(data, len(data))
+		},
+	)
 }
 
 func (s *Server) registerCommandTools() {
@@ -811,6 +1275,130 @@ func (s *Server) registerCommandTools() {
 			return textResult(fmt.Sprintf("Command %s triggered on %s.", args.Command, args.Target)), nil, nil
 		},
 	)
+
+	addTypedTool(s, "commands_get", "Get a single JumpCloud command by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.CommandConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/commands/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting command: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "commands_create", "Create a new JumpCloud command.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args commandCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]string{
+				"name":        args.Name,
+				"command":     args.Command,
+				"commandType": args.CommandType,
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/commands", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating command: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "commands_update", "Update an existing JumpCloud command. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args commandUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]string{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Command != "" {
+				body["command"] = args.Command
+			}
+			if args.CommandType != "" {
+				body["commandType"] = args.CommandType
+			}
+			if len(body) == 0 {
+				return errorResult("no fields to update — provide at least one field (name, command, command_type)"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.CommandConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "command", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/commands/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating command: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "commands_delete", "Permanently delete a JumpCloud command. Set execute=true to delete; otherwise returns a plan. IRREVERSIBLE.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.CommandConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "command", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/commands/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting command: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Command %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "commands_results", "List execution results for a JumpCloud command showing exit codes, stdout, stderr.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args resultsInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.CommandConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts := api.ListOptions{
+				Limit:  args.Limit,
+				Sort:   args.Sort,
+				Filter: []string{"command:$eq:" + id},
+			}
+			result, err := client.ListAll(ctx, "/commandresults", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing command results: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
 }
 
 func (s *Server) registerPolicyTools() {
@@ -827,6 +1415,137 @@ func (s *Server) registerPolicyTools() {
 			result, err := client.ListAll(ctx, "/policies", opts)
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policies: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "policies_get", "Get a single JumpCloud policy by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/policies/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policies_create", "Create a new JumpCloud policy from a template.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args policyCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name":     args.Name,
+				"template": map[string]string{"id": args.TemplateID},
+			}
+			if args.Values != "" {
+				var values any
+				if err := json.Unmarshal([]byte(args.Values), &values); err != nil {
+					return errorResult(fmt.Sprintf("invalid values JSON: %v", err)), nil, nil
+				}
+				body["values"] = values
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/policies", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policies_update", "Update an existing JumpCloud policy. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args policyUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Values != "" {
+				var values any
+				if err := json.Unmarshal([]byte(args.Values), &values); err != nil {
+					return errorResult(fmt.Sprintf("invalid values JSON: %v", err)), nil, nil
+				}
+				body["values"] = values
+			}
+			if !args.Execute {
+				return planResult("update", "policy", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/policies/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policies_delete", "Permanently delete a JumpCloud policy. Set execute=true to delete; otherwise returns a plan. IRREVERSIBLE.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "policy", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/policies/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting policy: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Policy %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policies_results", "List policy application results per device for a JumpCloud policy.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args resultsInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts := api.V2ListOptions{
+				Limit: args.Limit,
+				Sort:  args.Sort,
+			}
+			result, err := client.ListAll(ctx, "/policies/"+id+"/policystatuses", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing policy results: %v", err)), nil, nil
 			}
 			return rawListResult(result.Data, len(result.Data))
 		},
@@ -1128,6 +1847,56 @@ func (s *Server) registerAuthPolicyTools() {
 			}
 
 			return rawListResult(members, len(members))
+		},
+	)
+
+	addTypedTool(s, "auth_policies_enable", "Enable a disabled JumpCloud authentication policy. Set execute=true to enable; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("enable", "auth policy", args.Identifier, id, nil)
+			}
+			data, err := client.Update(ctx, "/authn/policies/"+id, map[string]any{"disabled": false})
+			if err != nil {
+				return errorResult(fmt.Sprintf("enabling auth policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_disable", "Disable a JumpCloud authentication policy. Set execute=true to disable; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("disable", "auth policy", args.Identifier, id, nil)
+			}
+			data, err := client.Update(ctx, "/authn/policies/"+id, map[string]any{"disabled": true})
+			if err != nil {
+				return errorResult(fmt.Sprintf("disabling auth policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
 		},
 	)
 }
@@ -1775,6 +2544,366 @@ func (s *Server) registerAdminTools() {
 	)
 }
 
+func (s *Server) registerAppsTools() {
+	addTypedTool(s, "apps_list", "List all JumpCloud SSO applications. Returns objects with _id, name, displayLabel, ssoType, status.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV1ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/applications", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing applications: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "apps_get", "Get a single JumpCloud SSO application by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.ApplicationConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/applications/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apps_create", "Create a new JumpCloud SSO application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args appCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+			}
+			if args.SsoType != "" {
+				body["ssoType"] = args.SsoType
+			}
+			if args.Config != "" {
+				var cfg any
+				if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
+					return errorResult(fmt.Sprintf("invalid config JSON: %v", err)), nil, nil
+				}
+				body["config"] = cfg
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/applications", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apps_update", "Update an existing JumpCloud SSO application. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args appUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.ApplicationConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Config != "" {
+				var cfg any
+				if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
+					return errorResult(fmt.Sprintf("invalid config JSON: %v", err)), nil, nil
+				}
+				body["config"] = cfg
+			}
+			if !args.Execute {
+				return planResult("update", "application", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/applications/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apps_delete", "Permanently delete a JumpCloud SSO application. Set execute=true to delete; otherwise returns a plan. IRREVERSIBLE.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.ApplicationConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "application", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/applications/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting application: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Application %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+// graphTargetAliases maps user-friendly target type aliases to V2 API parameter values.
+var graphTargetAliases = map[string]string{
+	"device":       "system",
+	"device_group": "system_group",
+}
+
+func (s *Server) registerGraphTools() {
+	addTypedTool(s, "graph_traverse", "Traverse JumpCloud graph associations between resources. Source types: user, device, user_group, device_group, application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args graphTraverseInput) (*mcp.CallToolResult, any, error) {
+			sourceType, identifier, err := parseGraphFrom(args.From)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+
+			// Map target aliases.
+			apiTarget := args.To
+			if mapped, ok := graphTargetAliases[apiTarget]; ok {
+				apiTarget = mapped
+			}
+
+			prefix, sourceID, err := resolveGraphSource(ctx, sourceType, identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("resolving source: %v", err)), nil, nil
+			}
+
+			endpoint := prefix + "/" + sourceID + "/associations?targets=" + apiTarget
+			v2Client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			result, err := v2Client.ListAll(ctx, endpoint, api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("traversing graph: %v", err)), nil, nil
+			}
+			data := flattenAssociations(result.Data)
+			return rawListResult(data, len(data))
+		},
+	)
+
+	addTypedTool(s, "graph_bind", "Create an association between two JumpCloud resources. Set execute=true to bind; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args graphBindInput) (*mcp.CallToolResult, any, error) {
+			return s.runGraphManageTool(ctx, args.From, args.To, "add", args.Execute)
+		},
+	)
+
+	addTypedTool(s, "graph_unbind", "Remove an association between two JumpCloud resources. Set execute=true to unbind; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args graphBindInput) (*mcp.CallToolResult, any, error) {
+			return s.runGraphManageTool(ctx, args.From, args.To, "remove", args.Execute)
+		},
+	)
+}
+
+func (s *Server) runGraphManageTool(ctx context.Context, from, to, op string, execute bool) (*mcp.CallToolResult, any, error) {
+	if s.readOnly {
+		return errorResult("server is in read-only mode"), nil, nil
+	}
+
+	sourceType, sourceIdent, err := parseGraphFrom(from)
+	if err != nil {
+		return errorResult(err.Error()), nil, nil
+	}
+
+	targetType, targetIdent, err := parseGraphTarget(to)
+	if err != nil {
+		return errorResult(err.Error()), nil, nil
+	}
+
+	// Map target aliases.
+	apiTarget := targetType
+	if mapped, ok := graphTargetAliases[targetType]; ok {
+		apiTarget = mapped
+	}
+
+	prefix, sourceID, err := resolveGraphSource(ctx, sourceType, sourceIdent)
+	if err != nil {
+		return errorResult(fmt.Sprintf("resolving source: %v", err)), nil, nil
+	}
+
+	targetID, err := resolveGraphTarget(ctx, targetType, targetIdent)
+	if err != nil {
+		return errorResult(fmt.Sprintf("resolving target: %v", err)), nil, nil
+	}
+
+	if !execute {
+		action := "bind"
+		if op == "remove" {
+			action = "unbind"
+		}
+		effects := map[string]string{
+			"operation": op,
+			"source":    sourceType + "/" + sourceID,
+			"target":    apiTarget + "/" + targetID,
+		}
+		return planResult(action, "graph association", from+" -> "+to, sourceID, effects)
+	}
+
+	body := map[string]string{
+		"op":   op,
+		"type": apiTarget,
+		"id":   targetID,
+	}
+	v2Client, err := newV2ClientFunc()
+	if err != nil {
+		return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+	}
+	_, err = v2Client.Create(ctx, prefix+"/"+sourceID+"/associations", body)
+	if err != nil {
+		return errorResult(fmt.Sprintf("%s graph association: %v", op, err)), nil, nil
+	}
+	verb := "bound"
+	if op == "remove" {
+		verb = "unbound"
+	}
+	return textResult(fmt.Sprintf("Successfully %s %s -> %s.", verb, from, to)), nil, nil
+}
+
+// parseGraphFrom splits a "type:identifier" string for graph source.
+func parseGraphFrom(from string) (string, string, error) {
+	parts := strings.SplitN(from, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid from format %q — expected type:name-or-id (e.g. user:jdoe)", from)
+	}
+	return parts[0], parts[1], nil
+}
+
+// parseGraphTarget splits a "type:identifier" string for graph target in bind/unbind.
+func parseGraphTarget(to string) (string, string, error) {
+	parts := strings.SplitN(to, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid to format %q — expected type:name-or-id (e.g. application:Slack)", to)
+	}
+	return parts[0], parts[1], nil
+}
+
+// resolveGraphSource resolves a graph source type and identifier to an API endpoint prefix and ID.
+func resolveGraphSource(ctx context.Context, sourceType, identifier string) (string, string, error) {
+	switch sourceType {
+	case "user":
+		client, err := newV1ClientFunc()
+		if err != nil {
+			return "", "", err
+		}
+		id, err := resolveV1(ctx, client, identifier, resolve.UserConfig)
+		return "/users", id, err
+	case "device":
+		client, err := newV1ClientFunc()
+		if err != nil {
+			return "", "", err
+		}
+		id, err := resolveV1(ctx, client, identifier, resolve.DeviceConfig)
+		return "/systems", id, err
+	case "user_group":
+		client, err := newV2ClientFunc()
+		if err != nil {
+			return "", "", err
+		}
+		r := resolve.NewV2Resolver(client)
+		id, err := r.Resolve(ctx, identifier, resolve.UserGroupConfig)
+		return "/usergroups", id, err
+	case "device_group":
+		client, err := newV2ClientFunc()
+		if err != nil {
+			return "", "", err
+		}
+		r := resolve.NewV2Resolver(client)
+		id, err := r.Resolve(ctx, identifier, resolve.DeviceGroupConfig)
+		return "/systemgroups", id, err
+	case "application":
+		client, err := newV1ClientFunc()
+		if err != nil {
+			return "", "", err
+		}
+		id, err := resolveV1(ctx, client, identifier, resolve.ApplicationConfig)
+		return "/applications", id, err
+	}
+	return "", "", fmt.Errorf("unsupported source type %q — valid types: user, device, user_group, device_group, application", sourceType)
+}
+
+// resolveGraphTarget resolves a graph target type and identifier to an ID.
+// For known source types with name resolution, uses the appropriate resolver.
+// For other types, requires a 24-char hex ID.
+func resolveGraphTarget(ctx context.Context, targetType, identifier string) (string, error) {
+	// Try resolving as a known source type first.
+	_, id, err := resolveGraphSource(ctx, targetType, identifier)
+	if err == nil {
+		return id, nil
+	}
+	// For types without name resolution, the identifier must be a raw ID.
+	if resolve.IsID(identifier) {
+		return identifier, nil
+	}
+	return "", fmt.Errorf("target type %q does not support name resolution — provide a 24-character hex ID", targetType)
+}
+
+// flattenAssociations transforms graph association objects from nested form
+// {"to":{"type":"...","id":"..."}} to flat form {"type":"...","id":"..."}.
+func flattenAssociations(data []json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(data))
+	for _, raw := range data {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			result = append(result, raw)
+			continue
+		}
+		toRaw, ok := m["to"]
+		if !ok {
+			result = append(result, raw)
+			continue
+		}
+		var toObj map[string]json.RawMessage
+		if err := json.Unmarshal(toRaw, &toObj); err != nil {
+			result = append(result, raw)
+			continue
+		}
+		flat := make(map[string]json.RawMessage)
+		for k, v := range m {
+			if k != "to" {
+				flat[k] = v
+			}
+		}
+		for k, v := range toObj {
+			flat[k] = v
+		}
+		out, err := json.Marshal(flat)
+		if err != nil {
+			result = append(result, raw)
+			continue
+		}
+		result = append(result, out)
+	}
+	return result
+}
+
 func (s *Server) registerRecipeTools() {
 	addTypedTool(s, "recipe_run", "Run a named jc recipe with parameters. Recipes are multi-step automated workflows.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args recipeRunInput) (*mcp.CallToolResult, any, error) {
@@ -1967,7 +3096,9 @@ func describeCommand(parts []string) string {
 		"devices": {
 			"list":    "List all JumpCloud-managed devices (systems) with optional filtering.",
 			"get":     "Retrieve a single device by hostname or ID.",
+			"update":  "Update settings on an existing JumpCloud device.",
 			"delete":  "Remove a device record from JumpCloud.",
+			"search":  "Search for devices by keyword across hostname, displayName, os, serialNumber.",
 			"lock":    "Send an MDM lock command to the device.",
 			"restart": "Send an MDM restart command to the device.",
 			"erase":   "Send an MDM erase (wipe) command to the device. EXTREMELY DESTRUCTIVE — wipes all data.",
@@ -1976,17 +3107,30 @@ func describeCommand(parts []string) string {
 			"list":          "List all user groups and device groups.",
 			"add-member":    "Add a user or device to a group.",
 			"remove-member": "Remove a user or device from a group.",
+			"user":          "Manage JumpCloud user groups (list, get, create, update, delete).",
+			"device":        "Manage JumpCloud device groups (list, get, create, update, delete).",
 		},
 		"insights": {
-			"query": "Query Directory Insights events (audit log) for a given service and time range.",
-			"count": "Count events matching criteria without returning full records.",
+			"query":    "Query Directory Insights events (audit log) for a given service and time range.",
+			"count":    "Count events matching criteria without returning full records.",
+			"distinct": "Get distinct values for a field from Directory Insights events.",
 		},
 		"commands": {
-			"list": "List all JumpCloud commands.",
-			"run":  "Trigger a command to run on specified devices or device groups.",
+			"list":    "List all JumpCloud commands.",
+			"get":     "Retrieve a single JumpCloud command by name or ID.",
+			"create":  "Create a new JumpCloud command.",
+			"update":  "Update an existing JumpCloud command.",
+			"delete":  "Permanently delete a JumpCloud command. IRREVERSIBLE.",
+			"results": "List execution results for a command showing exit codes, stdout, stderr.",
+			"run":     "Trigger a command to run on specified devices or device groups.",
 		},
 		"policies": {
-			"list": "List all JumpCloud policies with name, type, and OS target.",
+			"list":    "List all JumpCloud policies with name, type, and OS target.",
+			"get":     "Retrieve a single JumpCloud policy by name or ID.",
+			"create":  "Create a new JumpCloud policy from a template.",
+			"update":  "Update an existing JumpCloud policy.",
+			"delete":  "Permanently delete a JumpCloud policy. IRREVERSIBLE.",
+			"results": "List policy application results per device.",
 		},
 		"auth-policies": {
 			"list":         "List all JumpCloud authentication policies for conditional access.",
@@ -1998,6 +3142,18 @@ func describeCommand(parts []string) string {
 			"disable":      "Disable an authentication policy.",
 			"simulate":     "Simulate whether a user would be allowed/denied by a policy.",
 			"blast-radius": "Show which users are affected by a policy.",
+		},
+		"apps": {
+			"list":   "List all JumpCloud SSO applications.",
+			"get":    "Retrieve a single SSO application by name or ID.",
+			"create": "Create a new SSO application.",
+			"update": "Update an existing SSO application.",
+			"delete": "Permanently delete an SSO application. IRREVERSIBLE.",
+		},
+		"graph": {
+			"traverse": "Traverse JumpCloud graph associations between resources.",
+			"bind":     "Create an association between two JumpCloud resources.",
+			"unbind":   "Remove an association between two JumpCloud resources.",
 		},
 		"iplists": {
 			"list":   "List all JumpCloud IP lists used by authentication policies.",
