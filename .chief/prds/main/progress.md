@@ -30,7 +30,9 @@
 - V2 list footer shows `── N items ──` (no totalCount available unlike V1)
 - `ToV2Query()` / `ToV2Queries()` in filter package: `field:op:value` (no `$` prefix)
 - User group default fields: id, name, description, type
+- Device group default fields: id, name, description, type (same as user groups)
 - `UserGroupConfig` / `DeviceGroupConfig` in resolve package for V2 name-to-ID resolution
+- Device groups: `jc groups device list/get/create/update/delete` — mirrors user groups exactly with `/systemgroups` endpoint
 
 ---
 
@@ -194,4 +196,19 @@
   - Group commands nest under `jc groups user` (not `jc usergroups`) — prepares for `jc groups device` in US-025
   - `startUserGroupsServer` handles GET list, POST create, GET/PUT/DELETE by ID — similar to V1 test servers but simpler (no pagination needed for basic tests)
   - Confirmation prompts reuse shared `getConfirmReader()` and `overrideConfirmReader(t, input)` from users.go/users_test.go
+---
+
+## 2026-02-13 - US-025
+- Implemented Device Groups CRUD commands using V2 API (`/api/v2/systemgroups`)
+- Files changed:
+  - `internal/cmd/groups.go` — added `deviceGroupDefaultFields`, `resolveDeviceGroup()`, `newGroupsDeviceCmd()` parent + list/get/create/update/delete subcommands; registered `newGroupsDeviceCmd()` in `newGroupsCmd()`
+  - `internal/cmd/groups_test.go` — added 34 tests: `startDeviceGroupsServer()`, `sampleDeviceGroups()`, and full test coverage for list (JSON, table, CSV, IDs, quiet, footer, empty, filter, sort, invalid filter, limit), get (by ID, by name, not found, name not found, missing arg), create (full, name-only, missing name, API endpoint), update (by ID, by name, no fields, API endpoint), delete (force, force by name, confirm yes/no, empty input, not found, missing arg, prompt shows name), help structure (groups includes device, device subcommands, filter/sort/limit flags)
+  - `.chief/prds/main/prd.json` — marked US-025 as complete
+- **Learnings for future iterations:**
+  - Device groups are an exact mirror of user groups — endpoint `/systemgroups` instead of `/usergroups`, same field schema
+  - `DeviceGroupConfig` was already pre-defined in `resolve.go` during US-024 — forward planning pays off
+  - `startDeviceGroupsServer` follows same structure as `startUserGroupsServer` — handles GET list, POST create, GET/PUT/DELETE by ID
+  - All device group commands reuse `newV2Client`, `getConfirmReader`, `overrideConfirmReader` — zero duplication needed
+  - The `groups` parent command now shows both `user` and `device` subcommands in help
+  - Device group default fields match user groups: id, name, description, type
 ---

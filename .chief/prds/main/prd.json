@@ -533,7 +533,8 @@
         "All standard output formats supported"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 System Groups API: GET/POST /api/v2/systemgroups, GET/PUT/DELETE /api/v2/systemgroups/{id}.",
       "dependsOn": ["US-023", "US-018"]
     },
