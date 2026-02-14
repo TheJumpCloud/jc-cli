@@ -619,3 +619,25 @@
   - `http.ErrServerClosed` is the normal return from `srv.Serve` after `srv.Close()` — convert to nil for graceful shutdown
   - CORS preflight: `OPTIONS` → 204 No Content with allow headers; `Access-Control-Allow-Headers` must include `x-api-key` and `Authorization`
 ---
+
+### US-058: MCP Tool Allow/Block Lists — DONE
+- **Commit:** ca36046
+- **Files changed:**
+  - `internal/mcp/toolfilter.go` — New file: `toolFilter` struct with `isAllowed()` using `filepath.Match` for glob patterns
+  - `internal/mcp/toolfilter_test.go` — 9 unit tests covering no-list, allow, block, wildcard, precedence, multiple patterns
+  - `internal/mcp/server.go` — Added `toolFilter` and `toolNames` fields to `Server`, `ListToolNames()` method
+  - `internal/mcp/tools.go` — `addTool`/`addTypedTool` check `toolFilter.isAllowed()` before registering; track names in `toolNames`
+  - `internal/config/config.go` — `mcp.allowed_tools`, `mcp.blocked_tools` config keys + `MCPAllowedTools()`, `MCPBlockedTools()` accessors
+  - `internal/cmd/mcp.go` — `jc mcp tools` subcommand; pass allow/block lists from config to `NewServer`
+  - `internal/mcp/server_test.go` — 12 integration tests for allow/block/wildcard/precedence/read-only/ListToolNames
+  - `internal/cmd/mcp_test.go` — 4 new tests for tools subcommand and allow/block list docs
+- **Design decisions:**
+  - Filter at registration time (not runtime) — blocked tools never appear in `tools/list`
+  - Blocked tool calls get MCP protocol error (tool not found) — clear signal to AI agents
+  - `filepath.Match` provides glob-style matching — supports `*` and `?` wildcards
+  - Block list precedence over allow list — mirrors standard firewall rule ordering
+- **Codebase patterns:**
+  - MCP SDK has no public API to enumerate registered tools — maintain parallel `toolNames` slice
+  - `filepath.Match` is the stdlib glob matcher (no external dependency); patterns like `users_*` match tool names naturally since tools use `_` separators
+  - `jc mcp tools` creates a temporary server to discover available tools — simple but creates full server infrastructure; acceptable since it's a diagnostic command
+---

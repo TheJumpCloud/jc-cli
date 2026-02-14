@@ -1215,7 +1215,8 @@
         "Changes to allow/block lists take effect on server restart"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Allow/block lists give admins fine-grained control over AI agent capabilities. Example: allow read-only queries but block device erase. Wildcard patterns use glob-style matching.",
       "dependsOn": ["US-046", "US-047"]
     },
