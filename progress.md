@@ -91,6 +91,11 @@
 - Simulate command builds `SimulationContext` from flags + API data; missing flags → `unknown` for dependent conditions
 - Blast-radius fetches policy targets, resolves group members via V2 `/usergroups/{id}/members`, deduplicates with `seen` map
 - Combined V1+V2 mock servers for simulate tests: single `httptest.Server` routing `/api/systemusers` (V1) and `/api/v2/authn/policies` (V2)
+- `parsePolicyFromAPI()` anti-corruption layer: converts real API shapes (nested `effect`, `targets`) to simulator domain types; keeps simulator pure
+- Real API `effect`: `{action, obligations: {mfa: {required}}}` → derive `"allow"/"deny"/"allow_with_mfa"`
+- Real API `targets`: `{users: {inclusions: ["all"]}, userGroups: {inclusions: [...]}}` → flat `AllUsers bool` + `UserGroups []string`
+- Real API `locationIn`: `{countries: ["SG"]}` object format (not bare array)
+- `isIPListID()` in simulator: 24-char hex = IP list ID (resolve via API); otherwise = direct IP/CIDR
 ---
 
 ## 2026-02-13 - US-001
@@ -1026,4 +1031,33 @@
   - `parseDeviceStatus()` extracts managed status from `agentVersion != ""` and encryption from nested `fde.active` — both require careful null/type checking on raw JSON.
   - `fetchUserGroupIDs()` via V2 graph `/users/{id}/memberof` returns association objects with `{id, type}` — extract `id` fields and return as string slice for group membership matching.
   - Blast-radius deduplication uses a `seen` map of user IDs when aggregating members from multiple target groups — prevents duplicate entries in output.
+---
+
+## 2026-02-14 - Bugfix: Adapt Simulator to Real JumpCloud API Shapes
+- **Status:** COMPLETE (verified against live JumpCloud org)
+- What was fixed:
+  - **`effect` field**: Real API returns nested `{action: "allow", obligations: {mfa: {required: true}}}`, not a flat string. Added `parsePolicyFromAPI()` in `auth_policies.go` that derives `"allow"`, `"deny"`, or `"allow_with_mfa"` from the nested structure (checks `action` + `obligations.mfa.required`).
+  - **`targets` field**: Real API returns `{users: {inclusions: ["all"]}, userGroups: {inclusions: [...]}}`, not flat arrays. `parsePolicyFromAPI()` maps `users.inclusions: ["all"]` → `AllUsers: true` and `userGroups.inclusions` → `PolicyTargets.UserGroups`.
+  - **`locationIn` condition**: Real API uses `{countries: ["SG"]}` object format, not bare string/array. Updated `evalLocationIn()` to try object-with-countries first, then fall back to array, then single string.
+  - **`ipAddressIn` condition**: Real API sends arrays of IP list IDs (24-char hex), not direct IPs/CIDRs. Added `isIPListID()` to classify each array element — hex IDs are resolved via `IPListResolver`, non-IDs treated as direct IP/CIDR entries.
+  - **Test fixtures**: Updated all simulate/blast-radius test policies to use real API format via `apiEffect()` and `apiTargets()` helper functions.
+- Files changed:
+  - `internal/cmd/auth_policies.go` — added `parsePolicyFromAPI()` conversion function; replaced direct `json.Unmarshal` into `simulator.Policy` in both simulate and blast-radius commands
+  - `internal/cmd/auth_policies_test.go` — added `apiEffect()` and `apiTargets()` test helpers; updated all inline policy fixtures in simulate/blast-radius tests to use real API format
+  - `internal/simulator/simulator.go` — updated `evalLocationIn()` for `{countries:[]}` format; updated `evalIPAddressIn()` array branch with `isIPListID()` classification; added `isIPListID()` helper
+- **Live verification:**
+  - `jc auth-policies simulate "certain SSO" --user me --ip 116.88.96.251` → `allow_with_mfa`, `unknown` (IP matched Home list, device unknown)
+  - `jc auth-policies simulate "certain SSO" --user me --ip 192.168.1.100` → `does_not_apply` (IP not in Home list)
+  - `jc auth-policies simulate "Portal: Allow Singapore" --user me --location SG` → `does_not_apply` (disabled)
+  - `jc auth-policies simulate "slack" --user me --location US` → `does_not_apply` (wrong country, short-circuits `all`)
+  - `jc auth-policies simulate "slack" --user me --location SG` → `unknown` (location matches, but device unknown)
+  - `jc auth-policies simulate "Portal - Always MFA" --user me` → `does_not_apply` (user not in target groups)
+  - `jc auth-policies simulate "Portal - Always MFA" --user john.doe` → `allow_with_mfa`, `unknown` (in group, device unknown)
+  - `jc auth-policies blast-radius "certain SSO" --table` → all 6 users (targets ALL users)
+  - `jc auth-policies blast-radius "Portal - Always MFA"` → 1 affected user (john.doe)
+- **Learnings:**
+  - Anti-corruption layer pattern: keep the simulator as a pure domain model with simple types (`Effect string`, `AllUsers bool`), add a `parsePolicyFromAPI()` conversion at the command boundary. The API shape doesn't leak into domain logic.
+  - JumpCloud `effect` field encodes MFA requirement in `obligations.mfa.required`, not in the action string. Must check both `action` and `obligations` to derive the simulator's `"allow_with_mfa"` effect.
+  - JumpCloud `locationIn` condition uses an object `{countries: ["SG"]}` rather than a bare array — likely to support future location types (regions, cities).
+  - IP list IDs (24-char hex) in `ipAddressIn` arrays can be distinguished from direct IPs/CIDRs by length and character set. `isIPListID()` provides a clean heuristic that handles both cases in one pass.
 ---
