@@ -42,8 +42,9 @@ func newAppsListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all SSO applications",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all SSO applications",
 		Long: `List all JumpCloud SSO applications.
 
 Default fields: _id, name, displayLabel, ssoType, status.

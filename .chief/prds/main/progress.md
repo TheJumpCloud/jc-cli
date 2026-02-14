@@ -85,6 +85,8 @@
 - MCP SSE: `SSEHandler` from SDK implements `http.Handler`; wrap with auth/CORS middleware, serve via `http.Server`
 - SSE test pattern: `net.Listen("tcp", ":0")` + `srv.Serve(ln)` for random port; `Server.Listener()` exposes address for tests
 - `MCPSSEPort()` in config returns `mcp.sse_port` (default 8080); `--port` flag overrides
+- Command aliases: Cobra `Aliases` field on parent cmds (`u`→users, `d`→devices, `g`→groups, `i`→insights); verb aliases (`ls`→list, `rm`→delete) on subcommands
+- Short aliases added to `builtinCommands` map to prevent user-config alias shadowing
 
 ---
 
@@ -640,4 +642,31 @@
   - MCP SDK has no public API to enumerate registered tools — maintain parallel `toolNames` slice
   - `filepath.Match` is the stdlib glob matcher (no external dependency); patterns like `users_*` match tool names naturally since tools use `_` separators
   - `jc mcp tools` creates a temporary server to discover available tools — simple but creates full server infrastructure; acceptable since it's a diagnostic command
+---
+
+## 2026-02-13 - US-059
+- Implemented command aliases (short forms) using Cobra's `Aliases` field
+- **Resource aliases (parent commands):**
+  - `u` → `users`, `d` → `devices`, `g` → `groups`, `i` → `insights`
+- **Verb aliases (subcommands):**
+  - `ls` → `list` (on all resource commands: users, devices, groups user/device, commands, policies, apps, admins, recipe)
+  - `rm` → `delete` (on all resource commands with delete: users, devices, groups user/device, commands)
+- **Files changed:**
+  - `internal/cmd/users.go` — added `Aliases: []string{"u"}` to parent, `Aliases: []string{"ls"}` to list, `Aliases: []string{"rm"}` to delete; updated Long text to show aliases
+  - `internal/cmd/devices.go` — same pattern: `d` parent alias, `ls`/`rm` verb aliases
+  - `internal/cmd/groups.go` — `g` parent alias, `ls`/`rm` on both user and device group list/delete
+  - `internal/cmd/insights.go` — `i` parent alias
+  - `internal/cmd/commands.go` — `ls`/`rm` verb aliases on list/delete
+  - `internal/cmd/policies.go` — `ls` verb alias on list
+  - `internal/cmd/apps.go` — `ls` verb alias on list
+  - `internal/cmd/admins.go` — `ls` verb alias on list
+  - `internal/cmd/recipe.go` — `ls` verb alias on list
+  - `internal/cmd/root.go` — added `u`, `d`, `g`, `i` to `builtinCommands` map
+  - `internal/cmd/root_test.go` — added 10 test functions (37 sub-tests): resource aliases, verb aliases, combined resource+verb, help text, builtin map, Cobra registration
+- **Learnings for future iterations:**
+  - Cobra `Aliases` field on `cobra.Command` is the canonical way to add short forms — resolved at command tree walk time, works with completions automatically
+  - `rootCmd.Find([]string{"u", "ls"})` resolves aliases at each level — efficient way to test alias resolution without needing mock API servers
+  - Short aliases must be added to `builtinCommands` map so user-defined config aliases don't shadow them
+  - Cobra's `--help` output only shows `Long` description — aliases documented in `Long` text (e.g., "Aliases: u, users") are visible to users
+  - Verb aliases (`ls`, `rm`) are per-subcommand, not per-resource — each list/delete subcommand gets its own alias independently
 ---

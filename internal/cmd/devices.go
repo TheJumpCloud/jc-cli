@@ -27,9 +27,10 @@ var deviceDefaultFields = []string{"displayName", "hostname", "os", "osVersion",
 
 func newDevicesCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "devices",
-		Short: "Manage JumpCloud devices",
-		Long:  "List, get, delete, and send MDM commands to JumpCloud systems (devices).",
+		Use:     "devices",
+		Aliases: []string{"d"},
+		Short:   "Manage JumpCloud devices",
+		Long:    "List, get, delete, and send MDM commands to JumpCloud systems (devices).\n\nAliases: d, devices",
 	}
 
 	cmd.AddCommand(newDevicesListCmd())
@@ -51,8 +52,9 @@ func newDevicesListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all devices",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all devices",
 		Long: `List all JumpCloud systems (devices).
 
 Default fields: displayName, hostname, os, osVersion, lastContact, agentVersion.
@@ -151,8 +153,9 @@ func runDevicesGet(cmd *cobra.Command, identifier string) error {
 
 func newDevicesDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [hostname-or-id]",
-		Short: "Delete a device",
+		Use:     "delete [hostname-or-id]",
+		Aliases: []string{"rm"},
+		Short:   "Delete a device",
 		Long: `Delete a JumpCloud system (device).
 
 Accepts a hostname or 24-character hex system ID.

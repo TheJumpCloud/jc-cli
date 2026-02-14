@@ -24,8 +24,9 @@ var newInsightsClient = func() (*api.InsightsClient, error) {
 
 func newInsightsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "insights",
-		Short: "Query JumpCloud Directory Insights events",
+		Use:     "insights",
+		Aliases: []string{"i"},
+		Short:   "Query JumpCloud Directory Insights events",
 		Long: `Query Directory Insights for audit and activity events.
 
 Supported services: all, sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager.
@@ -36,7 +37,9 @@ Time ranges can be specified as:
   --last 30d          Last 30 days
   --last 1m           Last 1 month
   --start 2026-02-01  Absolute date
-  --start 2026-02-01T00:00:00Z  RFC 3339 datetime`,
+  --start 2026-02-01T00:00:00Z  RFC 3339 datetime
+
+Aliases: i, insights`,
 	}
 
 	cmd.AddCommand(newInsightsQueryCmd())

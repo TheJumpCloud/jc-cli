@@ -42,9 +42,10 @@ func resolveDeviceGroup(ctx context.Context, client *api.V2Client, identifier st
 
 func newGroupsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "groups",
-		Short: "Manage JumpCloud groups",
-		Long:  "Manage JumpCloud user groups and device (system) groups.",
+		Use:     "groups",
+		Aliases: []string{"g"},
+		Short:   "Manage JumpCloud groups",
+		Long:    "Manage JumpCloud user groups and device (system) groups.\n\nAliases: g, groups",
 	}
 
 	cmd.AddCommand(newGroupsUserCmd())
@@ -79,8 +80,9 @@ func newGroupsUserListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all user groups",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all user groups",
 		Long: `List all JumpCloud user groups.
 
 Default fields: id, name, description, type.
@@ -309,8 +311,9 @@ func runGroupsUserUpdate(cmd *cobra.Command, identifier, name, description strin
 
 func newGroupsUserDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [group-name-or-id]",
-		Short: "Delete a user group",
+		Use:     "delete [group-name-or-id]",
+		Aliases: []string{"rm"},
+		Short:   "Delete a user group",
 		Long: `Delete a JumpCloud user group.
 
 Accepts a group name or 24-character hex group ID.
@@ -454,8 +457,9 @@ func newGroupsDeviceListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all device groups",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all device groups",
 		Long: `List all JumpCloud device (system) groups.
 
 Default fields: id, name, description, type.
@@ -684,8 +688,9 @@ func runGroupsDeviceUpdate(cmd *cobra.Command, identifier, name, description str
 
 func newGroupsDeviceDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [group-name-or-id]",
-		Short: "Delete a device group",
+		Use:     "delete [group-name-or-id]",
+		Aliases: []string{"rm"},
+		Short:   "Delete a device group",
 		Long: `Delete a JumpCloud device (system) group.
 
 Accepts a group name or 24-character hex group ID.

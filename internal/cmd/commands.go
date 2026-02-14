@@ -51,8 +51,9 @@ func newCommandsListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all commands",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all commands",
 		Long: `List all JumpCloud commands.
 
 Default fields: name, commandType, command, schedule, scheduleRepeatType.
@@ -263,8 +264,9 @@ func runCommandsUpdate(cmd *cobra.Command, identifier, name, commandBody, comman
 
 func newCommandsDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <command-name-or-id>",
-		Short: "Delete a command",
+		Use:     "delete <command-name-or-id>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a command",
 		Long: `Delete a JumpCloud command.
 
 Accepts a command name or 24-character hex command ID.

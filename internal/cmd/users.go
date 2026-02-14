@@ -44,9 +44,10 @@ func resolveUser(ctx context.Context, client *api.V1Client, identifier string) (
 
 func newUsersCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "users",
-		Short: "Manage JumpCloud users",
-		Long:  "List, get, search, create, update, delete, lock, unlock, reset MFA, and reset password for JumpCloud system users.",
+		Use:     "users",
+		Aliases: []string{"u"},
+		Short:   "Manage JumpCloud users",
+		Long:    "List, get, search, create, update, delete, lock, unlock, reset MFA, and reset password for JumpCloud system users.\n\nAliases: u, users",
 	}
 
 	cmd.AddCommand(newUsersListCmd())
@@ -72,8 +73,9 @@ func newUsersListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all users",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all users",
 		Long: `List all JumpCloud system users.
 
 Default fields: username, email, firstname, lastname, activated, suspended.
@@ -412,8 +414,9 @@ func runUsersUpdate(cmd *cobra.Command, identifier, email, firstname, lastname, 
 
 func newUsersDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [username-or-id]",
-		Short: "Delete a user",
+		Use:     "delete [username-or-id]",
+		Aliases: []string{"rm"},
+		Short:   "Delete a user",
 		Long: `Delete a JumpCloud system user.
 
 Accepts a username or 24-character hex user ID.

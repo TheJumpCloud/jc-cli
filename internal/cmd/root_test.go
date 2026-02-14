@@ -987,3 +987,211 @@ func TestPriorityChain_ConfigOverridesDefaults(t *testing.T) {
 		t.Errorf("defaults.output = %q, want %q (config should override default)", got, "csv")
 	}
 }
+
+// --- Command Alias Tests ---
+
+func TestCommandAliases_ResourceShortForms(t *testing.T) {
+	rootCmd := NewRootCmd()
+
+	tests := []struct {
+		alias    string
+		fullName string
+	}{
+		{"u", "users"},
+		{"d", "devices"},
+		{"g", "groups"},
+		{"i", "insights"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.alias+"->"+tt.fullName, func(t *testing.T) {
+			// Cobra resolves aliases — find the command via the alias.
+			found, _, err := rootCmd.Find([]string{tt.alias})
+			if err != nil {
+				t.Fatalf("Find(%q) error: %v", tt.alias, err)
+			}
+			if found.Name() != tt.fullName {
+				t.Errorf("alias %q resolved to %q, want %q", tt.alias, found.Name(), tt.fullName)
+			}
+		})
+	}
+}
+
+func TestCommandAliases_VerbShortForms(t *testing.T) {
+	rootCmd := NewRootCmd()
+
+	tests := []struct {
+		path     []string
+		wantName string
+	}{
+		// ls → list
+		{[]string{"users", "ls"}, "list"},
+		{[]string{"devices", "ls"}, "list"},
+		{[]string{"groups", "user", "ls"}, "list"},
+		{[]string{"groups", "device", "ls"}, "list"},
+		{[]string{"commands", "ls"}, "list"},
+		{[]string{"policies", "ls"}, "list"},
+		{[]string{"apps", "ls"}, "list"},
+		{[]string{"admins", "ls"}, "list"},
+		{[]string{"recipe", "ls"}, "list"},
+		// rm → delete
+		{[]string{"users", "rm"}, "delete"},
+		{[]string{"devices", "rm"}, "delete"},
+		{[]string{"groups", "user", "rm"}, "delete"},
+		{[]string{"groups", "device", "rm"}, "delete"},
+		{[]string{"commands", "rm"}, "delete"},
+	}
+
+	for _, tt := range tests {
+		name := strings.Join(tt.path, " ")
+		t.Run(name, func(t *testing.T) {
+			found, _, err := rootCmd.Find(tt.path)
+			if err != nil {
+				t.Fatalf("Find(%v) error: %v", tt.path, err)
+			}
+			if found.Name() != tt.wantName {
+				t.Errorf("path %v resolved to %q, want %q", tt.path, found.Name(), tt.wantName)
+			}
+		})
+	}
+}
+
+func TestCommandAliases_CombinedResourceAndVerb(t *testing.T) {
+	rootCmd := NewRootCmd()
+
+	tests := []struct {
+		path     []string
+		wantName string
+	}{
+		// jc u ls → jc users list
+		{[]string{"u", "ls"}, "list"},
+		// jc u rm → jc users delete
+		{[]string{"u", "rm"}, "delete"},
+		// jc d ls → jc devices list
+		{[]string{"d", "ls"}, "list"},
+		// jc d rm → jc devices delete
+		{[]string{"d", "rm"}, "delete"},
+		// jc g user ls → jc groups user list
+		{[]string{"g", "user", "ls"}, "list"},
+	}
+
+	for _, tt := range tests {
+		name := strings.Join(tt.path, " ")
+		t.Run(name, func(t *testing.T) {
+			found, _, err := rootCmd.Find(tt.path)
+			if err != nil {
+				t.Fatalf("Find(%v) error: %v", tt.path, err)
+			}
+			if found.Name() != tt.wantName {
+				t.Errorf("path %v resolved to %q, want %q", tt.path, found.Name(), tt.wantName)
+			}
+		})
+	}
+}
+
+func TestCommandAliases_HelpShowsAliases(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"users", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Aliases: u, users") {
+		t.Errorf("users help should show aliases, got:\n%s", got)
+	}
+}
+
+func TestCommandAliases_AliasInHelpForDevices(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"devices", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Aliases: d, devices") {
+		t.Errorf("devices help should show aliases, got:\n%s", got)
+	}
+}
+
+func TestCommandAliases_AliasInHelpForGroups(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"groups", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Aliases: g, groups") {
+		t.Errorf("groups help should show aliases, got:\n%s", got)
+	}
+}
+
+func TestCommandAliases_AliasInHelpForInsights(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"insights", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Aliases: i, insights") {
+		t.Errorf("insights help should show aliases, got:\n%s", got)
+	}
+}
+
+func TestCommandAliases_BuiltinCommandsIncludesShortAliases(t *testing.T) {
+	shortAliases := []string{"u", "d", "g", "i"}
+	for _, alias := range shortAliases {
+		if !builtinCommands[alias] {
+			t.Errorf("builtinCommands should include short alias %q", alias)
+		}
+	}
+}
+
+func TestCommandAliases_AliasesRegisteredInCobra(t *testing.T) {
+	rootCmd := NewRootCmd()
+
+	tests := []struct {
+		cmdPath []string
+		alias   string
+	}{
+		{[]string{"users"}, "u"},
+		{[]string{"devices"}, "d"},
+		{[]string{"groups"}, "g"},
+		{[]string{"insights"}, "i"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.alias, func(t *testing.T) {
+			found, _, err := rootCmd.Find(tt.cmdPath)
+			if err != nil {
+				t.Fatalf("Find(%v) error: %v", tt.cmdPath, err)
+			}
+			aliases := found.Aliases
+			hasAlias := false
+			for _, a := range aliases {
+				if a == tt.alias {
+					hasAlias = true
+					break
+				}
+			}
+			if !hasAlias {
+				t.Errorf("command %v should have alias %q, got %v", tt.cmdPath, tt.alias, aliases)
+			}
+		})
+	}
+}

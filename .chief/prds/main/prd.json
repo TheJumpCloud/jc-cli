@@ -1236,7 +1236,8 @@
         "Help text shows aliases: 'Aliases: u, users'"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Use Cobra's Aliases field on commands. These are built-in aliases distinct from user-defined aliases in config.",
       "dependsOn": ["US-011", "US-015"]
     },

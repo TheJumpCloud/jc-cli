@@ -33,8 +33,9 @@ func newAdminsListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all administrators",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all administrators",
 		Long: `List all JumpCloud administrators with email, role, and MFA status.
 
 Default fields: id, email, role, enableMultiFactor.

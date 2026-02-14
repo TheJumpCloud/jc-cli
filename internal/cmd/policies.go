@@ -46,8 +46,9 @@ func newPoliciesListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all policies",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all policies",
 		Long: `List all JumpCloud policies.
 
 Default fields: id, name, template, os.

@@ -282,6 +282,8 @@ var builtinCommands = map[string]bool{
 	"policies": true, "apps": true, "graph": true, "admins": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
+	// Short aliases for resource commands.
+	"u": true, "d": true, "g": true, "i": true,
 }
 
 // expandAliases checks if the first positional argument matches a

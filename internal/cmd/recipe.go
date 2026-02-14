@@ -67,9 +67,10 @@ placed in ~/.config/jc/recipes/.`,
 
 func newRecipeListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List all available recipes (built-in + user-defined)",
-		RunE:  runRecipeList,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all available recipes (built-in + user-defined)",
+		RunE:    runRecipeList,
 	}
 }
 
