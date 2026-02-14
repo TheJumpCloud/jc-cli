@@ -13,6 +13,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -197,6 +198,21 @@ The newly created group object is returned.`,
 }
 
 func runGroupsUserCreate(cmd *cobra.Command, name, description string) error {
+	if viper.GetBool("plan") {
+		effects := []string{"name: " + name}
+		if description != "" {
+			effects = append(effects, "description: "+description)
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "user group",
+			Target:     name,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -257,6 +273,21 @@ func runGroupsUserUpdate(cmd *cobra.Command, identifier, name, description strin
 		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --description)")
 	}
 
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, k+": "+v)
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "user group",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -305,7 +336,7 @@ func runGroupsUserDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	// Fetch the group first so we can show details in the confirmation prompt.
+	// Fetch the group first so we can show details in the confirmation/plan.
 	groupData, err := client.Get(cmd.Context(), "/usergroups/"+id)
 	if err != nil {
 		return err
@@ -316,6 +347,16 @@ func runGroupsUserDelete(cmd *cobra.Command, identifier string) error {
 	}
 	if err := json.Unmarshal(groupData, &group); err != nil {
 		return fmt.Errorf("parsing group data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "user group",
+			Target:   fmt.Sprintf("%s (%s)", group.Name, id),
+			Effects:  []string{"Remove user group and all memberships"},
+		}
+		return renderPlan(cmd, p)
 	}
 
 	// Confirmation prompt (unless --force is set).
@@ -487,6 +528,21 @@ The newly created group object is returned.`,
 }
 
 func runGroupsDeviceCreate(cmd *cobra.Command, name, description string) error {
+	if viper.GetBool("plan") {
+		effects := []string{"name: " + name}
+		if description != "" {
+			effects = append(effects, "description: "+description)
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "device group",
+			Target:     name,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -547,6 +603,21 @@ func runGroupsDeviceUpdate(cmd *cobra.Command, identifier, name, description str
 		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --description)")
 	}
 
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, k+": "+v)
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "device group",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -595,7 +666,7 @@ func runGroupsDeviceDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	// Fetch the group first so we can show details in the confirmation prompt.
+	// Fetch the group first so we can show details in the confirmation/plan.
 	groupData, err := client.Get(cmd.Context(), "/systemgroups/"+id)
 	if err != nil {
 		return err
@@ -606,6 +677,16 @@ func runGroupsDeviceDelete(cmd *cobra.Command, identifier string) error {
 	}
 	if err := json.Unmarshal(groupData, &group); err != nil {
 		return fmt.Errorf("parsing group data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "device group",
+			Target:   fmt.Sprintf("%s (%s)", group.Name, id),
+			Effects:  []string{"Remove device group and all memberships"},
+		}
+		return renderPlan(cmd, p)
 	}
 
 	// Confirmation prompt (unless --force is set).
@@ -669,6 +750,23 @@ func runGroupsAddMember(cmd *cobra.Command, groupIdentifier, user, device string
 	}
 	if user != "" && device != "" {
 		return fmt.Errorf("specify only one of --user or --device, not both")
+	}
+
+	if viper.GetBool("plan") {
+		memberType := "user"
+		memberID := user
+		if device != "" {
+			memberType = "device"
+			memberID = device
+		}
+		p := &plan.Plan{
+			Action:     "add member",
+			Resource:   memberType + " group",
+			Target:     groupIdentifier,
+			Effects:    []string{fmt.Sprintf("Add %s %s to group", memberType, memberID)},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
 	}
 
 	v2Client, err := newV2Client()
@@ -808,6 +906,23 @@ func runGroupsRemoveMember(cmd *cobra.Command, groupIdentifier, user, device str
 	}
 	if user != "" && device != "" {
 		return fmt.Errorf("specify only one of --user or --device, not both")
+	}
+
+	if viper.GetBool("plan") {
+		memberType := "user"
+		memberID := user
+		if device != "" {
+			memberType = "device"
+			memberID = device
+		}
+		p := &plan.Plan{
+			Action:     "remove member",
+			Resource:   memberType + " group",
+			Target:     groupIdentifier,
+			Effects:    []string{fmt.Sprintf("Remove %s %s from group", memberType, memberID)},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
 	}
 
 	v2Client, err := newV2Client()

@@ -710,7 +710,8 @@
         "Plan mode works on: users create/update/delete/lock/unlock, devices delete/lock/erase, groups create/update/delete/add-member/remove-member"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Plan mode is critical for LLM safety — it lets agents preview commands before execution. Plan JSON format must be deterministic for machine consumption. Visual box uses lipgloss/glamour.",
       "dependsOn": ["US-012", "US-016", "US-017", "US-026"]
     },

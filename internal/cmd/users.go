@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -277,6 +278,24 @@ The newly created user object is returned.`,
 }
 
 func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname string) error {
+	if viper.GetBool("plan") {
+		effects := []string{"username: " + username, "email: " + email}
+		if firstname != "" {
+			effects = append(effects, "firstname: "+firstname)
+		}
+		if lastname != "" {
+			effects = append(effects, "lastname: "+lastname)
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "user",
+			Target:     username,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV1Client()
 	if err != nil {
 		return err
@@ -357,6 +376,21 @@ func runUsersUpdate(cmd *cobra.Command, identifier, email, firstname, lastname, 
 		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --email, --department)")
 	}
 
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, k+": "+v)
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "user",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	client, err := newV1Client()
 	if err != nil {
 		return err
@@ -405,7 +439,7 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	// Fetch the user first so we can show details in the confirmation prompt.
+	// Fetch the user first so we can show details in the confirmation/plan.
 	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
@@ -417,6 +451,16 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 	}
 	if err := json.Unmarshal(userData, &user); err != nil {
 		return fmt.Errorf("parsing user data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "user",
+			Target:   fmt.Sprintf("%s (%s)", user.Username, id),
+			Effects:  []string{"Remove user from JumpCloud", "User will lose access to all resources"},
+		}
+		return renderPlan(cmd, p)
 	}
 
 	// Confirmation prompt (unless --force is set).
@@ -480,7 +524,7 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 		return err
 	}
 
-	// Fetch user to get username for confirmation message.
+	// Fetch user to get username for confirmation/plan message.
 	userData, err := client.Get(cmd.Context(), "/systemusers/"+id)
 	if err != nil {
 		return err
@@ -493,6 +537,22 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 		return fmt.Errorf("parsing user data: %w", err)
 	}
 
+	action := "lock"
+	if !lock {
+		action = "unlock"
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:     action,
+			Resource:   "user",
+			Target:     fmt.Sprintf("%s (%s)", user.Username, id),
+			Effects:    []string{fmt.Sprintf("Set account_locked=%v", lock)},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
 	body := map[string]any{
 		"account_locked": lock,
 	}
@@ -501,11 +561,11 @@ func runUsersLockUnlock(cmd *cobra.Command, identifier string, lock bool) error 
 		return err
 	}
 
-	action := "locked"
+	past := "locked"
 	if !lock {
-		action = "unlocked"
+		past = "unlocked"
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "User %s %s successfully.\n", user.Username, action)
+	fmt.Fprintf(cmd.OutOrStdout(), "User %s %s successfully.\n", user.Username, past)
 	return nil
 }
 
@@ -602,6 +662,24 @@ func runUsersResetPassword(cmd *cobra.Command, identifier string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "User %s password reset triggered successfully.\n", user.Username)
 	return nil
+}
+
+// renderPlan renders a plan and returns an ExitError with the plan exit code.
+// When --output json is explicitly requested, JSON goes to stdout.
+// Otherwise, human-readable output goes to stderr.
+func renderPlan(cmd *cobra.Command, p *plan.Plan) error {
+	// Check if the user explicitly set --output (persistent flag on root).
+	outputFlag := cmd.Root().PersistentFlags().Lookup("output")
+	if outputFlag != nil && outputFlag.Changed && outputFlag.Value.String() == "json" {
+		if err := p.RenderJSON(cmd.OutOrStdout()); err != nil {
+			return err
+		}
+	} else {
+		if err := p.RenderHuman(cmd.ErrOrStderr()); err != nil {
+			return err
+		}
+	}
+	return &ExitError{Code: plan.ExitCodePlan}
 }
 
 // writeListFooter writes a "── N of TOTAL items ──" footer to stderr.

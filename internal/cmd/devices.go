@@ -12,6 +12,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -177,7 +178,7 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	// Fetch the device first so we can show details in the confirmation prompt.
+	// Fetch the device first so we can show details in the confirmation/plan.
 	deviceData, err := client.Get(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
@@ -190,6 +191,16 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 	}
 	if err := json.Unmarshal(deviceData, &device); err != nil {
 		return fmt.Errorf("parsing device data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "device",
+			Target:   fmt.Sprintf("%s (%s)", device.Hostname, id),
+			Effects:  []string{"Remove device record from JumpCloud"},
+		}
+		return renderPlan(cmd, p)
 	}
 
 	// Confirmation prompt (unless --force is set).
@@ -281,7 +292,7 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 		return err
 	}
 
-	// Fetch device to get hostname for confirmation message.
+	// Fetch device to get hostname for confirmation/plan message.
 	deviceData, err := client.Get(cmd.Context(), "/systems/"+id)
 	if err != nil {
 		return err
@@ -292,6 +303,18 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 	}
 	if err := json.Unmarshal(deviceData, &device); err != nil {
 		return fmt.Errorf("parsing device data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		reversible := action != "erase"
+		p := &plan.Plan{
+			Action:     action,
+			Resource:   "device",
+			Target:     fmt.Sprintf("%s (%s)", device.Hostname, id),
+			Effects:    []string{fmt.Sprintf("Send MDM %s command", action)},
+			Reversible: reversible,
+		}
+		return renderPlan(cmd, p)
 	}
 
 	// Confirmation prompt (unless --force is set).

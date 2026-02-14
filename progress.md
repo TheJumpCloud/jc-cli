@@ -553,3 +553,21 @@
   - Plan mode returns early after printing the preview — no API client needed, no mock server needed in plan mode tests.
   - The `writeTempCSV()` test helper using `t.TempDir()` is clean and auto-cleaned-up.
 ---
+
+### US-034: Plan Mode Engine
+- Status: **COMPLETE** ✅
+- Tests: 8 unit tests (plan package) + 19 integration tests (cmd package), all passing
+- Implementation:
+  - `internal/plan/plan.go` — `Plan` struct with `RenderHuman()` (visual box to stderr), `RenderJSON()` (structured JSON to stdout), `Render()` (format router); `ExitCodePlan = 10`
+  - `internal/plan/plan_test.go` — unit tests for human/JSON rendering, determinism, format routing, exit code constant
+  - `internal/cmd/plan_test.go` — integration tests for all mutating commands: users create/update/delete/lock/unlock (7), devices delete/lock/erase (3), groups user create/update/delete (3), groups device create/delete (2), add-member/remove-member (2), flag persistence (1), plus existing bulk plan test
+  - `internal/cmd/users.go` — added `renderPlan()` helper (shared across all cmd files), plan checks in `runUsersCreate`, `runUsersUpdate`, `runUsersDelete`, `runUsersLockUnlock`
+  - `internal/cmd/devices.go` — plan checks in `runDevicesDelete`, `runDevicesMDMCommand`
+  - `internal/cmd/groups.go` — plan checks in `runGroupsUserCreate`, `runGroupsUserUpdate`, `runGroupsUserDelete`, `runGroupsDeviceCreate`, `runGroupsDeviceUpdate`, `runGroupsDeviceDelete`, `runGroupsAddMember`, `runGroupsRemoveMember`
+- **Learnings for future iterations:**
+  - `renderPlan()` centralizes the plan mode output routing: checks `cmd.Root().PersistentFlags().Lookup("output").Changed` to distinguish explicit `--output json` from the default. Human-readable plan goes to stderr (default), JSON plan to stdout (only when explicitly requested).
+  - Plan checks go BEFORE mutating API calls but AFTER validation (e.g., "no fields to update" check) so we get useful plan output even without API access.
+  - For create commands, plan checks go before API client creation entirely — no API calls needed. For delete/lock/unlock, we still resolve the ID and fetch the resource (read-only) to show meaningful target info in the plan.
+  - The `ExitError{Code: plan.ExitCodePlan}` pattern (exit code 10) distinguishes plan mode from success (0), auth failure (3), and general errors (1).
+  - Membership plan checks (`add-member`, `remove-member`) go before V2Client creation, so no membership records are created — validated by tests checking `len(records) == 0`.
+---
