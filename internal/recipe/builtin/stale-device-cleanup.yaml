@@ -1,0 +1,22 @@
+name: stale-device-cleanup
+description: Find devices that have not contacted JumpCloud recently
+author: JumpCloud
+version: "1.0"
+tags: [devices, cleanup, maintenance]
+
+parameters:
+  - name: sort
+    description: Sort order for device list
+    required: false
+    type: string
+    default: "lastContact"
+
+steps:
+  - name: list-stale-devices
+    command: 'devices list --fields displayName,hostname,os,lastContact,agentVersion --sort {{ .sort }} -t'
+
+on_success:
+  message: "Stale device scan complete. Review devices with old lastContact dates."
+
+on_failure:
+  message: "Stale device scan failed at step: {{ .failed_step }}"

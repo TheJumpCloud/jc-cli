@@ -1,0 +1,34 @@
+name: security-audit
+description: Run a comprehensive security audit checking MFA, auth failures, and admin access
+author: JumpCloud
+version: "1.0"
+tags: [security, audit, compliance]
+
+parameters:
+  - name: days
+    description: Number of days to look back for security events
+    required: false
+    type: int
+    default: "7"
+
+steps:
+  - name: check-auth-failures
+    command: 'insights query --service sso --event-type sso_auth_failed --last {{ .days }}d -t --limit 50'
+    continue_on_error: true
+
+  - name: count-auth-failures
+    command: 'insights count --service sso --event-type sso_auth_failed --last {{ .days }}d'
+    capture: failure_count
+    continue_on_error: true
+
+  - name: list-admins
+    command: 'admins list -t'
+
+  - name: check-mfa-status
+    command: 'users list --fields username,email,totp_enabled -t'
+
+on_success:
+  message: "Security audit complete. Auth failures in last {{ .days }} days: {{ .failure_count }}"
+
+on_failure:
+  message: "Security audit failed at step: {{ .failed_step }}"

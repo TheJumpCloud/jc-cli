@@ -1,0 +1,21 @@
+name: bulk-create-users
+description: Create multiple users from a CSV file using the bulk operations engine
+author: JumpCloud
+version: "1.0"
+tags: [users, bulk, automation, onboarding]
+
+parameters:
+  - name: file
+    description: Path to CSV file containing user records
+    required: true
+    type: string
+
+steps:
+  - name: bulk-create
+    command: 'bulk users --file {{ .file }} --force'
+
+on_success:
+  message: "Bulk user creation complete from {{ .file }}"
+
+on_failure:
+  message: "Bulk user creation failed at step: {{ .failed_step }}"

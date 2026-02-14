@@ -1,0 +1,17 @@
+name: mfa-enforcement-check
+description: List users and their MFA enrollment status
+author: JumpCloud
+version: "1.0"
+tags: [security, compliance, mfa, audit]
+
+parameters: []
+
+steps:
+  - name: list-users-mfa-status
+    command: 'users list --fields username,email,totp_enabled,mfa -t'
+
+on_success:
+  message: "MFA status check complete. Review users with totp_enabled=false."
+
+on_failure:
+  message: "MFA check failed at step: {{ .failed_step }}"

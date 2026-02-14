@@ -1,0 +1,26 @@
+name: audit-inactive-users
+description: List users who have not logged in recently
+author: JumpCloud
+version: "1.0"
+tags: [audit, users, security, compliance]
+
+parameters:
+  - name: days
+    description: Number of days of inactivity to check
+    required: false
+    type: int
+    default: "90"
+
+steps:
+  - name: find-inactive-users
+    command: 'insights distinct --service all --field initiated_by.username --last {{ .days }}d'
+    capture: active_users
+
+  - name: list-all-users
+    command: 'users list --fields username,email,firstname,lastname -t'
+
+on_success:
+  message: "Inactive user audit complete. Review the user list above against active users."
+
+on_failure:
+  message: "Audit failed at step: {{ .failed_step }}"

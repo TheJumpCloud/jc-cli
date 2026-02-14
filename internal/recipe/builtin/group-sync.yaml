@@ -1,0 +1,28 @@
+name: group-sync
+description: Add a user to a specific user group by name
+author: JumpCloud
+version: "1.0"
+tags: [groups, users, automation, sync]
+
+parameters:
+  - name: user
+    description: Username or user ID to add
+    required: true
+    type: string
+  - name: group
+    description: User group name or ID
+    required: true
+    type: string
+
+steps:
+  - name: add-user-to-group
+    command: 'groups add-member {{ .group }} --user {{ .user }}'
+
+  - name: verify-membership
+    command: 'graph traverse --from user:{{ .user }} --to user_group -t'
+
+on_success:
+  message: "User {{ .user }} synced to group {{ .group }} successfully"
+
+on_failure:
+  message: "Group sync failed at step: {{ .failed_step }}"

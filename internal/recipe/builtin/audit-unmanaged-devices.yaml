@@ -1,0 +1,20 @@
+name: audit-unmanaged-devices
+description: List all devices and device groups to identify unmanaged systems
+author: JumpCloud
+version: "1.0"
+tags: [audit, devices, security, compliance]
+
+parameters: []
+
+steps:
+  - name: list-device-groups
+    command: 'groups device list --fields id,name -t'
+
+  - name: list-all-devices
+    command: 'devices list --fields displayName,hostname,os,lastContact -t --sort -lastContact'
+
+on_success:
+  message: "Device audit complete. Compare device list against group memberships to find unmanaged devices."
+
+on_failure:
+  message: "Device audit failed at step: {{ .failed_step }}"

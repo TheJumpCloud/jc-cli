@@ -899,7 +899,8 @@
         "Built-in recipes bundled into the binary (embedded via go:embed)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Embed recipe YAML files in the binary using Go embed. Each recipe should be well-documented with parameter descriptions and example usage.",
       "dependsOn": ["US-042"]
     },

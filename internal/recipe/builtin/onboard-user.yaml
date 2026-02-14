@@ -1,0 +1,49 @@
+name: onboard-user
+description: Create a new user, add to specified groups, and verify the account
+author: JumpCloud
+version: "1.0"
+tags: [onboarding, users, automation]
+
+parameters:
+  - name: username
+    description: User's login username
+    required: true
+    type: string
+  - name: email
+    description: User's email address
+    required: true
+    type: string
+  - name: firstname
+    description: User's first name
+    required: true
+    type: string
+  - name: lastname
+    description: User's last name
+    required: true
+    type: string
+  - name: department
+    description: Department to assign
+    required: false
+    type: string
+  - name: group
+    description: User group name or ID to add the user to
+    required: false
+    type: string
+
+steps:
+  - name: create-user
+    command: 'users create --username {{ .username }} --email {{ .email }} --firstname {{ .firstname }} --lastname {{ .lastname }} --department "{{ .department }}" --ids'
+    capture: user_id
+
+  - name: add-to-group
+    command: 'groups add-member {{ .group }} --user {{ .user_id }}'
+    when: "{{ .group }}"
+
+  - name: verify-user
+    command: 'users get {{ .user_id }}'
+
+on_success:
+  message: "User {{ .username }} ({{ .email }}) onboarded successfully"
+
+on_failure:
+  message: "Onboarding failed at step: {{ .failed_step }}"

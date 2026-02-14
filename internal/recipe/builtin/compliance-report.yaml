@@ -1,0 +1,33 @@
+name: compliance-report
+description: Generate a compliance snapshot including MFA adoption, user status, and device inventory
+author: JumpCloud
+version: "1.0"
+tags: [compliance, audit, security, reporting]
+
+parameters:
+  - name: days
+    description: Number of days to look back for activity
+    required: false
+    type: int
+    default: "30"
+
+steps:
+  - name: user-summary
+    command: 'users list --fields username,email,activated,suspended,totp_enabled -t'
+
+  - name: device-summary
+    command: 'devices list --fields displayName,hostname,os,osVersion,lastContact -t'
+
+  - name: recent-auth-failures
+    command: 'insights count --service sso --event-type sso_auth_failed --last {{ .days }}d'
+    capture: auth_failures
+    continue_on_error: true
+
+  - name: admin-list
+    command: 'admins list -t'
+
+on_success:
+  message: "Compliance report generated. Auth failures in last {{ .days }} days: {{ .auth_failures }}"
+
+on_failure:
+  message: "Compliance report failed at step: {{ .failed_step }}"

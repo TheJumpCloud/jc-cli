@@ -419,7 +419,8 @@ func RenderPlanHuman(w io.Writer, recipeName string, plans []StepPlan) {
 }
 
 // RecipesDir returns the directory where user-defined recipes are stored.
-func RecipesDir() string {
+// It is a variable to allow test overrides.
+var RecipesDir = func() string {
 	return filepath.Join(config.ConfigDir(), "recipes")
 }
 

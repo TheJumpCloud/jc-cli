@@ -1,0 +1,37 @@
+name: offboard-user
+description: Lock a user account, remove from all groups, and reset MFA
+author: JumpCloud
+version: "1.0"
+tags: [offboarding, users, security, automation]
+
+parameters:
+  - name: user
+    description: Username or user ID to offboard
+    required: true
+    type: string
+  - name: delete_user
+    description: Set to true to delete the user after offboarding
+    required: false
+    type: bool
+    default: "false"
+
+steps:
+  - name: lock-account
+    command: 'users lock {{ .user }}'
+
+  - name: remove-from-all-groups
+    command: 'groups remove-member --all --user {{ .user }}'
+    continue_on_error: true
+
+  - name: reset-mfa
+    command: 'users reset-mfa {{ .user }}'
+
+  - name: delete-user
+    command: 'users delete {{ .user }} --force'
+    when: "{{ .delete_user }}"
+
+on_success:
+  message: "User {{ .user }} offboarded successfully"
+
+on_failure:
+  message: "Offboarding failed at step: {{ .failed_step }}"
