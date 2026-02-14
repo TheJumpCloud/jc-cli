@@ -988,7 +988,8 @@
         "Destructive tools default to plan mode (return plan unless execute=true)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "40+ tools total. Each tool maps to a CLI command. Destructive tools are plan-first by default — the agent must explicitly pass execute: true to actually perform the action. This is the core LLM safety mechanism.",
       "dependsOn": ["US-046"]
     },

@@ -480,3 +480,17 @@
   - Cobra `--help` only shows `Long` description (not `Short`) — test assertions must match `Long` text
   - Minimal tool set (jc_ping) and resources (server/info, config/profiles) for transport story — full tools are US-047, resources US-048
 ---
+## US-047: MCP Tools — All Command Groups as Tools
+- **Status:** Complete
+- **What was built:** 26 MCP tools covering all JumpCloud command groups. Destructive tools use plan-first safety (return preview unless `execute: true`). Read-only mode blocks all mutation tools.
+- Files changed:
+  - `internal/mcp/tools.go` — Expanded from minimal jc_ping to full tool suite. Added client factory vars (`newV1ClientFunc`, `newV2ClientFunc`, `newInsightsClientFunc`) for test injection. 12 typed input structs with `jsonschema` description tags. Tool groups: users (10 tools: list/get/create/update/delete/lock/unlock/reset_mfa/reset_password), devices (5: list/get/lock/restart/erase), groups (3: list/add_member/remove_member), insights (2: query/count), commands (2: list/run), policies (1: list), recipes (1: run), meta (2: plan/explain). Helper functions: `resolveV1()`, `buildV1ListOptions()`, `buildV2ListOptions()`, `resolveTimeRange()`, `rawListResult()`, `planResult()`, `describeCommand()`.
+- New files:
+  - `internal/mcp/tools_test.go` — 53 tests covering all tool categories. Test helpers: `setupToolTest()`, client override funcs, `connectToolTestServer()`, `callTool()`, `getResultText()`. Mock servers: `startV1Server()`, `startV2Server()`, `startCombinedServer()`. Tests: tool registration (all 26 registered, all have descriptions), users CRUD + actions, devices list/get/MDM, groups list/membership, insights query/count, commands list/run, policies list, read-only mode (blocks 13 mutations, allows reads), plan/explain meta tools, helper function unit tests.
+- **Learnings for future iterations:**
+  - `jsonschema` struct tag in `google/jsonschema-go` is description-only — no `key=value` format, no comma-separated keywords. Required/optional controlled entirely by `json` tag `omitempty`.
+  - MCP SDK `CallToolParams.Arguments` accepts `any` (not `json.RawMessage`) — pass `map[string]any` directly, don't double-marshal.
+  - Plan-first pattern: destructive tools return `{action, target, warning, execute_instruction}` preview. Consistent UX for AI agents to confirm before executing.
+  - Cross-API membership: group resolution via V2 (`/usergroups`), member resolution via V1 (`/systemusers`, `/systems`). Combined server needed in tests.
+  - `resolveV1()` handles both ID pass-through (24-char hex) and name→ID resolution via `resolve.Resolver`.
+---
