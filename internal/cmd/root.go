@@ -101,10 +101,14 @@ interface.`,
 	rootCmd.AddCommand(newRecipeCmd())
 	rootCmd.AddCommand(newAuthPoliciesCmd())
 	rootCmd.AddCommand(newIPListsCmd())
+	rootCmd.AddCommand(newLDAPCmd())
+	rootCmd.AddCommand(newSoftwareCmd())
+	rootCmd.AddCommand(newADCmd())
 	rootCmd.AddCommand(newMcpCmd())
 	rootCmd.AddCommand(newSchemaCmd())
 	rootCmd.AddCommand(newExplainCmd())
 	rootCmd.AddCommand(newAskCmd())
+	rootCmd.AddCommand(newOrgCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -292,6 +296,7 @@ var builtinCommands = map[string]bool{
 	"version": true, "completion": true, "auth": true, "config": true,
 	"users": true, "devices": true, "groups": true, "commands": true,
 	"policies": true, "apps": true, "graph": true, "admins": true, "iplists": true, "auth-policies": true,
+	"software": true, "ldap": true, "ad": true, "org": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.

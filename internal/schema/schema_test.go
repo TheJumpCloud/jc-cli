@@ -6,8 +6,8 @@ import (
 
 func TestResourceNames_Sorted(t *testing.T) {
 	names := ResourceNames()
-	if len(names) != 10 {
-		t.Fatalf("expected 10 resources, got %d", len(names))
+	if len(names) != 14 {
+		t.Fatalf("expected 14 resources, got %d", len(names))
 	}
 	for i := 1; i < len(names); i++ {
 		if names[i-1] >= names[i] {
@@ -17,7 +17,7 @@ func TestResourceNames_Sorted(t *testing.T) {
 }
 
 func TestResourceNames_ContainsAllExpected(t *testing.T) {
-	expected := []string{"admins", "apps", "auth-policies", "commands", "devices", "groups", "insights", "iplists", "policies", "users"}
+	expected := []string{"ad", "admins", "apps", "auth-policies", "commands", "devices", "groups", "insights", "iplists", "ldap", "org", "policies", "software", "users"}
 	names := ResourceNames()
 	if len(names) != len(expected) {
 		t.Fatalf("expected %d resources, got %d", len(expected), len(names))
@@ -144,8 +144,8 @@ func TestGetResource_SortFields(t *testing.T) {
 
 func TestAllResources_Count(t *testing.T) {
 	all := AllResources()
-	if len(all) != 10 {
-		t.Fatalf("expected 10 resources, got %d", len(all))
+	if len(all) != 14 {
+		t.Fatalf("expected 14 resources, got %d", len(all))
 	}
 }
 
@@ -173,8 +173,8 @@ func TestBuildCommandManifest_Structure(t *testing.T) {
 	if len(m.Commands) == 0 {
 		t.Error("expected commands")
 	}
-	if len(m.Resources) != 10 {
-		t.Errorf("expected 10 resources, got %d", len(m.Resources))
+	if len(m.Resources) != 14 {
+		t.Errorf("expected 14 resources, got %d", len(m.Resources))
 	}
 }
 

@@ -117,6 +117,22 @@ var IPListConfig = ResourceConfig{
 	IDField:      "id",
 }
 
+// SoftwareAppConfig is the resolution config for JumpCloud software apps (V2 API).
+var SoftwareAppConfig = ResourceConfig{
+	CacheKey:     "softwareapps",
+	ListEndpoint: "/softwareapps",
+	NameField:    "displayName",
+	IDField:      "id",
+}
+
+// LDAPServerConfig is the resolution config for JumpCloud LDAP servers (V2 API).
+var LDAPServerConfig = ResourceConfig{
+	CacheKey:     "ldapservers",
+	ListEndpoint: "/ldapservers",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // AuthPolicyConfig is the resolution config for JumpCloud authentication policies (V2 API).
 var AuthPolicyConfig = ResourceConfig{
 	CacheKey:     "auth-policies",
@@ -130,6 +146,14 @@ var PolicyConfig = ResourceConfig{
 	CacheKey:     "policies",
 	ListEndpoint: "/policies",
 	NameField:    "name",
+	IDField:      "id",
+}
+
+// ActiveDirectoryConfig is the resolution config for JumpCloud Active Directory integrations (V2 API).
+var ActiveDirectoryConfig = ResourceConfig{
+	CacheKey:     "activedirectories",
+	ListEndpoint: "/activedirectories",
+	NameField:    "domain",
 	IDField:      "id",
 }
 

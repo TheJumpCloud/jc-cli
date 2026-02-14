@@ -134,6 +134,57 @@ type ipListUpdateInput struct {
 	Execute     bool     `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type softwareCreateInput struct {
+	Name     string `json:"name" jsonschema:"Display name for the software app"`
+	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
+}
+
+type softwareUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Software app name or ID to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New display name"`
+	Settings   string `json:"settings,omitempty" jsonschema:"New package settings as raw JSON array"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type ldapCreateInput struct {
+	Name                         string `json:"name" jsonschema:"LDAP server name"`
+	UserLockoutAction            string `json:"user_lockout_action,omitempty" jsonschema:"Action on user lockout"`
+	UserPasswordExpirationAction string `json:"user_password_expiration_action,omitempty" jsonschema:"Action on password expiration"`
+}
+
+type ldapUpdateInput struct {
+	Identifier                   string `json:"identifier" jsonschema:"LDAP server name or ID to update"`
+	Name                         string `json:"name,omitempty" jsonschema:"New server name"`
+	UserLockoutAction            string `json:"user_lockout_action,omitempty" jsonschema:"New lockout action"`
+	UserPasswordExpirationAction string `json:"user_password_expiration_action,omitempty" jsonschema:"New password expiration action"`
+	Execute                      bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type adCreateInput struct {
+	Domain  string `json:"domain" jsonschema:"Active Directory domain name"`
+	UseCase string `json:"use_case,omitempty" jsonschema:"Integration use case"`
+}
+
+type adUpdateInput struct {
+	Identifier    string `json:"identifier" jsonschema:"AD domain or ID to update"`
+	UseCase       string `json:"use_case,omitempty" jsonschema:"New use case"`
+	GroupsEnabled *bool  `json:"groups_enabled,omitempty" jsonschema:"Enable or disable group sync"`
+	Execute       bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type adminCreateInput struct {
+	Email     string `json:"email" jsonschema:"Administrator email address"`
+	Role      string `json:"role,omitempty" jsonschema:"Admin role (e.g. Administrator, Manager, Read Only)"`
+	EnableMFA bool   `json:"enable_mfa,omitempty" jsonschema:"Enable multi-factor authentication"`
+}
+
+type adminUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Admin email or ID to update"`
+	Role       string `json:"role,omitempty" jsonschema:"New admin role"`
+	EnableMFA  *bool  `json:"enable_mfa,omitempty" jsonschema:"Set to true to enable MFA or false to disable"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type planInput struct {
 	Command string `json:"command" jsonschema:"A jc command string to preview (e.g. users delete jdoe)"`
 }
@@ -174,6 +225,21 @@ func (s *Server) registerTools() {
 
 	// --- IP Lists tools ---
 	s.registerIPListTools()
+
+	// --- Software tools ---
+	s.registerSoftwareTools()
+
+	// --- LDAP tools ---
+	s.registerLDAPTools()
+
+	// --- Active Directory tools ---
+	s.registerADTools()
+
+	// --- Organization tools ---
+	s.registerOrgTools()
+
+	// --- Admin tools ---
+	s.registerAdminTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -1189,6 +1255,526 @@ func (s *Server) registerIPListTools() {
 	)
 }
 
+func (s *Server) registerSoftwareTools() {
+	addTypedTool(s, "software_list", "List all JumpCloud software apps. Returns objects with id, displayName, settings, createdAt, updatedAt.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/softwareapps", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing software apps: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "software_get", "Get a single JumpCloud software app by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/softwareapps/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting software app: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "software_create", "Create a new JumpCloud software app. Settings is a raw JSON array of package configurations.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args softwareCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"displayName": args.Name,
+			}
+			if args.Settings != "" {
+				var settings any
+				if err := json.Unmarshal([]byte(args.Settings), &settings); err != nil {
+					return errorResult(fmt.Sprintf("invalid settings JSON: %v", err)), nil, nil
+				}
+				body["settings"] = settings
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/softwareapps", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating software app: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "software_update", "Update a JumpCloud software app. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args softwareUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["displayName"] = args.Name
+			}
+			if args.Settings != "" {
+				var settings any
+				if err := json.Unmarshal([]byte(args.Settings), &settings); err != nil {
+					return errorResult(fmt.Sprintf("invalid settings JSON: %v", err)), nil, nil
+				}
+				body["settings"] = settings
+			}
+			if !args.Execute {
+				return planResult("update", "software app", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/softwareapps/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating software app: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "software_delete", "Delete a JumpCloud software app. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "software app", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/softwareapps/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting software app: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Software app %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerLDAPTools() {
+	addTypedTool(s, "ldap_list", "List all JumpCloud LDAP servers. Returns objects with id, name, userLockoutAction, userPasswordExpirationAction.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/ldapservers", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing LDAP servers: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "ldap_get", "Get a single JumpCloud LDAP server by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/ldapservers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting LDAP server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_create", "Create a new JumpCloud LDAP server.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args ldapCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+			}
+			if args.UserLockoutAction != "" {
+				body["userLockoutAction"] = args.UserLockoutAction
+			}
+			if args.UserPasswordExpirationAction != "" {
+				body["userPasswordExpirationAction"] = args.UserPasswordExpirationAction
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/ldapservers", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating LDAP server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_update", "Update a JumpCloud LDAP server. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args ldapUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.UserLockoutAction != "" {
+				body["userLockoutAction"] = args.UserLockoutAction
+			}
+			if args.UserPasswordExpirationAction != "" {
+				body["userPasswordExpirationAction"] = args.UserPasswordExpirationAction
+			}
+			if !args.Execute {
+				return planResult("update", "LDAP server", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/ldapservers/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating LDAP server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_delete", "Delete a JumpCloud LDAP server. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "LDAP server", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/ldapservers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting LDAP server: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("LDAP server %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerADTools() {
+	addTypedTool(s, "ad_list", "List all JumpCloud Active Directory integrations. Returns objects with id, domain, useCase, groupsEnabled, delegationState.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/activedirectories", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing Active Directory integrations: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "ad_get", "Get a single JumpCloud Active Directory integration by domain or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ActiveDirectoryConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/activedirectories/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting Active Directory: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ad_create", "Create a new JumpCloud Active Directory integration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args adCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"domain": args.Domain,
+			}
+			if args.UseCase != "" {
+				body["useCase"] = args.UseCase
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/activedirectories", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Active Directory: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ad_update", "Update a JumpCloud Active Directory integration. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args adUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ActiveDirectoryConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.UseCase != "" {
+				body["useCase"] = args.UseCase
+			}
+			if args.GroupsEnabled != nil {
+				body["groupsEnabled"] = *args.GroupsEnabled
+			}
+			if !args.Execute {
+				return planResult("update", "Active Directory", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/activedirectories/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating Active Directory: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ad_delete", "Delete a JumpCloud Active Directory integration. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ActiveDirectoryConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "Active Directory", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/activedirectories/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting Active Directory: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Active Directory %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerOrgTools() {
+	addTypedTool(s, "org_list", "List JumpCloud organizations. Returns objects with _id, displayName, created.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/organizations", api.ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing organizations: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "org_get", "Get a JumpCloud organization by ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/organizations/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting organization: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerAdminTools() {
+	addTypedTool(s, "admins_list", "List all JumpCloud administrators. Returns objects with id, email, role, enableMultiFactor.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV1ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/users", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing admins: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "admins_get", "Get a single JumpCloud administrator by email or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.AdminConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/users/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting admin: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "admins_create", "Create a new JumpCloud administrator.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args adminCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"email": args.Email,
+			}
+			if args.Role != "" {
+				body["roleName"] = args.Role
+			}
+			if args.EnableMFA {
+				body["enableMultiFactor"] = true
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/users", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating admin: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "admins_update", "Update a JumpCloud administrator. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args adminUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.AdminConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Role != "" {
+				body["roleName"] = args.Role
+			}
+			if args.EnableMFA != nil {
+				body["enableMultiFactor"] = *args.EnableMFA
+			}
+			if !args.Execute {
+				return planResult("update", "admin", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/users/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating admin: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "admins_delete", "Delete a JumpCloud administrator. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.AdminConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "admin", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/users/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting admin: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Admin %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
 func (s *Server) registerRecipeTools() {
 	addTypedTool(s, "recipe_run", "Run a named jc recipe with parameters. Recipes are multi-step automated workflows.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args recipeRunInput) (*mcp.CallToolResult, any, error) {
@@ -1419,6 +2005,38 @@ func describeCommand(parts []string) string {
 			"create": "Create a new IP list with IP entries.",
 			"update": "Update an existing IP list.",
 			"delete": "Delete an IP list. IRREVERSIBLE.",
+		},
+		"software": {
+			"list":   "List all JumpCloud software apps.",
+			"get":    "Get a software app by name or ID.",
+			"create": "Create a new software app with package settings.",
+			"update": "Update an existing software app.",
+			"delete": "Delete a software app. IRREVERSIBLE.",
+		},
+		"ldap": {
+			"list":   "List all JumpCloud LDAP servers.",
+			"get":    "Get an LDAP server by name or ID.",
+			"create": "Create a new LDAP server.",
+			"update": "Update an existing LDAP server.",
+			"delete": "Delete an LDAP server. IRREVERSIBLE.",
+		},
+		"ad": {
+			"list":   "List all JumpCloud Active Directory integrations.",
+			"get":    "Get an Active Directory integration by domain or ID.",
+			"create": "Create a new Active Directory integration.",
+			"update": "Update an existing Active Directory integration.",
+			"delete": "Delete an Active Directory integration. IRREVERSIBLE.",
+		},
+		"org": {
+			"list": "List JumpCloud organizations.",
+			"get":  "Get organization details by ID.",
+		},
+		"admins": {
+			"list":   "List all JumpCloud administrators.",
+			"get":    "Get an administrator by email or ID.",
+			"create": "Create a new administrator account.",
+			"update": "Update an administrator's role or settings.",
+			"delete": "Delete an administrator account. IRREVERSIBLE.",
 		},
 		"recipe": {
 			"run": "Execute a multi-step automated recipe with parameters.",

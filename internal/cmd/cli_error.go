@@ -35,6 +35,9 @@ const (
 	ErrCodeAuthPolicyNotFound = "AUTH_POLICY_NOT_FOUND"
 	ErrCodeIPListNotFound     = "IP_LIST_NOT_FOUND"
 	ErrCodeAdminNotFound      = "ADMIN_NOT_FOUND"
+	ErrCodeSoftwareNotFound   = "SOFTWARE_NOT_FOUND"
+	ErrCodeLDAPNotFound       = "LDAP_NOT_FOUND"
+	ErrCodeADNotFound         = "AD_NOT_FOUND"
 	ErrCodeResourceNotFound   = "RESOURCE_NOT_FOUND"
 	ErrCodeAuthFailed      = "AUTH_FAILED"
 	ErrCodeAuthExpired     = "AUTH_EXPIRED"
@@ -239,8 +242,12 @@ func mapResolveResourceType(resourceType string) string {
 		return ErrCodeDeviceNotFound
 	case "email":
 		return ErrCodeAdminNotFound
+	case "displayName":
+		return ErrCodeSoftwareNotFound
+	case "domain":
+		return ErrCodeADNotFound
 	case "name":
-		// Could be group, command, policy, or app — use generic.
+		// Could be group, command, policy, LDAP, or app — use generic.
 		return ErrCodeResourceNotFound
 	default:
 		return ErrCodeResourceNotFound
@@ -257,6 +264,10 @@ func resolveResourceCmd(resourceType string) string {
 		return "devices"
 	case "email":
 		return "admins"
+	case "displayName":
+		return "software"
+	case "domain":
+		return "ad"
 	default:
 		return "resources"
 	}
