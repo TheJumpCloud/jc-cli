@@ -921,7 +921,8 @@
         "Recipe plan mode shows all steps with resolved commands"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Recipe commands are the user-facing interface to the recipe engine (US-042). Plan mode for recipes shows the expanded commands for each step.",
       "dependsOn": ["US-042", "US-043"]
     },

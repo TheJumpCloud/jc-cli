@@ -690,3 +690,34 @@
   - `LoadFromDir()` warns on invalid recipes but continues loading valid ones — defensive loading for user-defined recipe directories
   - The `CobraCommand` interface decouples recipe tests from the actual Cobra command tree — tests use `mockCobraCmd` without importing the cmd package
 ---
+
+## 2026-02-13 - US-044
+- What was implemented:
+  - `jc recipe list` — lists all available recipes (built-in + user-defined) with name, description, version, tags, author, parameter count, step count
+  - `jc recipe list -t` — table output with NAME, DESCRIPTION, VERSION, TAGS default columns
+  - Footer to stderr: "── N recipes ──"
+  - `jc recipe show <name>` — displays full recipe details including steps, parameters, tags as JSON (or table/human)
+  - Show not-found error lists available recipe names for discoverability
+  - `jc recipe run <name> --param key=value` — executes a recipe with parameters via `recipe.NewDispatcher`
+  - Parameters passed as repeatable `--param key=value` flags; parsed by `parseParamFlags()`
+  - Recipe execution progress to stderr: `[N/M] step-name... done`
+  - on_success/on_failure messages rendered with template params and shown on stderr
+  - Failed recipe shows which step failed with error message
+  - `jc recipe run <name> --plan` — previews all steps without executing; human plan to stderr, JSON plan to stdout with `--output json`
+  - Plan mode returns `ExitError{Code: 10}` (same as other plan commands)
+  - `jc recipe validate <file.yaml>` — validates a recipe YAML file, reports errors or "is valid" success message
+  - `newRootCmdForRecipe` var for test injection; default nil avoids initialization cycle
+  - `overrideRecipesDir(t, dir)` and `overrideRootCmdForRecipe(t, fn)` test helpers
+- Files changed:
+  - internal/cmd/recipe.go — new recipe command group with list, show, run, validate subcommands (200 lines)
+  - internal/cmd/recipe_test.go — 28 tests covering: list JSON/table/footer/user-defined/default-fields, show JSON/table/not-found/missing-arg, run success/with-params/missing-required-param/not-found/missing-arg/invalid-param-format/plan/plan-json/step-failure/progress, validate valid/invalid/nonexistent/missing-arg/invalid-yaml, help tests (recipe/run/root)
+  - internal/cmd/root.go — registered `newRecipeCmd()`
+  - .chief/prds/main/prd.json — marked US-044 passes
+- **Learnings for future iterations:**
+  - Go initialization cycle: `var f = func() { NewRootCmd() }` → `NewRootCmd() → newRecipeCmd() → f` creates a cycle. Fix: make the var default to `nil` and resolve at call time with a nil check + fallback.
+  - Recipe list converts `Recipe` structs to `json.RawMessage` summary objects for the output engine — tags joined as comma-separated string for table readability, parameter and step counts as integers
+  - `parseParamFlags()` uses `strings.Cut(p, "=")` — clean Go 1.18+ idiom for splitting key=value with clear error on missing `=`
+  - Recipe `run` dispatches through `recipe.NewDispatcher(newRootCmdForRecipe)` — creates a fresh root command per step for isolated flag state
+  - Plan mode routing: checks `cmd.Root().PersistentFlags().Lookup("output").Changed` to distinguish explicit `--output json` from default — same pattern as `renderPlan()` in other cmd files
+  - Recipe show uses `output.WriteSingle()` with the full marshaled Recipe struct — the output engine handles JSON/table/human formatting automatically
+---
