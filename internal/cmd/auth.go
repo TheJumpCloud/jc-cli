@@ -81,6 +81,7 @@ func newAuthCmd() *cobra.Command {
 	cmd.AddCommand(newAuthLoginCmd())
 	cmd.AddCommand(newAuthStatusCmd())
 	cmd.AddCommand(newAuthLogoutCmd())
+	cmd.AddCommand(newAuthSwitchCmd())
 
 	return cmd
 }
@@ -275,4 +276,86 @@ func runAuthLogout(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Logged out (profile: %s)\n", profile)
 	return nil
+}
+
+func newAuthSwitchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "switch [profile-name]",
+		Short: "Switch the active profile",
+		Long: `Switch the active profile to a different named profile.
+
+If no profile name is given, an interactive picker is shown.
+Each profile has its own API key, org ID, and optional defaults.
+
+Examples:
+  jc auth switch production
+  jc auth switch              # interactive picker`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeProfileNames,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAuthSwitch(cmd, args, defaultInput)
+		},
+	}
+	return cmd
+}
+
+func runAuthSwitch(cmd *cobra.Command, args []string, input InputReader) error {
+	profiles := config.ProfileNames()
+	if len(profiles) == 0 {
+		return fmt.Errorf("no profiles configured. Run 'jc auth login --profile <name>' to create one")
+	}
+
+	var target string
+
+	if len(args) == 1 {
+		// Explicit profile name given.
+		target = args[0]
+	} else {
+		// Interactive picker.
+		if viper.GetBool("non-interactive") {
+			return fmt.Errorf("profile name required in non-interactive mode")
+		}
+
+		active := config.ActiveProfile()
+		fmt.Fprintf(cmd.ErrOrStderr(), "Available profiles:\n")
+		for i, p := range profiles {
+			marker := "  "
+			if p == active {
+				marker = "* "
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "  %s%d) %s\n", marker, i+1, p)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "\nSelect profile [1-%d]: ", len(profiles))
+
+		line, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("failed to read selection: %w", err)
+		}
+
+		var idx int
+		if _, err := fmt.Sscanf(line, "%d", &idx); err != nil || idx < 1 || idx > len(profiles) {
+			return fmt.Errorf("invalid selection: %s", line)
+		}
+		target = profiles[idx-1]
+	}
+
+	if !config.ProfileExists(target) {
+		available := strings.Join(config.ProfileNames(), ", ")
+		return fmt.Errorf("profile %q not found. Available profiles: %s", target, available)
+	}
+
+	if err := config.SetActiveProfile(target); err != nil {
+		return fmt.Errorf("failed to switch profile: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Switched to profile: %s\n", target)
+	return nil
+}
+
+// completeProfileNames provides tab completion for profile names.
+func completeProfileNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return config.ProfileNames(), cobra.ShellCompDirectiveNoFileComp
 }

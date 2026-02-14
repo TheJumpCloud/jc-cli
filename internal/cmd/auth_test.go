@@ -129,7 +129,7 @@ func TestAuthSubcommands(t *testing.T) {
 		t.Fatal("auth command not found")
 	}
 
-	expected := []string{"login", "status", "logout"}
+	expected := []string{"login", "status", "logout", "switch"}
 	for _, name := range expected {
 		found := false
 		for _, sub := range authCmd.Commands() {
@@ -731,5 +731,430 @@ profiles:
 	data, _ := os.ReadFile(cfgPath)
 	if !strings.Contains(string(data), "production") {
 		t.Errorf("config file should contain 'production', got:\n%s", data)
+	}
+}
+
+// --- Auth Switch Tests (US-035) ---
+
+func TestAuthSwitch_ExplicitProfile(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: "key-default"
+  production:
+    api_key: "key-prod"
+    org_id: "org-prod"
+`)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthSwitch(cmd, []string{"production"}, &mockInput{})
+	if err != nil {
+		t.Fatalf("runAuthSwitch() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "production") {
+		t.Errorf("expected output to mention 'production', got %q", got)
+	}
+
+	// Verify config file was updated.
+	data, _ := os.ReadFile(cfgPath)
+	cfgStr := string(data)
+	if !strings.Contains(cfgStr, "production") {
+		t.Errorf("config should set active_profile to production, got:\n%s", cfgStr)
+	}
+
+	// Verify viper state was updated.
+	if got := config.ActiveProfile(); got != "production" {
+		t.Errorf("ActiveProfile() = %q, want %q", got, "production")
+	}
+}
+
+func TestAuthSwitch_NonExistentProfile(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthSwitch(cmd, []string{"nonexistent"}, &mockInput{})
+	if err == nil {
+		t.Fatal("expected error for non-existent profile")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "default") {
+		t.Errorf("error should list available profiles, got: %v", err)
+	}
+}
+
+func TestAuthSwitch_InteractivePicker(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: "key-default"
+  production:
+    api_key: "key-prod"
+  staging:
+    api_key: "key-staging"
+`)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	// Select option 2 (profiles are sorted: default, production, staging).
+	input := &mockInput{line: "2"}
+
+	err := runAuthSwitch(cmd, nil, input)
+	if err != nil {
+		t.Fatalf("runAuthSwitch() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "production") {
+		t.Errorf("expected output to mention 'production', got %q", got)
+	}
+
+	// Verify the picker was shown on stderr.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "Available profiles") {
+		t.Errorf("expected 'Available profiles' in stderr, got %q", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "1) default") {
+		t.Errorf("expected '1) default' in stderr, got %q", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "2) production") {
+		t.Errorf("expected '2) production' in stderr, got %q", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "3) staging") {
+		t.Errorf("expected '3) staging' in stderr, got %q", stderrStr)
+	}
+}
+
+func TestAuthSwitch_InteractivePickerShowsActiveMarker(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: staging
+profiles:
+  default:
+    api_key: ""
+  staging:
+    api_key: ""
+`)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	input := &mockInput{line: "1"}
+
+	err := runAuthSwitch(cmd, nil, input)
+	if err != nil {
+		t.Fatalf("runAuthSwitch() error: %v", err)
+	}
+
+	// Active profile should have asterisk marker.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "* ") {
+		t.Errorf("expected active profile marker '*' in stderr, got %q", stderrStr)
+	}
+}
+
+func TestAuthSwitch_InteractiveInvalidSelection(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+  production:
+    api_key: ""
+`)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	input := &mockInput{line: "99"}
+
+	err := runAuthSwitch(cmd, nil, input)
+	if err == nil {
+		t.Fatal("expected error for invalid selection")
+	}
+	if !strings.Contains(err.Error(), "invalid selection") {
+		t.Errorf("error should mention 'invalid selection', got: %v", err)
+	}
+}
+
+func TestAuthSwitch_InteractiveNonNumericSelection(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	input := &mockInput{line: "abc"}
+
+	err := runAuthSwitch(cmd, nil, input)
+	if err == nil {
+		t.Fatal("expected error for non-numeric selection")
+	}
+	if !strings.Contains(err.Error(), "invalid selection") {
+		t.Errorf("error should mention 'invalid selection', got: %v", err)
+	}
+}
+
+func TestAuthSwitch_InteractiveNonInteractiveMode(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	viper.Set("non-interactive", true)
+	defer viper.Set("non-interactive", false)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthSwitch(cmd, nil, &mockInput{})
+	if err == nil {
+		t.Fatal("expected error in non-interactive mode without profile arg")
+	}
+	if !strings.Contains(err.Error(), "non-interactive") {
+		t.Errorf("error should mention 'non-interactive', got: %v", err)
+	}
+}
+
+func TestAuthSwitch_NoProfiles(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+`)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthSwitch(cmd, []string{"something"}, &mockInput{})
+	if err == nil {
+		t.Fatal("expected error when no profiles configured")
+	}
+	if !strings.Contains(err.Error(), "no profiles") {
+		t.Errorf("error should mention 'no profiles', got: %v", err)
+	}
+}
+
+func TestAuthSwitch_ViaRootCommand(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+  staging:
+    api_key: ""
+`)
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"auth", "switch", "staging"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "staging") {
+		t.Errorf("expected 'staging' in output, got %q", got)
+	}
+}
+
+// --- --org Flag Tests (US-035) ---
+
+func TestOrgFlag_OverridesActiveProfile(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: "key-default"
+  production:
+    api_key: "key-prod"
+    org_id: "org-prod"
+`)
+
+	ts := startMockJCServer(t, "org-prod", "Prod Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"--org", "production", "auth", "status"})
+
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "production") {
+		t.Errorf("expected output to mention profile 'production', got %q", got)
+	}
+}
+
+func TestOrgFlag_NonExistentProfile(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	rootCmd := NewRootCmd()
+	rootCmd.SetOut(new(bytes.Buffer))
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"--org", "nonexistent", "auth", "status"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-existent --org profile")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestOrgFlag_DoesNotPersistToConfig(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: "key-default"
+  staging:
+    api_key: "key-staging"
+`)
+
+	ts := startMockJCServer(t, "org-staging", "Staging Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	rootCmd := NewRootCmd()
+	rootCmd.SetOut(new(bytes.Buffer))
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"--org", "staging", "auth", "status"})
+
+	_ = rootCmd.Execute()
+
+	// Config file should still have default as active profile.
+	data, _ := os.ReadFile(cfgPath)
+	cfgStr := string(data)
+	// The active_profile in the file should not have changed.
+	if strings.Contains(cfgStr, "active_profile: staging") {
+		t.Errorf("--org should not persist to config file, got:\n%s", cfgStr)
+	}
+}
+
+// --- Auth Switch Help Tests ---
+
+func TestAuthSwitchHelp(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"auth", "switch", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Switch the active profile") {
+		t.Errorf("help should mention 'Switch the active profile', got %q", got)
+	}
+	if !strings.Contains(got, "interactive") {
+		t.Errorf("help should mention 'interactive', got %q", got)
+	}
+}
+
+// --- Tab Completion Tests (US-035) ---
+
+func TestAuthSwitch_TabCompletion(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+  production:
+    api_key: ""
+  staging:
+    api_key: ""
+`)
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"__complete", "auth", "switch", ""})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	for _, profile := range []string{"default", "production", "staging"} {
+		if !strings.Contains(got, profile) {
+			t.Errorf("completion should include profile %q, got %q", profile, got)
+		}
+	}
+}
+
+func TestOrgFlag_TabCompletion(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+  production:
+    api_key: ""
+`)
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"__complete", "--org", ""})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	for _, profile := range []string{"default", "production"} {
+		if !strings.Contains(got, profile) {
+			t.Errorf("--org completion should include profile %q, got %q", profile, got)
+		}
 	}
 }

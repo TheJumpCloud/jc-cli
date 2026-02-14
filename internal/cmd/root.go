@@ -30,6 +30,15 @@ interface.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// --org overrides the active profile for this command only.
+			if org := viper.GetString("org"); org != "" {
+				if !config.ProfileExists(org) {
+					available := strings.Join(config.ProfileNames(), ", ")
+					return fmt.Errorf("profile %q not found. Available profiles: %s", org, available)
+				}
+				config.OverrideActiveProfile(org)
+			}
+
 			// -t is a convenience shorthand for --output table.
 			if t, _ := cmd.Flags().GetBool("table"); t {
 				viper.Set("defaults.output", "table")
@@ -103,6 +112,9 @@ interface.`,
 	// Register flag completion functions for flags with a fixed set of values.
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return validOutputFormats, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = rootCmd.RegisterFlagCompletionFunc("org", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return config.ProfileNames(), cobra.ShellCompDirectiveNoFileComp
 	})
 
 	// Bind flags to Viper so the priority chain works:

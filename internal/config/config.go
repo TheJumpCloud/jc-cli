@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/klaassen-consulting/jc/internal/keychain"
@@ -238,6 +239,31 @@ func SetActiveProfile(profile string) error {
 // RemoveProfileField removes a field from a profile by setting it to empty.
 func RemoveProfileField(profile, key string) error {
 	return SetProfileField(profile, key, "")
+}
+
+// ProfileNames returns the sorted list of configured profile names.
+func ProfileNames() []string {
+	m := viper.GetStringMap("profiles")
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ProfileExists returns true if the named profile exists in the config.
+func ProfileExists(name string) bool {
+	m := viper.GetStringMap("profiles")
+	_, ok := m[name]
+	return ok
+}
+
+// OverrideActiveProfile temporarily overrides the active profile for the
+// current process. This is used by the --org flag for per-command overrides.
+// It sets the Viper key directly (no config file write).
+func OverrideActiveProfile(profile string) {
+	viper.Set("active_profile", profile)
 }
 
 // ValidConfigKeys lists all known dot-notation config keys that can be set

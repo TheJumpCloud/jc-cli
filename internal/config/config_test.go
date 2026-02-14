@@ -870,6 +870,150 @@ func TestSetConfigValue_Bool(t *testing.T) {
 	}
 }
 
+// --- Profile Functions Tests (US-035) ---
+
+func TestProfileNames_MultipleProfiles(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: ""
+  production:
+    api_key: ""
+  staging:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	names := ProfileNames()
+	if len(names) != 3 {
+		t.Fatalf("ProfileNames() returned %d names, want 3: %v", len(names), names)
+	}
+	// Should be sorted alphabetically.
+	want := []string{"default", "production", "staging"}
+	for i, n := range want {
+		if names[i] != n {
+			t.Errorf("ProfileNames()[%d] = %q, want %q", i, names[i], n)
+		}
+	}
+}
+
+func TestProfileNames_Empty(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	names := ProfileNames()
+	if len(names) != 0 {
+		t.Errorf("ProfileNames() returned %d names, want 0: %v", len(names), names)
+	}
+}
+
+func TestProfileExists(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: ""
+  production:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if !ProfileExists("default") {
+		t.Error("ProfileExists('default') = false, want true")
+	}
+	if !ProfileExists("production") {
+		t.Error("ProfileExists('production') = false, want true")
+	}
+	if ProfileExists("nonexistent") {
+		t.Error("ProfileExists('nonexistent') = true, want false")
+	}
+}
+
+func TestOverrideActiveProfile(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_API_KEY", "")
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: "default-key"
+  staging:
+    api_key: "staging-key"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Verify initial state.
+	if got := ActiveProfile(); got != "default" {
+		t.Errorf("initial ActiveProfile() = %q, want %q", got, "default")
+	}
+	if got := APIKey(); got != "default-key" {
+		t.Errorf("initial APIKey() = %q, want %q", got, "default-key")
+	}
+
+	// Override to staging.
+	OverrideActiveProfile("staging")
+
+	if got := ActiveProfile(); got != "staging" {
+		t.Errorf("after override ActiveProfile() = %q, want %q", got, "staging")
+	}
+	if got := APIKey(); got != "staging-key" {
+		t.Errorf("after override APIKey() = %q, want %q", got, "staging-key")
+	}
+}
+
 func TestSetConfigValue_Persists(t *testing.T) {
 	resetViper()
 	defer resetViper()

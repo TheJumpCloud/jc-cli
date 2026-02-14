@@ -730,7 +730,8 @@
         "Non-existent profile name produces error with list of available profiles"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Profile switching is essential for MSP workflows. The --org flag is a per-command override that doesn't persist. Each profile can have different auth methods.",
       "dependsOn": ["US-006", "US-002"]
     },
