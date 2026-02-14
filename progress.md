@@ -919,3 +919,31 @@
   - User-facing CLI names should match the resource command vocabulary (device/device_group), not the internal API vocabulary (system/system_group). A simple alias map at the command boundary keeps the rest of the code clean.
   - Previous US-031 learnings noted the nested `to` issue as a known limitation — this fix resolves it properly by flattening at the command layer rather than trying to add nested field support to the output engine.
 ---
+
+## 2026-02-14 - Bugfix: Insights API and Admins Endpoint
+- **Status:** COMPLETE (verified against live JumpCloud org)
+- What was fixed:
+  - **Insights base URL**: `InsightsBaseURL` was `https://console.jumpcloud.com/insights/directory/v1` which returned HTTP 404. The OpenAPI spec at `docs.jumpcloud.com/api/insights/directory/1.0/index.yaml` declares `host: api.jumpcloud.com`. Fix: changed to `https://api.jumpcloud.com/insights/directory/v1`. Same `x-api-key` auth — no transport changes needed.
+  - **Insights service array format**: API rejects bare string `"sso"` for the `service` field — requires JSON array `["sso"]`. Fix: added `serviceToArray()` helper; updated `buildQueryBody()`, `CountEvents()`, and `DistinctEvents()` to send arrays.
+  - **Insights distinct response parsing**: Real API returns object `{"event_type": [{key, doc_count}, ...]}`, not bare array. Fix: updated `DistinctEvents()` to try array first, then extract field-keyed array from object response.
+  - **Insights valid services list**: API rejected `admin` and `user_portal` — these don't exist. Fix: updated `ValidInsightsServices` to match actual API values (added: `access_management`, `alert`, `asset_management`, `notifications`, `object_storage`, `reports`, `saas_app_management`, `workflows`; removed: `admin`, `user_portal`).
+  - **Admins endpoint**: `GET /api/v2/administrators` returned HTTP 404 — this endpoint doesn't exist as a list endpoint. The V2 spec only has `/providers/{id}/administrators` (MSP) and `/administrators/{id}/organizationlinks` (sub-resource). For single-org admin listing, the correct endpoint is the undocumented V1-style `GET /api/users`. Fix: switched from `newV2Client()` with `/administrators` to `newV1Client()` with `/users`; updated default fields to `_id, email, roleName, enableMultiFactor` (V1 convention); changed filter format to V1 (`$eq`); footer now shows V1-style `N of N items`.
+- Files changed:
+  - `internal/api/insights.go` — base URL fix, `serviceToArray()`, array format in all 3 query methods, flexible distinct parsing, updated `ValidInsightsServices`
+  - `internal/api/insights_test.go` — updated service format assertions (string→array), added `TestInsightsClient_DistinctEvents_ObjectResponse`, updated valid services test list
+  - `internal/cmd/admins.go` — V2→V1 client, `/administrators`→`/users` endpoint, `ListOptions` + `ToV1Queries`, default fields `_id`/`roleName`
+  - `internal/cmd/admins_test.go` — V1 mock server with `{"results":[], "totalCount":N}` wrapper, `_id`/`roleName` field names, `overrideV1Client` instead of `overrideV2Client`
+  - `internal/cmd/insights.go` — updated help text with correct service list
+  - `internal/cmd/insights_test.go` — updated multi-service and all-service assertions for array format
+- **Live verification:**
+  - `jc insights query --service all --last 24h --limit 3` → returns events (was HTTP 404)
+  - `jc insights count --service directory --last 7d` → `{"count": 219}`
+  - `jc insights distinct --service all --last 7d --field event_type --table` → DOC_COUNT + KEY columns, 20 event types
+  - `jc admins list --table` → _ID + EMAIL + ROLENAME + ENABLEMULTIFACTOR columns, 4 admins (was HTTP 404)
+- **Learnings:**
+  - JumpCloud has two API hosts: `console.jumpcloud.com` (V1 + most V2) and `api.jumpcloud.com` (Insights). Always check the OpenAPI spec for the correct host.
+  - The Insights API `service` field requires a JSON array, not a string — even for single values.
+  - The Insights `distinct` endpoint returns aggregation buckets (`{key, doc_count}`) keyed by field name, not bare scalar arrays.
+  - JumpCloud admin listing uses an undocumented V1 endpoint (`GET /api/users`) — the V2 `/administrators` path only has sub-resource endpoints for MSP provider-to-org links.
+  - When an endpoint returns 404, check the OpenAPI spec AND third-party integrations (e.g., ConductorOne's baton-jumpcloud) for the correct path.
+---
