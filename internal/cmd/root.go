@@ -99,6 +99,8 @@ interface.`,
 	rootCmd.AddCommand(newBulkCmd())
 	rootCmd.AddCommand(newInsightsCmd())
 	rootCmd.AddCommand(newRecipeCmd())
+	rootCmd.AddCommand(newAuthPoliciesCmd())
+	rootCmd.AddCommand(newIPListsCmd())
 	rootCmd.AddCommand(newMcpCmd())
 	rootCmd.AddCommand(newSchemaCmd())
 	rootCmd.AddCommand(newExplainCmd())
@@ -289,7 +291,7 @@ func levenshtein(a, b string) int {
 var builtinCommands = map[string]bool{
 	"version": true, "completion": true, "auth": true, "config": true,
 	"users": true, "devices": true, "groups": true, "commands": true,
-	"policies": true, "apps": true, "graph": true, "admins": true,
+	"policies": true, "apps": true, "graph": true, "admins": true, "iplists": true, "auth-policies": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.

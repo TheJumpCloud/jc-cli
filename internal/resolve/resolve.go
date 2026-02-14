@@ -109,6 +109,22 @@ var ApplicationConfig = ResourceConfig{
 	IDField:      "_id",
 }
 
+// IPListConfig is the resolution config for JumpCloud IP lists (V2 API).
+var IPListConfig = ResourceConfig{
+	CacheKey:     "iplists",
+	ListEndpoint: "/iplists",
+	NameField:    "name",
+	IDField:      "id",
+}
+
+// AuthPolicyConfig is the resolution config for JumpCloud authentication policies (V2 API).
+var AuthPolicyConfig = ResourceConfig{
+	CacheKey:     "auth-policies",
+	ListEndpoint: "/authn/policies",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // PolicyConfig is the resolution config for JumpCloud policies (V2 API).
 var PolicyConfig = ResourceConfig{
 	CacheKey:     "policies",

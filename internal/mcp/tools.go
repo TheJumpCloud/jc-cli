@@ -10,6 +10,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/simulator"
 	"github.com/klaassen-consulting/jc/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -90,6 +91,49 @@ type recipeRunInput struct {
 	Params map[string]string `json:"params,omitempty" jsonschema:"Recipe parameters as key-value pairs"`
 }
 
+type authPolicyCreateInput struct {
+	Name       string `json:"name" jsonschema:"Policy name"`
+	Type       string `json:"type,omitempty" jsonschema:"Policy type (e.g. user_portal, admin)"`
+	Conditions string `json:"conditions,omitempty" jsonschema:"Conditions tree as raw JSON string"`
+	MFA        bool   `json:"mfa,omitempty" jsonschema:"Require MFA for this policy"`
+	Disabled   bool   `json:"disabled,omitempty" jsonschema:"Create in disabled state"`
+}
+
+type authPolicyUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Policy name or ID to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New policy name"`
+	Conditions string `json:"conditions,omitempty" jsonschema:"New conditions tree as raw JSON"`
+	Disabled   *bool  `json:"disabled,omitempty" jsonschema:"Set to true to disable or false to enable"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type simulateInput struct {
+	Policy   string `json:"policy" jsonschema:"Policy name or ID to simulate"`
+	User     string `json:"user" jsonschema:"User name or ID"`
+	IP       string `json:"ip,omitempty" jsonschema:"Source IP address"`
+	Device   string `json:"device,omitempty" jsonschema:"Device name or ID"`
+	Location string `json:"location,omitempty" jsonschema:"Country code (e.g. US, DE)"`
+}
+
+type blastRadiusInput struct {
+	Policy string `json:"policy" jsonschema:"Policy name or ID"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of affected users to return (default 100)"`
+}
+
+type ipListCreateInput struct {
+	Name        string   `json:"name" jsonschema:"IP list name"`
+	Description string   `json:"description,omitempty" jsonschema:"IP list description"`
+	IPs         []string `json:"ips" jsonschema:"IP entries (single IPs, CIDR ranges, IP ranges)"`
+}
+
+type ipListUpdateInput struct {
+	Identifier  string   `json:"identifier" jsonschema:"IP list name or ID to update"`
+	Name        string   `json:"name,omitempty" jsonschema:"New IP list name"`
+	Description string   `json:"description,omitempty" jsonschema:"New description"`
+	IPs         []string `json:"ips,omitempty" jsonschema:"New IP entries (replaces existing)"`
+	Execute     bool     `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type planInput struct {
 	Command string `json:"command" jsonschema:"A jc command string to preview (e.g. users delete jdoe)"`
 }
@@ -124,6 +168,12 @@ func (s *Server) registerTools() {
 
 	// --- Policies tools ---
 	s.registerPolicyTools()
+
+	// --- Auth Policies tools ---
+	s.registerAuthPolicyTools()
+
+	// --- IP Lists tools ---
+	s.registerIPListTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -717,6 +767,428 @@ func (s *Server) registerPolicyTools() {
 	)
 }
 
+func (s *Server) registerAuthPolicyTools() {
+	addTypedTool(s, "auth_policies_list", "List all JumpCloud authentication policies for conditional access. Returns policy objects with id, name, disabled, type, conditions, effect fields.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/authn/policies", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing auth policies: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "auth_policies_get", "Get a single JumpCloud authentication policy by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/authn/policies/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting auth policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_create", "Create a new JumpCloud authentication policy. Conditions are specified as a raw JSON string.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args authPolicyCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name":     args.Name,
+				"disabled": args.Disabled,
+			}
+			if args.Type != "" {
+				body["type"] = args.Type
+			}
+			if args.Conditions != "" {
+				var cond any
+				if err := json.Unmarshal([]byte(args.Conditions), &cond); err != nil {
+					return errorResult(fmt.Sprintf("invalid conditions JSON: %v", err)), nil, nil
+				}
+				body["conditions"] = cond
+			}
+			if args.MFA {
+				body["mfa"] = map[string]any{"required": true}
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/authn/policies", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating auth policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_update", "Update a JumpCloud authentication policy. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args authPolicyUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Conditions != "" {
+				var cond any
+				if err := json.Unmarshal([]byte(args.Conditions), &cond); err != nil {
+					return errorResult(fmt.Sprintf("invalid conditions JSON: %v", err)), nil, nil
+				}
+				body["conditions"] = cond
+			}
+			if args.Disabled != nil {
+				body["disabled"] = *args.Disabled
+			}
+			if !args.Execute {
+				return planResult("update", "auth policy", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/authn/policies/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating auth policy: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_delete", "Delete a JumpCloud authentication policy. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "auth policy", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/authn/policies/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting auth policy: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Auth policy %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_simulate", "Simulate whether a user would be allowed or denied by an authentication policy. Evaluates policy conditions locally against the provided context.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args simulateInput) (*mcp.CallToolResult, any, error) {
+			v2Client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			v1Client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V1 client: %v", err)), nil, nil
+			}
+
+			// Resolve policy.
+			r := resolve.NewV2Resolver(v2Client)
+			policyID, err := r.Resolve(ctx, args.Policy, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			policyRaw, err := v2Client.Get(ctx, "/authn/policies/"+policyID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting policy: %v", err)), nil, nil
+			}
+
+			var policy simulator.Policy
+			if err := json.Unmarshal(policyRaw, &policy); err != nil {
+				return errorResult(fmt.Sprintf("parsing policy: %v", err)), nil, nil
+			}
+
+			// Resolve user.
+			userID, err := resolveV1(ctx, v1Client, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+
+			// Fetch user's group memberships.
+			memberResult, _ := v2Client.ListAll(ctx, "/users/"+userID+"/memberof", api.V2ListOptions{})
+			var userGroups []string
+			if memberResult != nil {
+				for _, raw := range memberResult.Data {
+					var assoc struct {
+						ID   string `json:"id"`
+						Type string `json:"type"`
+					}
+					if err := json.Unmarshal(raw, &assoc); err == nil && assoc.Type == "user_group" {
+						userGroups = append(userGroups, assoc.ID)
+					}
+				}
+			}
+
+			simCtx := simulator.SimulationContext{
+				UserID:     userID,
+				UserGroups: userGroups,
+				IP:         args.IP,
+				Location:   args.Location,
+			}
+
+			// IP resolver.
+			ipResolver := func(listID string) ([]string, error) {
+				raw, err := v2Client.Get(ctx, "/iplists/"+listID)
+				if err != nil {
+					return nil, err
+				}
+				var ipList struct {
+					IPs []string `json:"ips"`
+				}
+				if err := json.Unmarshal(raw, &ipList); err != nil {
+					return nil, err
+				}
+				return ipList.IPs, nil
+			}
+
+			result := simulator.EvaluatePolicy(policy, simCtx, ipResolver)
+			res, err := jsonResult(result)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "auth_policies_blast_radius", "Analyze which users are affected by an authentication policy. Returns the list of users in the policy's target groups.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args blastRadiusInput) (*mcp.CallToolResult, any, error) {
+			v2Client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(v2Client)
+			policyID, err := r.Resolve(ctx, args.Policy, resolve.AuthPolicyConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			policyRaw, err := v2Client.Get(ctx, "/authn/policies/"+policyID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting policy: %v", err)), nil, nil
+			}
+
+			var policy struct {
+				Name    string `json:"name"`
+				Targets struct {
+					UserGroups []string `json:"userGroups"`
+					AllUsers   bool     `json:"allUsers"`
+				} `json:"targets"`
+			}
+			if err := json.Unmarshal(policyRaw, &policy); err != nil {
+				return errorResult(fmt.Sprintf("parsing policy: %v", err)), nil, nil
+			}
+
+			limit := args.Limit
+			if limit == 0 {
+				limit = 100
+			}
+
+			if policy.Targets.AllUsers {
+				res, err := jsonResult(map[string]any{
+					"all_users": true,
+					"message":   fmt.Sprintf("Policy %q targets ALL users.", policy.Name),
+				})
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				return res, nil, nil
+			}
+
+			if len(policy.Targets.UserGroups) == 0 {
+				res, err := jsonResult(map[string]any{
+					"groups":  0,
+					"members": 0,
+					"message": fmt.Sprintf("Policy %q has no target user groups.", policy.Name),
+				})
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				return res, nil, nil
+			}
+
+			seen := make(map[string]bool)
+			var members []json.RawMessage
+			for _, groupID := range policy.Targets.UserGroups {
+				if len(members) >= limit {
+					break
+				}
+				result, err := v2Client.ListAll(ctx, "/usergroups/"+groupID+"/members", api.V2ListOptions{})
+				if err != nil {
+					continue
+				}
+				for _, raw := range result.Data {
+					var m struct {
+						ID string `json:"id"`
+					}
+					if err := json.Unmarshal(raw, &m); err == nil && !seen[m.ID] {
+						seen[m.ID] = true
+						members = append(members, raw)
+						if len(members) >= limit {
+							break
+						}
+					}
+				}
+			}
+
+			return rawListResult(members, len(members))
+		},
+	)
+}
+
+func (s *Server) registerIPListTools() {
+	addTypedTool(s, "iplists_list", "List all JumpCloud IP lists. Returns objects with id, name, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/iplists", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing IP lists: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "iplists_get", "Get a single JumpCloud IP list by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IPListConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/iplists/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting IP list: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "iplists_create", "Create a new JumpCloud IP list. IPs can be single addresses, CIDR ranges, or IP ranges.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args ipListCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+				"ips":  args.IPs,
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/iplists", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating IP list: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "iplists_update", "Update a JumpCloud IP list. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args ipListUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IPListConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			if len(args.IPs) > 0 {
+				body["ips"] = args.IPs
+			}
+			if !args.Execute {
+				return planResult("update", "IP list", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/iplists/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating IP list: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "iplists_delete", "Delete a JumpCloud IP list. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IPListConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "IP list", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/iplists/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting IP list: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("IP list %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
 func (s *Server) registerRecipeTools() {
 	addTypedTool(s, "recipe_run", "Run a named jc recipe with parameters. Recipes are multi-step automated workflows.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args recipeRunInput) (*mcp.CallToolResult, any, error) {
@@ -929,6 +1401,24 @@ func describeCommand(parts []string) string {
 		},
 		"policies": {
 			"list": "List all JumpCloud policies with name, type, and OS target.",
+		},
+		"auth-policies": {
+			"list":         "List all JumpCloud authentication policies for conditional access.",
+			"get":          "Get an authentication policy by name or ID.",
+			"create":       "Create a new authentication policy with conditions and targets.",
+			"update":       "Update an existing authentication policy.",
+			"delete":       "Delete an authentication policy. IRREVERSIBLE.",
+			"enable":       "Enable a disabled authentication policy.",
+			"disable":      "Disable an authentication policy.",
+			"simulate":     "Simulate whether a user would be allowed/denied by a policy.",
+			"blast-radius": "Show which users are affected by a policy.",
+		},
+		"iplists": {
+			"list":   "List all JumpCloud IP lists used by authentication policies.",
+			"get":    "Get an IP list by name or ID.",
+			"create": "Create a new IP list with IP entries.",
+			"update": "Update an existing IP list.",
+			"delete": "Delete an IP list. IRREVERSIBLE.",
 		},
 		"recipe": {
 			"run": "Execute a multi-step automated recipe with parameters.",
