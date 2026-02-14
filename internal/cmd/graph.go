@@ -7,9 +7,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
 // graphDefaultFields is the default field subset shown for graph association output.
@@ -55,6 +58,8 @@ func newGraphCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newGraphTraverseCmd())
+	cmd.AddCommand(newGraphBindCmd())
+	cmd.AddCommand(newGraphUnbindCmd())
 
 	return cmd
 }
@@ -343,4 +348,178 @@ func validTargetsForSource(sourceType string) []string {
 		}
 	}
 	return result
+}
+
+// parseTargetFlag splits a "type:identifier" string for the --to flag in bind/unbind.
+// Unlike parseFromFlag, it doesn't validate against validSourceTypes because target
+// types include more types than source types (e.g., policy, command, etc.).
+func parseTargetFlag(to string) (string, string, error) {
+	parts := strings.SplitN(to, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid --to format %q. Expected type:name-or-id (e.g., application:Slack)", to)
+	}
+	return parts[0], parts[1], nil
+}
+
+// resolveTargetID resolves a target identifier to an ID.
+// For known source types (user, device, etc.), uses getSourceConfig resolution.
+// For other types (policy, command, etc.), requires a 24-char hex ID.
+func resolveTargetID(ctx context.Context, targetType, identifier string) (string, error) {
+	// Check if this target type has a source config (meaning it has name resolution).
+	cfg, err := getSourceConfig(targetType)
+	if err == nil {
+		return cfg.resolveFunc(ctx, identifier)
+	}
+	// For types without name resolution, the identifier must be a raw ID.
+	if resolve.IsID(identifier) {
+		return identifier, nil
+	}
+	return "", fmt.Errorf("target type %q does not support name resolution; provide a 24-character hex ID", targetType)
+}
+
+// runGraphManage is the shared implementation for bind (op="add") and unbind (op="remove").
+func runGraphManage(cmd *cobra.Command, from, to, op string) error {
+	// Parse --from.
+	sourceType, sourceIdent, err := parseFromFlag(from)
+	if err != nil {
+		return err
+	}
+
+	// Parse --to (type:name-or-id).
+	targetType, targetIdent, err := parseTargetFlag(to)
+	if err != nil {
+		return err
+	}
+
+	// Validate source→target type combo.
+	if !isValidTargetType(sourceType, targetType) {
+		return fmt.Errorf("invalid target type %q for source %q. Valid targets for %s: %s",
+			targetType, sourceType, sourceType, strings.Join(validTargetsBySource[sourceType], ", "))
+	}
+
+	// Map target type aliases.
+	apiTarget := targetType
+	if mapped, ok := targetToAPIParam[targetType]; ok {
+		apiTarget = mapped
+	}
+
+	ctx := cmd.Context()
+
+	// Resolve source ID.
+	sourceCfg, err := getSourceConfig(sourceType)
+	if err != nil {
+		return err
+	}
+	sourceID, err := sourceCfg.resolveFunc(ctx, sourceIdent)
+	if err != nil {
+		return err
+	}
+
+	// Resolve target ID.
+	targetID, err := resolveTargetID(ctx, targetType, targetIdent)
+	if err != nil {
+		return err
+	}
+
+	// Plan mode.
+	if viper.GetBool("plan") {
+		action := "bind"
+		if op == "remove" {
+			action = "unbind"
+		}
+		p := &plan.Plan{
+			Action:     action,
+			Resource:   "graph association",
+			Target:     fmt.Sprintf("%s → %s", from, to),
+			Effects:    []string{fmt.Sprintf("op: %s, source: %s/%s, target: %s/%s", op, sourceType, sourceID, apiTarget, targetID)},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	// Confirmation for unbind (remove).
+	if op == "remove" && !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Remove association %s → %s? [y/N] ", from, to)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	// POST to graph associations endpoint.
+	v2Client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	endpoint := sourceCfg.endpointPrefix + "/" + sourceID + "/associations"
+	body := map[string]any{
+		"op":   op,
+		"type": apiTarget,
+		"id":   targetID,
+	}
+	_, err = v2Client.Create(ctx, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	action := "bound"
+	if op == "remove" {
+		action = "unbound"
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Successfully %s %s:%s → %s:%s\n", action, sourceType, sourceIdent, targetType, targetIdent)
+	return nil
+}
+
+func newGraphBindCmd() *cobra.Command {
+	var fromFlag, toFlag string
+	cmd := &cobra.Command{
+		Use:   "bind --from <type>:<name-or-id> --to <type>:<name-or-id>",
+		Short: "Create an association between resources",
+		Long: `Create a graph association between two JumpCloud resources.
+
+Both --from and --to use the format type:name-or-id.
+The same source/target validation as 'traverse' applies.
+
+Examples:
+  jc graph bind --from user_group:Engineering --to application:Slack
+  jc graph bind --from device_group:Servers --to user:jdoe`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGraphManage(cmd, fromFlag, toFlag, "add")
+		},
+	}
+	cmd.Flags().StringVar(&fromFlag, "from", "", "Source resource as type:name-or-id")
+	cmd.Flags().StringVar(&toFlag, "to", "", "Target resource as type:name-or-id")
+	_ = cmd.MarkFlagRequired("from")
+	_ = cmd.MarkFlagRequired("to")
+	return cmd
+}
+
+func newGraphUnbindCmd() *cobra.Command {
+	var fromFlag, toFlag string
+	cmd := &cobra.Command{
+		Use:   "unbind --from <type>:<name-or-id> --to <type>:<name-or-id>",
+		Short: "Remove an association between resources",
+		Long: `Remove a graph association between two JumpCloud resources.
+
+Both --from and --to use the format type:name-or-id.
+Shows a confirmation prompt before removing. Use --force to skip.
+
+Examples:
+  jc graph unbind --from user_group:Engineering --to application:Slack
+  jc graph unbind --from device_group:Servers --to user:jdoe`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGraphManage(cmd, fromFlag, toFlag, "remove")
+		},
+	}
+	cmd.Flags().StringVar(&fromFlag, "from", "", "Source resource as type:name-or-id")
+	cmd.Flags().StringVar(&toFlag, "to", "", "Target resource as type:name-or-id")
+	_ = cmd.MarkFlagRequired("from")
+	_ = cmd.MarkFlagRequired("to")
+	return cmd
 }

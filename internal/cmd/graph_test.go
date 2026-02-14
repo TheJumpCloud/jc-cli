@@ -3,12 +3,14 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/spf13/viper"
 )
 
@@ -68,7 +70,13 @@ func startGraphServer(t *testing.T, associations map[string]map[string][]map[str
 			return
 		}
 
-		// V2 graph: /{resource}/{id}/associations?targets={type}
+		// V2 graph POST: /{resource}/{id}/associations (bind/unbind)
+		if strings.Contains(r.URL.Path, "/associations") && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// V2 graph GET: /{resource}/{id}/associations?targets={type}
 		if strings.Contains(r.URL.Path, "/associations") && r.Method == http.MethodGet {
 			targets := r.URL.Query().Get("targets")
 
@@ -845,8 +853,11 @@ func TestGraphCmd_HelpShowsTraverse(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "traverse") {
-		t.Errorf("graph help should show traverse subcommand: %s", buf.String())
+	out := buf.String()
+	for _, sub := range []string{"traverse", "bind", "unbind"} {
+		if !strings.Contains(out, sub) {
+			t.Errorf("graph help should show %q subcommand: %s", sub, out)
+		}
 	}
 }
 
@@ -1040,5 +1051,220 @@ func TestFlattenAssociations(t *testing.T) {
 	json.Unmarshal(result[2], &m2)
 	if m2["no_to_key"] != "value" {
 		t.Errorf("result[2] should pass through unchanged: %v", m2)
+	}
+}
+
+// --- Bind Tests ---
+
+func TestGraphBind_UserToApplication(t *testing.T) {
+	setupGraphTest(t)
+
+	ts := startGraphServer(t, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf, errBuf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"graph", "bind", "--from", "user:jdoe", "--to", "application:aabbccddee112233aabb2001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "Successfully bound") {
+		t.Errorf("expected success message, got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "user:jdoe") {
+		t.Errorf("success message should mention source, got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "application:") {
+		t.Errorf("success message should mention target, got: %s", stderr)
+	}
+}
+
+func TestGraphBind_Plan(t *testing.T) {
+	setupGraphTest(t)
+
+	ts := startGraphServer(t, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"graph", "bind", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application:aabbccddee112233aabb2001", "--plan"})
+
+	err := cmd.Execute()
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "bind") {
+		t.Errorf("plan should mention 'bind', got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "graph association") {
+		t.Errorf("plan should mention 'graph association', got:\n%s", stderr)
+	}
+}
+
+func TestGraphBind_InvalidFrom(t *testing.T) {
+	setupGraphTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"graph", "bind", "--from", "invalid", "--to", "application:Slack"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --from format")
+	}
+	if !strings.Contains(err.Error(), "type:name-or-id") {
+		t.Errorf("error should suggest correct format: %v", err)
+	}
+}
+
+func TestGraphBind_InvalidTarget(t *testing.T) {
+	setupGraphTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"graph", "bind", "--from", "user:jdoe", "--to", "command:aa11bb22cc33dd44ee550001"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: command is not a valid target for user source")
+	}
+	if !strings.Contains(err.Error(), "invalid target type") {
+		t.Errorf("error should mention invalid target type: %v", err)
+	}
+}
+
+// --- Unbind Tests ---
+
+func TestGraphUnbind_UserFromApplication(t *testing.T) {
+	setupGraphTest(t)
+
+	ts := startGraphServer(t, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf, errBuf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"graph", "unbind", "--force", "--from", "user:jdoe", "--to", "application:aabbccddee112233aabb2001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "Successfully unbound") {
+		t.Errorf("expected success message, got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "user:jdoe") {
+		t.Errorf("success message should mention source, got: %s", stderr)
+	}
+}
+
+func TestGraphUnbind_Plan(t *testing.T) {
+	setupGraphTest(t)
+
+	ts := startGraphServer(t, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"graph", "unbind", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application:aabbccddee112233aabb2001", "--plan"})
+
+	err := cmd.Execute()
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "unbind") {
+		t.Errorf("plan should mention 'unbind', got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "graph association") {
+		t.Errorf("plan should mention 'graph association', got:\n%s", stderr)
+	}
+}
+
+// --- parseTargetFlag unit tests ---
+
+func TestParseTargetFlag_Valid(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantType  string
+		wantIdent string
+	}{
+		{"application:Slack", "application", "Slack"},
+		{"user:jdoe", "user", "jdoe"},
+		{"command:aa11bb22cc33dd44ee550001", "command", "aa11bb22cc33dd44ee550001"},
+		{"policy:My Policy", "policy", "My Policy"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			typ, ident, err := parseTargetFlag(tt.input)
+			if err != nil {
+				t.Fatalf("parseTargetFlag(%q) error: %v", tt.input, err)
+			}
+			if typ != tt.wantType {
+				t.Errorf("type = %q, want %q", typ, tt.wantType)
+			}
+			if ident != tt.wantIdent {
+				t.Errorf("identifier = %q, want %q", ident, tt.wantIdent)
+			}
+		})
+	}
+}
+
+func TestParseTargetFlag_Invalid(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{""},
+		{"nocolon"},
+		{":noprefix"},
+		{"user:"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			_, _, err := parseTargetFlag(tt.input)
+			if err == nil {
+				t.Errorf("parseTargetFlag(%q) should return error", tt.input)
+			}
+		})
 	}
 }
