@@ -623,7 +623,12 @@ func applyJMESPathAndWrite(w io.Writer, data []json.RawMessage, opts Options) er
 	}
 
 	// Clear query to prevent infinite recursion when delegating to WriteList/WriteSingle.
+	// Also clear field selection state — JMESPath output has its own field shape,
+	// and stale DefaultFields would cause empty rows in table/CSV output.
 	opts.Query = ""
+	opts.DefaultFields = nil
+	opts.Fields = nil
+	opts.Exclude = nil
 
 	// Marshal the result back to JSON and detect its type.
 	resultJSON, err := json.Marshal(result)
@@ -669,7 +674,11 @@ func applyJMESPathSingleAndWrite(w io.Writer, data json.RawMessage, opts Options
 	}
 
 	// Clear query to prevent infinite recursion.
+	// Also clear field selection state — JMESPath output has its own field shape.
 	opts.Query = ""
+	opts.DefaultFields = nil
+	opts.Fields = nil
+	opts.Exclude = nil
 
 	resultJSON, err := json.Marshal(result)
 	if err != nil {

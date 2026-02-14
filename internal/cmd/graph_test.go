@@ -141,6 +141,19 @@ func TestGraphTraverse_UserToUserGroup(t *testing.T) {
 	if len(result) != 2 {
 		t.Errorf("got %d associations, want 2", len(result))
 	}
+
+	// Verify flattened structure: top-level "type" and "id", no nested "to".
+	for i, item := range result {
+		if _, ok := item["to"]; ok {
+			t.Errorf("result[%d] should not have nested 'to' key after flattening", i)
+		}
+		if _, ok := item["type"]; !ok {
+			t.Errorf("result[%d] missing flattened 'type' key", i)
+		}
+		if _, ok := item["id"]; !ok {
+			t.Errorf("result[%d] missing flattened 'id' key", i)
+		}
+	}
 }
 
 func TestGraphTraverse_UserByName(t *testing.T) {
@@ -483,12 +496,22 @@ func TestGraphTraverse_TableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	// Table output should contain the "TO" header and the nested to object data.
-	if !strings.Contains(strings.ToUpper(out), "TO") {
-		t.Errorf("table output missing 'TO' column header:\n%s", out)
-	}
 	if out == "" {
-		t.Error("expected non-empty table output")
+		t.Fatal("expected non-empty table output")
+	}
+	// Flattened associations should produce TYPE and ID column headers.
+	if !strings.Contains(out, "TYPE") {
+		t.Errorf("table output missing 'TYPE' column header:\n%s", out)
+	}
+	if !strings.Contains(out, "ID") {
+		t.Errorf("table output missing 'ID' column header:\n%s", out)
+	}
+	// Should contain the actual data values.
+	if !strings.Contains(out, "user_group") {
+		t.Errorf("table output missing 'user_group' value:\n%s", out)
+	}
+	if !strings.Contains(out, "aabbccddee112233aabb0001") {
+		t.Errorf("table output missing association ID:\n%s", out)
 	}
 }
 
@@ -870,5 +893,102 @@ func TestIsValidTargetType(t *testing.T) {
 	}
 	if isValidTargetType("invalid") {
 		t.Error("isValidTargetType(\"invalid\") = true, want false")
+	}
+}
+
+func TestGraphTraverse_TargetAliasMapping(t *testing.T) {
+	setupGraphTest(t)
+
+	tests := []struct {
+		name      string
+		toFlag    string
+		wantParam string
+	}{
+		{"device maps to system", "device", "system"},
+		{"device_group maps to system_group", "device_group", "system_group"},
+		{"system passes through", "system", "system"},
+		{"user_group passes through", "user_group", "user_group"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupGraphTest(t)
+
+			var requestedTargets string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if strings.Contains(r.URL.Path, "/associations") {
+					requestedTargets = r.URL.Query().Get("targets")
+					json.NewEncoder(w).Encode([]map[string]any{})
+					return
+				}
+				if r.URL.Path == "/systemusers" {
+					json.NewEncoder(w).Encode(map[string]any{"results": []any{}, "totalCount": 0})
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer ts.Close()
+			overrideV1Client(t, ts.URL)
+			overrideV2Client(t, ts.URL)
+
+			cmd := NewRootCmd()
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", tt.toFlag})
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Execute error: %v", err)
+			}
+
+			if requestedTargets != tt.wantParam {
+				t.Errorf("targets param = %q, want %q", requestedTargets, tt.wantParam)
+			}
+		})
+	}
+}
+
+func TestFlattenAssociations(t *testing.T) {
+	input := []json.RawMessage{
+		json.RawMessage(`{"to":{"type":"user_group","id":"abc123"}}`),
+		json.RawMessage(`{"to":{"type":"system","id":"def456"},"attributes":{"extra":true}}`),
+		json.RawMessage(`{"no_to_key":"value"}`),
+	}
+
+	result := flattenAssociations(input)
+
+	if len(result) != 3 {
+		t.Fatalf("got %d results, want 3", len(result))
+	}
+
+	// First: simple flatten.
+	var m0 map[string]any
+	json.Unmarshal(result[0], &m0)
+	if m0["type"] != "user_group" {
+		t.Errorf("result[0] type = %v, want user_group", m0["type"])
+	}
+	if m0["id"] != "abc123" {
+		t.Errorf("result[0] id = %v, want abc123", m0["id"])
+	}
+	if _, ok := m0["to"]; ok {
+		t.Error("result[0] should not have 'to' key")
+	}
+
+	// Second: flatten with extra top-level key preserved.
+	var m1 map[string]any
+	json.Unmarshal(result[1], &m1)
+	if m1["type"] != "system" {
+		t.Errorf("result[1] type = %v, want system", m1["type"])
+	}
+	if m1["attributes"] == nil {
+		t.Error("result[1] should preserve 'attributes' key")
+	}
+
+	// Third: no "to" key — passed through unchanged.
+	var m2 map[string]any
+	json.Unmarshal(result[2], &m2)
+	if m2["no_to_key"] != "value" {
+		t.Errorf("result[2] should pass through unchanged: %v", m2)
 	}
 }

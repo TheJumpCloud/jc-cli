@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,8 +13,8 @@ import (
 )
 
 // graphDefaultFields is the default field subset shown for graph association output.
-// Graph association objects have a nested "to" object containing "type" and "id".
-var graphDefaultFields = []string{"to"}
+// Associations are flattened from {"to":{"type":..,"id":..}} to {"type":..,"id":..}.
+var graphDefaultFields = []string{"type", "id"}
 
 // validSourceTypes lists the resource types that can be used as --from sources.
 var validSourceTypes = []string{
@@ -21,9 +22,17 @@ var validSourceTypes = []string{
 }
 
 // validTargetTypes lists the resource types that can be used as --to targets.
+// Includes user-friendly aliases (device, device_group) alongside API names.
 var validTargetTypes = []string{
-	"user", "system", "user_group", "system_group", "application",
-	"policy", "command",
+	"user", "device", "system", "user_group", "device_group", "system_group",
+	"application", "policy", "command",
+}
+
+// targetToAPIParam maps user-friendly target aliases to the actual V2 API parameter values.
+// Targets not in this map pass through unchanged.
+var targetToAPIParam = map[string]string{
+	"device":       "system",
+	"device_group": "system_group",
 }
 
 // resourceTypeConfig maps user-friendly source type names to V2 API endpoint prefixes
@@ -62,11 +71,13 @@ The --from flag specifies the source resource as type:name-or-id.
 The --to flag specifies the target resource type to find associations for.
 
 Source types: user, device, user_group, device_group, application
-Target types: user, system, user_group, system_group, application, policy, command
+Target types: user, device (system), user_group, device_group (system_group), application, policy, command
+
+"device" is an alias for "system" and "device_group" is an alias for "system_group".
 
 Examples:
-  jc graph traverse --from user:jdoe --to user_group
-  jc graph traverse --from device:JDOE-MBP --to system_group
+  jc graph traverse --from user:jdoe --to device
+  jc graph traverse --from device:JDOE-MBP --to device_group
   jc graph traverse --from user_group:Engineering --to application
   jc graph traverse --from user_group:Engineering --to user
   jc graph traverse --from application:Slack --to user_group`,
@@ -96,6 +107,12 @@ func runGraphTraverse(cmd *cobra.Command, from, to string) error {
 			to, strings.Join(validTargetTypes, ", "))
 	}
 
+	// Map user-friendly target aliases to API parameter values.
+	apiTarget := to
+	if mapped, ok := targetToAPIParam[to]; ok {
+		apiTarget = mapped
+	}
+
 	ctx := cmd.Context()
 
 	// Build the source config and resolve the identifier to an ID.
@@ -111,7 +128,7 @@ func runGraphTraverse(cmd *cobra.Command, from, to string) error {
 
 	// Build the V2 graph associations endpoint.
 	// Format: /v2/{resource_type}/{id}/associations?targets={target_type}
-	endpoint := sourceCfg.endpointPrefix + "/" + id + "/associations?targets=" + to
+	endpoint := sourceCfg.endpointPrefix + "/" + id + "/associations?targets=" + apiTarget
 
 	v2Client, err := newV2Client()
 	if err != nil {
@@ -123,18 +140,67 @@ func runGraphTraverse(cmd *cobra.Command, from, to string) error {
 		return err
 	}
 
+	// Flatten nested association objects: {"to":{"type":..,"id":..}} → {"type":..,"id":..}
+	data := flattenAssociations(result.Data)
+
 	opts := output.CurrentOptions()
 	opts.DefaultFields = graphDefaultFields
 
-	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+	if err := output.WriteList(cmd.OutOrStdout(), data, opts); err != nil {
 		return err
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
 	}
 
 	return nil
+}
+
+// flattenAssociations transforms graph association objects from nested form
+// {"to":{"type":"...","id":"..."}} to flat form {"type":"...","id":"..."}.
+// Non-conforming objects are passed through unchanged.
+func flattenAssociations(data []json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(data))
+	for _, raw := range data {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			result = append(result, raw)
+			continue
+		}
+
+		toRaw, ok := m["to"]
+		if !ok {
+			result = append(result, raw)
+			continue
+		}
+
+		var toObj map[string]json.RawMessage
+		if err := json.Unmarshal(toRaw, &toObj); err != nil {
+			result = append(result, raw)
+			continue
+		}
+
+		// Build flat object with to.type and to.id promoted to top level.
+		// Preserve any other top-level keys besides "to".
+		flat := make(map[string]json.RawMessage)
+		for k, v := range m {
+			if k != "to" {
+				flat[k] = v
+			}
+		}
+		for k, v := range toObj {
+			flat[k] = v
+		}
+
+		out, err := json.Marshal(flat)
+		if err != nil {
+			result = append(result, raw)
+			continue
+		}
+		result = append(result, out)
+	}
+	return result
 }
 
 // parseFromFlag splits a "type:identifier" string into its components.
