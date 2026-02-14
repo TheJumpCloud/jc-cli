@@ -688,7 +688,8 @@
         "Rate limiting respected during bulk operations"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Bulk uses a combination of individual API calls with rate limiting. Consider using JumpCloud's bulk job API where available (POST /api/v2/bulk/users).",
       "dependsOn": ["US-012", "US-008"]
     },

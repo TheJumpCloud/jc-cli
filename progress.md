@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Bulk operations: `parseBulkCSV()` → `rowToFields()` → `determineOperation()` → individual API calls with error accumulation; `bulkResult` tracks per-row outcomes
 - Resource commands follow pattern: `internal/cmd/<resource>.go` with `new<Resource>Cmd()` parent + `new<Resource>ListCmd()` / `new<Resource>GetCmd()` subcommands
 - Graph traversal: V2 `GET /{resource}/{id}/associations?targets={type}` — `graphSourceConfig` maps source types to endpoint prefixes + resolver closures
 - `newV1Client` package-level var in users.go enables test injection (similar to `newAPIClient` in auth.go)
@@ -519,4 +520,36 @@
   - No name resolution needed for admins — they're typically listed and filtered, not looked up by name/ID individually.
   - The `newV2Client` var and `overrideV2Client()` test helper already exist in groups.go/groups_test.go — no need to re-declare them. Just use them directly.
   - `StringArrayVar` (not `StringSliceVar`) for `--filter` flag — same pattern across all resource commands.
+---
+
+## 2026-02-13 - US-033
+- What was implemented:
+  - `jc bulk users --file users.csv` — processes bulk user create/update/delete from CSV files
+  - CSV header row maps to JumpCloud user fields; `operation` column determines action (create/update/delete)
+  - If no `operation` column present, all rows default to `create`
+  - For update/delete, `username` or `_id` column identifies the target user (with name resolution)
+  - Progress reporting to stderr: `Processing N of TOTAL: op label...`
+  - Failed operations logged but don't stop remaining operations (error accumulation)
+  - Summary report to stderr: `── Summary: N succeeded, N failed, N skipped ──`
+  - Detailed error output with `--verbose` flag
+  - `--plan` mode previews all operations without executing, shows operation counts and row details
+  - `--force` skips confirmation prompt; without it, shows "Ready to process: N creates, M updates, K deletes"
+  - Unknown operation values produce clear error with valid operation list
+  - Empty CSV (header only) produces clear "at least one data row" error
+  - Output results as JSON array (or table/CSV) with row, operation, username, status, error fields
+  - Rate limiting respected via existing V1Client retryTransport
+- Files changed:
+  - internal/cmd/bulk.go — new bulk command group with `bulk users` subcommand (260 lines)
+  - internal/cmd/bulk_test.go — 20 tests: create success, update success, delete success, mixed operations, missing required fields, no identifier, not found, partial failure, plan mode, confirm cancel/yes, unknown operation, empty CSV, no operation column, missing file, missing file flag, table output, verbose errors, help tests
+  - internal/cmd/root.go — registered `newBulkCmd()`
+  - .chief/prds/main/prd.json — marked US-033 passes
+- **Learnings for future iterations:**
+  - `encoding/csv` from stdlib handles all CSV edge cases (quoting, commas in values, etc.) — no external library needed.
+  - `parseBulkCSV()` returns headers and rows separately; `rowToFields()` converts a row to a map using headers as keys. Empty values are omitted, which naturally prevents sending empty strings for optional fields.
+  - The `determineOperation()` function centralizes operation detection — if an `operation` column exists, use it; otherwise default to `create`. This keeps the main loop clean.
+  - Reuse `getConfirmReader()` from users.go for confirmation prompts — same testable pattern with `overrideConfirmReader()`.
+  - Bulk operations use individual V1Client calls (Create/Update/Delete) rather than a bulk API endpoint. This leverages the existing retry/rate-limit transport chain and keeps the implementation simple.
+  - Error accumulation pattern: collect `bulkResult` structs with status/error, continue processing on failure, print summary at the end. This is the right UX for bulk operations where partial success is expected.
+  - Plan mode returns early after printing the preview — no API client needed, no mock server needed in plan mode tests.
+  - The `writeTempCSV()` test helper using `t.TempDir()` is clean and auto-cleaned-up.
 ---
