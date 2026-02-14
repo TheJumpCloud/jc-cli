@@ -551,6 +551,254 @@ func TestFlagsInheritedBySubcommands(t *testing.T) {
 	}
 }
 
+// --- Alias Expansion Tests (US-054) ---
+
+func TestExpandAliases_NoAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	args := []string{"users", "list"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 2 || expanded[0] != "users" || expanded[1] != "list" {
+		t.Errorf("expected unchanged args, got: %v", expanded)
+	}
+}
+
+func TestExpandAliases_MatchesAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"inactive": "users list --filter 'suspended=true' -t",
+	})
+
+	args := []string{"inactive"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	// Should expand to: users list --filter 'suspended=true' -t
+	if len(expanded) != 5 {
+		t.Fatalf("expected 5 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[0] != "users" || expanded[1] != "list" {
+		t.Errorf("expected 'users list' prefix, got: %v", expanded)
+	}
+}
+
+func TestExpandAliases_WithTrailingArgs(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"suspended": "users list --filter 'suspended=true'",
+	})
+
+	// User types: jc suspended -t --limit 10
+	args := []string{"suspended", "-t", "--limit", "10"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	// Should be: users list --filter 'suspended=true' -t --limit 10
+	if len(expanded) != 7 {
+		t.Fatalf("expected 7 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[0] != "users" {
+		t.Errorf("expected 'users' first, got: %s", expanded[0])
+	}
+	// Trailing args preserved.
+	if expanded[4] != "-t" || expanded[5] != "--limit" || expanded[6] != "10" {
+		t.Errorf("trailing args not preserved: %v", expanded[4:])
+	}
+}
+
+func TestExpandAliases_BuiltinConflict(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"users": "devices list",
+	})
+
+	args := []string{"users", "list"}
+	expanded, warning := expandAliases(args)
+	// Built-in takes precedence — args unchanged.
+	if len(expanded) != 2 || expanded[0] != "users" || expanded[1] != "list" {
+		t.Errorf("built-in conflict should leave args unchanged, got: %v", expanded)
+	}
+	if !strings.Contains(warning, "conflicts with built-in") {
+		t.Errorf("expected conflict warning, got: %s", warning)
+	}
+}
+
+func TestExpandAliases_EmptyArgs(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	args := []string{}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 0 {
+		t.Errorf("expected empty args, got: %v", expanded)
+	}
+}
+
+func TestExpandAliases_NoAliasConfigured(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	args := []string{"nonexistent"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 1 || expanded[0] != "nonexistent" {
+		t.Errorf("expected unchanged args, got: %v", expanded)
+	}
+}
+
+func TestExpandAliases_WithGlobalFlagsBeforeAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"inactive": "users list --filter 'suspended=true'",
+	})
+
+	// User types: jc --verbose inactive
+	args := []string{"--verbose", "inactive"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	// Should be: --verbose users list --filter 'suspended=true'
+	if len(expanded) != 5 {
+		t.Fatalf("expected 5 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[0] != "--verbose" {
+		t.Errorf("global flag should be preserved, got: %s", expanded[0])
+	}
+	if expanded[1] != "users" {
+		t.Errorf("alias expansion should follow flag, got: %s", expanded[1])
+	}
+}
+
+func TestAlias_IntegrationWithCommand(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	// Set up an alias that maps to a known command.
+	viper.Set("aliases", map[string]interface{}{
+		"ver": "version",
+	})
+
+	// Test the full flow: alias expansion → Cobra execution.
+	args := []string{"ver"}
+	expanded, _ := expandAliases(args)
+
+	rootCmd := NewRootCmd()
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetArgs(expanded)
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.HasPrefix(stdout.String(), "jc v") {
+		t.Errorf("alias 'ver' should expand to 'version' command, got: %s", stdout.String())
+	}
+}
+
+func TestAlias_ConfigSetAndExpand(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	// Set alias via config.
+	if err := config.SetConfigValue("aliases.v", "version"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	// Verify expansion works.
+	args := []string{"v"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 1 || expanded[0] != "version" {
+		t.Errorf("expected expanded to ['version'], got: %v", expanded)
+	}
+}
+
+func TestAlias_VisibleInConfigView(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`aliases:
+  inactive: "users list -t"
+`), 0600)
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	// Run config view and check alias is visible.
+	rootCmd := NewRootCmd()
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetArgs([]string{"config", "view"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "inactive") {
+		t.Error("config view should show aliases")
+	}
+	if !strings.Contains(stdout.String(), "users list -t") {
+		t.Error("config view should show alias expansion")
+	}
+}
+
+func TestAlias_ConfigSetHelp(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	rootCmd := NewRootCmd()
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetArgs([]string{"config", "set", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	helpText := stdout.String()
+	if !strings.Contains(helpText, "aliases.inactive") {
+		t.Error("config set help should show alias example")
+	}
+}
+
 func TestPlanFlagIsPersistent(t *testing.T) {
 	rootCmd := NewRootCmd()
 	flag := rootCmd.PersistentFlags().Lookup("plan")

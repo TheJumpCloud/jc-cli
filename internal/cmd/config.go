@@ -147,8 +147,10 @@ Examples:
   jc config set defaults.confirm_destructive true
   jc config set cache.ttl 600
   jc config set active_profile production
+  jc config set aliases.inactive "users list --filter 'suspended=true' -t"
+  jc config set aliases.stale "devices list --sort -lastContact -t"
 
-Valid keys:
+Valid keys (aliases.* accepts any alias name):
 ` + formatValidKeys(),
 		Args: cobra.ExactArgs(2),
 		RunE: runConfigSet,

@@ -1136,7 +1136,8 @@
         "Aliases visible in 'jc config view'"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Aliases provide personalization. They expand early in the command parsing pipeline. Built-in commands always take precedence over aliases.",
       "dependsOn": ["US-002"]
     },

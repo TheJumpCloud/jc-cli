@@ -1014,6 +1014,106 @@ profiles:
 	}
 }
 
+// --- Alias Config Tests (US-054) ---
+
+func TestIsValidConfigKey_AliasKeys(t *testing.T) {
+	// Any aliases.* key should be valid.
+	if !IsValidConfigKey("aliases.inactive") {
+		t.Error("IsValidConfigKey('aliases.inactive') = false, want true")
+	}
+	if !IsValidConfigKey("aliases.stale") {
+		t.Error("IsValidConfigKey('aliases.stale') = false, want true")
+	}
+	// Just "aliases" without a name should be invalid.
+	if IsValidConfigKey("aliases.") {
+		t.Error("IsValidConfigKey('aliases.') = true, want false")
+	}
+	if IsValidConfigKey("aliases") {
+		t.Error("IsValidConfigKey('aliases') = true, want false")
+	}
+}
+
+func TestAliases_Empty(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	aliases := Aliases()
+	if len(aliases) != 0 {
+		t.Errorf("Aliases() = %v, want empty map", aliases)
+	}
+}
+
+func TestAliases_FromConfig(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`aliases:
+  inactive: "users list --filter 'suspended=true' -t"
+  stale: "devices list --sort -lastContact -t"
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	aliases := Aliases()
+	if len(aliases) != 2 {
+		t.Fatalf("Aliases() returned %d entries, want 2: %v", len(aliases), aliases)
+	}
+	if aliases["inactive"] != "users list --filter 'suspended=true' -t" {
+		t.Errorf("aliases[inactive] = %q, want users list command", aliases["inactive"])
+	}
+	if aliases["stale"] != "devices list --sort -lastContact -t" {
+		t.Errorf("aliases[stale] = %q, want devices list command", aliases["stale"])
+	}
+}
+
+func TestSetConfigValue_Alias(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetConfigValue("aliases.inactive", "users list --filter 'suspended=true' -t"); err != nil {
+		t.Fatalf("SetConfigValue() error: %v", err)
+	}
+
+	// Verify it's accessible.
+	aliases := Aliases()
+	if aliases["inactive"] != "users list --filter 'suspended=true' -t" {
+		t.Errorf("aliases[inactive] = %q after SetConfigValue", aliases["inactive"])
+	}
+
+	// Verify persistence.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("cannot read config: %v", err)
+	}
+	if !strings.Contains(string(data), "inactive") {
+		t.Error("config file should contain alias 'inactive'")
+	}
+}
+
 func TestSetConfigValue_Persists(t *testing.T) {
 	resetViper()
 	defer resetViper()

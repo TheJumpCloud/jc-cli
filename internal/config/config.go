@@ -399,13 +399,23 @@ func MCPPlanFirst() bool {
 }
 
 // IsValidConfigKey returns true if key is a known config key.
+// Keys under "aliases." are always valid (user-defined alias names).
 func IsValidConfigKey(key string) bool {
+	if strings.HasPrefix(key, "aliases.") && len(key) > len("aliases.") {
+		return true
+	}
 	for _, k := range ValidConfigKeys {
 		if k == key {
 			return true
 		}
 	}
 	return false
+}
+
+// Aliases returns all configured aliases as a name→command map.
+func Aliases() map[string]string {
+	m := viper.GetStringMapString("aliases")
+	return m
 }
 
 // writeConfig writes the current Viper config to the config file atomically.

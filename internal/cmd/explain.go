@@ -111,8 +111,8 @@ var commandMetadata = map[string]map[string]commandInfo{
 		"switch": {description: "Switch to a different named profile for multi-org management.", reversible: true, requiresAuth: false},
 	},
 	"config": {
-		"view": {description: "Display the current configuration (secrets redacted).", reversible: true, requiresAuth: false},
-		"set":  {description: "Set a configuration value using dot notation.", reversible: true, requiresAuth: false},
+		"view": {description: "Display the current configuration (secrets redacted), including user-defined aliases.", reversible: true, requiresAuth: false},
+		"set":  {description: "Set a configuration value using dot notation. Use aliases.* keys to create command aliases.", reversible: true, requiresAuth: false},
 	},
 	"schema": {
 		"resources": {description: "List all resource types with their schema metadata.", reversible: true, requiresAuth: false},

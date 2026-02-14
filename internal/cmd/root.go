@@ -274,6 +274,64 @@ func levenshtein(a, b string) int {
 	return prev[len(b)]
 }
 
+// builtinCommands lists all built-in command names. Built-in commands
+// always take precedence over user-defined aliases.
+var builtinCommands = map[string]bool{
+	"version": true, "completion": true, "auth": true, "config": true,
+	"users": true, "devices": true, "groups": true, "commands": true,
+	"policies": true, "apps": true, "graph": true, "admins": true,
+	"bulk": true, "insights": true, "recipe": true, "mcp": true,
+	"schema": true, "explain": true, "ask": true, "help": true,
+}
+
+// expandAliases checks if the first positional argument matches a
+// user-defined alias and expands it. Returns the (possibly expanded)
+// args and a warning string if the alias shadows a built-in command.
+func expandAliases(args []string) ([]string, string) {
+	if len(args) == 0 {
+		return args, ""
+	}
+
+	// Find the first positional arg (skip flags).
+	firstArgIdx := -1
+	for i, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			firstArgIdx = i
+			break
+		}
+		// Skip flag values (e.g., --output json).
+		if (arg == "--output" || arg == "-o" || arg == "--org" || arg == "--api-key" ||
+			arg == "--fields" || arg == "--exclude") && i+1 < len(args) {
+			continue
+		}
+	}
+	if firstArgIdx < 0 {
+		return args, ""
+	}
+
+	name := args[firstArgIdx]
+	aliases := config.Aliases()
+	expansion, ok := aliases[name]
+	if !ok {
+		return args, ""
+	}
+
+	// Warn if the alias shadows a built-in command.
+	if builtinCommands[name] {
+		return args, fmt.Sprintf("Warning: alias %q conflicts with built-in command and will be ignored\n", name)
+	}
+
+	// Expand: replace the alias name with the aliased command tokens.
+	// Use the recipe package's ParseCommandArgs for proper quote handling.
+	tokens := strings.Fields(expansion)
+
+	expanded := make([]string, 0, len(args)-1+len(tokens))
+	expanded = append(expanded, args[:firstArgIdx]...)
+	expanded = append(expanded, tokens...)
+	expanded = append(expanded, args[firstArgIdx+1:]...)
+	return expanded, ""
+}
+
 // Execute initializes config and runs the root command.
 func Execute() {
 	if err := config.Init(); err != nil {
@@ -283,7 +341,15 @@ func Execute() {
 		os.Exit(ExitGeneral)
 	}
 
+	// Expand user-defined aliases before Cobra parses commands.
+	osArgs := os.Args[1:]
+	expanded, warning := expandAliases(osArgs)
+	if warning != "" {
+		fmt.Fprint(os.Stderr, warning)
+	}
+
 	rootCmd := NewRootCmd()
+	rootCmd.SetArgs(expanded)
 	if err := rootCmd.Execute(); err != nil {
 		// Check for ExitError with a specific exit code (legacy path).
 		var exitErr *ExitError

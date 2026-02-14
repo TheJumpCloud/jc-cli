@@ -848,3 +848,34 @@
   - Ollama requires `stream: false` in the request body for non-streaming responses; the chat API format is compatible with OpenAI's structure
   - JSON output mode (`--output json`) returns proposed commands without executing — useful for programmatic inspection of what the LLM suggested
 ---
+
+## 2026-02-13 - US-054
+- What was implemented:
+  - User-defined aliases in config file — `aliases` section maps alias names to full command strings
+  - `expandAliases()` in root.go expands aliases before Cobra command parsing
+  - Alias expansion happens in `Execute()` after `config.Init()` but before `rootCmd.Execute()`
+  - Built-in commands always take precedence — alias shadowing a built-in produces a warning on stderr
+  - Aliases can include flags and arguments (e.g., `"users list --filter 'suspended=true' -t"`)
+  - Trailing args after alias name are appended to the expansion
+  - Global flags before the alias name are preserved (e.g., `jc --verbose inactive`)
+  - `jc config set aliases.<name> "<command>"` creates aliases via dot notation
+  - `aliases.*` keys accepted as valid in `IsValidConfigKey()` (dynamic prefix match)
+  - `config.Aliases()` returns all configured aliases as `map[string]string`
+  - Aliases visible in `jc config view` output (both JSON and YAML)
+  - `config set` help text updated with alias examples
+  - `builtinCommands` map in root.go lists all known command names for conflict detection
+- Files changed:
+  - internal/cmd/root.go — added `builtinCommands` map, `expandAliases()` function, alias expansion in `Execute()` before `rootCmd.Execute()`
+  - internal/cmd/root_test.go — added 11 tests: no alias, matches alias, with trailing args, built-in conflict, empty args, no alias configured, global flags before alias, integration with command, config set and expand, visible in config view, config set help
+  - internal/config/config.go — added `Aliases()` function, updated `IsValidConfigKey()` to accept `aliases.*` prefix
+  - internal/config/config_test.go — added 4 tests: IsValidConfigKey alias keys, Aliases empty, Aliases from config, SetConfigValue alias
+  - internal/cmd/config.go — updated config set help with alias examples
+  - internal/cmd/explain.go — updated config set/view descriptions to mention aliases
+  - .chief/prds/main/prd.json — marked US-054 passes
+- **Learnings for future iterations:**
+  - Alias expansion must happen before Cobra parsing — `os.Args[1:]` rewritten via `rootCmd.SetArgs(expanded)` so Cobra sees the expanded tokens
+  - `strings.Fields()` is sufficient for alias tokenization — alias values are simple command strings, not shell expressions
+  - `builtinCommands` map avoids reflection/Cobra tree walking for conflict detection — faster and dependency-free
+  - `viper.GetStringMapString("aliases")` returns `map[string]string` directly — Viper handles YAML map → Go map conversion
+  - `IsValidConfigKey()` uses a prefix check (`strings.HasPrefix(key, "aliases.")`) to allow arbitrary alias names without pre-registration
+---
