@@ -1098,3 +1098,39 @@
   - `cmd.Flags().Changed()` is the canonical Go/Cobra pattern for partial updates — only send fields the user explicitly set, avoiding clobbering unset fields with zero values.
   - Graph bind/unbind target types need alias mapping (device→system, device_group→system_group) because the CLI uses user-friendly names while the V2 API uses internal type strings.
 ---
+
+## 2026-02-14 - Tier 2 API Coverage: Software, LDAP, AD, Organizations
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Design:** `docs/plans/2026-02-14-tier2-api-coverage-design.md`
+- **Plan:** `docs/plans/2026-02-14-tier2-api-coverage.md`
+- What was implemented:
+  - **Software Management** (`jc software`): V2 CRUD for `/softwareapps`. Default fields: `id, displayName, createdAt, updatedAt`. `--name` maps to API `displayName` field. `--settings` accepts raw JSON array for package configurations (validated with `json.Valid`). `SoftwareAppConfig` resolver with `displayName` as NameField. 15 new tests.
+  - **LDAP Servers** (`jc ldap`): V2 CRUD for `/ldapservers`. Default fields: `id, name, userLockoutAction, userPasswordExpirationAction`. Kebab-case flags (`--user-lockout-action`, `--user-password-expiration-action`) mapped to camelCase API body keys. `LDAPServerConfig` resolver. 14 new tests.
+  - **Active Directory** (`jc ad`): V2 CRUD for `/activedirectories`. Default fields: `id, domain, useCase, groupsEnabled, delegationState`. Uses `domain` as human-readable identifier (not `name`). `--groups-enabled` is a bool flag. `ActiveDirectoryConfig` resolver with `domain` as NameField. 15 new tests.
+  - **Organizations** (`jc org`): V1 read-only (list + get) for `/organizations`. Default fields: `_id, displayName, created`. No resolver needed — `get` takes raw org ID. No create/update/delete (account-level resource). 3 new tests.
+  - **Schema + MCP + wiring** (`cfa0e91`): Schema entries for all 4 resources (14 total). Error codes `SOFTWARE_NOT_FOUND`, `LDAP_NOT_FOUND`, `AD_NOT_FOUND`. MCP tools for all 4 resources plus admins (previously missing). `builtinCommands` map updated. `describeCommand` map extended. Schema/MCP test counts updated (10→14 resources).
+- Files created:
+  - `internal/cmd/software.go` — V2 CRUD (~300 lines)
+  - `internal/cmd/software_test.go` — 15 tests (~350 lines)
+  - `internal/cmd/ldap.go` — V2 CRUD (~280 lines)
+  - `internal/cmd/ldap_test.go` — 14 tests (~320 lines)
+  - `internal/cmd/ad.go` — V2 CRUD (~290 lines)
+  - `internal/cmd/ad_test.go` — 15 tests (~330 lines)
+  - `internal/cmd/org.go` — V1 read-only (~100 lines)
+  - `internal/cmd/org_test.go` — 3 tests (~100 lines)
+- Files modified:
+  - `internal/resolve/resolve.go` — `SoftwareAppConfig`, `LDAPServerConfig`, `ActiveDirectoryConfig`
+  - `internal/cmd/root.go` — `AddCommand` for all 4 + `builtinCommands` entries
+  - `internal/cmd/cli_error.go` — 3 new error codes, `mapResolveResourceType` for `displayName`/`domain`
+  - `internal/schema/schema.go` — 4 resource schemas + 4 command entries
+  - `internal/schema/schema_test.go` — resource count 10→14
+  - `internal/mcp/tools.go` — 25+ new MCP tools (software, LDAP, AD, org, admins)
+  - `internal/mcp/server_test.go` — first resource alphabetical check "admins"→"ad"
+  - `internal/cmd/schema_test.go` — resource count 10→14
+- **Total:** 3,531 lines added across 16 files, 47 new tests
+- **Learnings:**
+  - Parallel subagent dispatch (4 simultaneous) works well for independent resources. The only friction is shared files (root.go, resolve.go) — subagents hit "file modified since read" errors and handled them by re-reading and retrying.
+  - `displayName` as NameField (software) and `domain` as NameField (AD) demonstrate the V2 resolver pattern's flexibility — any field can be the human-readable identifier.
+  - V1 read-only pattern (org) is much simpler than V2 CRUD — no resolver, no mutations, no plan mode, no confirmation prompts. ~100 lines vs ~300 lines.
+  - MCP tool wiring is substantial (~600 lines for 5 resources) but follows a mechanical pattern — good candidate for code generation in the future.
+---
