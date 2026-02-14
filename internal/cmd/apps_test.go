@@ -3,10 +3,14 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/spf13/viper"
 )
 
 // startAppsServer creates a mock JumpCloud server that handles V1 /applications endpoints
@@ -23,6 +27,16 @@ func startAppsServer(t *testing.T, apps []map[string]any, associations map[strin
 				"totalCount": len(apps),
 			}
 			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V1: POST /applications — create endpoint.
+		if r.URL.Path == "/applications" && r.Method == http.MethodPost {
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			body["_id"] = "aabbccddee112233aabb9001"
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(body)
 			return
 		}
 
@@ -50,6 +64,37 @@ func startAppsServer(t *testing.T, apps []map[string]any, associations map[strin
 
 			// V1: GET /applications/{id} — get endpoint.
 			if r.Method == http.MethodGet {
+				for _, a := range apps {
+					if a["_id"] == id {
+						json.NewEncoder(w).Encode(a)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
+
+			// V1: PUT /applications/{id} — update endpoint.
+			if r.Method == http.MethodPut {
+				for _, a := range apps {
+					if a["_id"] == id {
+						var body map[string]any
+						json.NewDecoder(r.Body).Decode(&body)
+						for k, v := range body {
+							a[k] = v
+						}
+						json.NewEncoder(w).Encode(a)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
+
+			// V1: DELETE /applications/{id} — delete endpoint.
+			if r.Method == http.MethodDelete {
 				for _, a := range apps {
 					if a["_id"] == id {
 						json.NewEncoder(w).Encode(a)
@@ -570,7 +615,7 @@ func TestAppsHelp_Subcommands(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, sub := range []string{"list", "get"} {
+	for _, sub := range []string{"list", "get", "create", "update", "delete"} {
 		if !strings.Contains(out, sub) {
 			t.Errorf("help should contain subcommand %q, got:\n%s", sub, out)
 		}
@@ -614,5 +659,235 @@ func TestAppsHelp_RootIncludesApps(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "apps") {
 		t.Errorf("root help should contain 'apps', got:\n%s", out)
+	}
+}
+
+// --- Create Tests ---
+
+func TestAppsCreate(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "create", "--name", "New App", "--sso-type", "saml"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["name"] != "New App" {
+		t.Errorf("name = %v, want 'New App'", result["name"])
+	}
+	if result["ssoType"] != "saml" {
+		t.Errorf("ssoType = %v, want 'saml'", result["ssoType"])
+	}
+	if result["_id"] != "aabbccddee112233aabb9001" {
+		t.Errorf("_id = %v, want 'aabbccddee112233aabb9001'", result["_id"])
+	}
+}
+
+func TestAppsCreate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"apps", "create", "--name", "New App", "--sso-type", "saml", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+	if !strings.Contains(errBuf.String(), "create") {
+		t.Errorf("plan should mention 'create', got: %s", errBuf.String())
+	}
+}
+
+func TestAppsCreate_MissingName(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "create", "--sso-type", "saml"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --name")
+	}
+}
+
+func TestAppsCreate_MissingSSOType(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "create", "--name", "New App"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --sso-type")
+	}
+}
+
+// --- Update Tests ---
+
+func TestAppsUpdate(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--name", "Updated App"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["name"] != "Updated App" {
+		t.Errorf("name = %v, want 'Updated App'", result["name"])
+	}
+}
+
+func TestAppsUpdate_NoFields(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no fields to update")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("error should mention 'no fields to update', got: %v", err)
+	}
+}
+
+func TestAppsUpdate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--name", "Updated App", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+}
+
+// --- Delete Tests ---
+
+func TestAppsDelete_Force(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "delete", "aabbccddee112233aabb2001", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "AWS SSO") {
+		t.Errorf("output should mention app name: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deleted successfully") {
+		t.Errorf("output should confirm deletion: %s", buf.String())
+	}
+}
+
+func TestAppsDelete_Plan(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"apps", "delete", "aabbccddee112233aabb2001", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+	if !strings.Contains(errBuf.String(), "delete") {
+		t.Errorf("plan should mention 'delete', got: %s", errBuf.String())
+	}
+}
+
+func TestAppsDelete_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+	apps := sampleApps()
+	ts := setupAppsTest(t, apps, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "delete", "NonExistentApp", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not found app")
+	}
+}
+
+func TestAppsDelete_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "delete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
 	}
 }

@@ -3,12 +3,16 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -25,11 +29,14 @@ func newAppsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apps",
 		Short: "Manage JumpCloud SSO applications",
-		Long:  "List SSO applications, get app details, and view associated groups.",
+		Long:  "List, get, create, update, and delete SSO applications and view associated groups.",
 	}
 
 	cmd.AddCommand(newAppsListCmd())
 	cmd.AddCommand(newAppsGetCmd())
+	cmd.AddCommand(newAppsCreateCmd())
+	cmd.AddCommand(newAppsUpdateCmd())
+	cmd.AddCommand(newAppsDeleteCmd())
 
 	return cmd
 }
@@ -166,6 +173,238 @@ func runAppsGet(cmd *cobra.Command, identifier string) error {
 
 	opts := output.CurrentOptions()
 	return output.WriteSingle(cmd.OutOrStdout(), enriched, opts)
+}
+
+func newAppsCreateCmd() *cobra.Command {
+	var (
+		name    string
+		ssoType string
+		config  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new SSO application",
+		Long: `Create a new JumpCloud SSO application.
+
+Required: --name and --sso-type.
+Optional: --config for SSO-specific configuration as raw JSON.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAppsCreate(cmd, name, ssoType, config)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Application name (required)")
+	cmd.Flags().StringVar(&ssoType, "sso-type", "", "SSO type, e.g. saml, oidc, bookmark (required)")
+	cmd.Flags().StringVar(&config, "config", "", "SSO-specific configuration as raw JSON")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("sso-type")
+
+	return cmd
+}
+
+func runAppsCreate(cmd *cobra.Command, name, ssoType, config string) error {
+	if viper.GetBool("plan") {
+		effects := []string{"name: " + name, "ssoType: " + ssoType}
+		if config != "" {
+			effects = append(effects, "config: "+config)
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "app",
+			Target:     name,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	body := map[string]any{
+		"name":    name,
+		"ssoType": ssoType,
+	}
+
+	// Merge optional config JSON into the body.
+	if config != "" {
+		var extra map[string]any
+		if err := json.Unmarshal([]byte(config), &extra); err != nil {
+			return fmt.Errorf("parsing --config JSON: %w", err)
+		}
+		for k, v := range extra {
+			body[k] = v
+		}
+	}
+
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Create(cmd.Context(), "/applications", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newAppsUpdateCmd() *cobra.Command {
+	var (
+		name   string
+		config string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <app-name-or-id>",
+		Short: "Update an SSO application",
+		Long: `Update an existing JumpCloud SSO application.
+
+Accepts an app name or 24-character hex application ID.
+Specify only the fields you want to change. The updated app object is returned.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAppsUpdate(cmd, args[0], name, config)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Application name")
+	cmd.Flags().StringVar(&config, "config", "", "SSO-specific configuration as raw JSON")
+
+	return cmd
+}
+
+func runAppsUpdate(cmd *cobra.Command, identifier, name, config string) error {
+	body := map[string]any{}
+
+	if cmd.Flags().Changed("name") {
+		body["name"] = name
+	}
+
+	// Merge optional config JSON into the body.
+	if cmd.Flags().Changed("config") {
+		var extra map[string]any
+		if err := json.Unmarshal([]byte(config), &extra); err != nil {
+			return fmt.Errorf("parsing --config JSON: %w", err)
+		}
+		for k, v := range extra {
+			body[k] = v
+		}
+	}
+
+	if len(body) == 0 {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --config)")
+	}
+
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "app",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveApp(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/applications/"+id, body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newAppsDeleteCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete <app-name-or-id>",
+		Aliases: []string{"rm"},
+		Short:   "Delete an SSO application",
+		Long: `Delete a JumpCloud SSO application.
+
+Accepts an app name or 24-character hex application ID.
+Shows the app name before prompting for confirmation.
+Use --force to skip the confirmation prompt.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAppsDelete(cmd, args[0])
+		},
+	}
+
+	return cmd
+}
+
+func runAppsDelete(cmd *cobra.Command, identifier string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveApp(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	// Fetch the app first so we can show details in the confirmation prompt.
+	appData, err := client.Get(cmd.Context(), "/applications/"+id)
+	if err != nil {
+		return err
+	}
+
+	var app struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(appData, &app); err != nil {
+		return fmt.Errorf("parsing app data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "app",
+			Target:   fmt.Sprintf("%s (%s)", app.Name, id),
+			Effects:  []string{"Remove application permanently", "Users will lose SSO access"},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	// Confirmation prompt (unless --force is set).
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Delete app %q? [y/N] ", app.Name)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	_, err = client.Delete(cmd.Context(), "/applications/"+id)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "App %q deleted successfully.\n", app.Name)
+	return nil
 }
 
 // enrichAppWithAssociations adds userGroups and deviceGroups arrays to the app JSON.

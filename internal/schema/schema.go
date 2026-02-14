@@ -200,7 +200,7 @@ var Resources = map[string]ResourceSchema{
 	"apps": {
 		Resource:      "apps",
 		APIVersion:    "v1",
-		Verbs:         []string{"list", "get"},
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
 		DefaultFields: []string{"_id", "name", "displayLabel", "ssoType", "status"},
 		Fields: []FieldDef{
 			{Name: "_id", Type: "string", Description: "Unique application identifier"},
@@ -425,11 +425,13 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc apps",
 				Description: "Manage SSO applications",
-				Subcommands: []string{"list", "get"},
+				Subcommands: []string{"list", "get", "create", "update", "delete"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},
 					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
+					{Name: "sso-type", Type: "string", Description: "SSO type (create, required)"},
+					{Name: "config", Type: "string", Description: "SSO-specific config as JSON (create/update)"},
 				},
 			},
 			{
@@ -488,8 +490,8 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc graph",
-				Description: "Traverse JumpCloud resource associations",
-				Subcommands: []string{"traverse"},
+				Description: "Manage JumpCloud resource associations",
+				Subcommands: []string{"traverse", "bind", "unbind"},
 				Flags: []FlagEntry{
 					{Name: "from", Type: "string", Description: "Source: type:identifier (e.g. user:jdoe)"},
 					{Name: "to", Type: "string", Description: "Target type: user, system, user_group, system_group, application, policy, command"},
