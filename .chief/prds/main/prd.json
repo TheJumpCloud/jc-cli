@@ -875,7 +875,8 @@
         "Recipe files loaded from ~/.config/jc/recipes/ and built-in locations"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "The recipe engine executes jc commands internally, not via shell. This means recipes are safe, auditable, and get plan mode support. Go text/template is the template engine.",
       "dependsOn": ["US-001"]
     },

@@ -1,4 +1,12 @@
 ## Codebase Patterns
+- Recipe engine in `internal/recipe/`: `Parse()` → `Recipe` struct → `Execute(dispatcher, params, progressW)` → `*ExecutionResult`
+- `CommandDispatcher` func type: receives parsed args, returns stdout + error; `NewDispatcher(newRootCmd)` creates Cobra-backed dispatcher
+- `CobraCommand` interface abstracts Cobra for testable recipe dispatch; fresh root command per step isolates flag state
+- `parseCommandArgs()` handles quoted strings (single/double) — no shell exec, safe from injection
+- Recipe YAML fields: name, description, author, version, tags, parameters, steps, on_success, on_failure
+- Step fields: name, command (Go template), when (conditional), capture (output variable), continue_on_error
+- `evaluateWhen()`: "false"/"0"/""/"<no value>" = falsy; everything else = truthy
+- `LoadFromDir(dir)` loads *.yaml/*.yml recipes, warns on invalid; `RecipesDir()` = `~/.config/jc/recipes/`
 - Insights commands use `InsightsClient` (POST-based, not V1/V2); `newInsightsClient` var for test injection; `overrideInsightsClient(t, serverURL)` pattern
 - `resolveInsightsTimeRange()` translates `--last`/`--start`/`--end` to RFC 3339 strings — reusable for count/distinct (US-039)
 - `InsightsNowFunc` (exported) enables cross-package test overrides for deterministic time tests
@@ -642,4 +650,43 @@
   - Exporting `InsightsNowFunc` (following `SetOAuthTokenURL` pattern) enables cross-package test overrides for deterministic time-based tests
   - `--service` is `MarkFlagRequired` — Cobra handles the "missing required flag" error automatically, no custom validation needed
   - `startInsightsServerWithCapture` pattern returns a pointer to the captured body map — allows tests to inspect exactly what was sent to the API
+---
+
+## 2026-02-13 - US-042
+- What was implemented:
+  - New `internal/recipe/` package — recipe engine core with YAML parsing, Go template rendering, step execution, and CLI command dispatch
+  - `Recipe` struct — parsed from YAML with fields: name, description, author, version, tags, parameters, steps, on_success, on_failure
+  - `Parameter` struct — name, description, required, type (string/bool/int), default value
+  - `Step` struct — name, command (Go template), when (conditional), capture (output variable), continue_on_error
+  - `Parse(data)` / `ParseFile(path)` — YAML parsing with comprehensive validation (name required, steps required, step names/commands required, valid parameter types)
+  - `Validate()` — collects all validation errors and reports them together
+  - `ResolveParams(provided)` — merges provided values with defaults, validates required parameters
+  - `renderTemplate()` — Go `text/template` rendering with fast path for non-template strings
+  - `evaluateWhen()` — conditional evaluation: empty/"false"/"0"/"<no value>" are falsy, everything else truthy
+  - `parseCommandArgs()` — argument parser with single/double quote support (no shell exec)
+  - `Execute(dispatcher, params, progressW)` — sequential step execution with progress output `[N/M] step... done/failed/skipped`
+  - `Plan(params)` — previews all steps with rendered commands and would_run evaluation
+  - `RenderPlanHuman()` / `RenderPlanJSON()` — plan output formatters
+  - `CommandDispatcher` function type — receives parsed args, returns stdout output and error
+  - `CobraCommand` interface — abstracts Cobra command for testable dispatch
+  - `NewDispatcher(newRootCmd)` — creates dispatcher that captures stdout/stderr from fresh Cobra command per step
+  - `LoadFromDir(dir)` — loads all *.yaml/*.yml recipes from a directory, warns on invalid files
+  - `FindByName(recipes, name)` — recipe lookup by name
+  - `RecipesDir()` — returns `~/.config/jc/recipes/` path (XDG-compliant)
+  - Step output capture via `capture` field — stores trimmed stdout in data map for later template use
+  - `on_success` / `on_failure` hooks with template rendering (includes `{{ .failed_step }}`)
+  - `continue_on_error` per-step flag — failed step doesn't stop recipe execution
+- Files changed:
+  - internal/recipe/recipe.go — new recipe engine package (490 lines)
+  - internal/recipe/recipe_test.go — 54 tests covering: YAML parsing (valid/invalid/missing fields/types), parameter resolution (defaults/override/missing required), template rendering (simple/params/multiple/invalid), when conditions (empty/truthy/falsy/invalid), command arg parsing (simple/quoted/empty/spaces), execution (success/failure/continue-on-error/templates/capture/when-skip/when-run/missing-params/hooks), plan mode (render/conditions/missing params), plan rendering (JSON/human), file loading (success/nonexistent/invalid/subdirs), name lookup, dispatcher (output capture/errors/stderr)
+  - .chief/prds/main/prd.json — marked US-042 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - Internal command dispatch uses `CobraCommand` interface with `SetArgs()`/`SetOut()`/`SetErr()`/`Execute()` — creates a fresh root command per step to isolate flag state while sharing process-level config (Viper, auth)
+  - `parseCommandArgs()` handles single/double quoted strings for filter values like `--filter "os=Mac OS X"` — avoids shell injection by never invoking a shell
+  - `evaluateWhen()` uses Go template rendering then checks the result string — `"false"`, `"0"`, `""`, `"<no value>"` are all falsy. This lets template expressions like `{{ .enabled }}` work naturally
+  - `renderTemplate()` has a fast path: if the string doesn't contain `{{`, skip template parsing entirely — avoids overhead for static commands
+  - Recipe execution returns `*ExecutionResult` with per-step status rather than a simple error — this lets callers (future `jc recipe run` command) display rich progress and failure information
+  - `LoadFromDir()` warns on invalid recipes but continues loading valid ones — defensive loading for user-defined recipe directories
+  - The `CobraCommand` interface decouples recipe tests from the actual Cobra command tree — tests use `mockCobraCmd` without importing the cmd package
 ---
