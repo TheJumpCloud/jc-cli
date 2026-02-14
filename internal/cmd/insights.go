@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -36,6 +37,8 @@ Time ranges can be specified as:
 	}
 
 	cmd.AddCommand(newInsightsQueryCmd())
+	cmd.AddCommand(newInsightsCountCmd())
+	cmd.AddCommand(newInsightsDistinctCmd())
 
 	return cmd
 }
@@ -134,6 +137,202 @@ func runInsightsQuery(cmd *cobra.Command, service, last, start, end, eventType s
 	}
 
 	return nil
+}
+
+func newInsightsCountCmd() *cobra.Command {
+	var (
+		serviceFlag   string
+		lastFlag      string
+		startFlag     string
+		endFlag       string
+		eventTypeFlag string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "count",
+		Short: "Count Directory Insights events",
+		Long: `Count Directory Insights events matching the given filters.
+
+Returns a single count value without retrieving full event records.
+
+Examples:
+  jc insights count --service sso --last 7d
+  jc insights count --service sso --event-type sso_auth_failed --last 24h
+  jc insights count --service all --start 2026-02-01 --end 2026-02-13`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsCount(cmd, serviceFlag, lastFlag, startFlag, endFlag, eventTypeFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&serviceFlag, "service", "", "Service to query (e.g. sso, ldap, all; comma-separated for multiple)")
+	cmd.Flags().StringVar(&lastFlag, "last", "", "Time range shortcut (e.g. 24h, 7d, 30d, 1m)")
+	cmd.Flags().StringVar(&startFlag, "start", "", "Start time (date or RFC 3339)")
+	cmd.Flags().StringVar(&endFlag, "end", "", "End time (date or RFC 3339)")
+	cmd.Flags().StringVar(&eventTypeFlag, "event-type", "", "Filter by event type (e.g. sso_auth_failed)")
+
+	_ = cmd.MarkFlagRequired("service")
+
+	return cmd
+}
+
+func runInsightsCount(cmd *cobra.Command, service, last, start, end, eventType string) error {
+	if err := api.ValidateService(service); err != nil {
+		return err
+	}
+
+	startTime, endTime, err := resolveInsightsTimeRange(last, start, end)
+	if err != nil {
+		return err
+	}
+
+	query := api.InsightsQuery{
+		Service:   service,
+		StartTime: startTime,
+	}
+	if endTime != "" {
+		query.EndTime = endTime
+	}
+	if eventType != "" {
+		query.SearchTermFilter = map[string]any{
+			"event_type": eventType,
+		}
+	}
+
+	client, err := newInsightsClient()
+	if err != nil {
+		return err
+	}
+
+	count, err := client.CountEvents(cmd.Context(), query)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	if opts.Quiet {
+		return nil
+	}
+
+	data, err := json.Marshal(map[string]int{"count": count})
+	if err != nil {
+		return err
+	}
+
+	return output.WriteSingle(cmd.OutOrStdout(), json.RawMessage(data), opts)
+}
+
+func newInsightsDistinctCmd() *cobra.Command {
+	var (
+		serviceFlag   string
+		lastFlag      string
+		startFlag     string
+		endFlag       string
+		eventTypeFlag string
+		fieldFlag     string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "distinct",
+		Short: "Get distinct field values from Directory Insights events",
+		Long: `Get distinct (unique) values for a specific field from Directory Insights events.
+
+Useful for finding unique actors, IP addresses, event types, etc.
+
+Examples:
+  jc insights distinct --service sso --field initiated_by.username --last 30d
+  jc insights distinct --service sso --field client_ip --last 7d
+  jc insights distinct --service sso --field event_type --last 24h`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsDistinct(cmd, serviceFlag, lastFlag, startFlag, endFlag, eventTypeFlag, fieldFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&serviceFlag, "service", "", "Service to query (e.g. sso, ldap, all; comma-separated for multiple)")
+	cmd.Flags().StringVar(&lastFlag, "last", "", "Time range shortcut (e.g. 24h, 7d, 30d, 1m)")
+	cmd.Flags().StringVar(&startFlag, "start", "", "Start time (date or RFC 3339)")
+	cmd.Flags().StringVar(&endFlag, "end", "", "End time (date or RFC 3339)")
+	cmd.Flags().StringVar(&eventTypeFlag, "event-type", "", "Filter by event type (e.g. sso_auth_failed)")
+	cmd.Flags().StringVar(&fieldFlag, "field", "", "Field to get distinct values for (e.g. initiated_by.username)")
+
+	_ = cmd.MarkFlagRequired("service")
+	_ = cmd.MarkFlagRequired("field")
+
+	return cmd
+}
+
+func runInsightsDistinct(cmd *cobra.Command, service, last, start, end, eventType, field string) error {
+	if err := api.ValidateService(service); err != nil {
+		return err
+	}
+
+	startTime, endTime, err := resolveInsightsTimeRange(last, start, end)
+	if err != nil {
+		return err
+	}
+
+	query := api.InsightsQuery{
+		Service:   service,
+		StartTime: startTime,
+	}
+	if endTime != "" {
+		query.EndTime = endTime
+	}
+	if eventType != "" {
+		query.SearchTermFilter = map[string]any{
+			"event_type": eventType,
+		}
+	}
+
+	client, err := newInsightsClient()
+	if err != nil {
+		return err
+	}
+
+	items, err := client.DistinctEvents(cmd.Context(), query, field)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+
+	// For table/CSV/human formats, wrap scalar values into {"value": X} objects
+	// since the output engine expects JSON objects for structured formats.
+	displayItems := items
+	if opts.Format == output.FormatTable || opts.Format == output.FormatCSV || opts.Format == output.FormatHuman {
+		displayItems = wrapScalarValues(items)
+	}
+
+	if err := output.WriteList(cmd.OutOrStdout(), displayItems, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(items))
+	}
+
+	return nil
+}
+
+// wrapScalarValues wraps bare JSON scalars (strings, numbers, booleans) into
+// {"value": X} objects for display in table/CSV/human formats.
+func wrapScalarValues(items []json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		// Check if the item is already an object.
+		var m map[string]json.RawMessage
+		if json.Unmarshal(item, &m) == nil {
+			result = append(result, item)
+			continue
+		}
+		// Wrap scalar value.
+		wrapped, err := json.Marshal(map[string]json.RawMessage{"value": item})
+		if err != nil {
+			result = append(result, item)
+			continue
+		}
+		result = append(result, wrapped)
+	}
+	return result
 }
 
 // resolveInsightsTimeRange resolves --last, --start, and --end flags into RFC 3339 start/end times.

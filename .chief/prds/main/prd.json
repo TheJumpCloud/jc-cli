@@ -812,7 +812,8 @@
         "Standard output formats supported"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Count and distinct are lightweight aggregation queries. Distinct is useful for finding unique actors, IP addresses, event types.",
       "dependsOn": ["US-037"]
     },
