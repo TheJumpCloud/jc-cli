@@ -18,3 +18,6 @@ coverage.html
 
 # Build
 dist/
+
+# Large logs
+.chief/prds/main/claude.log
