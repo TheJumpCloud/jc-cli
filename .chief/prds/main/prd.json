@@ -594,7 +594,8 @@
         "V1 API endpoints: POST /api/commands/{id}/trigger, GET /api/commandresults"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Command trigger API uses POST /api/runcommand. Results via GET /api/commandresults with command filter.",
       "dependsOn": ["US-027"]
     },

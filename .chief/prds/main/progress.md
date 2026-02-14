@@ -257,3 +257,19 @@
   - `startCommandsServer` follows same pattern as `startUsersServer` — handles GET list, POST create, GET/PUT/DELETE by ID
   - Adding a new V1 resource command is now a well-established pattern: resource config in resolve, command file in cmd, register in root
 ---
+
+## 2026-02-13 - US-028
+- Implemented Commands Trigger and Results subcommands (`jc commands run`, `jc commands results`)
+- Files changed:
+  - `internal/cmd/commands.go` — added `newCommandsRunCmd()` with `--on` required flag for target device/group; `runCommandsRun()` resolves command via V1, tries device resolution (V1) then falls back to device group (V2), confirmation prompt with `--force` skip, POST `/runcommand`; added `newCommandsResultsCmd()` with `--limit`/`--sort` flags; `runCommandsResults()` fetches results with `command:$eq:{id}` filter and flattens nested response fields; `flattenCommandResults()` extracts `response.data.output`→`stdout`, `response.error`→`stderr`; `commandResultDefaultFields` for results output
+  - `internal/cmd/commands_test.go` — added 20 new tests for run (device by ID, device by name, group by name, group by ID, confirm yes/no, missing --on, missing arg, unresolvable target, API endpoint, prompt shows target, run by command name) and results (JSON, table, flattened fields, footer, limit, by name, missing arg, empty); added `startCommandsRunServer` combined V1+V2 mock, `setupCommandsRunTest`, `sampleRunDevices`, `sampleRunDeviceGroups`, `sampleCommandResults`, `triggerRecord` type; help tests for run/results subcommands and flags
+  - `.chief/prds/main/prd.json` — marked US-028 as complete
+- **Learnings for future iterations:**
+  - `resolve.IsID()` short-circuits on 24-char hex — when a raw ID is ambiguous (could be device or group), must verify with a GET call before assuming the resource type
+  - Test IDs must be valid hex (`[0-9a-fA-F]{24}`) — letters above `f` (like `g`) cause `IsID()` to return false, breaking pass-through behavior
+  - Combined V1+V2 test servers need `cache.directory` set to temp dir (same as membership tests)
+  - `POST /runcommand` takes `{command, systems[], systemGroups[]}` — not per-device trigger endpoint
+  - Command results have nested structure: `response.data.output` (stdout) and `response.error` (stderr) — flatten before output
+  - Target resolution pattern: try specific (device) then general (group) with explicit verification for raw IDs
+  - `V1Client.Get()` returns `*api.APIError` on 404 — use as existence check for ID verification
+---

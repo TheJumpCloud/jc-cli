@@ -949,3 +949,736 @@ func TestRootHelpIncludesCommands(t *testing.T) {
 		t.Errorf("root help should include 'commands', got: %s", help)
 	}
 }
+
+// ========================================================================
+// Run and Results Tests
+// ========================================================================
+
+// triggerRecord captures a /runcommand POST request for test assertions.
+type triggerRecord struct {
+	Command      string   `json:"command"`
+	Systems      []string `json:"systems"`
+	SystemGroups []string `json:"systemGroups"`
+}
+
+// sampleCommandResults returns test command result records.
+func sampleCommandResults() []map[string]any {
+	return []map[string]any{
+		{
+			"_id":         "res111res111res111res111",
+			"command":     "aaa111aaa111aaa111aaa111",
+			"system":      "alice-mbp.local",
+			"systemId":    "ddd444ddd444ddd444ddd444",
+			"exitCode":    0,
+			"requestTime": "2026-02-13T10:00:00Z",
+			"responseTime": "2026-02-13T10:00:05Z",
+			"response": map[string]any{
+				"data": map[string]any{
+					"output": "0 packages upgraded",
+				},
+				"error": "",
+			},
+		},
+		{
+			"_id":         "res222res222res222res222",
+			"command":     "aaa111aaa111aaa111aaa111",
+			"system":      "bob-linux.local",
+			"systemId":    "eee555eee555eee555eee555",
+			"exitCode":    1,
+			"requestTime": "2026-02-13T10:00:00Z",
+			"responseTime": "2026-02-13T10:00:10Z",
+			"response": map[string]any{
+				"data": map[string]any{
+					"output": "",
+				},
+				"error": "permission denied",
+			},
+		},
+	}
+}
+
+// sampleRunDevices returns test device records for run tests.
+func sampleRunDevices() []map[string]any {
+	return []map[string]any{
+		{"_id": "ddd444ddd444ddd444ddd444", "hostname": "alice-mbp.local", "os": "Mac OS X"},
+		{"_id": "eee555eee555eee555eee555", "hostname": "bob-linux.local", "os": "Ubuntu"},
+	}
+}
+
+// sampleRunDeviceGroups returns V2 device groups for run tests.
+func sampleRunDeviceGroups() []map[string]any {
+	return []map[string]any{
+		{"id": "ff7777ff7777ff7777ff7777", "name": "macOS Fleet", "type": "custom"},
+	}
+}
+
+// startCommandsRunServer creates a combined V1+V2 mock server for command run/results tests.
+func startCommandsRunServer(t *testing.T, commands []map[string]any, devices []map[string]any, deviceGroups []map[string]any, results []map[string]any, triggers *[]triggerRecord) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// V1: GET /commands — list for command name resolution.
+		if r.URL.Path == "/commands" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": commands, "totalCount": len(commands)}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V1: GET /commands/{id} — get a single command.
+		if strings.HasPrefix(r.URL.Path, "/commands/") && r.Method == http.MethodGet {
+			id := strings.TrimPrefix(r.URL.Path, "/commands/")
+			for _, c := range commands {
+				if c["_id"] == id {
+					json.NewEncoder(w).Encode(c)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+
+		// V1: GET /systems/{id} — get single device (for ID verification).
+		if strings.HasPrefix(r.URL.Path, "/systems/") && r.Method == http.MethodGet {
+			id := strings.TrimPrefix(r.URL.Path, "/systems/")
+			for _, d := range devices {
+				if d["_id"] == id {
+					json.NewEncoder(w).Encode(d)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+
+		// V1: GET /systems — list for device name resolution.
+		if r.URL.Path == "/systems" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": devices, "totalCount": len(devices)}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V2: GET /systemgroups — list for device group name resolution.
+		if r.URL.Path == "/systemgroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(deviceGroups)
+			return
+		}
+
+		// V1: POST /runcommand — trigger a command.
+		if r.URL.Path == "/runcommand" && r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var trigger triggerRecord
+			json.Unmarshal(body, &trigger)
+			if triggers != nil {
+				*triggers = append(*triggers, trigger)
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{}`))
+			return
+		}
+
+		// V1: GET /commandresults — list command results.
+		if r.URL.Path == "/commandresults" && r.Method == http.MethodGet {
+			skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			if limit == 0 {
+				limit = 100
+			}
+
+			// Filter by command ID if filter param is present.
+			filtered := results
+			for _, f := range r.URL.Query()["filter"] {
+				if strings.HasPrefix(f, "command:$eq:") {
+					cmdID := strings.TrimPrefix(f, "command:$eq:")
+					var matching []map[string]any
+					for _, res := range results {
+						if res["command"] == cmdID {
+							matching = append(matching, res)
+						}
+					}
+					filtered = matching
+				}
+			}
+
+			end := skip + limit
+			if end > len(filtered) {
+				end = len(filtered)
+			}
+			var page []map[string]any
+			if skip < len(filtered) {
+				page = filtered[skip:end]
+			}
+			if page == nil {
+				page = []map[string]any{}
+			}
+
+			resp := map[string]any{"results": page, "totalCount": len(filtered)}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+}
+
+// setupCommandsRunTest sets up a clean test environment for run/results tests.
+func setupCommandsRunTest(t *testing.T, triggers *[]triggerRecord) *httptest.Server {
+	t.Helper()
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+	ts := startCommandsRunServer(t, sampleCommands(), sampleRunDevices(), sampleRunDeviceGroups(), sampleCommandResults(), triggers)
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+	return ts
+}
+
+// --- Run Tests ---
+
+func TestCommandsRunOnDeviceForce(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ddd444ddd444ddd444ddd444", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "triggered") {
+		t.Errorf("expected 'triggered' in output, got: %s", out)
+	}
+
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+	if triggers[0].Command != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("trigger command = %q, want aaa111aaa111aaa111aaa111", triggers[0].Command)
+	}
+	if len(triggers[0].Systems) != 1 || triggers[0].Systems[0] != "ddd444ddd444ddd444ddd444" {
+		t.Errorf("trigger systems = %v, want [ddd444ddd444ddd444ddd444]", triggers[0].Systems)
+	}
+}
+
+func TestCommandsRunOnDeviceByName(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "alice-mbp.local", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "triggered") {
+		t.Errorf("expected 'triggered' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "1 device") {
+		t.Errorf("expected '1 device' in output, got: %s", out)
+	}
+
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+	if triggers[0].Systems[0] != "ddd444ddd444ddd444ddd444" {
+		t.Errorf("trigger systems = %v, want [ddd444ddd444ddd444ddd444]", triggers[0].Systems)
+	}
+}
+
+func TestCommandsRunOnGroupForce(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "macOS Fleet", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "triggered") {
+		t.Errorf("expected 'triggered' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "device group") {
+		t.Errorf("expected 'device group' in output, got: %s", out)
+	}
+
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+	if len(triggers[0].SystemGroups) != 1 || triggers[0].SystemGroups[0] != "ff7777ff7777ff7777ff7777" {
+		t.Errorf("trigger systemGroups = %v, want [ff7777ff7777ff7777ff7777]", triggers[0].SystemGroups)
+	}
+}
+
+func TestCommandsRunOnGroupByID(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ff7777ff7777ff7777ff7777", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// A 24-char hex ID will go through device resolution first.
+	// Since this ID doesn't match any device, it falls back to group resolution.
+	// But since the resolve sees it as an ID (24-char hex), it passes it through directly.
+	// The V1 device GET will fail (not found), so it tries V2 group resolution.
+	// Actually, IsID("ggg777...") returns true, so device resolution passes it directly,
+	// and the client.Get("/systems/ggg777...") will fail with 404.
+	// Then it falls through to group resolution where IsID also returns true,
+	// passing it directly as a group ID.
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+}
+
+func TestCommandsRunConfirmYes(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+	overrideConfirmReader(t, "y\n")
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ddd444ddd444ddd444ddd444"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "triggered") {
+		t.Errorf("expected 'triggered' in output, got: %s", out)
+	}
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+}
+
+func TestCommandsRunConfirmNo(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+	overrideConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ddd444ddd444ddd444ddd444"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "triggered") {
+		t.Error("should not have triggered when user said no")
+	}
+	if !strings.Contains(stderr.String(), "Cancelled") {
+		t.Errorf("expected 'Cancelled' on stderr, got: %s", stderr.String())
+	}
+	if len(triggers) != 0 {
+		t.Errorf("expected 0 triggers, got %d", len(triggers))
+	}
+}
+
+func TestCommandsRunMissingOn(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --on flag")
+	}
+}
+
+func TestCommandsRunMissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+func TestCommandsRunUnresolvableTarget(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+
+	// Server that has no matching devices or groups.
+	ts := startCommandsRunServer(t, sampleCommands(), []map[string]any{}, []map[string]any{}, nil, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "nonexistent-host", "--force"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unresolvable target")
+	}
+	if !strings.Contains(err.Error(), "could not resolve") {
+		t.Errorf("expected 'could not resolve' error, got: %v", err)
+	}
+}
+
+func TestCommandsRunAPIEndpoint(t *testing.T) {
+	setupUsersTest(t)
+
+	var capturedPath string
+	var capturedMethod string
+	var capturedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Handle /commands for command resolution.
+		if r.URL.Path == "/commands" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": sampleCommands(), "totalCount": 3}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// Handle /systems for device resolution.
+		if r.URL.Path == "/systems" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": sampleRunDevices(), "totalCount": 2}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// Capture the run command request.
+		if r.URL.Path == "/runcommand" && r.Method == http.MethodPost {
+			capturedPath = r.URL.Path
+			capturedMethod = r.Method
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &capturedBody)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ddd444ddd444ddd444ddd444", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedPath != "/runcommand" {
+		t.Errorf("expected POST /runcommand, got %s %s", capturedMethod, capturedPath)
+	}
+	if capturedMethod != "POST" {
+		t.Errorf("expected POST method, got %s", capturedMethod)
+	}
+	if capturedBody["command"] != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("body command = %v, want aaa111aaa111aaa111aaa111", capturedBody["command"])
+	}
+}
+
+func TestCommandsRunPromptShowsTarget(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+	overrideConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"commands", "run", "aaa111aaa111aaa111aaa111", "--on", "ddd444ddd444ddd444ddd444"})
+	_ = cmd.Execute()
+
+	prompt := stderr.String()
+	if !strings.Contains(prompt, "1 device") {
+		t.Errorf("run prompt should show target info, got: %s", prompt)
+	}
+}
+
+func TestCommandsRunByCommandName(t *testing.T) {
+	var triggers []triggerRecord
+	ts := setupCommandsRunTest(t, &triggers)
+	defer ts.Close()
+	viper.Set("cache.enabled", false)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "Update Agents", "--on", "ddd444ddd444ddd444ddd444", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(triggers) != 1 {
+		t.Fatalf("expected 1 trigger, got %d", len(triggers))
+	}
+	if triggers[0].Command != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("trigger command = %q, want aaa111aaa111aaa111aaa111", triggers[0].Command)
+	}
+}
+
+// --- Results Tests ---
+
+func TestCommandsResultsJSON(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\nOutput: %s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 results, got %d", len(result))
+	}
+}
+
+func TestCommandsResultsTable(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111", "--output", "table"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "alice-mbp.local") {
+		t.Errorf("table should contain system name 'alice-mbp.local', got: %s", out)
+	}
+	if !strings.Contains(out, "SYSTEM") {
+		t.Errorf("table header should contain 'SYSTEM', got: %s", out)
+	}
+}
+
+func TestCommandsResultsFlattenedFields(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	// First result should have stdout flattened from response.data.output.
+	if result[0]["stdout"] != "0 packages upgraded" {
+		t.Errorf("expected stdout '0 packages upgraded', got %v", result[0]["stdout"])
+	}
+
+	// Second result should have stderr flattened from response.error.
+	if result[1]["stderr"] != "permission denied" {
+		t.Errorf("expected stderr 'permission denied', got %v", result[1]["stderr"])
+	}
+}
+
+func TestCommandsResultsFooter(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	footer := stderr.String()
+	if !strings.Contains(footer, "2 items") {
+		t.Errorf("footer should contain '2 items', got: %s", footer)
+	}
+}
+
+func TestCommandsResultsLimit(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111", "--limit", "1"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result []any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("expected 1 result with --limit 1, got %d", len(result))
+	}
+}
+
+func TestCommandsResultsByName(t *testing.T) {
+	ts := setupCommandsRunTest(t, nil)
+	defer ts.Close()
+	viper.Set("cache.enabled", false)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "Update Agents"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\nOutput: %s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 results, got %d", len(result))
+	}
+}
+
+func TestCommandsResultsMissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+func TestCommandsResultsEmpty(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+
+	// Server with no results matching the command.
+	ts := startCommandsRunServer(t, sampleCommands(), nil, nil, []map[string]any{}, nil)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "aaa111aaa111aaa111aaa111"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result []any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty array, got %d items", len(result))
+	}
+}
+
+// --- Help Tests for Run/Results ---
+
+func TestCommandsHelpIncludesRunAndResults(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "--help"})
+	_ = cmd.Execute()
+
+	help := buf.String()
+	for _, sub := range []string{"run", "results"} {
+		if !strings.Contains(help, sub) {
+			t.Errorf("commands help should include %q subcommand, got: %s", sub, help)
+		}
+	}
+}
+
+func TestCommandsRunHelpIncludesFlags(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "run", "--help"})
+	_ = cmd.Execute()
+
+	help := buf.String()
+	if !strings.Contains(help, "--on") {
+		t.Errorf("run help should include --on flag, got: %s", help)
+	}
+}
+
+func TestCommandsResultsHelpIncludesFlags(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "results", "--help"})
+	_ = cmd.Execute()
+
+	help := buf.String()
+	for _, flag := range []string{"--limit", "--sort"} {
+		if !strings.Contains(help, flag) {
+			t.Errorf("results help should include %q flag, got: %s", flag, help)
+		}
+	}
+}
