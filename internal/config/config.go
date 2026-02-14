@@ -360,6 +360,7 @@ var ValidConfigKeys = []string{
 	"mcp.read_only",
 	"mcp.audit_log",
 	"mcp.plan_first",
+	"mcp.sse_port",
 	"ask.provider",
 	"ask.api_key",
 	"ask.model",
@@ -381,7 +382,7 @@ func SetConfigValue(key, value string) error {
 // and integers as numbers.
 func coerceValue(key, value string) interface{} {
 	switch key {
-	case "defaults.limit", "cache.ttl", "mcp.rate_limit", "ask.max_commands":
+	case "defaults.limit", "cache.ttl", "mcp.rate_limit", "mcp.sse_port", "ask.max_commands":
 		// Attempt int conversion.
 		var n int
 		if _, err := fmt.Sscanf(value, "%d", &n); err == nil {
@@ -418,6 +419,15 @@ func MCPAuditLog() bool {
 // MCPPlanFirst returns true if destructive MCP tools should default to plan mode.
 func MCPPlanFirst() bool {
 	return viper.GetBool("mcp.plan_first")
+}
+
+// MCPSSEPort returns the configured SSE transport port (default 8080).
+func MCPSSEPort() int {
+	port := viper.GetInt("mcp.sse_port")
+	if port == 0 {
+		return 8080
+	}
+	return port
 }
 
 // IsValidConfigKey returns true if key is a known config key.

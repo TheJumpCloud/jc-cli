@@ -1195,7 +1195,8 @@
         "TLS support via --tls-cert and --tls-key flags"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "SSE transport enables remote MCP access. This is useful for centralized JumpCloud management where the jc binary runs on a server. Security is critical — always require authentication for network transport.",
       "dependsOn": ["US-046"]
     },

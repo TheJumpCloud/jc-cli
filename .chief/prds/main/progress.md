@@ -82,6 +82,9 @@
 - `NoColor()` auto-disables color when stdout is not a terminal (pipe, redirect, substitution)
 - Color disable priority: `NO_COLOR` env > `JC_NO_COLOR` env > `--no-color` flag > `defaults.color` config > auto-TTY detection
 - `output.Options.IsPiped` field tracks pipe state; `CurrentOptions()` sets it from `config.IsStdoutTerminal()`
+- MCP SSE: `SSEHandler` from SDK implements `http.Handler`; wrap with auth/CORS middleware, serve via `http.Server`
+- SSE test pattern: `net.Listen("tcp", ":0")` + `srv.Serve(ln)` for random port; `Server.Listener()` exposes address for tests
+- `MCPSSEPort()` in config returns `mcp.sse_port` (default 8080); `--port` flag overrides
 
 ---
 
@@ -593,4 +596,26 @@
   - `output.Options.IsPiped` allows format-specific behavior when piped — currently table output is already unbounded (tabwriter minwidth=0), but the field is ready for future terminal-width-aware truncation
   - The `output` package can safely import `config` (no circular dependency) since `config` doesn't import `output`
   - Priority chain for color disable: `NO_COLOR` env > `JC_NO_COLOR` env > `--no-color` flag > `defaults.color` config > auto-TTY detection
+---
+
+## 2026-02-13 - US-057
+- Implemented MCP SSE Transport (`jc mcp serve --transport sse`)
+- **Files changed:**
+  - `internal/mcp/server.go` — added `SSEConfig` type, `RunSSE()` method using MCP SDK's `SSEHandler`, `authMiddleware()` for x-api-key/Bearer auth, `corsMiddleware()` for CORS headers, `Listener()` for test address discovery; added `mu`/`listener` fields to `Server` struct; added `net`, `net/http`, `crypto/tls` imports
+  - `internal/cmd/mcp.go` — added `--transport` (stdio/sse), `--port` (default 8080), `--cors-origin`, `--tls-cert`, `--tls-key` flags; updated `runMcpServe()` to switch on transport type; SSE transport requires authentication (uses `config.APIKey()`); updated help text with SSE documentation and examples
+  - `internal/config/config.go` — added `mcp.sse_port` to `ValidConfigKeys` and `coerceValue`; added `MCPSSEPort()` accessor (default 8080)
+- **New files:**
+  - `internal/mcp/sse_test.go` — 12 SSE integration tests: server starts/accepts connections, ListTools, ListResources, auth rejects unauthenticated, auth rejects wrong key, auth accepts Bearer token, no-auth mode, CORS headers present/absent, TLS support with self-signed certs, graceful shutdown, read-only mode; test helpers: `startSSEServer()`, `apiKeyTransport`, `bearerTransport`, `apiKeyTLSTransport`, `generateTestCert()`
+- **Files updated:**
+  - `internal/cmd/mcp_test.go` — added 3 new tests: `TestMcpServeCmd_SSEHelpText` (verifies all SSE flags in help), expanded `TestMcpServeCmd_FlagDefaults` (transport/port/cert/key/cors defaults), `TestMcpServeCmd_SSEExamples` (SSE examples and sse_port config)
+- **Learnings for future iterations:**
+  - MCP SDK v1.3.0 provides built-in `SSEHandler` and `SSEClientTransport` — no custom SSE framing needed
+  - `SSEHandler` implements `http.Handler` — wrap with standard middleware (auth, CORS) and serve via `http.Server`
+  - `SSEHandler.getServer` callback returns `*mcp.Server` per request — return same server for shared rate-limiting
+  - Use `net.Listen("tcp", ":0")` + `srv.Serve(ln)` (not `ListenAndServe`) so tests can discover actual port
+  - Auth middleware checks both `x-api-key` header and `Authorization: Bearer` prefix — SSE client transport must inject headers via custom `http.Client.Transport`
+  - `tls.LoadX509KeyPair` + `tls.NewListener` for TLS — cleaner than `srv.ServeTLS` since we already control the listener
+  - `generateTestCert()` creates ECDSA P-256 self-signed cert with 127.0.0.1 SAN — lightweight for tests
+  - `http.ErrServerClosed` is the normal return from `srv.Serve` after `srv.Close()` — convert to nil for graceful shutdown
+  - CORS preflight: `OPTIONS` → 204 No Content with allow headers; `Access-Control-Allow-Headers` must include `x-api-key` and `Authorization`
 ---

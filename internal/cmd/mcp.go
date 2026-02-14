@@ -36,14 +36,27 @@ Configure in Claude Desktop:
 
 func newMcpServeCmd() *cobra.Command {
 	var (
-		rateLimit int
-		readOnly  bool
+		rateLimit  int
+		readOnly   bool
+		transport  string
+		port       int
+		corsOrigin string
+		tlsCert    string
+		tlsKey     string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start MCP server on stdio transport",
-		Long: `Start an MCP server that communicates over stdin/stdout using JSON-RPC 2.0.
+		Short: "Start MCP server",
+		Long: `Start an MCP server using the specified transport.
+
+Transports:
+  stdio (default)  Communicates over stdin/stdout using JSON-RPC 2.0.
+                   Used by Claude Desktop and Claude Code.
+
+  sse              Starts an HTTP server with Server-Sent Events transport.
+                   Accessible by remote MCP clients over the network.
+                   Authentication required via x-api-key or Bearer token header.
 
 The server reuses the CLI's authentication, API clients, caching, and
 resolution engine. All tool calls are rate-limited and logged to
@@ -55,6 +68,13 @@ Configuration can be set in config.yaml under the 'mcp' section:
     read_only: false
     audit_log: true
     plan_first: true
+    sse_port: 8080
+
+SSE Examples:
+  jc mcp serve --transport sse
+  jc mcp serve --transport sse --port 9090
+  jc mcp serve --transport sse --tls-cert cert.pem --tls-key key.pem
+  jc mcp serve --transport sse --cors-origin "https://app.example.com"
 
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,20 +85,25 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("read-only") {
 				readOnly = config.MCPReadOnly()
 			}
-			return runMcpServe(rateLimit, readOnly)
+			if !cmd.Flags().Changed("port") {
+				port = config.MCPSSEPort()
+			}
+			return runMcpServe(rateLimit, readOnly, transport, port, corsOrigin, tlsCert, tlsKey)
 		},
 	}
 
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 60, "Maximum tool calls per minute")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "Disable all mutation tools")
+	cmd.Flags().StringVar(&transport, "transport", "stdio", "Transport type: stdio or sse")
+	cmd.Flags().IntVar(&port, "port", 8080, "Port for SSE transport (default 8080)")
+	cmd.Flags().StringVar(&corsOrigin, "cors-origin", "", "Allowed CORS origin for SSE transport")
+	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file for SSE transport")
+	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "TLS private key file for SSE transport")
 
 	return cmd
 }
 
-func runMcpServe(rateLimit int, readOnly bool) error {
-	// Log to stderr so we don't corrupt the JSON-RPC stream on stdout.
-	fmt.Fprintln(os.Stderr, "jc: starting MCP server on stdio transport")
-
+func runMcpServe(rateLimit int, readOnly bool, transport string, port int, corsOrigin, tlsCert, tlsKey string) error {
 	server := mcp.NewServer(mcp.Options{
 		RateLimit: rateLimit,
 		ReadOnly:  readOnly,
@@ -96,5 +121,34 @@ func runMcpServe(rateLimit int, readOnly bool) error {
 		cancel()
 	}()
 
-	return server.Run(ctx)
+	switch transport {
+	case "stdio":
+		fmt.Fprintln(os.Stderr, "jc: starting MCP server on stdio transport")
+		return server.Run(ctx)
+
+	case "sse":
+		// SSE transport requires authentication for security.
+		apiKey := config.APIKey()
+		if apiKey == "" {
+			return fmt.Errorf("SSE transport requires authentication. Run 'jc auth login' or set JC_API_KEY")
+		}
+
+		addr := fmt.Sprintf(":%d", port)
+		scheme := "http"
+		if tlsCert != "" {
+			scheme = "https"
+		}
+		fmt.Fprintf(os.Stderr, "jc: starting MCP server on SSE transport at %s://localhost%s\n", scheme, addr)
+
+		return server.RunSSE(ctx, mcp.SSEConfig{
+			Addr:       addr,
+			CORSOrigin: corsOrigin,
+			TLSCert:    tlsCert,
+			TLSKey:     tlsKey,
+			APIKey:     apiKey,
+		})
+
+	default:
+		return fmt.Errorf("unknown transport %q: must be 'stdio' or 'sse'", transport)
+	}
 }
