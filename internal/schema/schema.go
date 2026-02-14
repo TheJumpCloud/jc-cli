@@ -458,6 +458,14 @@ func BuildCommandManifest() CommandManifest {
 				Description: "Machine-readable schema and command manifest",
 				Subcommands: []string{"resources", "commands"},
 			},
+			{
+				Path:        "jc ask",
+				Description: "Translate natural language queries into jc CLI commands",
+			},
+			{
+				Path:        "jc explain",
+				Description: "Explain what a command would do without executing",
+			},
 		},
 	}
 }

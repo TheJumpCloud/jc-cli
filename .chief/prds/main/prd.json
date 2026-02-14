@@ -1116,7 +1116,8 @@
         "LLM never has direct API access — only generates command strings"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "jc ask is the conversational interface. Architecture: user input → LLM (with schema context) → proposed commands → plan mode → user confirmation → execution. The LLM is sandboxed — it can only suggest commands, not execute them.",
       "dependsOn": ["US-050", "US-034"]
     },

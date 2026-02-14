@@ -97,6 +97,12 @@ func setDefaults() {
 	viper.SetDefault("mcp.read_only", false)
 	viper.SetDefault("mcp.audit_log", true)
 	viper.SetDefault("mcp.plan_first", true)
+	viper.SetDefault("ask.provider", "disabled")
+	viper.SetDefault("ask.api_key", "")
+	viper.SetDefault("ask.model", "")
+	viper.SetDefault("ask.url", "")
+	viper.SetDefault("ask.max_commands", 10)
+	viper.SetDefault("ask.confirm_before_execute", true)
 }
 
 // bindEnvVars registers explicit mappings from environment variable names
@@ -118,6 +124,9 @@ func bindEnvVars() {
 
 	// JC_NO_COLOR → no_color
 	_ = viper.BindEnv("no_color", "JC_NO_COLOR")
+
+	// JC_ASK_API_KEY → ask.api_key
+	_ = viper.BindEnv("ask.api_key", "JC_ASK_API_KEY")
 }
 
 // Init sets up Viper with defaults, creates the config file if missing,
@@ -329,6 +338,12 @@ var ValidConfigKeys = []string{
 	"mcp.read_only",
 	"mcp.audit_log",
 	"mcp.plan_first",
+	"ask.provider",
+	"ask.api_key",
+	"ask.model",
+	"ask.url",
+	"ask.max_commands",
+	"ask.confirm_before_execute",
 }
 
 // SetConfigValue sets a config key using dot notation and writes the config
@@ -344,14 +359,14 @@ func SetConfigValue(key, value string) error {
 // and integers as numbers.
 func coerceValue(key, value string) interface{} {
 	switch key {
-	case "defaults.limit", "cache.ttl", "mcp.rate_limit":
+	case "defaults.limit", "cache.ttl", "mcp.rate_limit", "ask.max_commands":
 		// Attempt int conversion.
 		var n int
 		if _, err := fmt.Sscanf(value, "%d", &n); err == nil {
 			return n
 		}
 	case "defaults.confirm_destructive", "defaults.color", "cache.enabled",
-		"mcp.read_only", "mcp.audit_log", "mcp.plan_first":
+		"mcp.read_only", "mcp.audit_log", "mcp.plan_first", "ask.confirm_before_execute":
 		// Attempt bool conversion.
 		switch strings.ToLower(value) {
 		case "true", "1", "yes":

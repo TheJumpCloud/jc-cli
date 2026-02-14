@@ -402,10 +402,10 @@ func TestEvaluateWhen_InvalidTemplate(t *testing.T) {
 	}
 }
 
-// --- parseCommandArgs ---
+// --- ParseCommandArgs ---
 
 func TestParseCommandArgs_Simple(t *testing.T) {
-	args := parseCommandArgs("users list --limit 10")
+	args := ParseCommandArgs("users list --limit 10")
 	expected := []string{"users", "list", "--limit", "10"}
 	if len(args) != len(expected) {
 		t.Fatalf("args = %v, want %v", args, expected)
@@ -418,7 +418,7 @@ func TestParseCommandArgs_Simple(t *testing.T) {
 }
 
 func TestParseCommandArgs_DoubleQuoted(t *testing.T) {
-	args := parseCommandArgs(`users list --filter "os=Mac OS X"`)
+	args := ParseCommandArgs(`users list --filter "os=Mac OS X"`)
 	expected := []string{"users", "list", "--filter", "os=Mac OS X"}
 	if len(args) != len(expected) {
 		t.Fatalf("args = %v, want %v", args, expected)
@@ -431,7 +431,7 @@ func TestParseCommandArgs_DoubleQuoted(t *testing.T) {
 }
 
 func TestParseCommandArgs_SingleQuoted(t *testing.T) {
-	args := parseCommandArgs("users list --filter 'os=Mac OS X'")
+	args := ParseCommandArgs("users list --filter 'os=Mac OS X'")
 	expected := []string{"users", "list", "--filter", "os=Mac OS X"}
 	if len(args) != len(expected) {
 		t.Fatalf("args = %v, want %v", args, expected)
@@ -444,14 +444,14 @@ func TestParseCommandArgs_SingleQuoted(t *testing.T) {
 }
 
 func TestParseCommandArgs_Empty(t *testing.T) {
-	args := parseCommandArgs("")
+	args := ParseCommandArgs("")
 	if len(args) != 0 {
 		t.Errorf("args = %v, want empty", args)
 	}
 }
 
 func TestParseCommandArgs_ExtraSpaces(t *testing.T) {
-	args := parseCommandArgs("  users   list   ")
+	args := ParseCommandArgs("  users   list   ")
 	expected := []string{"users", "list"}
 	if len(args) != len(expected) {
 		t.Fatalf("args = %v, want %v", args, expected)

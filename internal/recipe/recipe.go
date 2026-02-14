@@ -198,9 +198,9 @@ func evaluateWhen(when string, data map[string]string) (bool, error) {
 	}
 }
 
-// parseCommandArgs splits a rendered command string into arguments.
-// It handles quoted strings (single and double quotes).
-func parseCommandArgs(cmdStr string) []string {
+// ParseCommandArgs splits a rendered command string into arguments.
+// It handles quoted strings (single and double quotes) without invoking a shell.
+func ParseCommandArgs(cmdStr string) []string {
 	var args []string
 	var current strings.Builder
 	inSingle := false
@@ -295,7 +295,7 @@ func (r *Recipe) Execute(dispatcher CommandDispatcher, params map[string]string,
 		}
 
 		// Parse into args and dispatch.
-		args := parseCommandArgs(rendered)
+		args := ParseCommandArgs(rendered)
 		fmt.Fprintf(progressW, "[%d/%d] %s...", stepNum, totalSteps, step.Name)
 
 		output, err := dispatcher(args)

@@ -809,3 +809,42 @@
   - Groups subcommands have a tricky nested structure (`groups user list` vs `groups add-member`). The `lookupGroupsSubcommand()` function handles `user/device + verb` combinations separately from direct `groups` verbs.
   - Human rendering uses the same box-drawing pattern as `plan.RenderHuman()` but with wider columns (60 vs 50 chars) to accommodate longer descriptions.
 ---
+
+## 2026-02-13 - US-053
+- What was implemented:
+  - `jc ask <question...>` — translates natural language queries into jc CLI commands using an LLM
+  - New `internal/ask/` package with `Client` interface and three provider implementations: Anthropic, OpenAI, Ollama
+  - `buildSystemPrompt()` — injects CLI schema (`schema.BuildCommandManifest()`) as LLM context for accurate command generation
+  - `parseResponse()` — robust LLM response parser that strips formatting artifacts (code fences, bullets, numbering, backticks, `jc` prefix)
+  - Proposed commands shown to user with `[N] jc <command>` format before execution
+  - Confirmation prompt `Execute these commands? [y/N]` — defaults to no; `--force` or `--non-interactive` skip confirmation
+  - `--output json` mode returns structured JSON with query, commands (status: proposed), and explanation — no execution
+  - Command execution via `recipe.NewDispatcher()` — dispatches through fresh Cobra command tree per step (same as recipes)
+  - Progress per command: `[1/N] jc <command>... done/failed`; summary: `── N executed, N failed ──`
+  - History logging to `~/.config/jc/ask-history.log` with RFC 3339 timestamps (non-fatal on failure)
+  - Config section `ask.*`: `provider` (anthropic/openai/ollama/disabled), `api_key`, `model`, `url`, `max_commands` (default 10), `confirm_before_execute`
+  - `JC_ASK_API_KEY` env var for LLM API key override (bound via `viper.BindEnv`)
+  - Exported `recipe.ParseCommandArgs()` for cross-package use (was unexported)
+  - Added `ask` to `commandMetadata` in explain.go and `resourceDescriptions`
+  - Added `ask` and `explain` commands to schema command manifest
+- Files changed:
+  - internal/ask/ask.go — new LLM client package with Anthropic/OpenAI/Ollama providers, response parsing, system prompt builder (320 lines)
+  - internal/ask/ask_test.go — 19 tests: response parsing (single/multi/cap/strip numbered/bullets/fences/backticks/jc prefix/empty), stripFormatting, buildSystemPrompt, NewClient providers, IsValidProvider, Anthropic/OpenAI/Ollama translate, API error, truncateBody
+  - internal/cmd/ask.go — new ask command with confirmation, execution, JSON output, history logging (175 lines)
+  - internal/cmd/ask_test.go — 16 tests: proposed commands, confirm no/yes/empty, force skip, JSON output, LLM error, empty response, missing args, multi-word query, failed execution, translation error, help output, root help, history, non-interactive
+  - internal/cmd/root.go — registered `newAskCmd()`
+  - internal/cmd/explain.go — added `ask` metadata
+  - internal/config/config.go — added `ask.*` defaults, `JC_ASK_API_KEY` env binding, `ValidConfigKeys`, `coerceValue` updates
+  - internal/recipe/recipe.go — exported `ParseCommandArgs()` (was `parseCommandArgs`)
+  - internal/recipe/recipe_test.go — updated to use `ParseCommandArgs`
+  - internal/schema/schema.go — added `ask` and `explain` to command manifest
+  - .chief/prds/main/prd.json — marked US-053 passes
+- **Learnings for future iterations:**
+  - `httpDoFunc` package-level var in `ask` package for HTTP client test injection — same pattern as `retrySleepFn`, `logWriter`, `newV1Client`
+  - LLM response parsing must be defensive: strip numbered lists, bullets, code fences, backticks, and `jc` prefix — LLMs frequently add these formatting artifacts
+  - `recipe.NewDispatcher()` reuse pattern: the ask command dispatches translated commands through the same dispatcher as recipes, getting free isolation (fresh root cmd per step), stdout/stderr capture, and error handling
+  - `parseResponse()` uses a simple state machine: commands until first blank line, then explanation lines after. The `Explanation:` prefix is stripped if present.
+  - Config keys in `ask.*` namespace keep LLM configuration separate from JumpCloud API configuration; `JC_ASK_API_KEY` env var avoids collision with `JC_API_KEY`
+  - Ollama requires `stream: false` in the request body for non-streaming responses; the chat API format is compatible with OpenAI's structure
+  - JSON output mode (`--output json`) returns proposed commands without executing — useful for programmatic inspection of what the LLM suggested
+---

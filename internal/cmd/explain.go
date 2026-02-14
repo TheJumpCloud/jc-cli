@@ -121,6 +121,9 @@ var commandMetadata = map[string]map[string]commandInfo{
 	"mcp": {
 		"serve": {description: "Start the MCP (Model Context Protocol) server for AI agent integration.", reversible: true, requiresAuth: true},
 	},
+	"ask": {
+		"": {description: "Translate a natural language query into jc CLI commands using an LLM.", reversible: true, requiresAuth: false, warnings: []string{"Commands are proposed for review before execution", "Requires LLM provider configuration (ask.provider)"}},
+	},
 }
 
 // resourceDescriptions provides fallback descriptions when only a resource name is given.
@@ -140,6 +143,7 @@ var resourceDescriptions = map[string]string{
 	"config":   "View and modify CLI configuration.",
 	"schema":   "Inspect resource schemas and CLI command metadata.",
 	"mcp":      "MCP server for AI agent integration.",
+	"ask":      "Translate natural language queries into jc CLI commands using an LLM.",
 }
 
 // newExplainCmd creates the explain command.
