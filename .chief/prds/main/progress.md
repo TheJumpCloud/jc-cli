@@ -33,6 +33,8 @@
 - Device group default fields: id, name, description, type (same as user groups)
 - `UserGroupConfig` / `DeviceGroupConfig` in resolve package for V2 name-to-ID resolution
 - Device groups: `jc groups device list/get/create/update/delete` — mirrors user groups exactly with `/systemgroups` endpoint
+- Commands use V1 API: `CommandConfig{CacheKey:"commands", ListEndpoint:"/commands", NameField:"name", IDField:"_id"}`
+- Commands default fields: name, commandType, command, schedule, scheduleRepeatType
 - V2 membership API: single POST with `op` field ("add"/"remove") — user groups `/usergroups/{id}/members`, device groups `/systemgroups/{id}/membership`
 - V2 `Create()` accepts 200, 201, and 204 (No Content) — needed for membership endpoints
 - Membership tests need both V1+V2 clients: `setupMembershipTest()` creates combined server, sets cache dir to temp
@@ -234,4 +236,24 @@
   - 409 Conflict = already a member (informative, not error); 404 on remove = not a member (informative, not error)
   - `--all --user` removes from ALL user groups by listing all groups and attempting removal from each (404 = not a member, skip silently)
   - `asAPIError()` helper uses `errors.As()` for clean API error type assertions
+---
+
+## 2026-02-13 - US-027
+- Implemented Commands CRUD commands (list, get, create, update, delete) using V1 API
+- Files created:
+  - `internal/cmd/commands.go` — `newCommandsCmd()` parent + list/get/create/update/delete subcommands; `resolveCommand()` using V1 Resolver with `CommandConfig`; `commandDefaultFields` for default output fields; filter/sort/limit/search support on list
+  - `internal/cmd/commands_test.go` — 35 tests covering: list (JSON, table, CSV, IDs, quiet, footer, empty, limit, sort, filter, invalid filter, search), get (by ID, by name, not found, missing arg), create (full, missing name, missing command, missing type, API endpoint), update (by ID, by name, no fields, API endpoint), delete (force, force by name, confirm yes/no/empty, not found, missing arg, prompt shows name+type), help structure (subcommands, flags, root includes commands)
+- Files changed:
+  - `internal/resolve/resolve.go` — added `CommandConfig` resource config (CacheKey: "commands", ListEndpoint: "/commands", NameField: "name", IDField: "_id")
+  - `internal/cmd/root.go` — registered `newCommandsCmd()` in root command
+  - `.chief/prds/main/prd.json` — marked US-027 as complete
+- **Learnings for future iterations:**
+  - Commands use V1 API (`/api/commands`), same as users/devices — reuses `newV1Client`, V1 `Resolver`, `ListOptions`
+  - Commands have `_id` as ID field (V1 pattern) — `CommandConfig` mirrors `UserConfig`/`DeviceConfig`
+  - Command fields: `name`, `command`, `commandType` (linux/mac/windows), `schedule`, `scheduleRepeatType`
+  - Create requires three flags: `--name`, `--command`, `--type` — all marked required via `MarkFlagRequired`
+  - Update uses `--type` flag mapped to `commandType` in API body (flag name ≠ API field name)
+  - Delete prompt shows both command name and type for clarity
+  - `startCommandsServer` follows same pattern as `startUsersServer` — handles GET list, POST create, GET/PUT/DELETE by ID
+  - Adding a new V1 resource command is now a well-established pattern: resource config in resolve, command file in cmd, register in root
 ---

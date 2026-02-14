@@ -93,6 +93,14 @@ var DeviceGroupConfig = ResourceConfig{
 	IDField:      "id",
 }
 
+// CommandConfig is the resolution config for JumpCloud commands (V1 API).
+var CommandConfig = ResourceConfig{
+	CacheKey:     "commands",
+	ListEndpoint: "/commands",
+	NameField:    "name",
+	IDField:      "_id",
+}
+
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
 //
 // Resolution order:

@@ -574,7 +574,8 @@
         "Standard output formats supported"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V1 Commands API: GET/POST /api/commands, GET/PUT/DELETE /api/commands/{id}.",
       "dependsOn": ["US-008", "US-018"]
     },
