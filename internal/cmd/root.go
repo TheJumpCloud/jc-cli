@@ -223,13 +223,21 @@ func flagErrorWithSuggestion(cmd *cobra.Command, err error) error {
 		return err
 	}
 
-	// Collect all persistent flag names from the command and its parents.
+	// Collect all flag names, deduplicating in case cmd.Flags() overlaps
+	// with Root().PersistentFlags() (happens when cmd IS the root command).
 	var candidates []string
+	seen := map[string]bool{}
 	cmd.Root().PersistentFlags().VisitAll(func(f *pflag.Flag) {
-		candidates = append(candidates, f.Name)
+		if !seen[f.Name] {
+			candidates = append(candidates, f.Name)
+			seen[f.Name] = true
+		}
 	})
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		candidates = append(candidates, f.Name)
+		if !seen[f.Name] {
+			candidates = append(candidates, f.Name)
+			seen[f.Name] = true
+		}
 	})
 
 	// Find closest matches (edit distance <= 3).

@@ -464,6 +464,25 @@ func TestUnknownFlagNoSuggestion(t *testing.T) {
 	}
 }
 
+func TestUnknownFlagNoDuplicateSuggestion(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"--outpu"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown flag --outpu")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Did you mean") {
+		t.Fatalf("expected suggestion in error, got: %v", errMsg)
+	}
+	// --output is a persistent flag on root; it must appear exactly once.
+	count := strings.Count(errMsg, "--output")
+	if count != 1 {
+		t.Errorf("expected --output to appear exactly once in suggestion, got %d times:\n%s", count, errMsg)
+	}
+}
+
 func TestFlagsViperBinding(t *testing.T) {
 	// Verify that each persistent flag is correctly bound to a Viper key.
 	tests := []struct {

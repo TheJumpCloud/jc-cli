@@ -106,14 +106,14 @@ func setupGraphTest(t *testing.T) {
 
 // --- Traverse Tests ---
 
-func TestGraphTraverse_UserToUserGroup(t *testing.T) {
+func TestGraphTraverse_UserToApplication(t *testing.T) {
 	setupGraphTest(t)
 
 	associations := map[string]map[string][]map[string]any{
 		"users:aa11bb22cc33dd44ee550001": {
-			"user_group": {
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0002"}},
+			"application": {
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2001"}},
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2002"}},
 			},
 		},
 	}
@@ -127,7 +127,7 @@ func TestGraphTraverse_UserToUserGroup(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -161,8 +161,8 @@ func TestGraphTraverse_UserByName(t *testing.T) {
 
 	associations := map[string]map[string][]map[string]any{
 		"users:aa11bb22cc33dd44ee550001": {
-			"user_group": {
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
+			"application": {
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2001"}},
 			},
 		},
 	}
@@ -176,7 +176,7 @@ func TestGraphTraverse_UserByName(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:jdoe", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:jdoe", "--to", "application"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -192,13 +192,13 @@ func TestGraphTraverse_UserByName(t *testing.T) {
 	}
 }
 
-func TestGraphTraverse_DeviceToSystemGroup(t *testing.T) {
+func TestGraphTraverse_DeviceToUserGroup(t *testing.T) {
 	setupGraphTest(t)
 
 	associations := map[string]map[string][]map[string]any{
 		"systems:bb11cc22dd33ee44ff550001": {
-			"system_group": {
-				{"to": map[string]any{"type": "system_group", "id": "dd11ee22ff33dd11ee220001"}},
+			"user_group": {
+				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
 			},
 		},
 	}
@@ -212,7 +212,7 @@ func TestGraphTraverse_DeviceToSystemGroup(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "device:bb11cc22dd33ee44ff550001", "--to", "system_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "device:bb11cc22dd33ee44ff550001", "--to", "user_group"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -233,8 +233,8 @@ func TestGraphTraverse_DeviceByName(t *testing.T) {
 
 	associations := map[string]map[string][]map[string]any{
 		"systems:bb11cc22dd33ee44ff550001": {
-			"system_group": {
-				{"to": map[string]any{"type": "system_group", "id": "dd11ee22ff33dd11ee220001"}},
+			"user_group": {
+				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
 			},
 		},
 	}
@@ -248,7 +248,7 @@ func TestGraphTraverse_DeviceByName(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "device:JDOE-MBP", "--to", "system_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "device:JDOE-MBP", "--to", "user_group"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -341,8 +341,8 @@ func TestGraphTraverse_DeviceGroupByName(t *testing.T) {
 
 	associations := map[string]map[string][]map[string]any{
 		"systemgroups:dd11ee22ff33dd11ee220001": {
-			"system": {
-				{"to": map[string]any{"type": "system", "id": "bb11cc22dd33ee44ff550001"}},
+			"user": {
+				{"to": map[string]any{"type": "user", "id": "aa11bb22cc33dd44ee550001"}},
 			},
 		},
 	}
@@ -356,7 +356,7 @@ func TestGraphTraverse_DeviceGroupByName(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "device_group:macOS Fleet", "--to", "system"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "device_group:macOS Fleet", "--to", "user"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -457,7 +457,7 @@ func TestGraphTraverse_EmptyResult(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -474,8 +474,8 @@ func TestGraphTraverse_TableOutput(t *testing.T) {
 
 	associations := map[string]map[string][]map[string]any{
 		"users:aa11bb22cc33dd44ee550001": {
-			"user_group": {
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
+			"application": {
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2001"}},
 			},
 		},
 	}
@@ -489,7 +489,7 @@ func TestGraphTraverse_TableOutput(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group", "--output", "table"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application", "--output", "table"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -507,10 +507,10 @@ func TestGraphTraverse_TableOutput(t *testing.T) {
 		t.Errorf("table output missing 'ID' column header:\n%s", out)
 	}
 	// Should contain the actual data values.
-	if !strings.Contains(out, "user_group") {
-		t.Errorf("table output missing 'user_group' value:\n%s", out)
+	if !strings.Contains(out, "application") {
+		t.Errorf("table output missing 'application' value:\n%s", out)
 	}
-	if !strings.Contains(out, "aabbccddee112233aabb0001") {
+	if !strings.Contains(out, "aabbccddee112233aabb2001") {
 		t.Errorf("table output missing association ID:\n%s", out)
 	}
 }
@@ -520,9 +520,9 @@ func TestGraphTraverse_Footer(t *testing.T) {
 
 	associations := map[string]map[string][]map[string]any{
 		"users:aa11bb22cc33dd44ee550001": {
-			"user_group": {
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
-				{"to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0002"}},
+			"application": {
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2001"}},
+				{"to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2002"}},
 			},
 		},
 	}
@@ -536,7 +536,7 @@ func TestGraphTraverse_Footer(t *testing.T) {
 	var buf, errBuf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -553,9 +553,9 @@ func TestGraphTraverse_IDsOutput(t *testing.T) {
 	// Use associations with top-level "id" field so --ids can extract them.
 	associations := map[string]map[string][]map[string]any{
 		"users:aa11bb22cc33dd44ee550001": {
-			"user_group": {
-				{"id": "aabbccddee112233aabb0001", "to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0001"}},
-				{"id": "aabbccddee112233aabb0002", "to": map[string]any{"type": "user_group", "id": "aabbccddee112233aabb0002"}},
+			"application": {
+				{"id": "aabbccddee112233aabb2001", "to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2001"}},
+				{"id": "aabbccddee112233aabb2002", "to": map[string]any{"type": "application", "id": "aabbccddee112233aabb2002"}},
 			},
 		},
 	}
@@ -569,7 +569,7 @@ func TestGraphTraverse_IDsOutput(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group", "--ids"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application", "--ids"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -676,6 +676,35 @@ func TestGraphTraverse_InvalidToType(t *testing.T) {
 	if !strings.Contains(err.Error(), "invalid target type") {
 		t.Errorf("error should mention invalid target type: %v", err)
 	}
+	// Error should mention the source type and its valid targets.
+	if !strings.Contains(err.Error(), "for source \"user\"") {
+		t.Errorf("error should mention source type: %v", err)
+	}
+	if !strings.Contains(err.Error(), "application") {
+		t.Errorf("error should list valid targets for user: %v", err)
+	}
+}
+
+func TestGraphTraverse_InvalidTargetForSource(t *testing.T) {
+	setupGraphTest(t)
+
+	// "command" is a valid target for device, but NOT for user.
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:jdoe", "--to", "command"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: command is not a valid target for user source")
+	}
+	if !strings.Contains(err.Error(), "invalid target type") {
+		t.Errorf("error should mention invalid target type: %v", err)
+	}
+	if !strings.Contains(err.Error(), "for source \"user\"") {
+		t.Errorf("error should mention source type: %v", err)
+	}
 }
 
 func TestGraphTraverse_EmptyFromIdentifier(t *testing.T) {
@@ -685,7 +714,7 @@ func TestGraphTraverse_EmptyFromIdentifier(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:", "--to", "application"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -727,7 +756,7 @@ func TestGraphTraverse_APIEndpoint(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "user_group"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", "application"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -736,7 +765,7 @@ func TestGraphTraverse_APIEndpoint(t *testing.T) {
 	if requestedPath != "/users/aa11bb22cc33dd44ee550001/associations" {
 		t.Errorf("unexpected API path: %s", requestedPath)
 	}
-	if requestedTargets != "user_group" {
+	if requestedTargets != "application" {
 		t.Errorf("unexpected targets param: %s", requestedTargets)
 	}
 }
@@ -771,7 +800,7 @@ func TestGraphTraverse_DeviceGroupAPIEndpoint(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"graph", "traverse", "--from", "device_group:dd11ee22ff33dd11ee220001", "--to", "system"})
+	cmd.SetArgs([]string{"graph", "traverse", "--from", "device_group:dd11ee22ff33dd11ee220001", "--to", "user"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -886,13 +915,28 @@ func TestIsValidSourceType(t *testing.T) {
 }
 
 func TestIsValidTargetType(t *testing.T) {
-	for _, typ := range validTargetTypes {
-		if !isValidTargetType(typ) {
-			t.Errorf("isValidTargetType(%q) = false, want true", typ)
+	// Each source type should accept all its own valid targets.
+	for src, targets := range validTargetsBySource {
+		for _, tgt := range targets {
+			if !isValidTargetType(src, tgt) {
+				t.Errorf("isValidTargetType(%q, %q) = false, want true", src, tgt)
+			}
 		}
 	}
-	if isValidTargetType("invalid") {
-		t.Error("isValidTargetType(\"invalid\") = true, want false")
+	// User-friendly aliases should also be accepted.
+	if !isValidTargetType("user", "device") {
+		t.Error("isValidTargetType(\"user\", \"device\") = false, want true (alias for system)")
+	}
+	if !isValidTargetType("user", "device_group") {
+		t.Error("isValidTargetType(\"user\", \"device_group\") = false, want true (alias for system_group)")
+	}
+	// Invalid target for any source.
+	if isValidTargetType("user", "invalid") {
+		t.Error("isValidTargetType(\"user\", \"invalid\") = true, want false")
+	}
+	// Valid target but wrong source.
+	if isValidTargetType("application", "command") {
+		t.Error("isValidTargetType(\"application\", \"command\") = true, want false")
 	}
 }
 
@@ -900,14 +944,16 @@ func TestGraphTraverse_TargetAliasMapping(t *testing.T) {
 	setupGraphTest(t)
 
 	tests := []struct {
-		name      string
-		toFlag    string
-		wantParam string
+		name       string
+		fromSource string // source type for --from (must support the target)
+		fromID     string
+		toFlag     string
+		wantParam  string
 	}{
-		{"device maps to system", "device", "system"},
-		{"device_group maps to system_group", "device_group", "system_group"},
-		{"system passes through", "system", "system"},
-		{"user_group passes through", "user_group", "user_group"},
+		{"device maps to system", "user", "aa11bb22cc33dd44ee550001", "device", "system"},
+		{"device_group maps to system_group", "user", "aa11bb22cc33dd44ee550001", "device_group", "system_group"},
+		{"system passes through", "user", "aa11bb22cc33dd44ee550001", "system", "system"},
+		{"user_group passes through", "device", "bb11cc22dd33ee44ff550001", "user_group", "user_group"},
 	}
 
 	for _, tt := range tests {
@@ -926,6 +972,10 @@ func TestGraphTraverse_TargetAliasMapping(t *testing.T) {
 					json.NewEncoder(w).Encode(map[string]any{"results": []any{}, "totalCount": 0})
 					return
 				}
+				if r.URL.Path == "/systems" {
+					json.NewEncoder(w).Encode(map[string]any{"results": []any{}, "totalCount": 0})
+					return
+				}
 				w.WriteHeader(http.StatusNotFound)
 			}))
 			defer ts.Close()
@@ -936,7 +986,7 @@ func TestGraphTraverse_TargetAliasMapping(t *testing.T) {
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 			cmd.SetErr(&bytes.Buffer{})
-			cmd.SetArgs([]string{"graph", "traverse", "--from", "user:aa11bb22cc33dd44ee550001", "--to", tt.toFlag})
+			cmd.SetArgs([]string{"graph", "traverse", "--from", tt.fromSource + ":" + tt.fromID, "--to", tt.toFlag})
 
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("Execute error: %v", err)

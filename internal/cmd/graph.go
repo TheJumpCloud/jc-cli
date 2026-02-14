@@ -21,11 +21,14 @@ var validSourceTypes = []string{
 	"user", "device", "user_group", "device_group", "application",
 }
 
-// validTargetTypes lists the resource types that can be used as --to targets.
-// Includes user-friendly aliases (device, device_group) alongside API names.
-var validTargetTypes = []string{
-	"user", "device", "system", "user_group", "device_group", "system_group",
-	"application", "policy", "command",
+// validTargetsBySource maps each source type to its allowed --to target types.
+// Discovered via live JumpCloud V2 API probing — invalid combos return HTTP 400.
+var validTargetsBySource = map[string][]string{
+	"user":         {"active_directory", "application", "g_suite", "idp_routing_policy", "ldap_server", "office_365", "password_manager_item", "radius_server", "system", "system_group"},
+	"device":       {"command", "policy", "policy_group", "user", "user_group"},
+	"user_group":   {"active_directory", "application", "g_suite", "idp_routing_policy", "ldap_server", "office_365", "password_manager_item", "radius_server", "system", "system_group"},
+	"device_group": {"command", "policy", "policy_group", "user", "user_group"},
+	"application":  {"user", "user_group"},
 }
 
 // targetToAPIParam maps user-friendly target aliases to the actual V2 API parameter values.
@@ -71,15 +74,23 @@ The --from flag specifies the source resource as type:name-or-id.
 The --to flag specifies the target resource type to find associations for.
 
 Source types: user, device, user_group, device_group, application
-Target types: user, device (system), user_group, device_group (system_group), application, policy, command
+
+Valid targets per source type:
+  user:         active_directory, application, g_suite, ldap_server, office_365,
+                radius_server, system (device), system_group (device_group)
+  device:       command, policy, policy_group, user, user_group
+  user_group:   active_directory, application, g_suite, ldap_server, office_365,
+                radius_server, system (device), system_group (device_group)
+  device_group: command, policy, policy_group, user, user_group
+  application:  user, user_group
 
 "device" is an alias for "system" and "device_group" is an alias for "system_group".
 
 Examples:
-  jc graph traverse --from user:jdoe --to device
-  jc graph traverse --from device:JDOE-MBP --to device_group
+  jc graph traverse --from user:jdoe --to system
+  jc graph traverse --from device:JDOE-MBP --to user_group
   jc graph traverse --from user_group:Engineering --to application
-  jc graph traverse --from user_group:Engineering --to user
+  jc graph traverse --from device_group:Servers --to command
   jc graph traverse --from application:Slack --to user_group`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGraphTraverse(cmd, fromFlag, toFlag)
@@ -101,10 +112,10 @@ func runGraphTraverse(cmd *cobra.Command, from, to string) error {
 		return err
 	}
 
-	// Validate --to target type.
-	if !isValidTargetType(to) {
-		return fmt.Errorf("invalid target type %q. Valid types: %s",
-			to, strings.Join(validTargetTypes, ", "))
+	// Validate --to target type against allowed targets for this source.
+	if !isValidTargetType(sourceType, to) {
+		return fmt.Errorf("invalid target type %q for source %q. Valid targets for %s: %s",
+			to, sourceType, sourceType, strings.Join(validTargetsBySource[sourceType], ", "))
 	}
 
 	// Map user-friendly target aliases to API parameter values.
@@ -293,12 +304,43 @@ func isValidSourceType(t string) bool {
 	return false
 }
 
-// isValidTargetType checks if the given type is a valid graph target type.
-func isValidTargetType(t string) bool {
-	for _, v := range validTargetTypes {
-		if t == v {
+// isValidTargetType checks if the given target type is valid for the specified source type.
+// User-friendly aliases (device→system, device_group→system_group) are resolved before lookup.
+func isValidTargetType(sourceType, t string) bool {
+	// Map user-friendly target aliases to API names for validation.
+	target := t
+	if mapped, ok := targetToAPIParam[t]; ok {
+		target = mapped
+	}
+	targets, ok := validTargetsBySource[sourceType]
+	if !ok {
+		return false
+	}
+	for _, v := range targets {
+		if target == v {
 			return true
 		}
 	}
 	return false
+}
+
+// validTargetsForSource returns the display list of valid target types for a source,
+// including user-friendly aliases where applicable.
+func validTargetsForSource(sourceType string) []string {
+	targets, ok := validTargetsBySource[sourceType]
+	if !ok {
+		return nil
+	}
+	result := make([]string, len(targets))
+	copy(result, targets)
+	// Add user-friendly aliases for API names that have them.
+	for alias, apiName := range targetToAPIParam {
+		for _, t := range targets {
+			if t == apiName {
+				result = append(result, alias)
+				break
+			}
+		}
+	}
+	return result
 }
