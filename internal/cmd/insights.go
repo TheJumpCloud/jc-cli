@@ -29,7 +29,7 @@ func newInsightsCmd() *cobra.Command {
 		Short:   "Query JumpCloud Directory Insights events",
 		Long: `Query Directory Insights for audit and activity events.
 
-Supported services: all, sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager.
+Supported services: all, access_management, alert, asset_management, directory, ldap, mdm, notifications, object_storage, password_manager, radius, reports, saas_app_management, software, sso, systems, workflows.
 
 Time ranges can be specified as:
   --last 24h          Last 24 hours

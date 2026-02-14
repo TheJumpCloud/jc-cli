@@ -9,16 +9,19 @@ import (
 	"testing"
 )
 
-// startAdminsServer creates a mock JumpCloud V2 server that handles /administrators endpoints.
-// V2 responses are bare JSON arrays (not wrapped like V1).
+// startAdminsServer creates a mock JumpCloud V1 server that handles /users endpoint.
+// V1 responses are wrapped: {"results": [...], "totalCount": N}.
 func startAdminsServer(t *testing.T, admins []map[string]any) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// GET /administrators — list endpoint.
-		if r.URL.Path == "/administrators" && r.Method == http.MethodGet {
-			json.NewEncoder(w).Encode(admins)
+		// GET /users — list endpoint (V1-style).
+		if r.URL.Path == "/users" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"results":    admins,
+				"totalCount": len(admins),
+			})
 			return
 		}
 
@@ -30,25 +33,25 @@ func startAdminsServer(t *testing.T, admins []map[string]any) *httptest.Server {
 func sampleAdmins() []map[string]any {
 	return []map[string]any{
 		{
-			"id":                 "aabbccddee112233aabb2001",
+			"_id":               "aabbccddee112233aabb2001",
 			"email":             "admin@acme.com",
-			"role":              "Administrator",
+			"roleName":          "Administrator",
 			"enableMultiFactor": true,
 			"firstname":         "Alice",
 			"lastname":          "Admin",
 		},
 		{
-			"id":                 "aabbccddee112233aabb2002",
+			"_id":               "aabbccddee112233aabb2002",
 			"email":             "manager@acme.com",
-			"role":              "Manager",
+			"roleName":          "Manager",
 			"enableMultiFactor": false,
 			"firstname":         "Bob",
 			"lastname":          "Manager",
 		},
 		{
-			"id":                 "aabbccddee112233aabb2003",
+			"_id":               "aabbccddee112233aabb2003",
 			"email":             "readonly@acme.com",
-			"role":              "Read Only",
+			"roleName":          "Read Only",
 			"enableMultiFactor": true,
 			"firstname":         "Carol",
 			"lastname":          "Reader",
@@ -63,7 +66,7 @@ func TestAdminsList_JSON(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -90,7 +93,7 @@ func TestAdminsList_DefaultFields(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -107,16 +110,19 @@ func TestAdminsList_DefaultFields(t *testing.T) {
 		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
 	}
 
-	// Default fields should include email, role, enableMultiFactor.
+	// Default fields should include _id, email, roleName, enableMultiFactor.
 	first := result[0]
 	if _, ok := first["email"]; !ok {
 		t.Error("default fields should include 'email'")
 	}
-	if _, ok := first["role"]; !ok {
-		t.Error("default fields should include 'role'")
+	if _, ok := first["roleName"]; !ok {
+		t.Error("default fields should include 'roleName'")
 	}
 	if _, ok := first["enableMultiFactor"]; !ok {
 		t.Error("default fields should include 'enableMultiFactor'")
+	}
+	if _, ok := first["_id"]; !ok {
+		t.Error("default fields should include '_id'")
 	}
 }
 
@@ -125,7 +131,7 @@ func TestAdminsList_Table(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -151,7 +157,7 @@ func TestAdminsList_CSV(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -174,7 +180,7 @@ func TestAdminsList_IDs(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -200,7 +206,7 @@ func TestAdminsList_Quiet(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -222,7 +228,7 @@ func TestAdminsList_Footer(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf, errBuf bytes.Buffer
@@ -235,8 +241,8 @@ func TestAdminsList_Footer(t *testing.T) {
 	}
 
 	footer := errBuf.String()
-	if !strings.Contains(footer, "3 items") {
-		t.Errorf("footer should contain '3 items', got: %q", footer)
+	if !strings.Contains(footer, "3 of 3 items") {
+		t.Errorf("footer should contain '3 of 3 items', got: %q", footer)
 	}
 }
 
@@ -244,7 +250,7 @@ func TestAdminsList_Empty(t *testing.T) {
 	setupUsersTest(t)
 	ts := startAdminsServer(t, []map[string]any{})
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -271,13 +277,13 @@ func TestAdminsList_Filter(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"admins", "list", "--filter", "role=Administrator"})
+	cmd.SetArgs([]string{"admins", "list", "--filter", "roleName=Administrator"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -296,7 +302,7 @@ func TestAdminsList_Sort(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -319,7 +325,7 @@ func TestAdminsList_InvalidFilter(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -338,7 +344,7 @@ func TestAdminsList_Limit(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -365,7 +371,7 @@ func TestAdminsList_RoleInOutput(t *testing.T) {
 	admins := sampleAdmins()
 	ts := startAdminsServer(t, admins)
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
@@ -385,13 +391,13 @@ func TestAdminsList_RoleInOutput(t *testing.T) {
 	// Verify admin roles are present in the output.
 	roles := map[string]bool{}
 	for _, a := range result {
-		if r, ok := a["role"].(string); ok {
+		if r, ok := a["roleName"].(string); ok {
 			roles[r] = true
 		}
 	}
 	for _, expected := range []string{"Administrator", "Manager", "Read Only"} {
 		if !roles[expected] {
-			t.Errorf("expected role %q in output, got roles: %v", expected, roles)
+			t.Errorf("expected roleName %q in output, got roles: %v", expected, roles)
 		}
 	}
 }
@@ -463,10 +469,13 @@ func TestAdminsList_Endpoint(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]any{})
+		json.NewEncoder(w).Encode(map[string]any{
+			"results":    []map[string]any{},
+			"totalCount": 0,
+		})
 	}))
 	defer ts.Close()
-	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
@@ -477,7 +486,7 @@ func TestAdminsList_Endpoint(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if requestedPath != "/administrators" {
-		t.Errorf("expected request to /administrators, got %q", requestedPath)
+	if requestedPath != "/users" {
+		t.Errorf("expected request to /users, got %q", requestedPath)
 	}
 }

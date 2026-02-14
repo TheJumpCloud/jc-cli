@@ -287,8 +287,9 @@ func TestInsightsClient_QueryEvents_PaginationParams(t *testing.T) {
 	if capturedBodies[0]["skip"] != float64(0) {
 		t.Errorf("first request skip = %v, want 0", capturedBodies[0]["skip"])
 	}
-	if capturedBodies[0]["service"] != "sso" {
-		t.Errorf("service = %v, want sso", capturedBodies[0]["service"])
+	svc, ok := capturedBodies[0]["service"].([]any)
+	if !ok || len(svc) != 1 || svc[0] != "sso" {
+		t.Errorf("service = %v, want [sso]", capturedBodies[0]["service"])
 	}
 }
 
@@ -541,6 +542,27 @@ func TestInsightsClient_DistinctEvents_Empty(t *testing.T) {
 	}
 }
 
+func TestInsightsClient_DistinctEvents_ObjectResponse(t *testing.T) {
+	// The real API returns an object like {"field_name": [{key, doc_count}, ...], ...}.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"event_type":[{"key":"sso_auth","doc_count":42},{"key":"ldap_bind","doc_count":7}],"doc_count_error_upper_bound":0,"sum_other_doc_count":0}`))
+	}))
+	defer ts.Close()
+
+	c := newTestInsightsClient(ts.URL)
+	items, err := c.DistinctEvents(context.Background(), InsightsQuery{
+		Service:   "sso",
+		StartTime: "2026-02-01T00:00:00Z",
+	}, "event_type")
+	if err != nil {
+		t.Fatalf("DistinctEvents error: %v", err)
+	}
+	if len(items) != 2 {
+		t.Errorf("got %d distinct values, want 2", len(items))
+	}
+}
+
 func TestInsightsClient_DistinctEvents_APIError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -621,7 +643,7 @@ func TestNewInsightsClient_AuthHeader(t *testing.T) {
 // --- ValidateService Tests ---
 
 func TestValidateService_Valid(t *testing.T) {
-	tests := []string{"sso", "ldap", "radius", "all", "admin", "mdm", "directory", "software", "systems", "user_portal", "password_manager"}
+	tests := []string{"sso", "ldap", "radius", "all", "mdm", "directory", "software", "systems", "password_manager", "alert", "notifications", "asset_management", "access_management", "reports", "object_storage", "saas_app_management", "workflows"}
 	for _, s := range tests {
 		if err := ValidateService(s); err != nil {
 			t.Errorf("ValidateService(%q) returned error: %v", s, err)
@@ -630,8 +652,8 @@ func TestValidateService_Valid(t *testing.T) {
 }
 
 func TestValidateService_MultipleValid(t *testing.T) {
-	if err := ValidateService("sso,ldap,admin"); err != nil {
-		t.Errorf("ValidateService(\"sso,ldap,admin\") returned error: %v", err)
+	if err := ValidateService("sso,ldap,directory"); err != nil {
+		t.Errorf("ValidateService(\"sso,ldap,directory\") returned error: %v", err)
 	}
 }
 
@@ -789,8 +811,13 @@ func TestInsightsClient_QueryEvents_MultiService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryEvents error: %v", err)
 	}
-	if capturedBody["service"] != "sso,ldap" {
-		t.Errorf("service = %v, want sso,ldap", capturedBody["service"])
+	// Service should be sent as an array.
+	svc, ok := capturedBody["service"].([]any)
+	if !ok {
+		t.Fatalf("service is not an array: %T = %v", capturedBody["service"], capturedBody["service"])
+	}
+	if len(svc) != 2 || svc[0] != "sso" || svc[1] != "ldap" {
+		t.Errorf("service = %v, want [sso, ldap]", svc)
 	}
 }
 

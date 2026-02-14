@@ -15,7 +15,7 @@ import (
 
 const (
 	// InsightsBaseURL is the JumpCloud Directory Insights API base URL.
-	InsightsBaseURL = "https://console.jumpcloud.com/insights/directory/v1"
+	InsightsBaseURL = "https://api.jumpcloud.com/insights/directory/v1"
 )
 
 // InsightsNowFunc is used to get the current time. Tests can override this.
@@ -159,7 +159,7 @@ func (c *InsightsClient) QueryEvents(ctx context.Context, query InsightsQuery, o
 // CountEvents sends a POST query to the /events/count endpoint and returns the event count.
 func (c *InsightsClient) CountEvents(ctx context.Context, query InsightsQuery) (int, error) {
 	body := map[string]any{
-		"service":    query.Service,
+		"service":    serviceToArray(query.Service),
 		"start_time": query.StartTime,
 	}
 	if query.EndTime != "" {
@@ -210,7 +210,7 @@ func (c *InsightsClient) CountEvents(ctx context.Context, query InsightsQuery) (
 // and returns distinct values for a given field.
 func (c *InsightsClient) DistinctEvents(ctx context.Context, query InsightsQuery, field string) ([]json.RawMessage, error) {
 	body := map[string]any{
-		"service":    query.Service,
+		"service":    serviceToArray(query.Service),
 		"start_time": query.StartTime,
 		"field":      field,
 	}
@@ -247,18 +247,50 @@ func (c *InsightsClient) DistinctEvents(ctx context.Context, query InsightsQuery
 		return nil, NewAPIError(resp.StatusCode, "/events/distinct", respBody)
 	}
 
+	// The API returns an object like {"field_name": [{"key":"val","doc_count":N}, ...], ...}.
+	// Extract the array from the requested field key.
 	var items []json.RawMessage
 	if err := json.Unmarshal(respBody, &items); err != nil {
-		return nil, fmt.Errorf("parsing distinct response: %w", err)
+		var obj map[string]json.RawMessage
+		if objErr := json.Unmarshal(respBody, &obj); objErr != nil {
+			return nil, fmt.Errorf("parsing distinct response: %w", err)
+		}
+		// Extract the bucket array from the queried field name.
+		if raw, ok := obj[field]; ok {
+			if json.Unmarshal(raw, &items) == nil {
+				return items, nil
+			}
+		}
+		// Fallback: try each key for an array value.
+		for _, v := range obj {
+			if json.Unmarshal(v, &items) == nil && len(items) > 0 {
+				return items, nil
+			}
+		}
+		return nil, fmt.Errorf("parsing distinct response: no array found in response object")
 	}
 
 	return items, nil
 }
 
+// serviceToArray converts a service string to the array format the API expects.
+// Handles comma-separated values like "sso,ldap" → ["sso", "ldap"].
+func serviceToArray(service string) []string {
+	parts := strings.Split(service, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 // buildQueryBody constructs the request body for event queries with pagination.
 func (c *InsightsClient) buildQueryBody(query InsightsQuery, skip, limit int, opts InsightsQueryOptions) map[string]any {
 	body := map[string]any{
-		"service":    query.Service,
+		"service":    serviceToArray(query.Service),
 		"start_time": query.StartTime,
 		"limit":      limit,
 		"skip":       skip,
@@ -281,16 +313,22 @@ func (c *InsightsClient) buildQueryBody(query InsightsQuery, skip, limit int, op
 // ValidInsightsServices is the list of valid Directory Insights service names.
 var ValidInsightsServices = []string{
 	"all",
-	"sso",
-	"radius",
-	"ldap",
-	"user_portal",
-	"admin",
-	"mdm",
+	"access_management",
+	"alert",
+	"asset_management",
 	"directory",
-	"software",
-	"systems",
+	"ldap",
+	"mdm",
+	"notifications",
+	"object_storage",
 	"password_manager",
+	"radius",
+	"reports",
+	"saas_app_management",
+	"software",
+	"sso",
+	"systems",
+	"workflows",
 }
 
 // ValidateService checks if a service name (or comma-separated list) is valid.

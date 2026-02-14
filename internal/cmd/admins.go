@@ -11,7 +11,8 @@ import (
 )
 
 // adminDefaultFields is the default field subset shown for admins list/table output.
-var adminDefaultFields = []string{"id", "email", "role", "enableMultiFactor"}
+// Uses _id (V1 convention) since the /users endpoint is a V1-style API.
+var adminDefaultFields = []string{"_id", "email", "roleName", "enableMultiFactor"}
 
 func newAdminsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,12 +39,12 @@ func newAdminsListCmd() *cobra.Command {
 		Short:   "List all administrators",
 		Long: `List all JumpCloud administrators with email, role, and MFA status.
 
-Default fields: id, email, role, enableMultiFactor.
+Default fields: _id, email, roleName, enableMultiFactor.
 Use --output table for a readable ASCII table.
 
 Filter examples:
-  --filter 'role=Administrator'       Filter by admin role
-  --filter 'email=admin@acme.com'     Filter by email`,
+  --filter 'roleName=Administrator'    Filter by admin role
+  --filter 'email=admin@acme.com'      Filter by email`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAdminsList(cmd, limitFlag, sortFlag, filterFlag)
 		},
@@ -51,7 +52,7 @@ Filter examples:
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -email)")
-	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'role=Administrator')")
+	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'roleName=Administrator')")
 
 	return cmd
 }
@@ -62,15 +63,16 @@ func runAdminsList(cmd *cobra.Command, limit int, sort string, filters []string)
 		return err
 	}
 
-	client, err := newV2Client()
+	// Admins use the V1-style /users endpoint (not V2 /administrators which doesn't exist).
+	client, err := newV1Client()
 	if err != nil {
 		return err
 	}
 
-	result, err := client.ListAll(cmd.Context(), "/administrators", api.V2ListOptions{
+	result, err := client.ListAll(cmd.Context(), "/users", api.ListOptions{
 		Limit:  limit,
 		Sort:   sort,
-		Filter: filter.ToV2Queries(exprs),
+		Filter: filter.ToV1Queries(exprs),
 	})
 	if err != nil {
 		return err
@@ -84,7 +86,7 @@ func runAdminsList(cmd *cobra.Command, limit int, sort string, filters []string)
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d items ──\n", len(result.Data), result.TotalCount)
 	}
 
 	return nil

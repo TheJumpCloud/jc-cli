@@ -241,8 +241,10 @@ func TestInsightsQuery_MultiService(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if (*captured)["service"] != "sso,ldap" {
-		t.Errorf("service = %v, want sso,ldap", (*captured)["service"])
+	// Service should be sent as an array.
+	svc, ok := (*captured)["service"].([]any)
+	if !ok || len(svc) != 2 || svc[0] != "sso" || svc[1] != "ldap" {
+		t.Errorf("service = %v, want [sso, ldap]", (*captured)["service"])
 	}
 }
 
@@ -263,8 +265,10 @@ func TestInsightsQuery_AllService(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if (*captured)["service"] != "all" {
-		t.Errorf("service = %v, want all", (*captured)["service"])
+	// Service should be sent as an array.
+	svc, ok := (*captured)["service"].([]any)
+	if !ok || len(svc) != 1 || svc[0] != "all" {
+		t.Errorf("service = %v, want [all]", (*captured)["service"])
 	}
 }
 
