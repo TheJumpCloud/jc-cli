@@ -771,7 +771,8 @@
         "API base URL: https://console.jumpcloud.com/insights/directory/v1"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Directory Insights uses a POST-based query API (not GET). The request body contains query parameters. Time parsing from '24h', '7d', '30d' shortcuts is a nice UX feature.",
       "dependsOn": ["US-007"]
     },

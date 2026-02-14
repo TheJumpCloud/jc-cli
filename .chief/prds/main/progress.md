@@ -52,6 +52,14 @@
 - `--org` flag validation in `PersistentPreRunE`: validates profile exists, calls `OverrideActiveProfile()` before any subcommand runs
 - `completeProfileNames()` provides tab completion for profile names on `auth switch` and `--org` flag
 - Interactive picker: numbered list with `*` marker for active profile, `ReadLine()` for input
+- `InsightsClient` embeds `*Client`, base URL `https://console.jumpcloud.com/insights/directory/v1`
+- Insights uses POST-based queries (body contains service, start_time, end_time, fields, search_term_filter, sort, limit, skip)
+- Insights responses: bare JSON arrays (like V2); pagination: page returns fewer items than page size = last page
+- Three Insights endpoints: `/events` (query), `/events/count` (count), `/events/distinct` (unique values)
+- `ParseTimeRange()`: "24h", "7d", "30d", "1m", "last Xd", "2006-01-02", RFC 3339
+- `ValidInsightsServices`: all, sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager
+- `insightsNowFunc` var for test clock injection in time parsing
+- `newTestInsightsClient(serverURL)` test helper mirrors `newTestV1Client`/`newTestV2Client`
 
 ---
 
@@ -341,4 +349,23 @@
   - `ValidArgsFunction` on `auth switch` cmd + `RegisterFlagCompletionFunc` on `--org` flag provides tab completion for both positional args and flag values
   - Interactive picker uses numbered selection (1-N) with `*` marker for current active profile — simpler than full TUI, works in all terminals
   - Auth status already showed profile name — no changes needed for that AC item
+---
+
+## 2026-02-13 - US-037
+- Implemented Directory Insights API client with POST-based event queries
+- Files created:
+  - `internal/api/insights.go` — `InsightsClient` struct with `QueryEvents()`, `CountEvents()`, `DistinctEvents()` methods; `InsightsQuery` and `InsightsQueryOptions` types; `ParseTimeRange()` for human-friendly time shortcuts; `ValidateService()` for service name validation; `ValidInsightsServices` list; `insightsNowFunc` var for test clock injection
+  - `internal/api/insights_test.go` — 27 tests covering: QueryEvents (single page, multi-page, limit cap, limit < page size, empty, context cancellation, API error, pagination params, sort, filter, fields, end_time, multi-service, pagination skip values), CountEvents (success, with filter, API error), DistinctEvents (success, empty, API error), constructors (base URL, no API key, transport sharing, auth header), ValidateService (valid single, valid multiple, invalid, partially invalid, empty segment), ParseTimeRange (hours, days, months, "last" prefix, RFC 3339, date-only, invalid, "last 1h")
+- Files changed:
+  - `.chief/prds/main/prd.json` — marked US-037 as complete
+- **Learnings for future iterations:**
+  - Directory Insights uses its own base URL (`https://console.jumpcloud.com/insights/directory/v1`) — distinct from V1 and V2
+  - Insights uses POST-based queries where all params go in the request body (not URL query params like V1/V2)
+  - Insights responses are bare JSON arrays (like V2) — pagination stops when page returns fewer items than page size
+  - `InsightsClient` embeds `*Client` (same as V1/V2) and reuses the full transport chain (auth, logging, retry)
+  - `insightsNowFunc` var enables deterministic testing of relative time parsing — same pattern as `nowFunc` in OAuth
+  - `ParseTimeRange()` handles: "24h", "7d", "30d", "1m", "last 24h", "2006-01-02", RFC 3339 — useful for UX
+  - Service validation at the API client layer ensures consistent validation for both CLI commands and MCP tools
+  - Three endpoints: `/events` (query), `/events/count` (aggregate count), `/events/distinct` (unique field values)
+  - `InsightsQuery.Limit` is the raw API body field; `InsightsQueryOptions.Limit` controls client-side pagination — don't confuse them
 ---
