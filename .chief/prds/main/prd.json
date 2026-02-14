@@ -613,7 +613,8 @@
         "Standard output formats and filtering supported"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 Policies API: GET /api/v2/policies, GET /api/v2/policies/{id}, GET /api/v2/policies/{id}/policystatuses.",
       "dependsOn": ["US-023", "US-018"]
     },

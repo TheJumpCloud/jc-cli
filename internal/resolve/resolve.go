@@ -101,6 +101,14 @@ var CommandConfig = ResourceConfig{
 	IDField:      "_id",
 }
 
+// PolicyConfig is the resolution config for JumpCloud policies (V2 API).
+var PolicyConfig = ResourceConfig{
+	CacheKey:     "policies",
+	ListEndpoint: "/policies",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
 //
 // Resolution order:

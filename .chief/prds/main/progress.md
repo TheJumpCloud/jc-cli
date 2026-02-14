@@ -39,6 +39,9 @@
 - V2 `Create()` accepts 200, 201, and 204 (No Content) — needed for membership endpoints
 - Membership tests need both V1+V2 clients: `setupMembershipTest()` creates combined server, sets cache dir to temp
 - `asAPIError()` in groups.go for clean `errors.As()` type assertion on API errors
+- Policies use V2 API: `PolicyConfig{CacheKey:"policies", ListEndpoint:"/policies", NameField:"name", IDField:"id"}`
+- Policy default fields: id, name, template, os; Result default fields: id, policyID, systemID, status, startedAt, endedAt
+- Policy results: V2 nested endpoint `/policies/{id}/policystatuses` — flat objects, no flattening needed
 
 ---
 
@@ -272,4 +275,23 @@
   - Command results have nested structure: `response.data.output` (stdout) and `response.error` (stderr) — flatten before output
   - Target resolution pattern: try specific (device) then general (group) with explicit verification for raw IDs
   - `V1Client.Get()` returns `*api.APIError` on 404 — use as existence check for ID verification
+---
+
+## 2026-02-13 - US-029
+- Implemented Policies List, Get, and Results commands using V2 API
+- Files created:
+  - `internal/cmd/policies.go` — `newPoliciesCmd()` parent + `newPoliciesListCmd()` + `newPoliciesGetCmd()` + `newPoliciesResultsCmd()`; `resolvePolicy()` using V2Resolver with `PolicyConfig`; filter/sort/limit support on list; policy results via `/policies/{id}/policystatuses`
+  - `internal/cmd/policies_test.go` — 26 tests covering: list (JSON, table, CSV, IDs, quiet, footer, empty, filter, sort, invalid filter, limit), get (by ID, by name, not found, missing arg), results (JSON, table, footer, limit, by name, missing arg, empty), help structure (subcommands, list flags, results flags, root includes policies)
+- Files changed:
+  - `internal/resolve/resolve.go` — added `PolicyConfig` resource config (CacheKey: "policies", ListEndpoint: "/policies", NameField: "name", IDField: "id")
+  - `internal/cmd/root.go` — registered `newPoliciesCmd()` in root command
+  - `.chief/prds/main/prd.json` — marked US-029 as complete
+- **Learnings for future iterations:**
+  - Policies use V2 API (`/api/v2/policies`) — mirrors the groups pattern exactly (V2 client, V2 resolver, bare JSON arrays, Link header pagination)
+  - Policy results are a nested V2 endpoint: `GET /api/v2/policies/{id}/policystatuses` — V2 client handles this transparently
+  - Policy statuses are flat objects (unlike command results which needed field flattening)
+  - `PolicyConfig` uses `id` (not `_id`) as the ID field — same V2 pattern as groups
+  - Test server for policystatuses routes via `strings.SplitN(rest, "/", 2)` — same pattern as command run/results test servers
+  - Policy default fields: id, name, template, os; Result default fields: id, policyID, systemID, status, startedAt, endedAt
+  - Adding a new V2 resource command is now a well-established pattern: resource config in resolve, command file in cmd, register in root
 ---
