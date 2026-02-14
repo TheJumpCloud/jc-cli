@@ -101,6 +101,14 @@ var CommandConfig = ResourceConfig{
 	IDField:      "_id",
 }
 
+// ApplicationConfig is the resolution config for JumpCloud SSO applications (V1 API).
+var ApplicationConfig = ResourceConfig{
+	CacheKey:     "applications",
+	ListEndpoint: "/applications",
+	NameField:    "name",
+	IDField:      "_id",
+}
+
 // PolicyConfig is the resolution config for JumpCloud policies (V2 API).
 var PolicyConfig = ResourceConfig{
 	CacheKey:     "policies",

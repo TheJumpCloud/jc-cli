@@ -631,7 +631,8 @@
         "Standard output formats and filtering supported"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Applications span V1 (GET /api/applications) and V2 graph associations.",
       "dependsOn": ["US-023", "US-018"]
     },

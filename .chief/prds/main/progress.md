@@ -42,6 +42,12 @@
 - Policies use V2 API: `PolicyConfig{CacheKey:"policies", ListEndpoint:"/policies", NameField:"name", IDField:"id"}`
 - Policy default fields: id, name, template, os; Result default fields: id, policyID, systemID, status, startedAt, endedAt
 - Policy results: V2 nested endpoint `/policies/{id}/policystatuses` — flat objects, no flattening needed
+- Apps use V1 API for list/get (`/applications`), V2 graph for associations (`/applications/{id}/associations?targets=user_group`)
+- `ApplicationConfig{CacheKey:"applications", ListEndpoint:"/applications", NameField:"name", IDField:"_id"}`
+- App default fields: _id, name, displayLabel, ssoType, status
+- V2 graph `?targets=<type>` param: embed in endpoint URL so `buildV2ListURL` preserves it
+- `json.Marshal(nil slice)` → `null`; initialize to empty slice `[]T{}` for consistent `[]` output
+- Combined V1+V2 test servers: one httptest.Server handles both V1 wrapped responses and V2 bare arrays
 
 ---
 
@@ -294,4 +300,23 @@
   - Test server for policystatuses routes via `strings.SplitN(rest, "/", 2)` — same pattern as command run/results test servers
   - Policy default fields: id, name, template, os; Result default fields: id, policyID, systemID, status, startedAt, endedAt
   - Adding a new V2 resource command is now a well-established pattern: resource config in resolve, command file in cmd, register in root
+---
+
+## 2026-02-13 - US-030
+- Implemented Apps List, Get, and Associations commands using V1 + V2 APIs
+- Files created:
+  - `internal/cmd/apps.go` — `newAppsCmd()` parent + `newAppsListCmd()` + `newAppsGetCmd()`; `resolveApp()` using V1 Resolver with `ApplicationConfig`; `enrichAppWithAssociations()` merges V2 graph associations into V1 app data; filter/sort/limit support on list
+  - `internal/cmd/apps_test.go` — 20 tests covering: list (JSON, table, CSV, IDs, quiet, footer, empty, filter, sort, invalid filter, limit), get (by ID, by name, includes associations, no associations returns empty arrays, not found, missing arg), help structure (subcommands, list flags, root includes apps)
+- Files changed:
+  - `internal/resolve/resolve.go` — added `ApplicationConfig` resource config (CacheKey: "applications", ListEndpoint: "/applications", NameField: "name", IDField: "_id")
+  - `internal/cmd/root.go` — registered `newAppsCmd()` in root command
+  - `.chief/prds/main/prd.json` — marked US-030 as complete
+- **Learnings for future iterations:**
+  - Applications are a hybrid V1+V2 command: list/get via V1 (`/api/applications`), associations via V2 graph API (`/api/v2/applications/{id}/associations?targets=user_group`)
+  - V2 graph associations use `?targets=<type>` as a direct query param — embed in endpoint URL string so `buildV2ListURL` preserves it alongside `limit`
+  - `json.Marshal([]json.RawMessage(nil))` produces `null` — must initialize to `[]json.RawMessage{}` for consistent `[]` JSON output
+  - `enrichAppWithAssociations()` pattern: unmarshal app into `map[string]json.RawMessage`, add association arrays, re-marshal — keeps app data resource-agnostic
+  - App default fields: `_id`, `name`, `displayLabel`, `ssoType`, `status`
+  - Combined V1+V2 test server: single httptest.Server handles both V1 response format (`{"results":..., "totalCount":...}`) and V2 bare arrays based on URL path
+  - `setupAppsTest(t, apps, associations)` overrides both V1 and V2 clients to point at the combined server
 ---
