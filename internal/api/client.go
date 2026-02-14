@@ -36,9 +36,11 @@ var logWriter io.Writer = os.Stderr
 
 // Client is an authenticated JumpCloud API client.
 type Client struct {
-	HTTP    *http.Client
-	BaseURL string
-	apiKey  string
+	HTTP       *http.Client
+	BaseURL    string
+	apiKey     string
+	AuthMethod string // "api_key" or "service_account"
+	TokenCache *TokenCache
 }
 
 // NewClient creates a new API client using the currently configured API key.
@@ -68,9 +70,53 @@ func NewClientWithKey(apiKey string) *Client {
 			Timeout:   DefaultTimeout,
 			Transport: transport,
 		},
-		BaseURL: BaseURL,
-		apiKey:  apiKey,
+		BaseURL:    BaseURL,
+		apiKey:     apiKey,
+		AuthMethod: "api_key",
 	}
+}
+
+// NewClientWithToken creates a new API client that authenticates using OAuth 2.0
+// bearer tokens obtained from a service account's client credentials.
+// Tokens are cached and auto-refreshed on expiry.
+func NewClientWithToken(tc *TokenCache) *Client {
+	base := baseTransport()
+
+	var transport http.RoundTripper = newRetryTransport(base)
+	transport = &loggingTransport{base: transport}
+	transport = &bearerAuthTransport{tokenCache: tc, base: transport}
+
+	return &Client{
+		HTTP: &http.Client{
+			Timeout:   DefaultTimeout,
+			Transport: transport,
+		},
+		BaseURL:    BaseURL,
+		AuthMethod: "service_account",
+		TokenCache: tc,
+	}
+}
+
+// bearerAuthTransport is an http.RoundTripper that injects a Bearer token
+// from the TokenCache into every outgoing request.
+type bearerAuthTransport struct {
+	tokenCache *TokenCache
+	base       http.RoundTripper
+}
+
+func (t *bearerAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := t.tokenCache.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain bearer token: %w", err)
+	}
+
+	r := req.Clone(req.Context())
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "application/json")
+	r.Header.Set("User-Agent", userAgent())
+
+	return t.base.RoundTrip(r)
 }
 
 // baseTransport returns an http.Transport with TLS 1.2+ enforcement and
@@ -172,9 +218,22 @@ func (t *loggingTransport) logRequestDebug(req *http.Request) {
 			if strings.EqualFold(name, "x-api-key") {
 				v = RedactKey(t.apiKey)
 			}
+			if strings.EqualFold(name, "authorization") {
+				v = redactAuthHeader(v)
+			}
 			fmt.Fprintf(logWriter, "    %s: %s\n", name, v)
 		}
 	}
+}
+
+// redactAuthHeader redacts the token in an Authorization header value.
+// "Bearer abc...xyz" becomes "Bearer ****xyz".
+func redactAuthHeader(value string) string {
+	parts := strings.SplitN(value, " ", 2)
+	if len(parts) != 2 {
+		return "****"
+	}
+	return parts[0] + " " + RedactKey(parts[1])
 }
 
 func (t *loggingTransport) logResponseDebug(resp *http.Response) {

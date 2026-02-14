@@ -172,6 +172,42 @@ func APIKey() string {
 	return resolved
 }
 
+// AuthMethod returns the authentication method for the active profile.
+// Returns "service_account" if configured, otherwise "api_key" (default).
+func AuthMethod() string {
+	profile := ActiveProfile()
+	method := viper.GetString("profiles." + profile + ".auth_method")
+	if method == "service_account" {
+		return "service_account"
+	}
+	return "api_key"
+}
+
+// ClientID returns the OAuth 2.0 client ID for the active profile.
+func ClientID() string {
+	profile := ActiveProfile()
+	return viper.GetString("profiles." + profile + ".client_id")
+}
+
+// ClientSecret returns the OAuth 2.0 client secret for the active profile.
+// If the config value is a keychain reference, the actual secret is retrieved
+// from the OS keychain transparently.
+func ClientSecret() string {
+	profile := ActiveProfile()
+	value := viper.GetString("profiles." + profile + ".client_secret")
+	if value == "" {
+		return ""
+	}
+
+	// Resolve keychain references transparently.
+	resolved, err := keychain.Resolve(value)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not retrieve client secret from keychain: %v\n", err)
+		return ""
+	}
+	return resolved
+}
+
 // OrgID returns the organization ID.
 // Priority: JC_ORG_ID env var > active profile's org_id in config.
 func OrgID() string {

@@ -750,7 +750,8 @@
         "Expired token with failed refresh produces clear re-authentication message"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "OAuth 2.0 is JumpCloud's newer auth method. Service accounts provide scoped access and credential rotation. Client secret stored in keychain like API keys.",
       "dependsOn": ["US-006", "US-005"]
     },

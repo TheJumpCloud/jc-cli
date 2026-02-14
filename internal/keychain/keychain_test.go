@@ -248,3 +248,92 @@ func TestErrorBackend(t *testing.T) {
 		t.Fatal("Delete() should return error with error backend")
 	}
 }
+
+// --- Client Secret Tests (US-036) ---
+
+func TestSetAndGetClientSecret(t *testing.T) {
+	keyring.MockInit()
+
+	if err := SetClientSecret("default", "my-client-secret"); err != nil {
+		t.Fatalf("SetClientSecret() error: %v", err)
+	}
+
+	got, err := GetClientSecret("default")
+	if err != nil {
+		t.Fatalf("GetClientSecret() error: %v", err)
+	}
+	if got != "my-client-secret" {
+		t.Errorf("GetClientSecret() = %q, want %q", got, "my-client-secret")
+	}
+}
+
+func TestGetClientSecretNonExistent(t *testing.T) {
+	keyring.MockInit()
+
+	_, err := GetClientSecret("no-such-profile")
+	if err == nil {
+		t.Fatal("GetClientSecret() should return error for non-existent profile")
+	}
+}
+
+func TestDeleteClientSecret(t *testing.T) {
+	keyring.MockInit()
+
+	if err := SetClientSecret("myprofile", "secret-123"); err != nil {
+		t.Fatalf("SetClientSecret() error: %v", err)
+	}
+
+	if err := DeleteClientSecret("myprofile"); err != nil {
+		t.Fatalf("DeleteClientSecret() error: %v", err)
+	}
+
+	_, err := GetClientSecret("myprofile")
+	if err == nil {
+		t.Fatal("GetClientSecret() should return error after DeleteClientSecret()")
+	}
+}
+
+func TestClientSecretURI(t *testing.T) {
+	tests := []struct {
+		profile string
+		want    string
+	}{
+		{"default", "keychain://jc/default:client_secret"},
+		{"production", "keychain://jc/production:client_secret"},
+	}
+	for _, tt := range tests {
+		got := ClientSecretURI(tt.profile)
+		if got != tt.want {
+			t.Errorf("ClientSecretURI(%q) = %q, want %q", tt.profile, got, tt.want)
+		}
+	}
+}
+
+func TestClientSecretIsolatedFromAPIKey(t *testing.T) {
+	keyring.MockInit()
+
+	// Set both API key and client secret for the same profile.
+	if err := Set("default", "api-key-value"); err != nil {
+		t.Fatalf("Set() error: %v", err)
+	}
+	if err := SetClientSecret("default", "client-secret-value"); err != nil {
+		t.Fatalf("SetClientSecret() error: %v", err)
+	}
+
+	// Verify they don't collide.
+	apiKey, err := Get("default")
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+	if apiKey != "api-key-value" {
+		t.Errorf("Get() = %q, want %q", apiKey, "api-key-value")
+	}
+
+	clientSecret, err := GetClientSecret("default")
+	if err != nil {
+		t.Fatalf("GetClientSecret() error: %v", err)
+	}
+	if clientSecret != "client-secret-value" {
+		t.Errorf("GetClientSecret() = %q, want %q", clientSecret, "client-secret-value")
+	}
+}

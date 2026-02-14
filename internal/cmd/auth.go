@@ -88,21 +88,31 @@ func newAuthCmd() *cobra.Command {
 
 func newAuthLoginCmd() *cobra.Command {
 	var profileFlag string
+	var serviceAccountFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with JumpCloud",
-		Long: `Authenticate with JumpCloud by providing an API key.
+		Long: `Authenticate with JumpCloud by providing an API key or service account credentials.
 
-The API key is validated against the JumpCloud API, stored in the OS keychain,
-and a reference is saved to the config file. If the keychain is unavailable,
-the key is stored in the config file with a warning.`,
+For API key authentication (default):
+  The API key is validated, stored in the OS keychain, and a reference is saved
+  to the config file.
+
+For service account authentication (--service-account):
+  Prompts for client ID and client secret (OAuth 2.0 client credentials).
+  The client secret is stored in the OS keychain. A bearer token is obtained
+  from the OAuth token endpoint and used for subsequent API calls.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if serviceAccountFlag {
+				return runAuthLoginServiceAccount(cmd, profileFlag, defaultInput)
+			}
 			return runAuthLogin(cmd, profileFlag, defaultInput)
 		},
 	}
 
 	cmd.Flags().StringVar(&profileFlag, "profile", "", "Profile name to create or update (default: active profile)")
+	cmd.Flags().BoolVar(&serviceAccountFlag, "service-account", false, "Authenticate using OAuth 2.0 service account (client ID + client secret)")
 
 	return cmd
 }
@@ -187,6 +197,121 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 	return nil
 }
 
+// newOAuthClient creates a bearer-token-authenticated API client. Overridable in tests.
+var newOAuthClient = func(tc *api.TokenCache) *api.Client {
+	return api.NewClientWithToken(tc)
+}
+
+func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input InputReader) error {
+	profile := profileFlag
+	if profile == "" {
+		profile = config.ActiveProfile()
+	}
+
+	// Check if running non-interactively.
+	if viper.GetBool("non-interactive") {
+		return fmt.Errorf("auth login --service-account requires interactive input. Remove --non-interactive")
+	}
+
+	// Prompt for client ID.
+	fmt.Fprint(cmd.ErrOrStderr(), "Enter client ID: ")
+	clientID, err := input.ReadLine()
+	if err != nil {
+		return fmt.Errorf("failed to read client ID: %w", err)
+	}
+	if clientID == "" {
+		return fmt.Errorf("client ID cannot be empty")
+	}
+
+	// Prompt for client secret with masked input.
+	fmt.Fprint(cmd.ErrOrStderr(), "Enter client secret: ")
+	clientSecret, err := input.ReadAPIKey()
+	fmt.Fprintln(cmd.ErrOrStderr()) // newline after masked input
+	if err != nil {
+		return err
+	}
+	if clientSecret == "" {
+		return fmt.Errorf("client secret cannot be empty")
+	}
+
+	// Validate by obtaining a token.
+	fmt.Fprintf(cmd.ErrOrStderr(), "Obtaining bearer token...")
+	tc := api.NewTokenCache(clientID, clientSecret)
+	_, err = tc.Token()
+	if err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr())
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), " OK\n")
+
+	// Validate the token by calling GET /api/organizations.
+	fmt.Fprintf(cmd.ErrOrStderr(), "Validating credentials...")
+	client := newOAuthClient(tc)
+	org, err := client.ValidateAPIKey()
+	if err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr())
+		return fmt.Errorf("token validation failed: %w", err)
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), " OK\n")
+
+	// Store the client secret in the keychain.
+	keychainAvailable := keychain.IsAvailable()
+	if keychainAvailable {
+		if err := keychain.SetClientSecret(profile, clientSecret); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not store client secret in keychain: %v\n", err)
+			// Fall back to plaintext in config.
+			if err := config.SetProfileField(profile, "client_secret", clientSecret); err != nil {
+				return fmt.Errorf("failed to save client secret to config: %w", err)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: client secret stored as plaintext in config file\n")
+		} else {
+			// Write keychain reference to config.
+			ref := keychain.ClientSecretURI(profile)
+			if err := config.SetProfileField(profile, "client_secret", ref); err != nil {
+				return fmt.Errorf("failed to save keychain reference to config: %w", err)
+			}
+		}
+	} else {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: OS keychain unavailable. Storing client secret as plaintext in config\n")
+		if err := config.SetProfileField(profile, "client_secret", clientSecret); err != nil {
+			return fmt.Errorf("failed to save client secret to config: %w", err)
+		}
+	}
+
+	// Save auth method and client ID to config.
+	if err := config.SetProfileField(profile, "auth_method", "service_account"); err != nil {
+		return fmt.Errorf("failed to save auth method to config: %w", err)
+	}
+	if err := config.SetProfileField(profile, "client_id", clientID); err != nil {
+		return fmt.Errorf("failed to save client ID to config: %w", err)
+	}
+
+	// Clear any leftover api_key field.
+	_ = config.SetProfileField(profile, "api_key", "")
+
+	// Set org_id if not already set.
+	existingOrgID := config.OrgID()
+	if existingOrgID == "" && org.ID != "" {
+		if err := config.SetProfileField(profile, "org_id", org.ID); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not save org ID to config: %v\n", err)
+		}
+	}
+
+	// Set as active profile if it's not already.
+	if config.ActiveProfile() != profile {
+		if err := config.SetActiveProfile(profile); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not set active profile: %v\n", err)
+		}
+	}
+
+	orgName := org.DisplayName
+	if orgName == "" {
+		orgName = org.ID
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s via service account (profile: %s)\n", orgName, profile)
+	return nil
+}
+
 func newAuthStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -199,23 +324,45 @@ func newAuthStatusCmd() *cobra.Command {
 
 func runAuthStatus(cmd *cobra.Command, args []string) error {
 	profile := config.ActiveProfile()
-	apiKey := config.APIKey()
+	authMethod := config.AuthMethod()
 	outputFmt := config.Output()
 
 	status := authStatusInfo{
 		Authenticated: false,
 		Profile:       profile,
+		AuthMethod:    authMethod,
 	}
 
-	if apiKey != "" {
-		// Try to validate.
-		client := newAPIClient(apiKey)
-		org, err := client.ValidateAPIKey()
-		if err == nil {
-			status.Authenticated = true
-			status.OrgName = org.DisplayName
-			status.OrgID = org.ID
-			status.APIKeyRedacted = api.RedactKey(apiKey)
+	if authMethod == "service_account" {
+		clientID := config.ClientID()
+		clientSecret := config.ClientSecret()
+
+		if clientID != "" && clientSecret != "" {
+			tc := api.NewTokenCache(clientID, clientSecret)
+			client := newOAuthClient(tc)
+			org, err := client.ValidateAPIKey()
+			if err == nil {
+				status.Authenticated = true
+				status.OrgName = org.DisplayName
+				status.OrgID = org.ID
+				status.ClientID = clientID
+				expiresAt := tc.ExpiresAt()
+				if !expiresAt.IsZero() {
+					status.TokenExpiry = expiresAt.UTC().Format("2006-01-02T15:04:05Z")
+				}
+			}
+		}
+	} else {
+		apiKey := config.APIKey()
+		if apiKey != "" {
+			client := newAPIClient(apiKey)
+			org, err := client.ValidateAPIKey()
+			if err == nil {
+				status.Authenticated = true
+				status.OrgName = org.DisplayName
+				status.OrgID = org.ID
+				status.APIKeyRedacted = api.RedactKey(apiKey)
+			}
 		}
 	}
 
@@ -229,9 +376,17 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	if status.Authenticated {
 		fmt.Fprintf(cmd.OutOrStdout(), "Authenticated: yes\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "Profile:       %s\n", status.Profile)
+		fmt.Fprintf(cmd.OutOrStdout(), "Auth Method:   %s\n", status.AuthMethod)
 		fmt.Fprintf(cmd.OutOrStdout(), "Org Name:      %s\n", status.OrgName)
 		fmt.Fprintf(cmd.OutOrStdout(), "Org ID:        %s\n", status.OrgID)
-		fmt.Fprintf(cmd.OutOrStdout(), "API Key:       %s\n", status.APIKeyRedacted)
+		if status.AuthMethod == "service_account" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Client ID:     %s\n", status.ClientID)
+			if status.TokenExpiry != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Token Expiry:  %s\n", status.TokenExpiry)
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "API Key:       %s\n", status.APIKeyRedacted)
+		}
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Authenticated: no\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "Profile:       %s\n", status.Profile)
@@ -243,11 +398,14 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 }
 
 type authStatusInfo struct {
-	Authenticated bool   `json:"authenticated"`
-	Profile       string `json:"profile"`
-	OrgName       string `json:"org_name,omitempty"`
-	OrgID         string `json:"org_id,omitempty"`
+	Authenticated  bool   `json:"authenticated"`
+	Profile        string `json:"profile"`
+	AuthMethod     string `json:"auth_method"`
+	OrgName        string `json:"org_name,omitempty"`
+	OrgID          string `json:"org_id,omitempty"`
 	APIKeyRedacted string `json:"api_key,omitempty"`
+	ClientID       string `json:"client_id,omitempty"`
+	TokenExpiry    string `json:"token_expiry,omitempty"`
 }
 
 func newAuthLogoutCmd() *cobra.Command {
@@ -262,16 +420,30 @@ func newAuthLogoutCmd() *cobra.Command {
 
 func runAuthLogout(cmd *cobra.Command, args []string) error {
 	profile := config.ActiveProfile()
+	authMethod := config.AuthMethod()
 
-	// Try to remove from keychain.
-	if err := keychain.Delete(profile); err != nil {
-		// Not an error if key wasn't in keychain.
-		fmt.Fprintf(cmd.ErrOrStderr(), "Note: %v\n", err)
-	}
+	if authMethod == "service_account" {
+		// Remove client secret from keychain.
+		if err := keychain.DeleteClientSecret(profile); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Note: %v\n", err)
+		}
 
-	// Clear profile credentials in config.
-	if err := config.SetProfileField(profile, "api_key", ""); err != nil {
-		return fmt.Errorf("failed to clear API key from config: %w", err)
+		// Clear service account fields from config.
+		_ = config.SetProfileField(profile, "auth_method", "")
+		_ = config.SetProfileField(profile, "client_id", "")
+		if err := config.SetProfileField(profile, "client_secret", ""); err != nil {
+			return fmt.Errorf("failed to clear client secret from config: %w", err)
+		}
+	} else {
+		// Try to remove API key from keychain.
+		if err := keychain.Delete(profile); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Note: %v\n", err)
+		}
+
+		// Clear profile credentials in config.
+		if err := config.SetProfileField(profile, "api_key", ""); err != nil {
+			return fmt.Errorf("failed to clear API key from config: %w", err)
+		}
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Logged out (profile: %s)\n", profile)

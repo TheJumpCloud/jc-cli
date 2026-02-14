@@ -88,3 +88,37 @@ func Resolve(value string) (string, error) {
 	}
 	return Get(profile)
 }
+
+// SetClientSecret stores an OAuth client secret in the OS keychain for the given profile.
+// Uses a different account name (<profile>:client_secret) to avoid collisions with API keys.
+func SetClientSecret(profile, secret string) error {
+	account := profile + ":client_secret"
+	if err := keyring.Set(ServiceName, account, secret); err != nil {
+		return fmt.Errorf("failed to store client secret in keychain for profile %q: %w", profile, err)
+	}
+	return nil
+}
+
+// GetClientSecret retrieves an OAuth client secret from the OS keychain for the given profile.
+func GetClientSecret(profile string) (string, error) {
+	account := profile + ":client_secret"
+	secret, err := keyring.Get(ServiceName, account)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve client secret from keychain for profile %q: %w", profile, err)
+	}
+	return secret, nil
+}
+
+// DeleteClientSecret removes an OAuth client secret from the OS keychain for the given profile.
+func DeleteClientSecret(profile string) error {
+	account := profile + ":client_secret"
+	if err := keyring.Delete(ServiceName, account); err != nil {
+		return fmt.Errorf("failed to remove client secret from keychain for profile %q: %w", profile, err)
+	}
+	return nil
+}
+
+// ClientSecretURI returns the keychain reference URI for a profile's client secret.
+func ClientSecretURI(profile string) string {
+	return URIPrefix + profile + ":client_secret"
+}

@@ -1158,3 +1158,534 @@ profiles:
 		}
 	}
 }
+
+// --- Service Account Authentication Tests (US-036) ---
+
+// startMockOAuthServer creates a mock OAuth token server + JumpCloud API server.
+// The OAuth server issues tokens; the JC server validates them.
+func startMockOAuthAndJCServer(t *testing.T, orgID, orgName string) (oauthURL, jcURL string) {
+	t.Helper()
+
+	// OAuth token server.
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Basic ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"invalid_client"}`))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "test-bearer-token-9999",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	t.Cleanup(func() { oauthServer.Close() })
+
+	// JumpCloud API server (validates bearer tokens).
+	jcServer := startMockJCServer(t, orgID, orgName, http.StatusOK)
+	t.Cleanup(func() { jcServer.Close() })
+
+	return oauthServer.URL, jcServer.URL
+}
+
+// overrideOAuthURL sets the OAuth token URL to a test server.
+func overrideOAuthURL(t *testing.T, url string) {
+	t.Helper()
+	orig := api.SetOAuthTokenURL(url)
+	t.Cleanup(func() { api.SetOAuthTokenURL(orig) })
+}
+
+// overrideOAuthClient overrides newOAuthClient to point at the test JC server.
+func overrideOAuthClient(t *testing.T, serverURL string) {
+	t.Helper()
+	orig := newOAuthClient
+	t.Cleanup(func() { newOAuthClient = orig })
+	newOAuthClient = func(tc *api.TokenCache) *api.Client {
+		c := api.NewClientWithToken(tc)
+		c.BaseURL = serverURL
+		return c
+	}
+}
+
+func TestAuthLogin_ServiceAccount_Success(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	oauthURL, jcURL := startMockOAuthAndJCServer(t, "org-sa-123", "SA Test Org")
+	overrideOAuthURL(t, oauthURL)
+	overrideOAuthClient(t, jcURL)
+
+	input := &mockInput{
+		line:   "test-client-id-abc",
+		apiKey: "test-client-secret-xyz",
+	}
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err != nil {
+		t.Fatalf("runAuthLoginServiceAccount() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "SA Test Org") {
+		t.Errorf("expected output to contain org name 'SA Test Org', got %q", got)
+	}
+	if !strings.Contains(got, "service account") {
+		t.Errorf("expected output to mention 'service account', got %q", got)
+	}
+	if !strings.Contains(got, "profile: default") {
+		t.Errorf("expected output to contain 'profile: default', got %q", got)
+	}
+
+	// Verify config was updated.
+	cfgData, _ := os.ReadFile(cfgPath)
+	cfgStr := string(cfgData)
+	if !strings.Contains(cfgStr, "service_account") {
+		t.Errorf("config should contain auth_method: service_account, got:\n%s", cfgStr)
+	}
+	if !strings.Contains(cfgStr, "test-client-id-abc") {
+		t.Errorf("config should contain client_id, got:\n%s", cfgStr)
+	}
+
+	// Verify client secret was stored in keychain.
+	stored, err := keyring.Get("jc", "default:client_secret")
+	if err != nil {
+		t.Fatalf("expected client secret in keychain: %v", err)
+	}
+	if stored != "test-client-secret-xyz" {
+		t.Errorf("keychain value = %q, want %q", stored, "test-client-secret-xyz")
+	}
+}
+
+func TestAuthLogin_ServiceAccount_WithProfile(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	oauthURL, jcURL := startMockOAuthAndJCServer(t, "org-sa-456", "SA Profile Org")
+	overrideOAuthURL(t, oauthURL)
+	overrideOAuthClient(t, jcURL)
+
+	input := &mockInput{
+		line:   "profile-client-id",
+		apiKey: "profile-client-secret",
+	}
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLoginServiceAccount(cmd, "automation", input)
+	if err != nil {
+		t.Fatalf("runAuthLoginServiceAccount() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "profile: automation") {
+		t.Errorf("expected output to mention 'profile: automation', got %q", got)
+	}
+
+	// Verify client secret stored under the named profile.
+	stored, err := keyring.Get("jc", "automation:client_secret")
+	if err != nil {
+		t.Fatalf("expected client secret in keychain for profile 'automation': %v", err)
+	}
+	if stored != "profile-client-secret" {
+		t.Errorf("keychain value = %q, want %q", stored, "profile-client-secret")
+	}
+}
+
+func TestAuthLogin_ServiceAccount_EmptyClientID(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	input := &mockInput{line: "", apiKey: "secret"}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err == nil {
+		t.Fatal("expected error for empty client ID")
+	}
+	if !strings.Contains(err.Error(), "client ID cannot be empty") {
+		t.Errorf("error should mention 'client ID cannot be empty', got: %v", err)
+	}
+}
+
+func TestAuthLogin_ServiceAccount_EmptyClientSecret(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	input := &mockInput{line: "some-id", apiKey: ""}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err == nil {
+		t.Fatal("expected error for empty client secret")
+	}
+	if !strings.Contains(err.Error(), "client secret cannot be empty") {
+		t.Errorf("error should mention 'client secret cannot be empty', got: %v", err)
+	}
+}
+
+func TestAuthLogin_ServiceAccount_InvalidCredentials(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	// OAuth server that rejects credentials.
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"invalid_client"}`))
+	}))
+	defer oauthServer.Close()
+	overrideOAuthURL(t, oauthServer.URL)
+
+	input := &mockInput{line: "bad-id", apiKey: "bad-secret"}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err == nil {
+		t.Fatal("expected error for invalid credentials")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") {
+		t.Errorf("error should mention 'authentication failed', got: %v", err)
+	}
+}
+
+func TestAuthLogin_ServiceAccount_NonInteractive(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	viper.Set("non-interactive", true)
+	defer viper.Set("non-interactive", false)
+
+	input := &mockInput{line: "id", apiKey: "secret"}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err == nil {
+		t.Fatal("expected error in non-interactive mode")
+	}
+	if !strings.Contains(err.Error(), "interactive input") {
+		t.Errorf("error should mention 'interactive input', got: %v", err)
+	}
+}
+
+func TestAuthLogin_ServiceAccountFlagInHelp(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"auth", "login", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "--service-account") {
+		t.Errorf("login help should mention --service-account flag, got %q", got)
+	}
+}
+
+// --- Auth Status with Service Account (US-036) ---
+
+func TestAuthStatus_ServiceAccount_Authenticated(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "sa-client-id-1234"
+    client_secret: ""
+    org_id: ""
+`)
+
+	oauthURL, jcURL := startMockOAuthAndJCServer(t, "org-sa-status", "SA Status Org")
+	overrideOAuthURL(t, oauthURL)
+	overrideOAuthClient(t, jcURL)
+
+	// Store client secret in keychain directly.
+	_ = keyring.Set("jc", "default:client_secret", "sa-secret-5678")
+	viper.Set("profiles.default.client_secret", "keychain://jc/default:client_secret")
+
+	viper.Set("defaults.output", "table")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthStatus(cmd, nil)
+	if err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Authenticated: yes") {
+		t.Errorf("expected 'Authenticated: yes', got %q", got)
+	}
+	if !strings.Contains(got, "service_account") {
+		t.Errorf("expected 'service_account' in output, got %q", got)
+	}
+	if !strings.Contains(got, "sa-client-id-1234") {
+		t.Errorf("expected client ID in output, got %q", got)
+	}
+	if !strings.Contains(got, "SA Status Org") {
+		t.Errorf("expected org name in output, got %q", got)
+	}
+}
+
+func TestAuthStatus_ServiceAccount_JSONOutput(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "json-sa-client"
+    client_secret: ""
+`)
+
+	oauthURL, jcURL := startMockOAuthAndJCServer(t, "org-json-sa", "JSON SA Org")
+	overrideOAuthURL(t, oauthURL)
+	overrideOAuthClient(t, jcURL)
+
+	_ = keyring.Set("jc", "default:client_secret", "json-sa-secret")
+	viper.Set("profiles.default.client_secret", "keychain://jc/default:client_secret")
+	viper.Set("defaults.output", "json")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthStatus(cmd, nil)
+	if err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	var status authStatusInfo
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nOutput: %s", err, stdout.String())
+	}
+
+	if !status.Authenticated {
+		t.Error("expected authenticated=true")
+	}
+	if status.AuthMethod != "service_account" {
+		t.Errorf("auth_method = %q, want %q", status.AuthMethod, "service_account")
+	}
+	if status.ClientID != "json-sa-client" {
+		t.Errorf("client_id = %q, want %q", status.ClientID, "json-sa-client")
+	}
+	if status.TokenExpiry == "" {
+		t.Error("expected token_expiry to be set")
+	}
+	if status.OrgID != "org-json-sa" {
+		t.Errorf("org_id = %q, want %q", status.OrgID, "org-json-sa")
+	}
+}
+
+// --- Auth Logout with Service Account (US-036) ---
+
+func TestAuthLogout_ServiceAccount(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "logout-sa-id"
+    client_secret: "keychain://jc/default:client_secret"
+    org_id: "org-123"
+`)
+
+	// Store client secret in keychain.
+	_ = keyring.Set("jc", "default:client_secret", "logout-sa-secret")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthLogout(cmd, nil)
+	if err != nil {
+		t.Fatalf("runAuthLogout() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Logged out") {
+		t.Errorf("expected 'Logged out' message, got %q", got)
+	}
+
+	// Verify client secret removed from keychain.
+	_, err = keyring.Get("jc", "default:client_secret")
+	if err == nil {
+		t.Error("expected client secret to be removed from keychain after logout")
+	}
+
+	// Verify config was cleared.
+	cfgData, _ := os.ReadFile(cfgPath)
+	cfgStr := string(cfgData)
+	if strings.Contains(cfgStr, "service_account") {
+		t.Errorf("config should not contain 'service_account' after logout, got:\n%s", cfgStr)
+	}
+	if strings.Contains(cfgStr, "logout-sa-id") {
+		t.Errorf("config should not contain client_id after logout, got:\n%s", cfgStr)
+	}
+}
+
+// --- Bearer Token Auth Transport Tests (US-036) ---
+
+func TestNewClientWithToken(t *testing.T) {
+	keyring.MockInit()
+
+	// Create a mock JC server that verifies Bearer auth.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"message":"missing bearer token"}`))
+			return
+		}
+
+		if r.URL.Path == "/organizations" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []map[string]interface{}{
+					{"_id": "org-bearer", "displayName": "Bearer Org"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Create a mock token server.
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "bearer-test-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	overrideOAuthURL(t, tokenServer.URL)
+
+	tc := api.NewTokenCache("test-id", "test-secret")
+	client := api.NewClientWithToken(tc)
+	client.BaseURL = ts.URL
+
+	org, err := client.ValidateAPIKey()
+	if err != nil {
+		t.Fatalf("ValidateAPIKey() error: %v", err)
+	}
+	if org.DisplayName != "Bearer Org" {
+		t.Errorf("org name = %q, want %q", org.DisplayName, "Bearer Org")
+	}
+}
+
+func TestAuthStatus_APIKey_ShowsAuthMethod(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+
+	ts := startMockJCServer(t, "org-api-method", "API Method Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	viper.Set("api_key", "api-method-key-1234")
+	viper.Set("defaults.output", "json")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthStatus(cmd, nil)
+	if err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	var status authStatusInfo
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if status.AuthMethod != "api_key" {
+		t.Errorf("auth_method = %q, want %q", status.AuthMethod, "api_key")
+	}
+}
+
+// --- Login via Root Command (US-036) ---
+
+func TestAuthLogin_ServiceAccount_ViaRootCommand(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"auth", "login", "--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "--service-account") {
+		t.Errorf("auth login help should show --service-account, got %q", got)
+	}
+	if !strings.Contains(got, "OAuth 2.0") {
+		t.Errorf("auth login help should mention OAuth 2.0, got %q", got)
+	}
+}

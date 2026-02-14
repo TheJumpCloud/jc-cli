@@ -1,4 +1,7 @@
 ## Codebase Patterns
+- OAuth 2.0: `TokenCache` caches bearer tokens with 30s pre-expiry refresh; `bearerAuthTransport` injects `Authorization: Bearer`; `oauthTokenURL` + `nowFunc` + `newOAuthClient` vars for test overrides
+- Client secret keychain: `<profile>:client_secret` account name avoids collision with API key stored under `<profile>`
+- Dual auth transport: `authTransport` (x-api-key) vs `bearerAuthTransport` (Bearer) — selected at client construction time, transparent to callers
 - Bulk operations: `parseBulkCSV()` → `rowToFields()` → `determineOperation()` → individual API calls with error accumulation; `bulkResult` tracks per-row outcomes
 - Resource commands follow pattern: `internal/cmd/<resource>.go` with `new<Resource>Cmd()` parent + `new<Resource>ListCmd()` / `new<Resource>GetCmd()` subcommands
 - Graph traversal: V2 `GET /{resource}/{id}/associations?targets={type}` — `graphSourceConfig` maps source types to endpoint prefixes + resolver closures
@@ -570,4 +573,37 @@
   - For create commands, plan checks go before API client creation entirely — no API calls needed. For delete/lock/unlock, we still resolve the ID and fetch the resource (read-only) to show meaningful target info in the plan.
   - The `ExitError{Code: plan.ExitCodePlan}` pattern (exit code 10) distinguishes plan mode from success (0), auth failure (3), and general errors (1).
   - Membership plan checks (`add-member`, `remove-member`) go before V2Client creation, so no membership records are created — validated by tests checking `len(records) == 0`.
+---
+
+## 2026-02-13 - US-036
+- What was implemented:
+  - `jc auth login --service-account` — interactive OAuth 2.0 login flow prompting for client ID (ReadLine) and client secret (masked ReadAPIKey)
+  - Token exchange via `POST https://admin-oauth.id.jumpcloud.com/oauth2/token` with Basic auth (base64 clientID:clientSecret), `grant_type=client_credentials`, `scope=api`
+  - `TokenCache` struct with thread-safe caching (mutex), 30-second pre-expiry refresh buffer, configurable `nowFunc` for test overrides
+  - `bearerAuthTransport` — new RoundTripper that injects `Authorization: Bearer <token>` instead of `x-api-key`; fetches/refreshes token transparently per-request
+  - Config profile stores `auth_method: service_account`, `client_id`, `client_secret` (keychain ref `keychain://jc/<profile>:client_secret`)
+  - `jc auth status` — shows auth_method, client_id, and token_expiry for service accounts; shows api_key (redacted) for API key auth
+  - `jc auth logout` — clears client_secret from keychain and removes auth_method/client_id/client_secret from config
+  - `authStatusInfo` struct updated with `AuthMethod`, `ClientID`, `TokenExpiry` fields for JSON output
+  - `redactAuthHeader()` function redacts Bearer tokens in `--debug` logging output
+  - `SetOAuthTokenURL()` exported function for cross-package test overrides
+  - `keychain.SetClientSecret()` / `GetClientSecret()` / `DeleteClientSecret()` — use `<profile>:client_secret` account name to avoid collision with API key entries
+- Files changed:
+  - internal/api/oauth.go — new TokenCache with Token(), ExpiresAt(), fetchToken(), SetOAuthTokenURL() (120 lines)
+  - internal/api/oauth_test.go — 10 tests: fetch success, caching, refresh on expiry, invalid/forbidden/server error, empty token, default expiry, zero before fetch, connection error
+  - internal/api/client.go — added AuthMethod/TokenCache fields to Client, NewClientWithToken(), bearerAuthTransport, redactAuthHeader()
+  - internal/cmd/auth.go — added --service-account flag, runAuthLoginServiceAccount(), newOAuthClient var, updated runAuthStatus() for service_account, updated runAuthLogout() for service_account, updated authStatusInfo struct
+  - internal/cmd/auth_test.go — 13 new tests: login success/profile/empty-id/empty-secret/invalid-creds/non-interactive/help-flag, status authenticated/json, logout, bearer transport, api_key auth_method, root command help
+  - internal/config/config.go — added AuthMethod(), ClientID(), ClientSecret() helper functions
+  - internal/keychain/keychain.go — added SetClientSecret(), GetClientSecret(), DeleteClientSecret(), ClientSecretURI()
+  - internal/keychain/keychain_test.go — 5 new tests: set/get, non-existent, delete, URI, isolation from API key
+  - .chief/prds/main/prd.json — marked US-036 passes
+- **Learnings for future iterations:**
+  - Dual transport pattern: `authTransport` (x-api-key) vs `bearerAuthTransport` (Authorization: Bearer) — divergence at transport layer keeps Client/V1Client/V2Client code unchanged
+  - `TokenCache` uses `nowFunc` var (same pattern as `retrySleepFn`, `logWriter`) for test-overridable time — allows simulating token expiry without real delays
+  - `oauthTokenURL` var for test overrides; exported `SetOAuthTokenURL()` for cross-package tests (cmd tests overriding api package state)
+  - Client secret uses `<profile>:client_secret` keychain account name to avoid collision with API key stored under `<profile>` account
+  - `loggingTransport` redacts both `x-api-key` and `Authorization` headers — Bearer tokens are just as sensitive as API keys
+  - `config.AuthMethod()` defaults to `api_key` when not set — backwards compatible, existing profiles work unchanged
+  - 30-second buffer before token expiry ensures proactive refresh, not reactive 401 handling
 ---

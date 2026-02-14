@@ -48,6 +48,10 @@
 - V2 graph `?targets=<type>` param: embed in endpoint URL so `buildV2ListURL` preserves it
 - `json.Marshal(nil slice)` → `null`; initialize to empty slice `[]T{}` for consistent `[]` output
 - Combined V1+V2 test servers: one httptest.Server handles both V1 wrapped responses and V2 bare arrays
+- Profile functions: `ProfileNames()` (sorted), `ProfileExists()`, `OverrideActiveProfile()` (in-memory only)
+- `--org` flag validation in `PersistentPreRunE`: validates profile exists, calls `OverrideActiveProfile()` before any subcommand runs
+- `completeProfileNames()` provides tab completion for profile names on `auth switch` and `--org` flag
+- Interactive picker: numbered list with `*` marker for active profile, `ReadLine()` for input
 
 ---
 
@@ -319,4 +323,22 @@
   - App default fields: `_id`, `name`, `displayLabel`, `ssoType`, `status`
   - Combined V1+V2 test server: single httptest.Server handles both V1 response format (`{"results":..., "totalCount":...}`) and V2 bare arrays based on URL path
   - `setupAppsTest(t, apps, associations)` overrides both V1 and V2 clients to point at the combined server
+---
+
+## 2026-02-13 - US-035
+- Implemented multi-org profile switching: `jc auth switch`, `--org` per-command override, tab completion
+- Files changed:
+  - `internal/config/config.go` — added `ProfileNames()`, `ProfileExists()`, `OverrideActiveProfile()` functions; added `sort` import
+  - `internal/config/config_test.go` — added 4 tests: ProfileNames multiple/empty, ProfileExists, OverrideActiveProfile
+  - `internal/cmd/auth.go` — added `newAuthSwitchCmd()` with interactive picker; `runAuthSwitch()` with explicit name and numbered selection; `completeProfileNames()` for tab completion; registered `switch` in auth parent command
+  - `internal/cmd/auth_test.go` — added 16 tests: switch explicit/nonexistent/interactive picker/active marker/invalid selection/non-numeric/non-interactive mode/no profiles/via root command, --org override/nonexistent/no-persist, help, tab completion for switch and --org flag
+  - `internal/cmd/root.go` — added `--org` override logic in `PersistentPreRunE` (validates profile exists, calls `OverrideActiveProfile`); registered `--org` flag completion with `completeProfileNames`
+  - `.chief/prds/main/prd.json` — marked US-035 as complete
+- **Learnings for future iterations:**
+  - `viper.GetStringMap("profiles")` returns lowercase keys from the YAML map — perfect for profile enumeration
+  - `OverrideActiveProfile()` uses `viper.Set()` (in-memory only) so `--org` doesn't persist to config file — clean separation between temporary and permanent profile changes
+  - `PersistentPreRunE` on root runs before all subcommands — ideal place for `--org` validation so it works universally
+  - `ValidArgsFunction` on `auth switch` cmd + `RegisterFlagCompletionFunc` on `--org` flag provides tab completion for both positional args and flag values
+  - Interactive picker uses numbered selection (1-N) with `*` marker for current active profile — simpler than full TUI, works in all terminals
+  - Auth status already showed profile name — no changes needed for that AC item
 ---
