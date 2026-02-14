@@ -61,6 +61,9 @@
 - `insightsNowFunc` var for test clock injection in time parsing
 - `newTestInsightsClient(serverURL)` test helper mirrors `newTestV1Client`/`newTestV2Client`
 - Distinct API returns bare scalars — `wrapScalarValues()` wraps them into `{"value": X}` objects for table/CSV/human output; JSON passes through unchanged
+- Saved searches stored in Viper under `insights.saved_searches.<name>` as map; `getSavedSearches()` manually type-asserts each field
+- `writeInsightsConfig` var for test override (no-op in tests); `setSavedSearch(t, name, fields)` pre-populates Viper for run/saved tests
+- `runInsightsRun()` delegates to `runInsightsQuery()` — saves raw flag values so `--last` recalculates from current time
 
 ---
 
@@ -383,4 +386,21 @@
   - Count uses `WriteSingle()` (single `{"count": N}` object); Distinct uses `WriteList()` (array of values) — matching the pattern of single-resource vs list commands
   - Both commands reuse `resolveInsightsTimeRange()` for identical `--last`/`--start`/`--end` flag handling — zero duplication
   - Count doesn't need `--limit`/`--sort` (returns single scalar); Distinct doesn't need them either (API doesn't support them for this endpoint)
+---
+
+## 2026-02-13 - US-040
+- Implemented Saved Searches for Insights: save, saved (list), and run subcommands
+- Files changed:
+  - `internal/cmd/insights.go` — added `savedSearch` type, `getSavedSearches()`, `savedSearchNames()`, `writeInsightsConfig` var; `newInsightsSaveCmd()` with full flag validation (service, time range, event type, limit, sort); `newInsightsSavedCmd()` listing saved searches as JSON/table/CSV; `newInsightsRunCmd()` executing saved queries with time-relative recalculation; registered all three in `newInsightsCmd()`; added `sort`, `strings`, `viper` imports
+  - `internal/cmd/insights_test.go` — added 25 new tests: save (basic, all flags, start/end, missing name, missing service, missing time range, invalid service, invalid time, last+start exclusive), saved/list (JSON, table, empty, footer, all fields), run (basic, event type filter, time-relative recalculated, not found, not found with available list, missing arg, table, start/end), help (includes save/saved/run, save flags, run usage); added `overrideWriteInsightsConfig`, `setSavedSearch` test helpers; added `viper` import
+  - `.chief/prds/main/prd.json` — marked US-040 as complete
+- **Learnings for future iterations:**
+  - Saved searches store raw flag values (e.g., `"last": "24h"`) not resolved timestamps — this lets `--last` recalculate from current time on each `run`
+  - `viper.GetStringMap()` returns `map[string]any` where nested maps are `map[string]any` — manual type assertion needed for each field
+  - Viper may return `float64` for numeric values read from config (YAML/JSON round-trip) — handle both `int` and `float64` in `getSavedSearches()`
+  - `writeInsightsConfig` as a var allows test override to no-op — avoids temp file management in save command tests
+  - `viper.WriteConfig()` is simpler than manual temp+rename when the config file path is already set
+  - `runInsightsRun` delegates to `runInsightsQuery()` — zero code duplication for execution logic
+  - `ValidArgsFunction` on `run` command enables tab completion for saved search names
+  - Non-existent saved search error includes list of available searches (when any exist) for discoverability
 ---

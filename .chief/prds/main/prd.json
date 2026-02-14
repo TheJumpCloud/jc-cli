@@ -832,7 +832,8 @@
         "Non-existent saved search name produces error with list of available searches"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Saved searches are local to the config file. Time-relative queries (--last 24h) are recalculated each run, not stored as absolute timestamps.",
       "dependsOn": ["US-038"]
     },

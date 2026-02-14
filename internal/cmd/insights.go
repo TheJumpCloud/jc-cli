@@ -3,9 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/output"
@@ -39,6 +42,9 @@ Time ranges can be specified as:
 	cmd.AddCommand(newInsightsQueryCmd())
 	cmd.AddCommand(newInsightsCountCmd())
 	cmd.AddCommand(newInsightsDistinctCmd())
+	cmd.AddCommand(newInsightsSaveCmd())
+	cmd.AddCommand(newInsightsSavedCmd())
+	cmd.AddCommand(newInsightsRunCmd())
 
 	return cmd
 }
@@ -370,4 +376,287 @@ func resolveInsightsTimeRange(last, start, end string) (startTime, endTime strin
 	}
 
 	return startTime, endTime, nil
+}
+
+// savedSearch represents a saved insights query stored in config.
+type savedSearch struct {
+	Service   string `json:"service" mapstructure:"service"`
+	Last      string `json:"last,omitempty" mapstructure:"last"`
+	Start     string `json:"start,omitempty" mapstructure:"start"`
+	End       string `json:"end,omitempty" mapstructure:"end"`
+	EventType string `json:"event_type,omitempty" mapstructure:"event_type"`
+	Limit     int    `json:"limit,omitempty" mapstructure:"limit"`
+	Sort      string `json:"sort,omitempty" mapstructure:"sort"`
+}
+
+// getSavedSearches returns the map of saved searches from config.
+func getSavedSearches() map[string]savedSearch {
+	raw := viper.GetStringMap("insights.saved_searches")
+	result := make(map[string]savedSearch, len(raw))
+	for name, v := range raw {
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		var s savedSearch
+		if sv, ok := m["service"].(string); ok {
+			s.Service = sv
+		}
+		if sv, ok := m["last"].(string); ok {
+			s.Last = sv
+		}
+		if sv, ok := m["start"].(string); ok {
+			s.Start = sv
+		}
+		if sv, ok := m["end"].(string); ok {
+			s.End = sv
+		}
+		if sv, ok := m["event_type"].(string); ok {
+			s.EventType = sv
+		}
+		if sv, ok := m["limit"].(int); ok {
+			s.Limit = sv
+		} else if sv, ok := m["limit"].(float64); ok {
+			s.Limit = int(sv)
+		}
+		if sv, ok := m["sort"].(string); ok {
+			s.Sort = sv
+		}
+		result[name] = s
+	}
+	return result
+}
+
+// savedSearchNames returns sorted names of all saved searches.
+func savedSearchNames() []string {
+	searches := getSavedSearches()
+	names := make([]string, 0, len(searches))
+	for name := range searches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func newInsightsSaveCmd() *cobra.Command {
+	var (
+		serviceFlag   string
+		lastFlag      string
+		startFlag     string
+		endFlag       string
+		eventTypeFlag string
+		limitFlag     int
+		sortFlag      string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "save <name>",
+		Short: "Save an insights query for later re-use",
+		Long: `Save a named insights query that can be re-run later with 'jc insights run'.
+
+Time-relative searches (--last 24h) are recalculated from current time on each run.
+
+Examples:
+  jc insights save "failed-sso-24h" --service sso --event-type sso_auth_failed --last 24h
+  jc insights save "all-events-7d" --service all --last 7d
+  jc insights save "ldap-range" --service ldap --start 2026-02-01 --end 2026-02-13`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsSave(cmd, args[0], serviceFlag, lastFlag, startFlag, endFlag, eventTypeFlag, limitFlag, sortFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&serviceFlag, "service", "", "Service to query (e.g. sso, ldap, all; comma-separated for multiple)")
+	cmd.Flags().StringVar(&lastFlag, "last", "", "Time range shortcut (e.g. 24h, 7d, 30d, 1m)")
+	cmd.Flags().StringVar(&startFlag, "start", "", "Start time (date or RFC 3339)")
+	cmd.Flags().StringVar(&endFlag, "end", "", "End time (date or RFC 3339)")
+	cmd.Flags().StringVar(&eventTypeFlag, "event-type", "", "Filter by event type (e.g. sso_auth_failed)")
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of events to return (0 = all)")
+	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -timestamp)")
+
+	_ = cmd.MarkFlagRequired("service")
+
+	return cmd
+}
+
+func runInsightsSave(cmd *cobra.Command, name, service, last, start, end, eventType string, limit int, sortVal string) error {
+	// Validate service.
+	if err := api.ValidateService(service); err != nil {
+		return err
+	}
+
+	// Validate time range flags.
+	if last == "" && start == "" {
+		return fmt.Errorf("either --last or --start is required")
+	}
+	if last != "" && start != "" {
+		return fmt.Errorf("--last and --start are mutually exclusive")
+	}
+
+	// Validate the time format (even though we store the raw string).
+	if last != "" {
+		if _, err := api.ParseTimeRange(last); err != nil {
+			return err
+		}
+	}
+	if start != "" {
+		if _, err := api.ParseTimeRange(start); err != nil {
+			return fmt.Errorf("invalid --start: %w", err)
+		}
+	}
+	if end != "" {
+		if _, err := api.ParseTimeRange(end); err != nil {
+			return fmt.Errorf("invalid --end: %w", err)
+		}
+	}
+
+	// Build the saved search entry.
+	s := map[string]any{
+		"service": service,
+	}
+	if last != "" {
+		s["last"] = last
+	}
+	if start != "" {
+		s["start"] = start
+	}
+	if end != "" {
+		s["end"] = end
+	}
+	if eventType != "" {
+		s["event_type"] = eventType
+	}
+	if limit > 0 {
+		s["limit"] = limit
+	}
+	if sortVal != "" {
+		s["sort"] = sortVal
+	}
+
+	// Store in config under insights.saved_searches.<name>.
+	viper.Set("insights.saved_searches."+name, s)
+	if err := writeInsightsConfig(); err != nil {
+		return fmt.Errorf("failed to save search: %w", err)
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "Saved search %q\n", name)
+	return nil
+}
+
+// writeInsightsConfig writes the Viper config to disk.
+var writeInsightsConfig = func() error {
+	return viper.WriteConfig()
+}
+
+func newInsightsSavedCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "saved",
+		Short: "List all saved insight searches",
+		Long: `List all saved insight searches with their names and query parameters.
+
+Examples:
+  jc insights saved
+  jc insights saved --output table
+  jc insights saved --output json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsSaved(cmd)
+		},
+	}
+	return cmd
+}
+
+func runInsightsSaved(cmd *cobra.Command) error {
+	searches := getSavedSearches()
+	names := savedSearchNames()
+
+	if len(names) == 0 {
+		opts := output.CurrentOptions()
+		return output.WriteList(cmd.OutOrStdout(), []json.RawMessage{}, opts)
+	}
+
+	items := make([]json.RawMessage, 0, len(names))
+	for _, name := range names {
+		s := searches[name]
+		entry := map[string]any{
+			"name":    name,
+			"service": s.Service,
+		}
+		if s.Last != "" {
+			entry["last"] = s.Last
+		}
+		if s.Start != "" {
+			entry["start"] = s.Start
+		}
+		if s.End != "" {
+			entry["end"] = s.End
+		}
+		if s.EventType != "" {
+			entry["event_type"] = s.EventType
+		}
+		if s.Limit > 0 {
+			entry["limit"] = s.Limit
+		}
+		if s.Sort != "" {
+			entry["sort"] = s.Sort
+		}
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return err
+		}
+		items = append(items, data)
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = []string{"name", "service", "last", "start", "end", "event_type"}
+
+	if err := output.WriteList(cmd.OutOrStdout(), items, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d saved searches ──\n", len(items))
+	}
+
+	return nil
+}
+
+func newInsightsRunCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "run <name>",
+		Short: "Run a saved insight search",
+		Long: `Execute a previously saved insight search by name.
+
+Time-relative searches (--last 24h) are recalculated from current time.
+
+Examples:
+  jc insights run "failed-sso-24h"
+  jc insights run "all-events-7d" --output table
+  jc insights run "all-events-7d" --limit 10`,
+		Args: cobra.ExactArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return savedSearchNames(), cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsRun(cmd, args[0])
+		},
+	}
+	return cmd
+}
+
+func runInsightsRun(cmd *cobra.Command, name string) error {
+	searches := getSavedSearches()
+	s, ok := searches[name]
+	if !ok {
+		names := savedSearchNames()
+		if len(names) == 0 {
+			return fmt.Errorf("saved search %q not found (no saved searches exist)", name)
+		}
+		return fmt.Errorf("saved search %q not found; available: %s", name, strings.Join(names, ", "))
+	}
+
+	// Run the saved query using the same logic as 'insights query'.
+	return runInsightsQuery(cmd, s.Service, s.Last, s.Start, s.End, s.EventType, s.Limit, s.Sort)
 }
