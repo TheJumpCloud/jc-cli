@@ -748,3 +748,33 @@
   - URL vs file path detection via `strings.HasPrefix(source, "http://")` is sufficient — no need for `url.Parse()` since recipe sources are simple paths or URLs
   - Overwrite checks use `os.Stat()` before writing — if file exists, prompt for confirmation; reused in both create and import
 ---
+
+## 2026-02-13 - US-048
+- What was implemented:
+  - MCP resources for schema, recipes, and CLI command manifest — expanding from 2 to 24+ resources
+  - `jc://schema/resources` — returns all 8 resource types as sorted JSON array with API version, verbs, default fields, filter/sort support, ID/name field mappings
+  - `jc://schema/{resource}` — individual resource schema for users, devices, groups, commands, policies, apps, admins, insights
+  - `jc://schema/commands` — full CLI command manifest with all commands, subcommands, per-command flags, and global flags
+  - `jc://recipes/list` — all available recipes (built-in + user-defined) with name, description, version, tags, parameter details, and step count
+  - `jc://recipes/{name}` — individual recipe JSON definition for each built-in recipe (re-loads at read time for freshness)
+  - `jc://config/profiles` — already existed from US-046, verified working
+  - `jc://server/info` — already existed from US-046, refactored to use shared `jsonResource()` helper
+  - All resources respond with `application/json` MIME type
+  - `resourceSchema` struct captures field metadata for each JumpCloud resource type
+  - `commandManifest` / `commandEntry` / `flagEntry` structs describe the CLI command tree
+  - `buildCommandManifest()` generates static command manifest with all 14 command groups, subcommands, and flags
+  - `jsonResource()` shared helper eliminates JSON marshal boilerplate across all resource handlers
+  - `validSchemaResources()` returns sorted resource type names for deterministic output
+- Files changed:
+  - internal/mcp/resources.go — expanded from 73 lines to 505 lines; added `resourceSchema`, `commandManifest`, `commandEntry`, `flagEntry` types; `schemas` map with all 8 resource types; `registerFoundationResources()`, `registerSchemaResources()`, `registerRecipeResources()` split from single `registerResources()`; `buildCommandManifest()` with full CLI tree; `jsonResource()` helper
+  - internal/mcp/server_test.go — updated `TestMCP_ListResources` for 20+ resources; added 10 new tests: `TestMCP_ReadResource_SchemaResources` (full list), `TestMCP_ReadResource_SchemaUsers` (users detail), `TestMCP_ReadResource_SchemaDevices`, `TestMCP_ReadResource_SchemaGroups`, `TestMCP_ReadResource_SchemaAllTypes` (subtests for all 8 types), `TestMCP_ReadResource_SchemaCommands` (command manifest), `TestMCP_ReadResource_CommandManifestFlags` (global flags), `TestMCP_ReadResource_RecipesList`, `TestMCP_ReadResource_RecipeByName`, `TestMCP_ReadResource_RecipeParameters`
+  - .chief/prds/main/prd.json — marked US-048 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - MCP resources are registered at server creation time with static URIs — the SDK's `AddResource()` doesn't support URI templates or wildcards. Individual recipe resources are registered per built-in recipe name, with handlers that re-load at read time for freshness.
+  - `strings.Title()` is deprecated in Go — use `strings.ToUpper(s[:1]) + s[1:]` for simple first-letter capitalization (already noted in memory from US-017).
+  - Schema resources are better as static metadata than live API calls — MCP resources should be fast, deterministic, and not require authentication to read. The `resourceSchema` struct captures the essential metadata LLMs need: verbs, default fields, filter/sort support, and ID/name field mappings.
+  - The `jsonResource()` helper deduplicates the JSON marshal + `ResourceContents` construction pattern used by every resource handler — cleaner than repeating 8 lines per handler.
+  - `buildCommandManifest()` is a static function rather than dynamic Cobra tree walking. This avoids importing the cmd package (which would create a circular dependency mcp→cmd→mcp) and ensures the manifest is deterministic.
+  - Recipe list resources use `recipe.LoadAll()` dynamically (reads from filesystem at each access) while individual recipe resources are registered per built-in name at server start. This is a reasonable trade-off: the list always reflects current state, while individual resources cover the known built-in set.
+---

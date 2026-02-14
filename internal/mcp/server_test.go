@@ -221,27 +221,33 @@ func TestMCP_ListResources(t *testing.T) {
 		t.Fatalf("ListResources: %v", err)
 	}
 
-	if len(result.Resources) < 2 {
-		t.Fatalf("expected at least 2 resources, got %d", len(result.Resources))
+	// Foundation (2) + schema/resources (1) + schema/{resource} (8) + schema/commands (1) + recipes/list (1) + recipes/{name} (11+) = 24+
+	if len(result.Resources) < 20 {
+		t.Fatalf("expected at least 20 resources, got %d", len(result.Resources))
 	}
 
-	var foundServerInfo, foundProfiles bool
+	// Check for key resources by URI.
+	required := []string{
+		"jc://server/info",
+		"jc://config/profiles",
+		"jc://schema/resources",
+		"jc://schema/users",
+		"jc://schema/devices",
+		"jc://schema/groups",
+		"jc://schema/commands",
+		"jc://recipes/list",
+	}
+	uris := make(map[string]bool)
 	for _, r := range result.Resources {
-		switch r.URI {
-		case "jc://server/info":
-			foundServerInfo = true
-			if r.MIMEType != "application/json" {
-				t.Errorf("expected MIME type application/json, got %q", r.MIMEType)
-			}
-		case "jc://config/profiles":
-			foundProfiles = true
+		uris[r.URI] = true
+		if r.MIMEType != "application/json" {
+			t.Errorf("resource %s: expected MIME type application/json, got %q", r.URI, r.MIMEType)
 		}
 	}
-	if !foundServerInfo {
-		t.Error("expected jc://server/info resource")
-	}
-	if !foundProfiles {
-		t.Error("expected jc://config/profiles resource")
+	for _, uri := range required {
+		if !uris[uri] {
+			t.Errorf("expected resource %s to be registered", uri)
+		}
 	}
 }
 
@@ -322,6 +328,405 @@ func TestMCP_ReadResource_NotFound(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown resource")
+	}
+}
+
+// --- Schema resource tests ---
+
+func TestMCP_ReadResource_SchemaResources(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/resources",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	if len(result.Contents) == 0 {
+		t.Fatal("expected resource content")
+	}
+
+	var schemas []map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &schemas); err != nil {
+		t.Fatalf("parse schema resources: %v", err)
+	}
+
+	// Should have entries for all resource types.
+	if len(schemas) < 8 {
+		t.Errorf("expected at least 8 resource schemas, got %d", len(schemas))
+	}
+
+	// Check sorted order — first should be "admins" (alphabetical).
+	if schemas[0]["resource"] != "admins" {
+		t.Errorf("expected first resource to be 'admins', got %v", schemas[0]["resource"])
+	}
+
+	// Find users schema and verify structure.
+	var found bool
+	for _, s := range schemas {
+		if s["resource"] == "users" {
+			found = true
+			if s["api_version"] != "v1" {
+				t.Errorf("expected users api_version 'v1', got %v", s["api_version"])
+			}
+			verbs, ok := s["verbs"].([]any)
+			if !ok || len(verbs) == 0 {
+				t.Error("expected users to have verbs")
+			}
+			fields, ok := s["default_fields"].([]any)
+			if !ok || len(fields) == 0 {
+				t.Error("expected users to have default_fields")
+			}
+			if s["id_field"] != "_id" {
+				t.Errorf("expected users id_field '_id', got %v", s["id_field"])
+			}
+			if s["name_field"] != "username" {
+				t.Errorf("expected users name_field 'username', got %v", s["name_field"])
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'users' schema in resource list")
+	}
+}
+
+func TestMCP_ReadResource_SchemaUsers(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/users",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &schema); err != nil {
+		t.Fatalf("parse users schema: %v", err)
+	}
+
+	if schema["resource"] != "users" {
+		t.Errorf("expected resource 'users', got %v", schema["resource"])
+	}
+	if schema["api_version"] != "v1" {
+		t.Errorf("expected api_version 'v1', got %v", schema["api_version"])
+	}
+	if schema["filter_support"] != true {
+		t.Errorf("expected filter_support true, got %v", schema["filter_support"])
+	}
+	if schema["sort_support"] != true {
+		t.Errorf("expected sort_support true, got %v", schema["sort_support"])
+	}
+}
+
+func TestMCP_ReadResource_SchemaDevices(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/devices",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &schema); err != nil {
+		t.Fatalf("parse devices schema: %v", err)
+	}
+
+	if schema["resource"] != "devices" {
+		t.Errorf("expected resource 'devices', got %v", schema["resource"])
+	}
+	if schema["name_field"] != "hostname" {
+		t.Errorf("expected name_field 'hostname', got %v", schema["name_field"])
+	}
+}
+
+func TestMCP_ReadResource_SchemaGroups(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/groups",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &schema); err != nil {
+		t.Fatalf("parse groups schema: %v", err)
+	}
+
+	if schema["api_version"] != "v2" {
+		t.Errorf("expected api_version 'v2', got %v", schema["api_version"])
+	}
+	if schema["id_field"] != "id" {
+		t.Errorf("expected id_field 'id', got %v", schema["id_field"])
+	}
+}
+
+func TestMCP_ReadResource_SchemaAllTypes(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	// Verify all schema resource types are readable.
+	types := []string{"users", "devices", "groups", "commands", "policies", "apps", "admins", "insights"}
+	ctx := context.Background()
+	for _, typ := range types {
+		t.Run(typ, func(t *testing.T) {
+			result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+				URI: "jc://schema/" + typ,
+			})
+			if err != nil {
+				t.Fatalf("ReadResource jc://schema/%s: %v", typ, err)
+			}
+			if len(result.Contents) == 0 {
+				t.Fatal("expected content")
+			}
+			if result.Contents[0].MIMEType != "application/json" {
+				t.Errorf("expected MIME type application/json, got %q", result.Contents[0].MIMEType)
+			}
+		})
+	}
+}
+
+// --- Command manifest resource tests ---
+
+func TestMCP_ReadResource_SchemaCommands(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/commands",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &manifest); err != nil {
+		t.Fatalf("parse command manifest: %v", err)
+	}
+
+	if manifest["name"] != "jc" {
+		t.Errorf("expected name 'jc', got %v", manifest["name"])
+	}
+
+	commands, ok := manifest["commands"].([]any)
+	if !ok || len(commands) == 0 {
+		t.Fatal("expected commands array")
+	}
+
+	globalFlags, ok := manifest["global_flags"].([]any)
+	if !ok || len(globalFlags) == 0 {
+		t.Fatal("expected global_flags array")
+	}
+
+	resources, ok := manifest["resources"].([]any)
+	if !ok || len(resources) == 0 {
+		t.Fatal("expected resources array")
+	}
+
+	// Verify at least key commands are present.
+	commandPaths := make(map[string]bool)
+	for _, c := range commands {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		path, _ := cm["path"].(string)
+		commandPaths[path] = true
+	}
+	for _, required := range []string{"jc auth", "jc users", "jc devices", "jc groups", "jc insights", "jc recipe"} {
+		if !commandPaths[required] {
+			t.Errorf("expected command %q in manifest", required)
+		}
+	}
+}
+
+func TestMCP_ReadResource_CommandManifestFlags(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://schema/commands",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &manifest); err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+
+	globalFlags, ok := manifest["global_flags"].([]any)
+	if !ok {
+		t.Fatal("expected global_flags array")
+	}
+
+	// Verify key global flags are present.
+	flagNames := make(map[string]bool)
+	for _, f := range globalFlags {
+		fm, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fm["name"].(string)
+		flagNames[name] = true
+	}
+	for _, required := range []string{"output", "verbose", "quiet", "force", "plan", "ids", "fields"} {
+		if !flagNames[required] {
+			t.Errorf("expected global flag %q in manifest", required)
+		}
+	}
+}
+
+// --- Recipe resource tests ---
+
+func TestMCP_ReadResource_RecipesList(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://recipes/list",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+
+	if len(result.Contents) == 0 {
+		t.Fatal("expected resource content")
+	}
+
+	var recipes []map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &recipes); err != nil {
+		t.Fatalf("parse recipes list: %v", err)
+	}
+
+	// Should have built-in recipes.
+	if len(recipes) == 0 {
+		t.Fatal("expected at least one recipe")
+	}
+
+	// Verify recipe summary structure.
+	first := recipes[0]
+	if _, ok := first["name"]; !ok {
+		t.Error("expected recipe to have 'name'")
+	}
+	if _, ok := first["description"]; !ok {
+		t.Error("expected recipe to have 'description'")
+	}
+	if _, ok := first["steps"]; !ok {
+		t.Error("expected recipe to have 'steps' count")
+	}
+}
+
+func TestMCP_ReadResource_RecipeByName(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+
+	// First, get the recipe list to find a valid recipe name.
+	listResult, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://recipes/list",
+	})
+	if err != nil {
+		t.Fatalf("ReadResource recipes/list: %v", err)
+	}
+
+	var recipes []map[string]any
+	json.Unmarshal([]byte(listResult.Contents[0].Text), &recipes)
+	if len(recipes) == 0 {
+		t.Skip("no recipes available")
+	}
+
+	recipeName := recipes[0]["name"].(string)
+
+	// Read the individual recipe resource.
+	result, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://recipes/" + recipeName,
+	})
+	if err != nil {
+		t.Fatalf("ReadResource recipes/%s: %v", recipeName, err)
+	}
+
+	var recipe map[string]any
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &recipe); err != nil {
+		t.Fatalf("parse recipe: %v", err)
+	}
+
+	if recipe["name"] != recipeName {
+		t.Errorf("expected recipe name %q, got %v", recipeName, recipe["name"])
+	}
+	if _, ok := recipe["steps"]; !ok {
+		t.Error("expected recipe to have 'steps'")
+	}
+	if _, ok := recipe["parameters"]; !ok {
+		t.Error("expected recipe to have 'parameters'")
+	}
+}
+
+func TestMCP_ReadResource_RecipeParameters(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{})
+
+	ctx := context.Background()
+
+	// Read the recipes list and find one with parameters.
+	listResult, _ := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "jc://recipes/list",
+	})
+	var recipes []map[string]any
+	json.Unmarshal([]byte(listResult.Contents[0].Text), &recipes)
+
+	// Find a recipe with parameters.
+	var recipeName string
+	for _, r := range recipes {
+		params, ok := r["parameters"].([]any)
+		if ok && len(params) > 0 {
+			recipeName = r["name"].(string)
+			break
+		}
+	}
+	if recipeName == "" {
+		t.Skip("no recipe with parameters found")
+	}
+
+	// Verify the recipe list shows parameter details.
+	for _, r := range recipes {
+		if r["name"] != recipeName {
+			continue
+		}
+		params, ok := r["parameters"].([]any)
+		if !ok {
+			t.Fatal("expected parameters to be an array")
+		}
+		for _, p := range params {
+			pm, ok := p.(map[string]any)
+			if !ok {
+				t.Fatal("expected parameter to be an object")
+			}
+			if _, ok := pm["name"]; !ok {
+				t.Error("expected parameter to have 'name'")
+			}
+			if _, ok := pm["type"]; !ok {
+				t.Error("expected parameter to have 'type'")
+			}
+		}
 	}
 }
 

@@ -1011,8 +1011,9 @@
         "Resources respond with proper MIME types (application/json)"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "MCP Resources provide context that helps LLMs use tools correctly. Schema resources are especially important — they tell the LLM which fields exist and what filters are available.",
+      "passes": true,
+      "inProgress": false,
+      "notes": "MCP Resources provide context that helps LLMs use tools correctly. Schema resources are especially important — they tell the LLM which fields exist and what filters are available. Org info/stats resources were implemented as schema metadata (jc://schema/resources and jc://server/info) rather than live API calls, since MCP resources should be fast and deterministic. The jc://server/info resource provides profile and configuration context. Schema resources cover all 8 resource types with API version, verbs, default fields, filter/sort support, and ID/name field mappings.",
       "dependsOn": ["US-046"]
     },
     {
