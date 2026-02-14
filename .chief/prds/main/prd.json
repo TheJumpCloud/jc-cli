@@ -667,7 +667,8 @@
         "Results include admin role (e.g., Administrator, Manager, Read Only)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 Administrators API: GET /api/v2/administrators. Read-only for now (list/get).",
       "dependsOn": ["US-023"]
     },

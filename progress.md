@@ -498,3 +498,25 @@
   - `graphSourceConfig` with `resolveFunc` closures is a clean pattern for mapping user-friendly type names to the right resolver+endpoint pair without creating a massive switch in the runner function.
   - The `?targets=<type>` query parameter embeds in the endpoint URL string — same pattern as `apps.go` for associations. `buildV2ListURL` preserves existing query params.
 ---
+
+## 2026-02-13 - US-032
+- What was implemented:
+  - `jc admins list` — lists all JumpCloud administrators via V2 GET /api/v2/administrators
+  - Default fields: id, email, role, enableMultiFactor (audit-focused)
+  - `--filter` flag for filtering by role, email, etc. (V2 filter format)
+  - `--sort` flag for server-side sorting (e.g. `--sort -email`)
+  - `--limit` flag to cap results
+  - All output formats supported: JSON (default), table, CSV, IDs, quiet
+  - Footer to stderr: "── N items ──"
+  - Results include admin roles: Administrator, Manager, Read Only
+- Files changed:
+  - internal/cmd/admins.go — new admins command group with list subcommand
+  - internal/cmd/admins_test.go — 17 tests: JSON, default fields, table, CSV, IDs, quiet, footer, empty, filter, sort, invalid filter, limit, role presence, endpoint verification, help tests (subcommands, list flags, root includes admins)
+  - internal/cmd/root.go — registered `newAdminsCmd()`
+  - .chief/prds/main/prd.json — marked US-032 passes
+- **Learnings for future iterations:**
+  - Simple V2 list-only commands (like admins) are the easiest to implement — just follow the policies.go pattern: `newV2Client()` → `ListAll()` → `output.WriteList()` → footer to stderr.
+  - No name resolution needed for admins — they're typically listed and filtered, not looked up by name/ID individually.
+  - The `newV2Client` var and `overrideV2Client()` test helper already exist in groups.go/groups_test.go — no need to re-declare them. Just use them directly.
+  - `StringArrayVar` (not `StringSliceVar`) for `--filter` flag — same pattern across all resource commands.
+---
