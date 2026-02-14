@@ -964,7 +964,7 @@
         "All tool calls logged to ~/.config/jc/mcp-audit.log"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "MCP uses JSON-RPC 2.0 over stdio. The server wraps the existing CLI command infrastructure. Use an established Go MCP library if available, otherwise implement the protocol directly.",
       "dependsOn": ["US-001", "US-008", "US-023"]
     },

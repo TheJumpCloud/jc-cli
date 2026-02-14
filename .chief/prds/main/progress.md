@@ -68,6 +68,9 @@
 - NDJSON: `writeNDJSONList()` emits one compact JSON object per line; empty list → no output
 - YAML: `jsonToYAMLNode()` recursively converts JSON → `yaml.Node` with explicit type tags for ordered key output
 - `yaml.MapSlice` is yaml/v2 only — yaml/v3 uses `yaml.Node` with `MappingNode` kind for ordered maps
+- Built-in recipes embedded via `go:embed builtin/*.yaml` in `internal/recipe/embed.go`
+- `LoadBuiltIn()` loads embedded recipes; `LoadAll()` merges built-in + user-defined (user overrides built-in by name)
+- `RecipesDir` is a `var` (function value), not a plain function — enables test overrides
 
 ---
 
@@ -424,4 +427,56 @@
   - YAML empty list produces `[]` — matches convention for document formats
   - Both formats respect `--fields`/`--exclude`/`--all` since field filtering happens before format dispatch in `WriteList()`/`WriteSingle()`
   - `go.yaml.in/yaml/v3` was already an indirect dependency via Viper — `go mod tidy` promotes it to direct
+---
+
+## 2026-02-13 - US-043
+- Implemented Built-In Recipe Library with 11 recipes embedded in the binary via `go:embed`
+- Files created:
+  - `internal/recipe/builtin/onboard-user.yaml` — create user, add to group, verify
+  - `internal/recipe/builtin/offboard-user.yaml` — lock, remove groups, reset MFA, optional delete
+  - `internal/recipe/builtin/audit-inactive-users.yaml` — find users not active recently
+  - `internal/recipe/builtin/audit-unmanaged-devices.yaml` — list devices and groups for comparison
+  - `internal/recipe/builtin/mfa-enforcement-check.yaml` — list users with MFA status
+  - `internal/recipe/builtin/compliance-report.yaml` — MFA adoption, devices, auth failures, admins
+  - `internal/recipe/builtin/stale-device-cleanup.yaml` — find devices sorted by lastContact
+  - `internal/recipe/builtin/password-expiry-report.yaml` — list users with password expiry dates
+  - `internal/recipe/builtin/bulk-create-users.yaml` — create users from CSV via bulk engine
+  - `internal/recipe/builtin/group-sync.yaml` — add user to group and verify membership
+  - `internal/recipe/builtin/security-audit.yaml` — auth failures, admins, MFA status review
+  - `internal/recipe/embed.go` — `LoadBuiltIn()` (embedded FS), `LoadAll()` (built-in + user, with override)
+  - `internal/recipe/embed_test.go` — 15 tests: all recipes valid, names, sorting, templates renderable, user overrides, user additions, empty/nonexistent user dir
+- Files changed:
+  - `internal/recipe/recipe.go` — changed `RecipesDir` from function to var for test overrides
+  - `.chief/prds/main/prd.json` — marked US-043 as complete
+- **Learnings for future iterations:**
+  - `go:embed` directive must reference a relative path from the Go source file — `builtin/*.yaml` embeds all YAML from the subdirectory
+  - `embed.FS.ReadDir()` + `ReadFile()` mirror `os.ReadDir()` + `os.ReadFile()` — easy to write parallel load functions
+  - `RecipesDir` was changed from a plain function to a `var` (function value) to allow test override without breaking callers
+  - `LoadAll()` implements user-defined recipe override: user recipes with same name as built-in take precedence
+  - All built-in recipes are validated at load time via `Parse()` → `Validate()` — guarantees embedded YAML is always valid
+  - Recipe templates are testable via `Plan()` which renders templates without executing — used in `TestLoadBuiltIn_RecipeTemplatesRenderable`
+  - `sort.Slice` on recipe name ensures deterministic ordering for `LoadBuiltIn()` and `LoadAll()`
+---
+## US-046: MCP Server — Stdio Transport
+- **Status:** Complete
+- **What was built:** MCP server over stdio transport using the official Go MCP SDK (`github.com/modelcontextprotocol/go-sdk` v1.3.0). `jc mcp serve` starts a JSON-RPC 2.0 server on stdin/stdout with rate limiting and audit logging.
+- New files:
+  - `internal/mcp/server.go` — `Server` struct wrapping `mcp.Server`, `rateLimiter` (token bucket, 1-min window), `auditLogger` (NDJSON to `~/.config/jc/mcp-audit.log`), `Options` config, `Run()` (stdio) and `RunWithTransport()` (testing)
+  - `internal/mcp/tools.go` — Tool registration with rate-limit/audit wrappers, `addTool()` and generic `addTypedTool[In]()`, `jc_ping` health check tool, `textResult()`, `jsonResult()`, `errorResult()` helpers
+  - `internal/mcp/resources.go` — Resource registration: `jc://server/info` (version, capabilities, profile) and `jc://config/profiles` (config file contents)
+  - `internal/mcp/server_test.go` — 20 tests: server construction, MCP protocol (initialize, list tools, call tool, list/read resources), rate limiter (allow/block/reset/error), audit logger (writes/creates dir), integration tests
+  - `internal/cmd/mcp.go` — `newMcpCmd()` parent with Claude Desktop config example, `newMcpServeCmd()` with `--rate-limit` (default 60) and `--read-only` flags, signal-based graceful shutdown
+  - `internal/cmd/mcp_test.go` — 5 tests: help text, flag defaults, root inclusion, audit log mention, Claude Desktop config example
+- Files changed:
+  - `internal/cmd/root.go` — Added `newMcpCmd()` registration
+  - `go.mod` / `go.sum` — Added `github.com/modelcontextprotocol/go-sdk v1.3.0` + transitive deps
+  - `.chief/prds/main/prd.json` — Marked US-046 as passing
+- **Learnings for future iterations:**
+  - Official MCP Go SDK: `mcp.NewServer()` + `mcp.AddTool()` (generic) auto-infers JSON schema from Go struct tags
+  - `mcp.NewInMemoryTransports()` creates paired client/server transports for in-process testing — call `server.Connect()` before `client.Connect()`
+  - `mcp.StdioTransport{}` for production stdio mode — only JSON-RPC goes to stdout, all logging to stderr
+  - Tool names validated by SDK: only `[a-zA-Z0-9_.-]` allowed — use underscores for namespacing (e.g. `jc_ping`)
+  - `nowFunc` var pattern reused for deterministic rate limiter tests
+  - Cobra `--help` only shows `Long` description (not `Short`) — test assertions must match `Long` text
+  - Minimal tool set (jc_ping) and resources (server/info, config/profiles) for transport story — full tools are US-047, resources US-048
 ---
