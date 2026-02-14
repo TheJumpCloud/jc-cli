@@ -1061,3 +1061,40 @@
   - JumpCloud `locationIn` condition uses an object `{countries: ["SG"]}` rather than a bare array — likely to support future location types (regions, cities).
   - IP list IDs (24-char hex) in `ipAddressIn` arrays can be distinguished from direct IPs/CIDRs by length and character set. `isIPListID()` provides a clean heuristic that handles both cases in one pass.
 ---
+
+## 2026-02-14 - Tier 1 API Coverage Gaps
+- **Status:** COMPLETE (all tests pass, build clean)
+- **Design:** `docs/plans/2026-02-14-tier1-api-coverage-design.md`
+- What was implemented:
+  - **Policies create/update/delete** (`366e523`): `jc policies create --name --template-id [--values]`, `jc policies update <name-or-id> [--name] [--values]`, `jc policies delete <name-or-id> [--force]`. V2 CRUD pattern, plan mode support, partial updates via `Changed()`, confirmation prompt on delete. 11 new tests.
+  - **Graph bind/unbind** (`6893aa9`): `jc graph bind --from type:id --to type:id`, `jc graph unbind --from type:id --to type:id [--force]`. Shared `runGraphManage()` for both ops, `parseTargetFlag()` for target parsing, `resolveTargetID()` falls back to raw hex for types without name resolution (policy, command). POST to `/{source}/associations` with `{op, type, id}` body. 8 new tests.
+  - **Admins get/create/update/delete** (`507fe14`): `jc admins get <email-or-id>`, `jc admins create --email [--role] [--enable-mfa]`, `jc admins update <email-or-id> [--role] [--enable-mfa/--disable-mfa]`, `jc admins delete <email-or-id> [--force]`. V1 CRUD pattern, `AdminConfig` resolver (email field, `/users` endpoint), `ErrCodeAdminNotFound` error code. 18 new tests.
+  - **Devices update/search** (`da65803`): `jc devices update <hostname-or-id> [--displayName] [--allowSshPasswordAuthentication] [--allowMultiFactorAuthentication] [--allowPublicKeyAuthentication]`, `jc devices search <query> [--limit] [--sort]`. V1 PUT for update, POST `/search/systems` with `searchFilter.searchTerm` for search. 8 new tests.
+  - **Apps create/update/delete** (`135c23b`): `jc apps create --name --sso-type [--config]`, `jc apps update <name-or-id> [--name] [--config]`, `jc apps delete <name-or-id> [--force]`. V1 CRUD pattern, `--config` accepts raw JSON for SSO-specific settings. 11 new tests.
+  - **Schema updates**: All five resources updated in `internal/schema/schema.go` — both `Resources` map verbs and `BuildCommandManifest()` subcommands/flags. Graph subcommands now include `bind`/`unbind`.
+- Files changed:
+  - `internal/cmd/policies.go` — create/update/delete commands (+190 lines)
+  - `internal/cmd/policies_test.go` — 11 new test functions, extended mock server
+  - `internal/cmd/graph.go` — bind/unbind commands, `parseTargetFlag()`, `resolveTargetID()`, `runGraphManage()` (+177 lines)
+  - `internal/cmd/graph_test.go` — 8 new test functions, POST handler in mock server
+  - `internal/cmd/admins.go` — get/create/update/delete commands (+264 lines)
+  - `internal/cmd/admins_test.go` — 18 new test functions, full CRUD mock server
+  - `internal/cmd/devices.go` — update/search commands (+150 lines)
+  - `internal/cmd/devices_test.go` — 8 new test functions, PUT/search handlers
+  - `internal/cmd/apps.go` — create/update/delete commands (+241 lines)
+  - `internal/cmd/apps_test.go` — 11 new test functions, POST/PUT/DELETE handlers
+  - `internal/cmd/cli_error.go` — `ErrCodeAdminNotFound`, `mapResolveResourceType("email")`, `resolveResourceCmd("email")`
+  - `internal/resolve/resolve.go` — `AdminConfig` resource config
+  - `internal/schema/schema.go` — verbs + subcommands + flags for all 5 resources
+- **Coverage before/after:**
+  - Policies: list, get, results → list, get, create, update, delete, results
+  - Graph: traverse → traverse, bind, unbind
+  - Admins: list → list, get, create, update, delete
+  - Devices: list, get, delete, lock, restart, erase → list, get, update, delete, search, lock, restart, erase
+  - Apps: list, get → list, get, create, update, delete
+- **Learnings:**
+  - Subagent-driven development worked well for independent resource commands — admins and devices subagents ran in parallel with no conflicts.
+  - Shared files (`schema.go`, `cli_error.go`) need careful commit ordering when multiple subagents modify them — batch shared changes into one atomic commit.
+  - `cmd.Flags().Changed()` is the canonical Go/Cobra pattern for partial updates — only send fields the user explicitly set, avoiding clobbering unset fields with zero values.
+  - Graph bind/unbind target types need alias mapping (device→system, device_group→system_group) because the CLI uses user-friendly names while the V2 API uses internal type strings.
+---
