@@ -75,6 +75,9 @@
 - MCP prompt args are `map[string]string` — all string-typed (unlike tool args which can be any JSON type)
 - MCP config section: `mcp.rate_limit`, `mcp.read_only`, `mcp.audit_log`, `mcp.plan_first` in config.yaml
 - Config flag override pattern: `cmd.Flags().Changed("flag")` checks if CLI flag was explicitly set; if not, read from Viper config
+- Structured errors: `CLIError` in `cli_error.go`; `ToCLIError()` converts any error at `Execute()` boundary; typed errors (`ResolveError`, `FilterError`) carry context for automatic code mapping
+- Error codes: `RESOURCE_ERROR` pattern; exit codes: 0=success, 1=general, 2=usage, 3=auth, 4=permission, 5=rate_limit, 10=plan, 130=interrupted
+- Errors render as JSON on stderr when `--output json`, plain text otherwise; `writeError()` in root.go handles format dispatch
 
 ---
 
@@ -543,4 +546,29 @@
   - `ValidArgsFunction` on schema cmd provides tab completion for resource names
   - When refactoring shared code from `mcp` to `schema`, the MCP tests still pass because the data is structurally identical — just the import path changed
   - Schema package is a pure-data leaf package (depends only on `version`) — no circular dependency risk
+---
+
+## 2026-02-13 - US-051
+- Implemented Structured Machine-Readable Errors
+- **New files:**
+  - `internal/cmd/cli_error.go` — `CLIError` type with JSON/plain rendering, exit code mapping, error code constants (18 codes), `ToCLIError()` conversion from `api.APIError`, `resolve.ResolveError`, `filter.FilterError`, and generic errors; `NewCLIError()`, `WrapCLIError()`, `CLIErrorFromAPI()` constructors; `writeError()` for format-aware error output
+  - `internal/cmd/cli_error_test.go` — 32 tests covering: type methods (Error, Unwrap), exit code mapping (8 codes + 3 HTTP fallbacks), JSON output (field presence, omitted empty fields, valid JSON with special chars), plain text output (with/without suggestion), ToCLIError conversions (nil, already CLIError, APIError 401/403/404/429/500, ResolveError user/device/generic, FilterError, ErrNoAPIKey, generic, wrapped APIError, wrapped ResolveError), constructors, error code constants, exit code values, writeError JSON/plain, PersistentPreRunE integration (invalid output format, fields+exclude mutual exclusion)
+- **Files changed:**
+  - `internal/cmd/root.go` — Updated `Execute()` to convert errors via `ToCLIError()` and render as structured JSON on stderr when `--output json`; updated `PersistentPreRunE` to return `CLIError` for validation failures (output format, fields+exclude, profile not found)
+  - `internal/resolve/resolve.go` — Added `ResolveError` type with `ResourceType`, `Identifier`, `Message` fields; updated V1 and V2 resolver "not found" and "ambiguous" errors to return `*ResolveError`
+  - `internal/filter/filter.go` — Added `FilterError` type with `Expression`, `Message` fields; updated `Parse()` to return `*FilterError` for invalid filter syntax
+  - `.chief/prds/main/prd.json` — Marked US-051 as complete
+- **Architecture:**
+  - Errors intercepted at `Execute()` choke point — commands return errors normally, `ToCLIError()` converts at the boundary
+  - Exit codes: 0=success, 1=general, 2=usage, 3=auth, 4=permission, 5=rate_limit, 10=plan, 130=interrupted
+  - Error codes follow `RESOURCE_ERROR` pattern: `USER_NOT_FOUND`, `AUTH_FAILED`, `RATE_LIMITED`, `INVALID_FILTER`, etc.
+  - JSON error output on stderr; command data on stdout — clean separation for piping
+  - `errorAs[T]()` generic unwrap helper traverses error chains without importing `errors` in the type file
+- **Learnings for future iterations:**
+  - `ToCLIError()` is the central conversion function — wraps any error with structured context; unwraps error chains to find typed errors (`api.APIError`, `resolve.ResolveError`, `filter.FilterError`)
+  - `ResolveError` and `FilterError` are backward-compatible — they implement `error` interface with same `.Error()` messages, so existing test assertions still pass
+  - Exit code mapping is two-tier: error code → exit code (primary), HTTP status → exit code (fallback)
+  - `writeError()` format switch: JSON format → structured JSON to stderr, all other formats → plain text with optional suggestion
+  - `PersistentPreRunE` returns `CLIError` directly for validation errors — these get rendered at the `Execute()` boundary
+  - No need to modify every command — the `Execute()` boundary conversion handles API errors and resolve errors automatically
 ---

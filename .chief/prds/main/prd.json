@@ -1094,7 +1094,8 @@
         "Explain does NOT execute the command (read-only, similar to plan mode)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Explain is a lighter version of plan mode — it describes the command without making API calls. Useful for LLM-generated commands where the user wants to understand intent before even planning.",
       "dependsOn": ["US-034"]
     },

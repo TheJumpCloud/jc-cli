@@ -778,3 +778,34 @@
   - `buildCommandManifest()` is a static function rather than dynamic Cobra tree walking. This avoids importing the cmd package (which would create a circular dependency mcp→cmd→mcp) and ensures the manifest is deterministic.
   - Recipe list resources use `recipe.LoadAll()` dynamically (reads from filesystem at each access) while individual recipe resources are registered per built-in name at server start. This is a reasonable trade-off: the list always reflects current state, while individual resources cover the known built-in set.
 ---
+
+## 2026-02-13 - US-052
+- What was implemented:
+  - `jc explain <command...>` — describes what a jc command would do in plain English without executing it or making API calls
+  - `Explanation` struct with fields: command, action, resource, description, reversible, destructive, side_effects, warnings, requires_auth
+  - Comprehensive `commandMetadata` map covering all resource types and verbs (users, devices, groups, insights, commands, policies, apps, admins, graph, bulk, recipe, auth, config, schema, mcp)
+  - `resourceDescriptions` map for resource-level explanations (e.g., `jc explain users`)
+  - Groups subcommand handling: `groups user list`, `groups device delete`, `groups add-member`, etc.
+  - Human-readable output: ASCII box with description, action, reversibility, side effects, and warnings (similar to plan mode rendering)
+  - JSON output (`--output json`): structured `Explanation` object for LLM/script consumption
+  - Destructive operations marked with `*** DESTRUCTIVE OPERATION ***` banner
+  - Side effects listed for mutating commands (e.g., "User is removed from all groups" for delete)
+  - Warnings for irreversible actions (e.g., "EXTREMELY DESTRUCTIVE" for device erase)
+  - `requires_auth` field indicates whether the command needs authentication
+  - Unknown commands produce helpful messages with `jc --help` suggestion
+  - Unknown verbs on known resources produce specific "Unknown subcommand" messages
+  - Word wrapping and truncation for clean box rendering
+  - Quoted command strings supported: `jc explain "users delete jdoe"`
+  - `wrapText()` and `truncate()` utility functions for human rendering
+- Files changed:
+  - internal/cmd/explain.go — new explain command (280 lines): Explanation struct, commandMetadata, resourceDescriptions, buildExplanation(), renderExplanationJSON(), renderExplanationHuman(), lookupGroupsSubcommand()
+  - internal/cmd/explain_test.go — 31 tests: users delete (human + JSON), users list (human + JSON), devices erase (human + JSON), groups add-member, groups user list, groups user delete, groups device only, resource only, unknown command, unknown verb, missing args, quoted command string, insights query, commands run, bulk users, recipe run, auth login (no auth required), auth logout (side effects), help output, root help includes explain, all 15 known resources (subtests), buildExplanation unit tests (lock, reset-mfa), wrapText, truncate
+  - internal/cmd/root.go — registered `newExplainCmd()`
+  - .chief/prds/main/prd.json — marked US-052 passes
+- **Learnings for future iterations:**
+  - Cobra parses ALL flags on the command line, even positional args that look like flags. `jc explain groups add-member --user jdoe` fails because Cobra sees `--user` as a flag on the explain command. Users must either omit target-command flags or quote the entire command string.
+  - `commandMetadata` is a static map — no API calls, no Cobra introspection, no circular imports. This keeps explain fast and deterministic, suitable for both CLI and MCP consumption.
+  - The MCP `describeCommand()` in tools.go returns a single string; the CLI explain provides richer structured output (action, reversibility, side effects, warnings). Future work could unify these by having the MCP explain tool use the same `buildExplanation()` function.
+  - Groups subcommands have a tricky nested structure (`groups user list` vs `groups add-member`). The `lookupGroupsSubcommand()` function handles `user/device + verb` combinations separately from direct `groups` verbs.
+  - Human rendering uses the same box-drawing pattern as `plan.RenderHuman()` but with wider columns (60 vs 50 chars) to accommodate longer descriptions.
+---
