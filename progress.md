@@ -16,7 +16,7 @@
 - Dual auth transport: `authTransport` (x-api-key) vs `bearerAuthTransport` (Bearer) — selected at client construction time, transparent to callers
 - Bulk operations: `parseBulkCSV()` → `rowToFields()` → `determineOperation()` → individual API calls with error accumulation; `bulkResult` tracks per-row outcomes
 - Resource commands follow pattern: `internal/cmd/<resource>.go` with `new<Resource>Cmd()` parent + `new<Resource>ListCmd()` / `new<Resource>GetCmd()` subcommands
-- Graph traversal: V2 `GET /{resource}/{id}/associations?targets={type}` — `graphSourceConfig` maps source types to endpoint prefixes + resolver closures
+- Graph traversal: V2 `GET /{resource}/{id}/associations?targets={type}` — `graphSourceConfig` maps source types to endpoint prefixes + resolver closures; `validTargetsBySource` map enforces per-source target restrictions (prevents HTTP 400 from invalid combos)
 - `newV1Client` package-level var in users.go enables test injection (similar to `newAPIClient` in auth.go)
 - `ListAll()` returns `*ListResult{Data, TotalCount}` — use `TotalCount` for list footers
 - List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
@@ -77,7 +77,7 @@
 - `ListOptions{Limit, PageSize}` controls pagination behavior; `effectivePageSize()` optimizes request size
 - `-t` / `--table` persistent flag sets output to `table` via `PersistentPreRunE`; `-V` shorthand for `--version`
 - `validOutputFormats` in `root.go` is the authoritative list of accepted `--output` values; validated in `PersistentPreRunE`
-- `flagErrorWithSuggestion()` + `levenshtein()` in `root.go` provides "Did you mean?" for unknown flags (edit distance ≤ 3)
+- `flagErrorWithSuggestion()` + `levenshtein()` in `root.go` provides "Did you mean?" for unknown flags (edit distance ≤ 3); `seen` map deduplicates candidates when cmd is root
 - When adding subcommands that need their own `PersistentPreRunE`, chain to parent's pre-run manually (Cobra does not auto-chain)
 - Config commands in `internal/cmd/config.go`: `config view` uses `viper.AllSettings()` + redaction; `config set` validates against `ValidConfigKeys` with `coerceValue()` for type safety
 - `config.SetConfigValue(key, value)` is the general-purpose config setter; `coerceValue()` handles string→int/bool coercion for known keys
@@ -946,4 +946,26 @@
   - The Insights `distinct` endpoint returns aggregation buckets (`{key, doc_count}`) keyed by field name, not bare scalar arrays.
   - JumpCloud admin listing uses an undocumented V1 endpoint (`GET /api/users`) — the V2 `/administrators` path only has sub-resource endpoints for MSP provider-to-org links.
   - When an endpoint returns 404, check the OpenAPI spec AND third-party integrations (e.g., ConductorOne's baton-jumpcloud) for the correct path.
+---
+
+## 2026-02-14 - Bugfix: Per-Source Graph Target Validation & Duplicate Flag Suggestions
+- **Status:** COMPLETE
+- What was fixed:
+  - **Graph per-source target validation**: `jc graph traverse --from user:me --to command` returned HTTP 400 because the JumpCloud V2 graph API only allows specific target types per source type. The CLI validated against a single global `validTargetTypes` list, allowing invalid combinations through. Fix: replaced `validTargetTypes` slice with `validTargetsBySource` map encoding exact valid targets per source (discovered via live API probing). Updated `isValidTargetType(sourceType, target)` to check per-source constraints with alias resolution. Error messages now show the source type and its specific valid targets.
+  - **Duplicate flag suggestions**: `jc users list --outpu` showed `--output` twice in "Did you mean?" because `flagErrorWithSuggestion()` collected candidates from both `Root().PersistentFlags()` and `cmd.Flags()` — which overlap when the command IS the root. Fix: added `seen` map to deduplicate candidates.
+- Valid targets per source type (from live API probing):
+  - user: active_directory, application, g_suite, idp_routing_policy, ldap_server, office_365, password_manager_item, radius_server, system, system_group
+  - device: command, policy, policy_group, user, user_group
+  - user_group: (same as user)
+  - device_group: (same as device)
+  - application: user, user_group
+- Files changed:
+  - `internal/cmd/graph.go` — replaced `validTargetTypes` with `validTargetsBySource` map, updated `isValidTargetType(sourceType, target)`, added `validTargetsForSource()`, updated help text with per-source target documentation, updated error messages
+  - `internal/cmd/graph_test.go` — updated all tests to use valid source→target combos (e.g., `user→application` instead of `user→user_group`), added `TestGraphTraverse_InvalidTargetForSource`, updated `TestIsValidTargetType` for per-source validation, updated `TestGraphTraverse_TargetAliasMapping` with per-source sources
+  - `internal/cmd/root.go` — added `seen` map in `flagErrorWithSuggestion()` to deduplicate flag candidates
+  - `internal/cmd/root_test.go` — added `TestUnknownFlagNoDuplicateSuggestion` verifying `--output` appears exactly once
+- **Learnings:**
+  - JumpCloud V2 graph associations are asymmetric — users can associate with applications/systems but NOT commands/policies. Those are only reachable from devices/device groups. A per-source validation map catches these at the CLI layer with clear messages instead of cryptic HTTP 400s.
+  - Cobra's `cmd.Flags()` includes all flags (local AND inherited persistent), so when `cmd` IS the root command, `Root().PersistentFlags()` and `cmd.Flags()` have complete overlap. A `seen` map deduplicates without changing behavior for subcommands with unique local flags.
+  - When tightening validation, all existing tests must be audited for now-invalid combos — several tests used `user→user_group` which became invalid under per-source rules.
 ---
