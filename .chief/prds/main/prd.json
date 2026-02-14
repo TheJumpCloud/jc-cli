@@ -1034,7 +1034,8 @@
         "MCP config section in config.yaml controls: transport, rate_limit, read_only, audit_log, plan_first"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Prompts are pre-built guidance templates. The safety model is critical — plan-first for destructive ops, audit logging, rate limiting, and read-only mode give admins control over AI agent behavior.",
       "dependsOn": ["US-047", "US-048"]
     },

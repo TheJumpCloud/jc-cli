@@ -66,15 +66,18 @@ func NewServer(opts Options) *Server {
 		},
 	)
 
+	al := newAuditLogger(auditPath)
+
 	s := &Server{
 		mcpServer: mcpServer,
 		limiter:   newRateLimiter(opts.RateLimit),
-		auditLog:  newAuditLogger(auditPath),
+		auditLog:  al,
 		readOnly:  opts.ReadOnly,
 	}
 
 	s.registerTools()
 	s.registerResources()
+	s.registerPrompts()
 
 	return s
 }

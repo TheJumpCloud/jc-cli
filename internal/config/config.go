@@ -29,6 +29,12 @@ cache:
   ttl: 300
   directory: ""
 
+mcp:
+  rate_limit: 60
+  read_only: false
+  audit_log: true
+  plan_first: true
+
 profiles:
   default:
     api_key: ""
@@ -87,6 +93,10 @@ func setDefaults() {
 	viper.SetDefault("cache.enabled", true)
 	viper.SetDefault("cache.ttl", 300)
 	viper.SetDefault("cache.directory", "")
+	viper.SetDefault("mcp.rate_limit", 60)
+	viper.SetDefault("mcp.read_only", false)
+	viper.SetDefault("mcp.audit_log", true)
+	viper.SetDefault("mcp.plan_first", true)
 }
 
 // bindEnvVars registers explicit mappings from environment variable names
@@ -315,6 +325,10 @@ var ValidConfigKeys = []string{
 	"cache.enabled",
 	"cache.ttl",
 	"cache.directory",
+	"mcp.rate_limit",
+	"mcp.read_only",
+	"mcp.audit_log",
+	"mcp.plan_first",
 }
 
 // SetConfigValue sets a config key using dot notation and writes the config
@@ -330,13 +344,14 @@ func SetConfigValue(key, value string) error {
 // and integers as numbers.
 func coerceValue(key, value string) interface{} {
 	switch key {
-	case "defaults.limit", "cache.ttl":
+	case "defaults.limit", "cache.ttl", "mcp.rate_limit":
 		// Attempt int conversion.
 		var n int
 		if _, err := fmt.Sscanf(value, "%d", &n); err == nil {
 			return n
 		}
-	case "defaults.confirm_destructive", "defaults.color", "cache.enabled":
+	case "defaults.confirm_destructive", "defaults.color", "cache.enabled",
+		"mcp.read_only", "mcp.audit_log", "mcp.plan_first":
 		// Attempt bool conversion.
 		switch strings.ToLower(value) {
 		case "true", "1", "yes":
@@ -346,6 +361,26 @@ func coerceValue(key, value string) interface{} {
 		}
 	}
 	return value
+}
+
+// MCPRateLimit returns the configured MCP rate limit (calls/minute).
+func MCPRateLimit() int {
+	return viper.GetInt("mcp.rate_limit")
+}
+
+// MCPReadOnly returns true if the MCP server should be read-only.
+func MCPReadOnly() bool {
+	return viper.GetBool("mcp.read_only")
+}
+
+// MCPAuditLog returns true if MCP audit logging is enabled.
+func MCPAuditLog() bool {
+	return viper.GetBool("mcp.audit_log")
+}
+
+// MCPPlanFirst returns true if destructive MCP tools should default to plan mode.
+func MCPPlanFirst() bool {
+	return viper.GetBool("mcp.plan_first")
 }
 
 // IsValidConfigKey returns true if key is a known config key.

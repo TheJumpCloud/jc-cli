@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/mcp"
 	"github.com/spf13/cobra"
 )
@@ -48,8 +49,22 @@ The server reuses the CLI's authentication, API clients, caching, and
 resolution engine. All tool calls are rate-limited and logged to
 ~/.config/jc/mcp-audit.log.
 
+Configuration can be set in config.yaml under the 'mcp' section:
+  mcp:
+    rate_limit: 60
+    read_only: false
+    audit_log: true
+    plan_first: true
+
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Use config values as defaults; CLI flags override.
+			if !cmd.Flags().Changed("rate-limit") {
+				rateLimit = config.MCPRateLimit()
+			}
+			if !cmd.Flags().Changed("read-only") {
+				readOnly = config.MCPReadOnly()
+			}
 			return runMcpServe(rateLimit, readOnly)
 		},
 	}

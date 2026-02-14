@@ -71,6 +71,10 @@
 - Built-in recipes embedded via `go:embed builtin/*.yaml` in `internal/recipe/embed.go`
 - `LoadBuiltIn()` loads embedded recipes; `LoadAll()` merges built-in + user-defined (user overrides built-in by name)
 - `RecipesDir` is a `var` (function value), not a plain function — enables test overrides
+- MCP prompts: `server.AddPrompt(prompt, handler)` — prompts return `PromptMessage` arrays guiding AI workflows
+- MCP prompt args are `map[string]string` — all string-typed (unlike tool args which can be any JSON type)
+- MCP config section: `mcp.rate_limit`, `mcp.read_only`, `mcp.audit_log`, `mcp.plan_first` in config.yaml
+- Config flag override pattern: `cmd.Flags().Changed("flag")` checks if CLI flag was explicitly set; if not, read from Viper config
 
 ---
 
@@ -493,4 +497,29 @@
   - Plan-first pattern: destructive tools return `{action, target, warning, execute_instruction}` preview. Consistent UX for AI agents to confirm before executing.
   - Cross-API membership: group resolution via V2 (`/usergroups`), member resolution via V1 (`/systemusers`, `/systems`). Combined server needed in tests.
   - `resolveV1()` handles both ID pass-through (24-char hex) and name→ID resolution via `resolve.Resolver`.
+---
+
+## 2026-02-13 - US-049
+- Implemented MCP Prompts and Safety Model
+- **New files:**
+  - `internal/mcp/prompts.go` — 6 MCP prompts: `onboard_user`, `offboard_user`, `security_audit`, `find_user_info`, `troubleshoot_auth`, `compliance_check`; each with typed arguments and structured workflow guidance
+  - `internal/mcp/prompts_test.go` — 22 tests covering: list all prompts (count, arguments, descriptions), prompt capability in initialize, all 6 prompts with various argument combinations, filtered compliance check (mfa/devices/policies focus), not-found error, role/description validation
+- **Files changed:**
+  - `internal/mcp/server.go` — added `s.registerPrompts()` call in `NewServer()`
+  - `internal/config/config.go` — added `mcp` config section (rate_limit, read_only, audit_log, plan_first) with Viper defaults, ValidConfigKeys, coercion, and accessor functions (`MCPRateLimit()`, `MCPReadOnly()`, `MCPAuditLog()`, `MCPPlanFirst()`)
+  - `internal/cmd/mcp.go` — updated `serve` command to read config defaults for `--rate-limit` and `--read-only` flags; added config section documentation in help text; imported `config` package
+  - `.chief/prds/main/prd.json` — marked US-049 as complete
+- **Safety model summary:**
+  - Plan-first: all destructive MCP tools already default to plan mode (return preview unless `execute=true`) — implemented in US-047
+  - Audit logging: all tool calls logged with timestamp, tool name, parameters, success/error — implemented in US-046
+  - Read-only mode: `--read-only` flag (or `mcp.read_only` config) disables all mutation tools — implemented in US-046
+  - Rate limiting: configurable calls/minute (default 60) — implemented in US-046
+  - MCP config section: persists settings in config.yaml so they don't need to be passed as flags every time
+- **Learnings for future iterations:**
+  - MCP SDK `server.AddPrompt(prompt, handler)` — prompts are distinct from tools; they return `PromptMessage` arrays with `Role` and `Content`
+  - `GetPromptRequest.Params.Arguments` is `map[string]string` — all prompt args are strings (unlike tool args which can be any JSON type)
+  - MCP SDK auto-advertises `Capabilities.Prompts` when prompts are registered — no manual capability configuration needed
+  - Prompt handlers receive request context and can access server state, but should be read-only (no API calls) — they provide workflow guidance, not execute actions
+  - Config integration pattern: CLI flags default to hardcoded values, but `cmd.Flags().Changed()` checks if user explicitly set the flag; if not, read from Viper config — gives config.yaml lower priority than CLI flags
+  - MCP config keys use same `coerceValue()` pattern as other config sections — ensures booleans and ints are stored with correct types in YAML
 ---
