@@ -1156,7 +1156,8 @@
         "Each line from stdin processed as a separate operation"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Stdin support enables Unix philosophy composability. Combined with --ids output, enables powerful pipelines: list → filter → act.",
       "dependsOn": ["US-012", "US-009"]
     },

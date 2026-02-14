@@ -17,6 +17,9 @@ import (
 	"github.com/klaassen-consulting/jc/internal/recipe"
 )
 
+// stdinParamsReader is the reader used for --params-stdin. Overridable in tests.
+var stdinParamsReader io.Reader
+
 // recipeDefaultFields is the default field subset shown for recipe list output.
 var recipeDefaultFields = []string{"name", "description", "version", "tags"}
 
@@ -157,14 +160,19 @@ func newRecipeRunCmd() *cobra.Command {
 		Short: "Execute a recipe with parameters",
 		Long: `Execute a recipe with parameters. Parameters are passed as --param key=value.
 
+Use --params-stdin to read parameters as a JSON object from stdin:
+  echo '{"username":"jdoe","email":"jdoe@acme.com"}' | jc recipe run onboard-user --params-stdin
+
 Examples:
   jc recipe run onboard-user --param username=jdoe --param email=jdoe@acme.com
-  jc recipe run onboard-user --param username=jdoe --plan`,
+  jc recipe run onboard-user --param username=jdoe --plan
+  echo '{"username":"jdoe"}' | jc recipe run onboard-user --params-stdin`,
 		Args: cobra.ExactArgs(1),
 		RunE: runRecipeRun,
 	}
 
 	cmd.Flags().StringArray("param", nil, "Recipe parameter as key=value (repeatable)")
+	cmd.Flags().Bool("params-stdin", false, "Read recipe parameters as JSON from stdin")
 
 	return cmd
 }
@@ -186,10 +194,19 @@ func runRecipeRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("recipe %q not found. Available recipes: %s", name, strings.Join(available, ", "))
 	}
 
-	// Parse --param flags into a map.
-	params, err := parseParamFlags(cmd)
-	if err != nil {
-		return err
+	// Parse parameters from --param flags or --params-stdin.
+	paramsStdin, _ := cmd.Flags().GetBool("params-stdin")
+	var params map[string]string
+	if paramsStdin {
+		params, err = parseParamsFromStdin()
+		if err != nil {
+			return err
+		}
+	} else {
+		params, err = parseParamFlags(cmd)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Plan mode: preview steps without executing.
@@ -256,6 +273,42 @@ func parseParamFlags(cmd *cobra.Command) (map[string]string, error) {
 			return nil, fmt.Errorf("invalid parameter format %q: expected key=value", p)
 		}
 		params[k] = v
+	}
+	return params, nil
+}
+
+// parseParamsFromStdin reads recipe parameters as a JSON object from stdin.
+// The JSON must be a flat object with string values: {"key": "value", ...}.
+func parseParamsFromStdin() (map[string]string, error) {
+	reader := stdinParamsReader
+	if reader == nil {
+		reader = stdinSource
+	}
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("reading params from stdin: %w", err)
+	}
+
+	if len(data) == 0 {
+		return make(map[string]string), nil
+	}
+
+	// Parse as generic map first to handle mixed value types.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("invalid JSON on stdin: %w", err)
+	}
+
+	params := make(map[string]string, len(raw))
+	for k, v := range raw {
+		switch val := v.(type) {
+		case string:
+			params[k] = val
+		default:
+			// Convert non-string values to their JSON representation.
+			params[k] = fmt.Sprintf("%v", val)
+		}
 	}
 	return params, nil
 }

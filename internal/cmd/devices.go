@@ -151,18 +151,35 @@ func runDevicesGet(cmd *cobra.Command, identifier string) error {
 
 func newDevicesDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <hostname-or-id>",
+		Use:   "delete [hostname-or-id]",
 		Short: "Delete a device",
 		Long: `Delete a JumpCloud system (device).
 
 Accepts a hostname or 24-character hex system ID.
 Shows the device's hostname, OS, and last contact date before prompting for
-confirmation. Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+confirmation. Use --force to skip the confirmation prompt.
+
+Stdin mode:
+  Use --stdin to read hostnames/IDs from stdin (one per line).
+  When stdin is piped, --stdin is implied automatically.
+  In stdin mode, --force is implied (no confirmation prompts).
+
+  jc devices list --filter 'active!=true' --ids | jc devices delete --force
+  cat devices.txt | jc devices delete --stdin --force`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			useStdin, _ := cmd.Flags().GetBool("stdin")
+			if useStdin || (len(args) == 0 && isStdinPiped()) {
+				return runDevicesDeleteStdin(cmd)
+			}
+			if len(args) == 0 {
+				return fmt.Errorf("requires a hostname or ID argument (or use --stdin)")
+			}
 			return runDevicesDelete(cmd, args[0])
 		},
 	}
+
+	cmd.Flags().Bool("stdin", false, "Read hostnames/IDs from stdin (one per line)")
 
 	return cmd
 }
@@ -229,6 +246,37 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Device %s deleted successfully.\n", device.Hostname)
+	return nil
+}
+
+// runDevicesDeleteStdin reads hostnames/IDs from stdin and deletes each one.
+func runDevicesDeleteStdin(cmd *cobra.Command) error {
+	identifiers, err := readLinesFromStdin()
+	if err != nil {
+		return err
+	}
+
+	if len(identifiers) == 0 {
+		return nil
+	}
+
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	result := runStdinBatch(identifiers, "device", "Deleting", cmd.ErrOrStderr(), func(identifier string) error {
+		id, err := resolveDevice(cmd.Context(), client, identifier)
+		if err != nil {
+			return err
+		}
+		_, err = client.Delete(cmd.Context(), "/systems/"+id)
+		return err
+	})
+
+	if result.Failed > 0 {
+		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
+	}
 	return nil
 }
 

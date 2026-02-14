@@ -879,3 +879,21 @@
   - `viper.GetStringMapString("aliases")` returns `map[string]string` directly — Viper handles YAML map → Go map conversion
   - `IsValidConfigKey()` uses a prefix check (`strings.HasPrefix(key, "aliases.")`) to allow arbitrary alias names without pre-registration
 ---
+
+## US-055: Stdin Support for Batch Operations
+- **Status:** COMPLETE
+- **Implementation:**
+  - `internal/cmd/stdin.go` — new file with stdin infrastructure: `stdinSource` var (testable), `isStdinPiped()` via `os.Stdin.Stat()`, `readLinesFromStdin()` using `bufio.Scanner`, `stdinBatchResult` struct, `runStdinBatch()` for batch processing with progress
+  - `internal/cmd/users.go` — updated `newUsersDeleteCmd()` with `--stdin` flag, `MaximumNArgs(1)`, auto-detect piped stdin, added `runUsersDeleteStdin()` batch handler
+  - `internal/cmd/devices.go` — same pattern for devices: `--stdin` flag, pipe detection, `runDevicesDeleteStdin()` batch handler
+  - `internal/cmd/groups.go` — same pattern for user groups and device groups: `--stdin` flags, `runGroupsUserDeleteStdin()` and `runGroupsDeviceDeleteStdin()`
+  - `internal/cmd/recipe.go` — added `--params-stdin` flag to recipe run, `stdinParamsReader` var for testing, `parseParamsFromStdin()` reads JSON object from stdin into `map[string]string`
+  - `internal/cmd/stdin_test.go` — 21 tests: readLines unit tests (multiple lines, empty, blank lines, trim), runStdinBatch tests (all succeed, some fail), users delete stdin (multi, empty, invalid, no-args error), devices delete stdin (multi, empty, no-args error), groups user/device delete stdin, parseParamsFromStdin (valid JSON, empty, invalid, mixed types), recipe run params-stdin integration
+- **Learnings for future iterations:**
+  - Stdin conflicts with confirmation prompts — when `--stdin` is active, `--force` must be used (both read from stdin)
+  - `bufio.Scanner` is preferred over `bufio.Reader.ReadString('\n')` for bulk line reading — handles both `\n` and `\r\n`, cleaner EOF handling
+  - `os.Stdin.Stat()` + `ModeCharDevice` check detects piped stdin without importing external `isatty` packages
+  - `stdinSource io.Reader` var pattern enables test injection — `overrideStdinSource(t, input)` swaps in `strings.NewReader`
+  - Separate `stdinParamsReader` for recipe `--params-stdin` avoids interference with line-based `stdinSource`
+  - Batch progress follows bulk.go pattern: `N of M` progress to stderr, summary at end
+---
