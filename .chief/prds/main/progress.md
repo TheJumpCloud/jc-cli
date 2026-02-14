@@ -60,6 +60,7 @@
 - `ValidInsightsServices`: all, sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager
 - `insightsNowFunc` var for test clock injection in time parsing
 - `newTestInsightsClient(serverURL)` test helper mirrors `newTestV1Client`/`newTestV2Client`
+- Distinct API returns bare scalars — `wrapScalarValues()` wraps them into `{"value": X}` objects for table/CSV/human output; JSON passes through unchanged
 
 ---
 
@@ -368,4 +369,18 @@
   - Service validation at the API client layer ensures consistent validation for both CLI commands and MCP tools
   - Three endpoints: `/events` (query), `/events/count` (aggregate count), `/events/distinct` (unique field values)
   - `InsightsQuery.Limit` is the raw API body field; `InsightsQueryOptions.Limit` controls client-side pagination — don't confuse them
+---
+
+## 2026-02-13 - US-039
+- Implemented Insights Count and Distinct subcommands
+- Files changed:
+  - `internal/cmd/insights.go` — added `newInsightsCountCmd()`, `runInsightsCount()`, `newInsightsDistinctCmd()`, `runInsightsDistinct()`, `wrapScalarValues()`; registered both subcommands in `newInsightsCmd()`; added `encoding/json` import
+  - `internal/cmd/insights_test.go` — added 26 new tests: count (JSON, table, event-type filter, start/end time, endpoint, invalid service, missing service, no time range, quiet, API error), distinct (JSON, table, footer, empty, field param, event-type filter, endpoint, invalid service, missing service, missing field, no time range, quiet, API error), help (includes count+distinct, count flags, distinct flags); added `startInsightsCountServer`, `startInsightsCountServerWithCapture`, `startInsightsDistinctServer`, `startInsightsDistinctServerWithCapture` test helpers
+  - `.chief/prds/main/prd.json` — marked US-039 as complete
+- **Learnings for future iterations:**
+  - Distinct values from the API are bare scalars (strings, numbers) not JSON objects — the output engine's table/CSV formatters require objects with keyed fields
+  - `wrapScalarValues()` wraps bare scalars into `{"value": X}` objects for table/CSV/human display; JSON output passes through raw scalars unchanged for fidelity
+  - Count uses `WriteSingle()` (single `{"count": N}` object); Distinct uses `WriteList()` (array of values) — matching the pattern of single-resource vs list commands
+  - Both commands reuse `resolveInsightsTimeRange()` for identical `--last`/`--start`/`--end` flag handling — zero duplication
+  - Count doesn't need `--limit`/`--sort` (returns single scalar); Distinct doesn't need them either (API doesn't support them for this endpoint)
 ---
