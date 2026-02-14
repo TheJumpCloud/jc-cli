@@ -1,5 +1,6 @@
 ## Codebase Patterns
 - Resource commands follow pattern: `internal/cmd/<resource>.go` with `new<Resource>Cmd()` parent + `new<Resource>ListCmd()` / `new<Resource>GetCmd()` subcommands
+- Graph traversal: V2 `GET /{resource}/{id}/associations?targets={type}` — `graphSourceConfig` maps source types to endpoint prefixes + resolver closures
 - `newV1Client` package-level var in users.go enables test injection (similar to `newAPIClient` in auth.go)
 - `ListAll()` returns `*ListResult{Data, TotalCount}` — use `TotalCount` for list footers
 - List footer goes to stderr (`cmd.ErrOrStderr()`), data to stdout — keeps piping clean
@@ -469,4 +470,31 @@
   - `config view` redacts plaintext API keys but shows `keychain://jc/<profile>` refs as-is since they're not secrets.
   - Active profile highlighting uses an `_active: true` field in the profile map — visible in both JSON and YAML output.
   - `ValidConfigKeys` is a flat list of dot-notation paths — simple to validate against and display in error messages.
+---
+
+## 2026-02-13 - US-031
+- What was implemented:
+  - `jc graph traverse --from <type>:<name-or-id> --to <target_type>` — traverses JumpCloud V2 graph associations
+  - Source types: user, device, user_group, device_group, application
+  - Target types: user, system, user_group, system_group, application, policy, command
+  - Name resolution works for all source types (users/devices via V1 resolver, groups via V2 resolver, apps via V1 resolver)
+  - `parseFromFlag()` parses `type:identifier` format with validation
+  - `getSourceConfig()` maps source types to V2 API endpoint prefixes and resolver functions
+  - Invalid source/target types produce clear errors with valid type lists
+  - Empty results return `[]` with exit code 0
+  - All output formats supported: JSON (default), table, CSV, `--ids`
+  - Footer to stderr: "── N items ──"
+  - V2 Graph API endpoint: `GET /api/v2/{resource_type}/{id}/associations?targets={target_type}`
+- Files changed:
+  - internal/cmd/graph.go — new graph command with traverse subcommand (190 lines)
+  - internal/cmd/graph_test.go — 24 tests covering all source types by ID and name, table/footer/IDs output, error cases (missing flags, invalid format, invalid types, empty identifier), API endpoint verification, help output
+  - internal/cmd/root.go — registered `newGraphCmd()`
+  - .chief/prds/main/prd.json — marked US-031 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - Graph association objects have nested `to` field (`{"to": {"type": "...", "id": "..."}}`). The output engine's flat field model means default fields should use `to` (the nested object), not `to.type`/`to.id` which don't work with the current `filterFields()` implementation.
+  - The `--ids` flag looks for top-level `_id`/`id`/`ID` fields. Graph associations from the real API may or may not have a top-level `id` — depends on the JumpCloud V2 response format for that endpoint.
+  - Combined V1+V2 mock server is needed for graph tests since name resolution uses V1 (users, devices, apps) while the graph API itself is V2. Both clients must point to the same test server.
+  - `graphSourceConfig` with `resolveFunc` closures is a clean pattern for mapping user-friendly type names to the right resolver+endpoint pair without creating a massive switch in the runner function.
+  - The `?targets=<type>` query parameter embeds in the endpoint URL string — same pattern as `apps.go` for associations. `buildV2ListURL` preserves existing query params.
 ---

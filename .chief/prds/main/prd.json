@@ -650,7 +650,8 @@
         "Association types validated (error on invalid from→to combinations)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "V2 Graph API enables traversal between all resource types. The graph command is powerful for auditing access relationships. Support common traversals first.",
       "dependsOn": ["US-023", "US-018"]
     },
