@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -28,11 +32,14 @@ func newPoliciesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policies",
 		Short: "Manage JumpCloud policies",
-		Long:  "List policies, get policy details, and view policy application results.",
+		Long:  "List, get, create, update, and delete JumpCloud policies, and view policy application results.",
 	}
 
 	cmd.AddCommand(newPoliciesListCmd())
 	cmd.AddCommand(newPoliciesGetCmd())
+	cmd.AddCommand(newPoliciesCreateCmd())
+	cmd.AddCommand(newPoliciesUpdateCmd())
+	cmd.AddCommand(newPoliciesDeleteCmd())
 	cmd.AddCommand(newPoliciesResultsCmd())
 
 	return cmd
@@ -200,5 +207,230 @@ func runPoliciesResults(cmd *cobra.Command, identifier string, limit int, sort s
 		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
 	}
 
+	return nil
+}
+
+func newPoliciesCreateCmd() *cobra.Command {
+	var (
+		name       string
+		templateID string
+		values     string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new policy",
+		Long: `Create a new JumpCloud policy.
+
+Required fields: --name, --template-id.
+Use --values to pass template-specific configuration as a JSON string.
+The newly created policy object is returned.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPoliciesCreate(cmd, name, templateID, values)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Policy name (required)")
+	cmd.Flags().StringVar(&templateID, "template-id", "", "Policy template ID (required)")
+	cmd.Flags().StringVar(&values, "values", "", "Template-specific config as JSON")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("template-id")
+
+	return cmd
+}
+
+func runPoliciesCreate(cmd *cobra.Command, name, templateID, values string) error {
+	if viper.GetBool("plan") {
+		effects := []string{"name: " + name, "template: " + templateID}
+		if values != "" {
+			effects = append(effects, "values: (custom JSON)")
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "policy",
+			Target:     name,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	body := map[string]any{
+		"name":     name,
+		"template": map[string]any{"id": templateID},
+	}
+	if values != "" {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(values), &v); err != nil {
+			return fmt.Errorf("invalid --values JSON: %w", err)
+		}
+		body["values"] = v
+	}
+
+	result, err := client.Create(cmd.Context(), "/policies", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newPoliciesUpdateCmd() *cobra.Command {
+	var (
+		name   string
+		values string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <policy-name-or-id>",
+		Short: "Update a policy",
+		Long: `Update an existing JumpCloud policy.
+
+Accepts a policy name or 24-character hex ID.
+Specify only the fields you want to change. The updated policy object is returned.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPoliciesUpdate(cmd, args[0], name, values)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Policy name")
+	cmd.Flags().StringVar(&values, "values", "", "Template-specific config as JSON")
+
+	return cmd
+}
+
+func runPoliciesUpdate(cmd *cobra.Command, identifier, name, values string) error {
+	body := map[string]any{}
+
+	if cmd.Flags().Changed("name") {
+		body["name"] = name
+	}
+	if cmd.Flags().Changed("values") {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(values), &v); err != nil {
+			return fmt.Errorf("invalid --values JSON: %w", err)
+		}
+		body["values"] = v
+	}
+
+	if len(body) == 0 {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --values)")
+	}
+
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "policy",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolvePolicy(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/policies/"+id, body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newPoliciesDeleteCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete <policy-name-or-id>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a policy",
+		Long: `Delete a JumpCloud policy.
+
+Accepts a policy name or 24-character hex ID.
+Shows the policy name before prompting for confirmation.
+Use --force to skip the confirmation prompt.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPoliciesDelete(cmd, args[0])
+		},
+	}
+
+	return cmd
+}
+
+func runPoliciesDelete(cmd *cobra.Command, identifier string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolvePolicy(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	// Fetch the policy first so we can show details in the confirmation/plan.
+	policyData, err := client.Get(cmd.Context(), "/policies/"+id)
+	if err != nil {
+		return err
+	}
+
+	var policy struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(policyData, &policy); err != nil {
+		return fmt.Errorf("parsing policy data: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "policy",
+			Target:   fmt.Sprintf("%s (%s)", policy.Name, id),
+			Effects:  []string{"Remove policy permanently"},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	// Confirmation prompt (unless --force is set).
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Delete policy %q? [y/N] ", policy.Name)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	_, err = client.Delete(cmd.Context(), "/policies/"+id)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Policy %q deleted successfully.\n", policy.Name)
 	return nil
 }

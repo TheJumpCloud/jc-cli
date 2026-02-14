@@ -181,7 +181,7 @@ var Resources = map[string]ResourceSchema{
 	"policies": {
 		Resource:      "policies",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get", "results"},
+		Verbs:         []string{"list", "get", "create", "update", "delete", "results"},
 		DefaultFields: []string{"id", "name", "template", "os"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique policy identifier"},
@@ -415,7 +415,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc policies",
 				Description: "Manage JumpCloud policies",
-				Subcommands: []string{"list", "get", "results"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "results"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},

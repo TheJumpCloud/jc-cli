@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,16 @@ func startPoliciesServer(t *testing.T, policies []map[string]any, statuses map[s
 		// GET /policies — list endpoint.
 		if r.URL.Path == "/policies" && r.Method == http.MethodGet {
 			json.NewEncoder(w).Encode(policies)
+			return
+		}
+
+		// POST /policies — create endpoint.
+		if r.URL.Path == "/policies" && r.Method == http.MethodPost {
+			var input map[string]any
+			json.NewDecoder(r.Body).Decode(&input)
+			input["id"] = "newpolicynewpolicynewpo1"
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(input)
 			return
 		}
 
@@ -40,16 +51,41 @@ func startPoliciesServer(t *testing.T, policies []map[string]any, statuses map[s
 				return
 			}
 
-			// GET /policies/{id} — get endpoint.
-			if r.Method == http.MethodGet {
-				for _, p := range policies {
-					if p["id"] == id {
-						json.NewEncoder(w).Encode(p)
-						return
-					}
+			// Find the policy by ID for GET/PUT/DELETE.
+			var found map[string]any
+			for _, p := range policies {
+				if p["id"] == id {
+					found = p
+					break
 				}
+			}
+
+			if found == nil {
 				w.WriteHeader(http.StatusNotFound)
 				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
+
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(found)
+				return
+			case http.MethodPut:
+				var input map[string]any
+				json.NewDecoder(r.Body).Decode(&input)
+				// Merge input into a copy of found.
+				merged := make(map[string]any)
+				for k, v := range found {
+					merged[k] = v
+				}
+				for k, v := range input {
+					merged[k] = v
+				}
+				json.NewEncoder(w).Encode(merged)
+				return
+			case http.MethodDelete:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(found)
 				return
 			}
 		}
@@ -644,6 +680,230 @@ func TestPoliciesResults_Empty(t *testing.T) {
 	}
 }
 
+// --- Create Tests ---
+
+func TestPoliciesCreate(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "create", "--name", "Test Policy", "--template-id", "tmpl001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["name"] != "Test Policy" {
+		t.Errorf("name = %q, want 'Test Policy'", result["name"])
+	}
+	if result["id"] != "newpolicynewpolicynewpo1" {
+		t.Errorf("id = %q, want 'newpolicynewpolicynewpo1'", result["id"])
+	}
+}
+
+func TestPoliciesCreate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "create", "--name", "Test", "--template-id", "tmpl001", "--plan"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ExitError for plan mode, got nil")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got: %T: %v", err, err)
+	}
+	if exitErr.Code != 10 {
+		t.Errorf("exit code = %d, want 10", exitErr.Code)
+	}
+}
+
+func TestPoliciesCreate_MissingName(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "create", "--template-id", "tmpl001"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --name, got nil")
+	}
+}
+
+// --- Update Tests ---
+
+func TestPoliciesUpdate(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "update", "aabbccddee112233aabb1001", "--name", "New Name"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["name"] != "New Name" {
+		t.Errorf("name = %q, want 'New Name'", result["name"])
+	}
+}
+
+func TestPoliciesUpdate_NoFields(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "update", "aabbccddee112233aabb1001"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no fields, got nil")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("error should mention 'no fields to update', got: %v", err)
+	}
+}
+
+func TestPoliciesUpdate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "update", "aabbccddee112233aabb1001", "--name", "New Name", "--plan"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ExitError for plan mode, got nil")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got: %T: %v", err, err)
+	}
+	if exitErr.Code != 10 {
+		t.Errorf("exit code = %d, want 10", exitErr.Code)
+	}
+}
+
+// --- Delete Tests ---
+
+func TestPoliciesDelete_Force(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "delete", "aabbccddee112233aabb1001", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "deleted successfully") {
+		t.Errorf("output should confirm deletion, got: %s", out)
+	}
+}
+
+func TestPoliciesDelete_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "delete", "aabbccddee112233aabb1001", "--plan"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ExitError for plan mode, got nil")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got: %T: %v", err, err)
+	}
+	if exitErr.Code != 10 {
+		t.Errorf("exit code = %d, want 10", exitErr.Code)
+	}
+}
+
+func TestPoliciesDelete_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startPoliciesServer(t, samplePolicies(), nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "delete", "aabbccddee112233aabb9999", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not-found policy, got nil")
+	}
+}
+
+func TestPoliciesDelete_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"policies", "delete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing arg, got nil")
+	}
+}
+
 // --- Help Tests ---
 
 func TestPoliciesHelp_Subcommands(t *testing.T) {
@@ -660,7 +920,7 @@ func TestPoliciesHelp_Subcommands(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, sub := range []string{"list", "get", "results"} {
+	for _, sub := range []string{"list", "get", "create", "update", "delete", "results"} {
 		if !strings.Contains(out, sub) {
 			t.Errorf("help should contain subcommand %q, got:\n%s", sub, out)
 		}
