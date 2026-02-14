@@ -548,8 +548,8 @@ func runAuthPoliciesSimulate(cmd *cobra.Command, policyIdentifier, userIdentifie
 		return err
 	}
 
-	var policy simulator.Policy
-	if err := json.Unmarshal(policyRaw, &policy); err != nil {
+	policy, err := parsePolicyFromAPI(policyRaw)
+	if err != nil {
 		return fmt.Errorf("parsing policy: %w", err)
 	}
 
@@ -664,6 +664,72 @@ func parseDeviceStatus(raw json.RawMessage) (managed *bool, encrypted *bool) {
 	return managed, encrypted
 }
 
+// parsePolicyFromAPI converts raw JumpCloud API policy JSON into a simulator.Policy.
+// The API shape differs from the simulator's domain types:
+//   - effect is {action: "allow", obligations: {mfa: {required: true}}} → "allow"/"deny"/"allow_with_mfa"
+//   - targets has {users: {inclusions: ["all"]}, userGroups: {inclusions: [...]}} → flat fields
+func parsePolicyFromAPI(raw json.RawMessage) (simulator.Policy, error) {
+	var apiPolicy struct {
+		ID         string          `json:"id"`
+		Name       string          `json:"name"`
+		Disabled   bool            `json:"disabled"`
+		Type       string          `json:"type"`
+		Conditions json.RawMessage `json:"conditions"`
+		Effect     struct {
+			Action      string `json:"action"`
+			Obligations struct {
+				MFA struct {
+					Required bool `json:"required"`
+				} `json:"mfa"`
+			} `json:"obligations"`
+		} `json:"effect"`
+		Targets struct {
+			Users struct {
+				Inclusions []string `json:"inclusions"`
+			} `json:"users"`
+			UserGroups struct {
+				Inclusions []string `json:"inclusions"`
+			} `json:"userGroups"`
+			Resources []struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+			} `json:"resources"`
+		} `json:"targets"`
+	}
+
+	if err := json.Unmarshal(raw, &apiPolicy); err != nil {
+		return simulator.Policy{}, err
+	}
+
+	// Derive effect string from nested structure.
+	effect := apiPolicy.Effect.Action
+	if effect == "allow" && apiPolicy.Effect.Obligations.MFA.Required {
+		effect = "allow_with_mfa"
+	}
+
+	// Map targets structure.
+	var allUsers bool
+	for _, inc := range apiPolicy.Targets.Users.Inclusions {
+		if inc == "all" {
+			allUsers = true
+			break
+		}
+	}
+
+	return simulator.Policy{
+		ID:         apiPolicy.ID,
+		Name:       apiPolicy.Name,
+		Disabled:   apiPolicy.Disabled,
+		Type:       apiPolicy.Type,
+		Conditions: apiPolicy.Conditions,
+		Effect:     effect,
+		Targets: simulator.PolicyTargets{
+			UserGroups: apiPolicy.Targets.UserGroups.Inclusions,
+			AllUsers:   allUsers,
+		},
+	}, nil
+}
+
 // --- Blast Radius Command ---
 
 func newAuthPoliciesBlastRadiusCmd() *cobra.Command {
@@ -711,14 +777,8 @@ func runAuthPoliciesBlastRadius(cmd *cobra.Command, identifier string, limit int
 		return err
 	}
 
-	var policy struct {
-		Name    string `json:"name"`
-		Targets struct {
-			UserGroups []string `json:"userGroups"`
-			AllUsers   bool     `json:"allUsers"`
-		} `json:"targets"`
-	}
-	if err := json.Unmarshal(policyRaw, &policy); err != nil {
+	policy, err := parsePolicyFromAPI(policyRaw)
+	if err != nil {
 		return fmt.Errorf("parsing policy: %w", err)
 	}
 

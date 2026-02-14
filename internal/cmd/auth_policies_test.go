@@ -811,6 +811,32 @@ func simulateTestUsers() []map[string]any {
 	}
 }
 
+// apiEffect builds the nested effect structure matching the real JumpCloud API format.
+func apiEffect(action string, mfaRequired bool) map[string]any {
+	return map[string]any{
+		"action": action,
+		"obligations": map[string]any{
+			"mfa": map[string]any{"required": mfaRequired},
+		},
+	}
+}
+
+// apiTargets builds the nested targets structure matching the real JumpCloud API format.
+func apiTargets(allUsers bool, groupIDs []string) map[string]any {
+	inclusions := []string{}
+	if allUsers {
+		inclusions = []string{"all"}
+	}
+	if groupIDs == nil {
+		groupIDs = []string{}
+	}
+	return map[string]any{
+		"users":      map[string]any{"inclusions": inclusions},
+		"userGroups": map[string]any{"inclusions": groupIDs, "exclusions": []string{}},
+		"resources":  []any{},
+	}
+}
+
 func simulateTestPolicies() []map[string]any {
 	return []map[string]any{
 		{
@@ -821,11 +847,8 @@ func simulateTestPolicies() []map[string]any {
 			"conditions": map[string]any{
 				"ipAddressIn": "aabbccddee112233aabb2001",
 			},
-			"effect": "allow_with_mfa",
-			"targets": map[string]any{
-				"allUsers":   true,
-				"userGroups": []string{},
-			},
+			"effect":  apiEffect("allow", true),
+			"targets": apiTargets(true, nil),
 		},
 		{
 			"id":       "aabbccddee112233aabb3002",
@@ -835,11 +858,8 @@ func simulateTestPolicies() []map[string]any {
 			"conditions": map[string]any{
 				"ipAddressNotIn": "aabbccddee112233aabb2001",
 			},
-			"effect": "deny",
-			"targets": map[string]any{
-				"allUsers":   false,
-				"userGroups": []string{"ccddee112233aabbccdd0001"},
-			},
+			"effect":  apiEffect("deny", false),
+			"targets": apiTargets(false, []string{"ccddee112233aabbccdd0001"}),
 		},
 		{
 			"id":       "aabbccddee112233aabb3003",
@@ -847,11 +867,8 @@ func simulateTestPolicies() []map[string]any {
 			"disabled": false,
 			"type":     "user_portal",
 			"conditions": map[string]any{},
-			"effect":     "allow",
-			"targets": map[string]any{
-				"allUsers":   true,
-				"userGroups": []string{},
-			},
+			"effect":    apiEffect("allow", false),
+			"targets":   apiTargets(true, nil),
 		},
 	}
 }
@@ -1101,11 +1118,8 @@ func TestSimulate_WithDevice(t *testing.T) {
 			"conditions": map[string]any{
 				"deviceManaged": true,
 			},
-			"effect": "allow",
-			"targets": map[string]any{
-				"allUsers":   true,
-				"userGroups": []string{},
-			},
+			"effect":  apiEffect("allow", false),
+			"targets": apiTargets(true, nil),
 		},
 	}
 
@@ -1228,11 +1242,8 @@ func TestBlastRadius_NoTargetGroups(t *testing.T) {
 			"disabled":   false,
 			"type":       "user_portal",
 			"conditions": map[string]any{},
-			"effect":     "allow",
-			"targets": map[string]any{
-				"allUsers":   false,
-				"userGroups": []string{},
-			},
+			"effect":     apiEffect("allow", false),
+			"targets":    apiTargets(false, nil),
 		},
 	}
 
@@ -1316,11 +1327,8 @@ func TestBlastRadius_DeduplicatesAcrossGroups(t *testing.T) {
 			"disabled":   false,
 			"type":       "user_portal",
 			"conditions": map[string]any{},
-			"effect":     "allow",
-			"targets": map[string]any{
-				"allUsers":   false,
-				"userGroups": []string{"ccddee112233aabbccdd0001", "ccddee112233aabbccdd0002"},
-			},
+			"effect":     apiEffect("allow", false),
+			"targets":    apiTargets(false, []string{"ccddee112233aabbccdd0001", "ccddee112233aabbccdd0002"}),
 		},
 	}
 

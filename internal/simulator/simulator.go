@@ -363,16 +363,45 @@ func evalIPAddressIn(val json.RawMessage, ctx SimulationContext, ipResolver IPLi
 		return TriFalse
 	}
 
-	// Try as direct IP list.
-	var ips []string
-	if err := json.Unmarshal(val, &ips); err == nil {
-		if MatchIP(ctx.IP, ips) {
+	// Try as array of strings — could be IP list IDs (24-char hex) or direct IPs/CIDRs.
+	var items []string
+	if err := json.Unmarshal(val, &items); err == nil {
+		// Classify: if any item looks like an IP list ID (24-char hex), resolve via API.
+		// Otherwise treat as direct IP/CIDR entries.
+		var directIPs []string
+		for _, item := range items {
+			if isIPListID(item) && ipResolver != nil {
+				entries, err := ipResolver(item)
+				if err != nil {
+					continue
+				}
+				if MatchIP(ctx.IP, entries) {
+					return TriTrue
+				}
+			} else {
+				directIPs = append(directIPs, item)
+			}
+		}
+		if MatchIP(ctx.IP, directIPs) {
 			return TriTrue
 		}
 		return TriFalse
 	}
 
 	return TriUnknown
+}
+
+// isIPListID returns true if the string looks like a JumpCloud IP list ID (24-char hex).
+func isIPListID(s string) bool {
+	if len(s) != 24 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func evalBoolPredicate(val json.RawMessage, actual *bool) TriState {
@@ -396,21 +425,35 @@ func evalLocationIn(val json.RawMessage, ctx SimulationContext) TriState {
 		return TriUnknown
 	}
 
-	// Value can be a single string or array of strings.
-	var single string
-	if err := json.Unmarshal(val, &single); err == nil {
-		if strings.EqualFold(ctx.Location, single) {
-			return TriTrue
+	// Real API uses {countries: ["SG", "US"]} object format.
+	var locObj struct {
+		Countries []string `json:"countries"`
+	}
+	if err := json.Unmarshal(val, &locObj); err == nil && len(locObj.Countries) > 0 {
+		for _, loc := range locObj.Countries {
+			if strings.EqualFold(ctx.Location, loc) {
+				return TriTrue
+			}
 		}
 		return TriFalse
 	}
 
+	// Fallback: array of strings.
 	var locations []string
 	if err := json.Unmarshal(val, &locations); err == nil {
 		for _, loc := range locations {
 			if strings.EqualFold(ctx.Location, loc) {
 				return TriTrue
 			}
+		}
+		return TriFalse
+	}
+
+	// Fallback: single string.
+	var single string
+	if err := json.Unmarshal(val, &single); err == nil {
+		if strings.EqualFold(ctx.Location, single) {
+			return TriTrue
 		}
 		return TriFalse
 	}
