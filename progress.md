@@ -1134,3 +1134,33 @@
   - V1 read-only pattern (org) is much simpler than V2 CRUD — no resolver, no mutations, no plan mode, no confirmation prompts. ~100 lines vs ~300 lines.
   - MCP tool wiring is substantial (~600 lines for 5 resources) but follows a mechanical pattern — good candidate for code generation in the future.
 ---
+
+## 2026-02-14 - MCP Tool Gap Closure: Full CLI Parity
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commit:** `82c0b8c`
+- What was implemented:
+  - Closed the MCP tool gap — every CLI subcommand now has a corresponding MCP tool.
+  - **Before:** 59 typed tools + 1 ping = 60 total. **After:** 94 typed tools + 1 ping = 95 total. **Net new:** 35 tools.
+  - **Users** (+1): `users_search` — POST `/search/systemusers` with keyword matching across fields.
+  - **Devices** (+3): `devices_update` (PUT settings), `devices_delete` (remove device), `devices_search` (POST `/search/systems`).
+  - **Groups — User** (+5): `groups_user_list`, `groups_user_get`, `groups_user_create`, `groups_user_update`, `groups_user_delete` — V2 CRUD for `/usergroups`.
+  - **Groups — Device** (+5): `groups_device_list`, `groups_device_get`, `groups_device_create`, `groups_device_update`, `groups_device_delete` — V2 CRUD for `/systemgroups`.
+  - **Commands** (+5): `commands_get`, `commands_create`, `commands_update`, `commands_delete`, `commands_results` — V1 CRUD + result fetching.
+  - **Policies** (+5): `policies_get`, `policies_create`, `policies_update`, `policies_delete`, `policies_results` — V2 CRUD + status results.
+  - **Auth Policies** (+2): `auth_policies_enable`, `auth_policies_disable` — convenience toggles for the `disabled` field.
+  - **Insights** (+1): `insights_distinct` — distinct field values from Directory Insights events.
+  - **Apps** (+5): `apps_list`, `apps_get`, `apps_create`, `apps_update`, `apps_delete` — V1 CRUD for `/applications`.
+  - **Graph** (+3): `graph_traverse` (list associations), `graph_bind` (create association), `graph_unbind` (remove association) — V2 graph associations API.
+  - **Rewrites** (4): `commands_list`, `insights_count`, `insights_query`, `policies_list` — expanded with proper input types and richer descriptions.
+  - **14 new input types**: `searchInput`, `deviceUpdateInput`, `commandCreateInput`, `commandUpdateInput`, `resultsInput`, `policyCreateInput`, `policyUpdateInput`, `groupCreateInput`, `groupUpdateInput`, `appCreateInput`, `appUpdateInput`, `graphTraverseInput`, `graphBindInput`, `insightsDistinctInput`.
+  - **5 new helper functions**: `parseGraphFrom()`, `parseGraphTarget()`, `resolveGraphSource()`, `resolveGraphTarget()`, `flattenAssociations()` — graph operations need source/target type resolution and association flattening.
+  - All destructive tools follow plan-first safety pattern (require `execute: true`).
+  - `describeCommand()` map updated with entries for all new tools.
+- Files changed:
+  - `internal/mcp/tools.go` — 1,300 insertions, 144 deletions (2,035 → 3,335 lines)
+- **Learnings:**
+  - A single comprehensive subagent works better than parallel agents for a single-file change — avoids file-modified conflicts entirely.
+  - MCP tool descriptions matter for LLM discovery — longer, more explicit descriptions with field names and example values improve tool selection accuracy.
+  - Graph bind/unbind in MCP needed helper functions (`parseGraphFrom`, `parseGraphTarget`) because the `--from type:id` CLI flag pattern doesn't map directly to MCP's typed JSON inputs — MCP uses separate `source_type`, `source_id`, `target_type`, `target_id` fields instead.
+  - `flattenAssociations()` extracts `to.type` and `to.id` from nested graph response objects — MCP consumers prefer flat key-value pairs over deeply nested JSON.
+---
