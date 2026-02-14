@@ -3,6 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,6 +19,20 @@ import (
 
 // recipeDefaultFields is the default field subset shown for recipe list output.
 var recipeDefaultFields = []string{"name", "description", "version", "tags"}
+
+// recipeInputReader is used by recipe create for interactive input.
+// Overridable in tests.
+var recipeInputReader InputReader
+
+func getRecipeInputReader() InputReader {
+	if recipeInputReader != nil {
+		return recipeInputReader
+	}
+	return defaultInput
+}
+
+// recipeHTTPGet fetches a URL. Overridable in tests.
+var recipeHTTPGet = http.Get
 
 // newRootCmdForRecipe creates a fresh root command for recipe step dispatch.
 // This is a package-level var so tests can override it.
@@ -37,6 +55,9 @@ placed in ~/.config/jc/recipes/.`,
 	cmd.AddCommand(newRecipeShowCmd())
 	cmd.AddCommand(newRecipeRunCmd())
 	cmd.AddCommand(newRecipeValidateCmd())
+	cmd.AddCommand(newRecipeCreateCmd())
+	cmd.AddCommand(newRecipeImportCmd())
+	cmd.AddCommand(newRecipeExportCmd())
 
 	return cmd
 }
@@ -258,4 +279,312 @@ func runRecipeValidate(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Recipe %s is valid.\n", path)
 	return nil
+}
+
+// --- recipe create ---
+
+func newRecipeCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create",
+		Short: "Interactively create a new recipe",
+		Long: `Interactively build a new recipe by prompting for name, description,
+parameters, and steps. The resulting YAML is saved to ~/.config/jc/recipes/.`,
+		RunE: runRecipeCreate,
+	}
+}
+
+func runRecipeCreate(cmd *cobra.Command, args []string) error {
+	input := getRecipeInputReader()
+	w := cmd.ErrOrStderr()
+
+	// Prompt for name.
+	fmt.Fprint(w, "Recipe name: ")
+	name, err := input.ReadLine()
+	if err != nil {
+		return fmt.Errorf("reading name: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("recipe name is required")
+	}
+
+	// Prompt for description.
+	fmt.Fprint(w, "Description: ")
+	desc, err := input.ReadLine()
+	if err != nil {
+		return fmt.Errorf("reading description: %w", err)
+	}
+
+	// Build the recipe.
+	r := &recipe.Recipe{
+		Name:        name,
+		Description: strings.TrimSpace(desc),
+		Version:     "1.0",
+	}
+
+	// Prompt for parameters (loop until empty name).
+	fmt.Fprintln(w, "\nAdd parameters (press Enter with empty name to finish):")
+	for {
+		fmt.Fprint(w, "  Parameter name: ")
+		pName, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading parameter name: %w", err)
+		}
+		pName = strings.TrimSpace(pName)
+		if pName == "" {
+			break
+		}
+
+		fmt.Fprint(w, "  Description: ")
+		pDesc, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading parameter description: %w", err)
+		}
+
+		fmt.Fprint(w, "  Required (y/n): ")
+		pReq, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading parameter required: %w", err)
+		}
+
+		p := recipe.Parameter{
+			Name:        pName,
+			Description: strings.TrimSpace(pDesc),
+			Required:    strings.TrimSpace(strings.ToLower(pReq)) == "y",
+			Type:        "string",
+		}
+		r.Parameters = append(r.Parameters, p)
+	}
+
+	// Prompt for steps (loop until empty name).
+	fmt.Fprintln(w, "\nAdd steps (press Enter with empty name to finish):")
+	for {
+		fmt.Fprint(w, "  Step name: ")
+		sName, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading step name: %w", err)
+		}
+		sName = strings.TrimSpace(sName)
+		if sName == "" {
+			break
+		}
+
+		fmt.Fprint(w, "  Command: ")
+		sCmd, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading step command: %w", err)
+		}
+
+		s := recipe.Step{
+			Name:    sName,
+			Command: strings.TrimSpace(sCmd),
+		}
+		r.Steps = append(r.Steps, s)
+	}
+
+	if len(r.Steps) == 0 {
+		return fmt.Errorf("recipe must have at least one step")
+	}
+
+	// Validate the recipe.
+	if err := r.Validate(); err != nil {
+		return err
+	}
+
+	// Marshal to YAML.
+	data, err := recipe.MarshalYAML(r)
+	if err != nil {
+		return fmt.Errorf("marshaling recipe: %w", err)
+	}
+
+	// Ensure recipes directory exists.
+	dir := recipe.RecipesDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating recipes directory: %w", err)
+	}
+
+	// Write the recipe file.
+	outPath := filepath.Join(dir, name+".yaml")
+
+	// Check for existing file and prompt for overwrite.
+	if _, err := os.Stat(outPath); err == nil {
+		fmt.Fprintf(w, "\nRecipe %q already exists. Overwrite? [y/N]: ", name)
+		confirm, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		if strings.TrimSpace(strings.ToLower(confirm)) != "y" {
+			fmt.Fprintln(w, "Cancelled.")
+			return nil
+		}
+	}
+
+	if err := os.WriteFile(outPath, data, 0600); err != nil {
+		return fmt.Errorf("writing recipe: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Recipe saved to %s\n", outPath)
+	return nil
+}
+
+// --- recipe import ---
+
+func newRecipeImportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "import <url-or-path>",
+		Short: "Import a recipe from a URL or local file",
+		Long: `Import a recipe from a URL or local file path. The recipe is validated
+before saving to ~/.config/jc/recipes/.
+
+Examples:
+  jc recipe import https://example.com/recipes/my-recipe.yaml
+  jc recipe import /path/to/recipe.yaml`,
+		Args: cobra.ExactArgs(1),
+		RunE: runRecipeImport,
+	}
+}
+
+func runRecipeImport(cmd *cobra.Command, args []string) error {
+	source := args[0]
+	w := cmd.ErrOrStderr()
+
+	var data []byte
+	var err error
+
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// Fetch from URL.
+		resp, err := recipeHTTPGet(source)
+		if err != nil {
+			return fmt.Errorf("fetching recipe: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("fetching recipe: HTTP %d", resp.StatusCode)
+		}
+
+		data, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("reading response: %w", err)
+		}
+	} else {
+		// Read from local file.
+		data, err = os.ReadFile(source)
+		if err != nil {
+			return fmt.Errorf("reading recipe file: %w", err)
+		}
+	}
+
+	// Validate the recipe.
+	r, err := recipe.Parse(data)
+	if err != nil {
+		return fmt.Errorf("invalid recipe: %w", err)
+	}
+
+	// For URL imports, show recipe details and prompt for confirmation.
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		fmt.Fprintf(w, "Recipe: %s\n", r.Name)
+		if r.Description != "" {
+			fmt.Fprintf(w, "Description: %s\n", r.Description)
+		}
+		fmt.Fprintf(w, "Steps: %d\n", len(r.Steps))
+		for i, s := range r.Steps {
+			fmt.Fprintf(w, "  [%d] %s: %s\n", i+1, s.Name, s.Command)
+		}
+
+		fmt.Fprint(w, "\nImport this recipe? [y/N]: ")
+		input := getRecipeInputReader()
+		confirm, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		if strings.TrimSpace(strings.ToLower(confirm)) != "y" {
+			fmt.Fprintln(w, "Import cancelled.")
+			return nil
+		}
+	}
+
+	// Ensure recipes directory exists.
+	dir := recipe.RecipesDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating recipes directory: %w", err)
+	}
+
+	// Check for duplicate name.
+	outPath := filepath.Join(dir, r.Name+".yaml")
+	if _, err := os.Stat(outPath); err == nil {
+		fmt.Fprintf(w, "Recipe %q already exists. Overwrite? [y/N]: ", r.Name)
+		input := getRecipeInputReader()
+		confirm, err := input.ReadLine()
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		if strings.TrimSpace(strings.ToLower(confirm)) != "y" {
+			fmt.Fprintln(w, "Import cancelled.")
+			return nil
+		}
+	}
+
+	if err := os.WriteFile(outPath, data, 0600); err != nil {
+		return fmt.Errorf("writing recipe: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Recipe %q imported to %s\n", r.Name, outPath)
+	return nil
+}
+
+// --- recipe export ---
+
+func newRecipeExportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export <name>",
+		Short: "Export a recipe as YAML",
+		Long: `Export a recipe as YAML to stdout or to a file.
+
+Examples:
+  jc recipe export onboard-user
+  jc recipe export onboard-user --file onboard.yaml`,
+		Args: cobra.ExactArgs(1),
+		RunE: runRecipeExport,
+	}
+
+	cmd.Flags().String("file", "", "Write recipe to file instead of stdout")
+
+	return cmd
+}
+
+func runRecipeExport(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	recipes, err := recipe.LoadAll()
+	if err != nil {
+		return err
+	}
+
+	r := recipe.FindByName(recipes, name)
+	if r == nil {
+		available := make([]string, 0, len(recipes))
+		for _, rec := range recipes {
+			available = append(available, rec.Name)
+		}
+		return fmt.Errorf("recipe %q not found. Available recipes: %s", name, strings.Join(available, ", "))
+	}
+
+	data, err := recipe.MarshalYAML(r)
+	if err != nil {
+		return fmt.Errorf("marshaling recipe: %w", err)
+	}
+
+	outFile, _ := cmd.Flags().GetString("file")
+	if outFile != "" {
+		if err := os.WriteFile(outFile, data, 0600); err != nil {
+			return fmt.Errorf("writing file: %w", err)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "Recipe %q exported to %s\n", name, outFile)
+		return nil
+	}
+
+	// Write YAML to stdout.
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
 }

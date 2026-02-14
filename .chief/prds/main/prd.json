@@ -942,7 +942,8 @@
         "Duplicate recipe name prompts for overwrite confirmation"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Interactive recipe builder uses survey/huh for step-by-step prompts. Import from URL should validate before saving to prevent malicious recipes.",
       "dependsOn": ["US-042"]
     },

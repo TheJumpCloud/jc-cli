@@ -418,6 +418,11 @@ func RenderPlanHuman(w io.Writer, recipeName string, plans []StepPlan) {
 	fmt.Fprintln(w, "\nNo changes made (plan mode).")
 }
 
+// MarshalYAML serializes a recipe to YAML bytes.
+func MarshalYAML(r *Recipe) ([]byte, error) {
+	return yaml.Marshal(r)
+}
+
 // RecipesDir returns the directory where user-defined recipes are stored.
 // It is a variable to allow test overrides.
 var RecipesDir = func() string {

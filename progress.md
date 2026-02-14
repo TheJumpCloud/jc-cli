@@ -721,3 +721,30 @@
   - Plan mode routing: checks `cmd.Root().PersistentFlags().Lookup("output").Changed` to distinguish explicit `--output json` from default — same pattern as `renderPlan()` in other cmd files
   - Recipe show uses `output.WriteSingle()` with the full marshaled Recipe struct — the output engine handles JSON/table/human formatting automatically
 ---
+
+## 2026-02-13 - US-045
+- What was implemented:
+  - `jc recipe create` — interactive recipe builder prompting for name, description, parameters (loop), and steps (loop); writes YAML to `~/.config/jc/recipes/<name>.yaml`
+  - `jc recipe import <url-or-path>` — imports recipe from URL (HTTP GET) or local file path; validates via `recipe.Parse()` before saving
+  - URL imports show recipe details (name, steps) and prompt for confirmation before saving
+  - `jc recipe export <name>` — exports recipe as YAML to stdout
+  - `jc recipe export <name> --file output.yaml` — writes recipe to specified file
+  - Duplicate recipe names prompt for overwrite confirmation (both create and import)
+  - `recipe.MarshalYAML(r)` — new function in recipe package for clean YAML serialization
+  - `recipeInputReader` var for test injection (reuses `InputReader` interface from auth.go)
+  - `recipeHTTPGet` var for test injection of HTTP client in URL import tests
+  - `multiLineInput` test helper — implements `InputReader` with a sequence of line responses for multi-prompt testing
+- Files changed:
+  - internal/cmd/recipe.go — added `newRecipeCreateCmd()`, `newRecipeImportCmd()`, `newRecipeExportCmd()`, `recipeInputReader`, `recipeHTTPGet`, registered 3 new subcommands
+  - internal/cmd/recipe_test.go — added 22 new tests: create success/empty-name/no-steps/overwrite-confirm/overwrite-cancel, import local/invalid/nonexistent/URL/URL-cancel/URL-error/duplicate-overwrite/missing-arg, export stdout/file/not-found/missing-arg/round-trip, help tests for new commands
+  - internal/recipe/recipe.go — added `MarshalYAML()` function
+  - .chief/prds/main/prd.json — marked US-045 passes
+  - progress.md — added progress entry
+- **Learnings for future iterations:**
+  - `InputReader` interface from auth.go is reusable for any interactive command — just create a new package-level var (`recipeInputReader`) with the same override pattern
+  - `multiLineInput` test helper with index-based line consumption is the right pattern for testing multi-prompt flows — simpler than piping stdin
+  - `recipeHTTPGet` var wraps `http.Get` for testability — URL import tests use `httptest.NewServer` to serve recipe YAML
+  - `yaml.Marshal()` with the existing `yaml:` struct tags on `Recipe` produces clean, round-trippable YAML — no custom marshaling needed
+  - URL vs file path detection via `strings.HasPrefix(source, "http://")` is sufficient — no need for `url.Parse()` since recipe sources are simple paths or URLs
+  - Overwrite checks use `os.Stat()` before writing — if file exists, prompt for confirmation; reused in both create and import
+---

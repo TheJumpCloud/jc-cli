@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -807,5 +810,638 @@ func TestRootCmd_IncludesRecipe(t *testing.T) {
 	output := out.String()
 	if !strings.Contains(output, "recipe") {
 		t.Errorf("root help should include recipe command, got: %q", output)
+	}
+}
+
+// --- recipe create tests ---
+
+// multiLineInput implements InputReader for tests that need multiple line responses.
+type multiLineInput struct {
+	lines []string
+	index int
+}
+
+func (m *multiLineInput) ReadAPIKey() (string, error) {
+	return m.ReadLine()
+}
+
+func (m *multiLineInput) ReadLine() (string, error) {
+	if m.index >= len(m.lines) {
+		return "", fmt.Errorf("no more input")
+	}
+	line := m.lines[m.index]
+	m.index++
+	return line, nil
+}
+
+func overrideRecipeInputReader(t *testing.T, input InputReader) {
+	t.Helper()
+	orig := recipeInputReader
+	recipeInputReader = input
+	t.Cleanup(func() { recipeInputReader = orig })
+}
+
+func TestRecipeCreate_Success(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Simulate: name, desc, param(name, desc, required), empty param, step(name, cmd), empty step
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{
+		"my-new-recipe",    // name
+		"A brand new recipe", // description
+		"target",           // param name
+		"Target user",      // param desc
+		"y",                // param required
+		"",                 // empty param name (stop params)
+		"greet",            // step name
+		"users list",       // step command
+		"",                 // empty step name (stop steps)
+	}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "create"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stdout := out.String()
+	if !strings.Contains(stdout, "Recipe saved to") {
+		t.Errorf("should confirm save, got: %q", stdout)
+	}
+
+	// Verify the file was created.
+	savedPath := filepath.Join(recipeDir, "my-new-recipe.yaml")
+	data, err := os.ReadFile(savedPath)
+	if err != nil {
+		t.Fatalf("recipe file not created: %v", err)
+	}
+
+	// Verify the YAML can be parsed back.
+	r, err := recipe.ParseFile(savedPath)
+	if err != nil {
+		t.Fatalf("saved recipe invalid: %v", err)
+	}
+	if r.Name != "my-new-recipe" {
+		t.Errorf("name = %q, want my-new-recipe", r.Name)
+	}
+	if r.Description != "A brand new recipe" {
+		t.Errorf("description = %q, want A brand new recipe", r.Description)
+	}
+	if len(r.Parameters) != 1 {
+		t.Fatalf("parameters count = %d, want 1", len(r.Parameters))
+	}
+	if r.Parameters[0].Name != "target" {
+		t.Errorf("param name = %q, want target", r.Parameters[0].Name)
+	}
+	if !r.Parameters[0].Required {
+		t.Error("param should be required")
+	}
+	if len(r.Steps) != 1 {
+		t.Fatalf("steps count = %d, want 1", len(r.Steps))
+	}
+	if r.Steps[0].Name != "greet" {
+		t.Errorf("step name = %q, want greet", r.Steps[0].Name)
+	}
+	if r.Steps[0].Command != "users list" {
+		t.Errorf("step command = %q, want users list", r.Steps[0].Command)
+	}
+	_ = data
+}
+
+func TestRecipeCreate_EmptyName(t *testing.T) {
+	setupRecipeTest(t)
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{""}})
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "create"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
+	if !strings.Contains(err.Error(), "name is required") {
+		t.Errorf("error should mention name required, got: %q", err.Error())
+	}
+}
+
+func TestRecipeCreate_NoSteps(t *testing.T) {
+	setupRecipeTest(t)
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{
+		"empty-recipe", // name
+		"No steps",     // description
+		"",             // no params
+		"",             // no steps
+	}})
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "create"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no steps")
+	}
+	if !strings.Contains(err.Error(), "at least one step") {
+		t.Errorf("error should mention steps required, got: %q", err.Error())
+	}
+}
+
+func TestRecipeCreate_OverwriteConfirm(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Pre-create the file.
+	_ = os.WriteFile(filepath.Join(recipeDir, "existing.yaml"),
+		[]byte("name: existing\nsteps:\n  - name: s1\n    command: version\n"), 0600)
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{
+		"existing",       // name (conflicts)
+		"Updated recipe", // description
+		"",               // no params
+		"new-step",       // step name
+		"users list",     // step command
+		"",               // no more steps
+		"y",              // overwrite confirm
+	}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "create"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Recipe saved") {
+		t.Errorf("should confirm save after overwrite, got: %q", out.String())
+	}
+}
+
+func TestRecipeCreate_OverwriteCancel(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Pre-create the file.
+	_ = os.WriteFile(filepath.Join(recipeDir, "existing.yaml"),
+		[]byte("name: existing\nsteps:\n  - name: s1\n    command: version\n"), 0600)
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{
+		"existing",       // name (conflicts)
+		"Updated recipe", // description
+		"",               // no params
+		"new-step",       // step name
+		"users list",     // step command
+		"",               // no more steps
+		"n",              // cancel overwrite
+	}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "create"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(errOut.String(), "Cancelled") {
+		t.Errorf("should show cancelled, got stderr: %q", errOut.String())
+	}
+}
+
+// --- recipe import tests ---
+
+func TestRecipeImport_LocalFile(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Write a recipe to a temp file.
+	sourcePath := writeTempRecipe(t, "import-me.yaml", validRecipeYAML)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", sourcePath})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stdout := out.String()
+	if !strings.Contains(stdout, "imported") {
+		t.Errorf("should confirm import, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "test-recipe") {
+		t.Errorf("should show recipe name, got: %q", stdout)
+	}
+
+	// Verify the file was saved.
+	saved := filepath.Join(recipeDir, "test-recipe.yaml")
+	if _, err := os.Stat(saved); err != nil {
+		t.Errorf("imported recipe file not found: %v", err)
+	}
+}
+
+func TestRecipeImport_InvalidFile(t *testing.T) {
+	setupRecipeTest(t)
+
+	// Write an invalid recipe file.
+	path := writeTempRecipe(t, "bad.yaml", "name: \"\"\nsteps: []\n")
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", path})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid recipe")
+	}
+	if !strings.Contains(err.Error(), "invalid recipe") {
+		t.Errorf("error should mention invalid recipe, got: %q", err.Error())
+	}
+}
+
+func TestRecipeImport_NonexistentFile(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", "/nonexistent/path/recipe.yaml"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+	if !strings.Contains(err.Error(), "reading recipe file") {
+		t.Errorf("error should mention reading file, got: %q", err.Error())
+	}
+}
+
+func TestRecipeImport_URL(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Start a test server that serves recipe YAML.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
+		w.Write([]byte(validRecipeYAML))
+	}))
+	defer srv.Close()
+
+	// Override http.Get to use test server.
+	origGet := recipeHTTPGet
+	recipeHTTPGet = http.Get
+	t.Cleanup(func() { recipeHTTPGet = origGet })
+
+	// Confirm import.
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"y"}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/recipe.yaml"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stdout := out.String()
+	if !strings.Contains(stdout, "imported") {
+		t.Errorf("should confirm import, got: %q", stdout)
+	}
+
+	// Verify the recipe details were shown.
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "test-recipe") {
+		t.Errorf("should show recipe name, got stderr: %q", stderr)
+	}
+	if !strings.Contains(stderr, "Steps: 1") {
+		t.Errorf("should show step count, got stderr: %q", stderr)
+	}
+
+	// Verify file saved.
+	if _, err := os.Stat(filepath.Join(recipeDir, "test-recipe.yaml")); err != nil {
+		t.Errorf("imported recipe file not found: %v", err)
+	}
+}
+
+func TestRecipeImport_URL_Cancel(t *testing.T) {
+	setupRecipeTest(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(validRecipeYAML))
+	}))
+	defer srv.Close()
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"n"}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/recipe.yaml"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(errOut.String(), "cancelled") {
+		t.Errorf("should show cancelled, got stderr: %q", errOut.String())
+	}
+
+	// File should NOT be saved.
+	recipeDir := recipe.RecipesDir()
+	if _, err := os.Stat(filepath.Join(recipeDir, "test-recipe.yaml")); err == nil {
+		t.Error("recipe should not have been saved after cancel")
+	}
+}
+
+func TestRecipeImport_URL_HTTPError(t *testing.T) {
+	setupRecipeTest(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/notfound.yaml"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for HTTP 404")
+	}
+	if !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("error should mention HTTP status, got: %q", err.Error())
+	}
+}
+
+func TestRecipeImport_DuplicateOverwrite(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	// Pre-create the recipe file.
+	_ = os.WriteFile(filepath.Join(recipeDir, "test-recipe.yaml"),
+		[]byte("name: test-recipe\nsteps:\n  - name: old\n    command: version\n"), 0600)
+
+	sourcePath := writeTempRecipe(t, "import-me.yaml", validRecipeYAML)
+
+	// Confirm overwrite.
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"y"}})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", sourcePath})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "imported") {
+		t.Errorf("should confirm import, got: %q", out.String())
+	}
+}
+
+func TestRecipeImport_MissingArg(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+// --- recipe export tests ---
+
+func TestRecipeExport_Stdout(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "export", "onboard-user"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stdout := out.String()
+	// Should be valid YAML with recipe name.
+	if !strings.Contains(stdout, "name: onboard-user") {
+		t.Errorf("YAML should contain recipe name, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "steps:") {
+		t.Errorf("YAML should contain steps, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "parameters:") {
+		t.Errorf("YAML should contain parameters, got: %q", stdout)
+	}
+
+	// The exported YAML should be parseable.
+	_, err := recipe.Parse([]byte(stdout))
+	if err != nil {
+		t.Fatalf("exported YAML not valid: %v", err)
+	}
+}
+
+func TestRecipeExport_ToFile(t *testing.T) {
+	setupRecipeTest(t)
+
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "exported.yaml")
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "export", "onboard-user", "--file", outPath})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Confirmation on stderr.
+	if !strings.Contains(errOut.String(), "exported") {
+		t.Errorf("should confirm export, got stderr: %q", errOut.String())
+	}
+
+	// File should exist and be valid YAML.
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("exported file not found: %v", err)
+	}
+
+	r, err := recipe.Parse(data)
+	if err != nil {
+		t.Fatalf("exported file not valid: %v", err)
+	}
+	if r.Name != "onboard-user" {
+		t.Errorf("name = %q, want onboard-user", r.Name)
+	}
+}
+
+func TestRecipeExport_NotFound(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "export", "nonexistent-recipe"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent recipe")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should say not found, got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "onboard-user") {
+		t.Errorf("error should list available recipes, got: %q", err.Error())
+	}
+}
+
+func TestRecipeExport_MissingArg(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "export"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+func TestRecipeExport_RoundTrip(t *testing.T) {
+	setupRecipeTest(t)
+
+	// Export a recipe, then validate the output can be re-imported.
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "export", "offboard-user"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Parse the exported YAML.
+	r, err := recipe.Parse(out.Bytes())
+	if err != nil {
+		t.Fatalf("exported YAML not valid: %v", err)
+	}
+	if r.Name != "offboard-user" {
+		t.Errorf("round-trip name = %q, want offboard-user", r.Name)
+	}
+}
+
+// --- help tests for new commands ---
+
+func TestRecipeCmd_Help_IncludesNewCommands(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "create") {
+		t.Errorf("help should mention create subcommand, got: %q", output)
+	}
+	if !strings.Contains(output, "import") {
+		t.Errorf("help should mention import subcommand, got: %q", output)
+	}
+	if !strings.Contains(output, "export") {
+		t.Errorf("help should mention export subcommand, got: %q", output)
+	}
+}
+
+func TestRecipeExportCmd_Help(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "export", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "--file") {
+		t.Errorf("export help should mention --file flag, got: %q", output)
+	}
+}
+
+func TestRecipeImportCmd_Help(t *testing.T) {
+	setupRecipeTest(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "url-or-path") {
+		t.Errorf("import help should mention url-or-path usage, got: %q", output)
 	}
 }
