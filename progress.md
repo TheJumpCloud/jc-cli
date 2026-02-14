@@ -949,7 +949,7 @@
 ---
 
 ## 2026-02-14 - Bugfix: Per-Source Graph Target Validation & Duplicate Flag Suggestions
-- **Status:** COMPLETE
+- **Status:** COMPLETE (verified against live JumpCloud org)
 - What was fixed:
   - **Graph per-source target validation**: `jc graph traverse --from user:me --to command` returned HTTP 400 because the JumpCloud V2 graph API only allows specific target types per source type. The CLI validated against a single global `validTargetTypes` list, allowing invalid combinations through. Fix: replaced `validTargetTypes` slice with `validTargetsBySource` map encoding exact valid targets per source (discovered via live API probing). Updated `isValidTargetType(sourceType, target)` to check per-source constraints with alias resolution. Error messages now show the source type and its specific valid targets.
   - **Duplicate flag suggestions**: `jc users list --outpu` showed `--output` twice in "Did you mean?" because `flagErrorWithSuggestion()` collected candidates from both `Root().PersistentFlags()` and `cmd.Flags()` — which overlap when the command IS the root. Fix: added `seen` map to deduplicate candidates.
@@ -964,6 +964,17 @@
   - `internal/cmd/graph_test.go` — updated all tests to use valid source→target combos (e.g., `user→application` instead of `user→user_group`), added `TestGraphTraverse_InvalidTargetForSource`, updated `TestIsValidTargetType` for per-source validation, updated `TestGraphTraverse_TargetAliasMapping` with per-source sources
   - `internal/cmd/root.go` — added `seen` map in `flagErrorWithSuggestion()` to deduplicate flag candidates
   - `internal/cmd/root_test.go` — added `TestUnknownFlagNoDuplicateSuggestion` verifying `--output` appears exactly once
+- **Live verification:**
+  - `jc graph traverse --from user:<id> --to command` → clear error: `invalid target type "command" for source "user". Valid targets for user: ...` (was HTTP 400)
+  - `jc graph traverse --from user:<id> --to policy` → clear error listing valid user targets (was HTTP 400)
+  - `jc graph traverse --from application:<id> --to command` → clear error: `Valid targets for application: user, user_group`
+  - `jc graph traverse --from user:<id> --to application` → live API success, 0 items (no HTTP 400)
+  - `jc graph traverse --from user:<id> --to device` → live API success (alias resolved to system)
+  - `jc graph traverse --from device:<id> --to user_group` → live API success, 0 items
+  - `jc graph traverse --from device:<id> --to command --table` → 3 commands returned with clean TYPE + ID table
+  - `jc users list --outpu` → `--output` appears exactly once in "Did you mean?" (was duplicated)
+  - `jc --outpu` → `--output` once (root command — was the worst case for duplicates)
+  - `jc users list --verbos` → `--verbose` appears exactly once
 - **Learnings:**
   - JumpCloud V2 graph associations are asymmetric — users can associate with applications/systems but NOT commands/policies. Those are only reachable from devices/device groups. A per-source validation map catches these at the CLI layer with clear messages instead of cryptic HTTP 400s.
   - Cobra's `cmd.Flags()` includes all flags (local AND inherited persistent), so when `cmd` IS the root command, `Root().PersistentFlags()` and `cmd.Flags()` have complete overlap. A `seen` map deduplicates without changing behavior for subcommands with unique local flags.
