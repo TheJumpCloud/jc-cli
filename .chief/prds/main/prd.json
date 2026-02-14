@@ -1255,7 +1255,8 @@
         "Empty JMESPath result returns empty array/null (not error)"
       ],
       "priority": 4,
-      "passes": false,
+      "inProgress": false,
+      "passes": true,
       "notes": "JMESPath is the same query language used by AWS CLI. Use the go-jmespath package. This is a power-user feature for advanced data extraction.",
       "dependsOn": ["US-009"]
     }

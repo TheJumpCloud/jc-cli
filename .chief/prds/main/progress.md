@@ -87,6 +87,9 @@
 - `MCPSSEPort()` in config returns `mcp.sse_port` (default 8080); `--port` flag overrides
 - Command aliases: Cobra `Aliases` field on parent cmds (`u`→users, `d`→devices, `g`→groups, `i`→insights); verb aliases (`ls`→list, `rm`→delete) on subcommands
 - Short aliases added to `builtinCommands` map to prevent user-config alias shadowing
+- `--query` flag: JMESPath post-processing via `go-jmespath`; applied after field selection, before format dispatch
+- JMESPath on lists vs singles: `applyJMESPathAndWrite()` for arrays, `applyJMESPathSingleAndWrite()` for objects — different input shapes
+- `opts.Query = ""` before recursive call prevents infinite loop when JMESPath result delegates to WriteList/WriteSingle
 
 ---
 
@@ -669,4 +672,27 @@
   - Short aliases must be added to `builtinCommands` map so user-defined config aliases don't shadow them
   - Cobra's `--help` output only shows `Long` description — aliases documented in `Long` text (e.g., "Aliases: u, users") are visible to users
   - Verb aliases (`ls`, `rm`) are per-subcommand, not per-resource — each list/delete subcommand gets its own alias independently
+---
+
+## 2026-02-13 - US-060
+- Implemented JMESPath query post-processing (`--query` flag)
+- **Files changed:**
+  - `internal/output/output.go` — added `Query` field to `Options`; `CurrentOptions()` reads from Viper; `applyJMESPathAndWrite()` for list data (converts `[]json.RawMessage` to native Go interface for JMESPath eval, then dispatches result based on type); `applyJMESPathSingleAndWrite()` for single objects; both `WriteList()` and `WriteSingle()` integrate JMESPath after field selection but before format dispatch
+  - `internal/output/output_test.go` — 14 new tests: filter+reshape, extract field, first element, length (scalar), null result, empty array, invalid expression, single object query, table output, CSV output, fields combo, YAML output, NDJSON output, CurrentOptions query field
+  - `internal/cmd/root.go` — added `--query` persistent flag with JMESPath description, bound to Viper key `query`
+  - `internal/cmd/root_test.go` — 3 new tests: flag registered, bound to Viper, appears in help
+  - `go.mod` — promoted `github.com/jmespath/go-jmespath v0.4.0` from indirect to direct dependency
+- **Architecture:**
+  - JMESPath applied *after* field selection (`--fields`/`--exclude`/`--all`) but *before* format dispatch
+  - List data: `applyJMESPathAndWrite()` — wraps `[]json.RawMessage` as native array for JMESPath eval
+  - Single data: `applyJMESPathSingleAndWrite()` — passes object directly so field-level expressions like `"username"` work
+  - JMESPath result type detection: arrays → `WriteList()`, objects/scalars → `WriteSingle()`, null → prints "null"
+  - Query cleared before recursive call to prevent infinite recursion
+- **Learnings for future iterations:**
+  - JMESPath operates on native Go values (`interface{}`), not `json.RawMessage` — must unmarshal before search, re-marshal after
+  - Single objects vs arrays need different JMESPath input: `WriteSingle` passes the object directly; `WriteList` wraps in array. Otherwise `"username"` on `[{...}]` returns null
+  - `go-jmespath` v0.4.0 returns typed Go values — arrays as `[]interface{}`, objects as `map[string]interface{}`, scalars as primitives
+  - The `opts.Query = ""` trick prevents infinite recursion when the JMESPath result delegates back to `WriteList()`/`WriteSingle()`
+  - JMESPath errors are user-facing and include the expression — wrapped with `jmespath:` prefix for clear identification
+  - `go mod tidy` may promote other indirect dependencies to direct if they are now directly imported elsewhere (e.g., MCP SDK)
 ---

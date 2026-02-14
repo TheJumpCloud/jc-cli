@@ -988,6 +988,62 @@ func TestPriorityChain_ConfigOverridesDefaults(t *testing.T) {
 	}
 }
 
+// --- JMESPath Query Flag Tests (US-060) ---
+
+func TestQueryFlagRegistered(t *testing.T) {
+	rootCmd := NewRootCmd()
+	flag := rootCmd.PersistentFlags().Lookup("query")
+	if flag == nil {
+		t.Fatal("expected --query to be a persistent flag")
+	}
+	if flag.DefValue != "" {
+		t.Errorf("--query default should be empty, got %q", flag.DefValue)
+	}
+}
+
+func TestQueryFlagBoundToViper(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"--query", "[*].username", "testcmd"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := viper.GetString("query"); got != "[*].username" {
+		t.Errorf("viper query = %q, want %q", got, "[*].username")
+	}
+}
+
+func TestQueryFlagInHelp(t *testing.T) {
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"--help"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "--query") {
+		t.Error("help should mention --query flag")
+	}
+	if !strings.Contains(got, "JMESPath") {
+		t.Error("help should mention JMESPath in --query description")
+	}
+}
+
 // --- Command Alias Tests ---
 
 func TestCommandAliases_ResourceShortForms(t *testing.T) {

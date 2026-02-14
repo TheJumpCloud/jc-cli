@@ -121,6 +121,7 @@ interface.`,
 	rootCmd.PersistentFlags().String("fields", "", "Comma-separated list of fields to include (e.g. 'username,email,department')")
 	rootCmd.PersistentFlags().String("exclude", "", "Comma-separated list of fields to exclude (e.g. 'password_date,totp_enabled')")
 	rootCmd.PersistentFlags().Bool("all", false, "Include all available fields in output")
+	rootCmd.PersistentFlags().String("query", "", "JMESPath expression to filter/transform output (e.g. \"[?department=='Engineering'].{name:username,email:email}\")")
 
 	// Register flag completion functions for flags with a fixed set of values.
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -150,6 +151,7 @@ interface.`,
 	_ = viper.BindPFlag("fields", rootCmd.PersistentFlags().Lookup("fields"))
 	_ = viper.BindPFlag("exclude", rootCmd.PersistentFlags().Lookup("exclude"))
 	_ = viper.BindPFlag("all", rootCmd.PersistentFlags().Lookup("all"))
+	_ = viper.BindPFlag("query", rootCmd.PersistentFlags().Lookup("query"))
 
 	return rootCmd
 }

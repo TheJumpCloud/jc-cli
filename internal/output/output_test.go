@@ -1405,3 +1405,310 @@ func TestJSONOutput_WorksWhenPiped(t *testing.T) {
 		t.Error("JSON output should produce array when piped")
 	}
 }
+
+// --- JMESPath query (--query) ---
+
+func TestWriteList_Query_FilterAndReshape(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"jdoe","email":"jdoe@acme.com","department":"Engineering"}`),
+		rawMsg(`{"username":"asmith","email":"asmith@acme.com","department":"Sales"}`),
+		rawMsg(`{"username":"bjones","email":"bjones@acme.com","department":"Engineering"}`),
+	}
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[?department=='Engineering'].{name:username,email:email}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON array: %v", err)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(arr))
+	}
+	if arr[0]["name"] != "jdoe" {
+		t.Errorf("first result name = %v, want jdoe", arr[0]["name"])
+	}
+	if _, ok := arr[0]["department"]; ok {
+		t.Error("department should be reshaped away")
+	}
+}
+
+func TestWriteList_Query_ExtractField(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[*].username",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON array: %v", err)
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(arr))
+	}
+	if arr[0] != "jdoe" {
+		t.Errorf("first = %v, want jdoe", arr[0])
+	}
+	if arr[1] != "asmith" {
+		t.Errorf("second = %v, want asmith", arr[1])
+	}
+}
+
+func TestWriteList_Query_FirstElement(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	// [0] extracts first element — returns a single object, not an array.
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[0]",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("not valid JSON object: %v", err)
+	}
+	if m["username"] != "jdoe" {
+		t.Errorf("username = %v, want jdoe", m["username"])
+	}
+}
+
+func TestWriteList_Query_Length(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	// length() returns a scalar number.
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "length(@)",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	if got != "2" {
+		t.Errorf("length = %q, want %q", got, "2")
+	}
+}
+
+func TestWriteList_Query_NullResult(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	// Query that matches nothing returns null.
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[?username=='nonexistent']|[0]",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	if got != "null" {
+		t.Errorf("null result = %q, want %q", got, "null")
+	}
+}
+
+func TestWriteList_Query_EmptyArrayResult(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[?username=='nonexistent']",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	if got != "[]" {
+		t.Errorf("empty array = %q, want %q", got, "[]")
+	}
+}
+
+func TestWriteList_Query_InvalidExpression(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[invalid!!!",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid JMESPath expression")
+	}
+	if !strings.Contains(err.Error(), "jmespath") {
+		t.Errorf("error should mention jmespath, got: %v", err)
+	}
+}
+
+func TestWriteSingle_Query(t *testing.T) {
+	var buf bytes.Buffer
+	data := singleUser()
+
+	err := WriteSingle(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "username",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	// Single resource queried for a scalar field → prints the value.
+	if got != `"jdoe"` {
+		t.Errorf("query result = %q, want %q", got, `"jdoe"`)
+	}
+}
+
+func TestWriteList_Query_WithTable(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"jdoe","department":"Engineering"}`),
+		rawMsg(`{"username":"asmith","department":"Sales"}`),
+	}
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatTable,
+		Query:  "[?department=='Engineering']",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "jdoe") {
+		t.Error("table should contain jdoe")
+	}
+	if strings.Contains(got, "asmith") {
+		t.Error("table should not contain asmith (filtered out)")
+	}
+}
+
+func TestWriteList_Query_WithCSV(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"jdoe","department":"Engineering"}`),
+		rawMsg(`{"username":"asmith","department":"Sales"}`),
+	}
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatCSV,
+		Query:  "[?department=='Sales']",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "asmith") {
+		t.Error("CSV should contain asmith")
+	}
+	if strings.Contains(got, "jdoe") {
+		t.Error("CSV should not contain jdoe (filtered out)")
+	}
+}
+
+func TestWriteList_Query_WithFieldsCombo(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"jdoe","email":"jdoe@acme.com","department":"Engineering"}`),
+		rawMsg(`{"username":"asmith","email":"asmith@acme.com","department":"Sales"}`),
+	}
+
+	// --fields restricts fields first, then JMESPath operates on the filtered data.
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Fields: []string{"username", "department"},
+		Query:  "[?department=='Engineering']",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &arr); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if len(arr) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(arr))
+	}
+	if _, ok := arr[0]["email"]; ok {
+		t.Error("email should be excluded by --fields")
+	}
+	if arr[0]["username"] != "jdoe" {
+		t.Errorf("username = %v, want jdoe", arr[0]["username"])
+	}
+}
+
+func TestWriteList_Query_WithYAML(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatYAML,
+		Query:  "[0].username",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	if got != "jdoe" {
+		t.Errorf("YAML scalar = %q, want %q", got, "jdoe")
+	}
+}
+
+func TestWriteList_Query_WithNDJSON(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"jdoe","department":"Engineering"}`),
+		rawMsg(`{"username":"asmith","department":"Sales"}`),
+	}
+
+	err := WriteList(&buf, data, Options{
+		Format: FormatNDJSON,
+		Query:  "[?department=='Engineering']",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 NDJSON line, got %d", len(lines))
+	}
+	if !strings.Contains(lines[0], "jdoe") {
+		t.Error("NDJSON line should contain jdoe")
+	}
+}
+
+func TestCurrentOptions_QueryField(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("query", "[*].username")
+
+	opts := CurrentOptions()
+	if opts.Query != "[*].username" {
+		t.Errorf("Query = %q, want %q", opts.Query, "[*].username")
+	}
+}

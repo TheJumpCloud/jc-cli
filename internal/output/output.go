@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/jmespath/go-jmespath"
 	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/spf13/viper"
 	"go.yaml.in/yaml/v3"
@@ -71,6 +72,10 @@ type Options struct {
 	// IsPiped is true when stdout is not a terminal (piped, redirected, or captured).
 	// Table output uses unbounded column widths when piped so that data is not truncated.
 	IsPiped bool
+
+	// Query is a JMESPath expression applied to the output data after field selection.
+	// When set, the result of the JMESPath query replaces the original data before formatting.
+	Query string
 }
 
 // CurrentOptions reads output options from Viper flags and config.
@@ -83,6 +88,7 @@ func CurrentOptions() Options {
 		Exclude: splitCommaFlag(viper.GetString("exclude")),
 		All:     viper.GetBool("all"),
 		IsPiped: !config.IsStdoutTerminal(),
+		Query:   viper.GetString("query"),
 	}
 }
 
@@ -127,6 +133,11 @@ func WriteList(w io.Writer, data []json.RawMessage, opts Options) error {
 		data = filterFields(data, effectiveFields)
 	}
 
+	// Apply JMESPath query if specified.
+	if opts.Query != "" {
+		return applyJMESPathAndWrite(w, data, opts)
+	}
+
 	switch opts.Format {
 	case FormatTable:
 		return writeTable(w, data, effectiveFields)
@@ -163,6 +174,11 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 		if len(filtered) > 0 {
 			data = filtered[0]
 		}
+	}
+
+	// Apply JMESPath query if specified.
+	if opts.Query != "" {
+		return applyJMESPathSingleAndWrite(w, data, opts)
 	}
 
 	switch opts.Format {
@@ -583,6 +599,101 @@ func writeYAMLSingle(w io.Writer, data json.RawMessage) error {
 	enc := yaml.NewEncoder(w)
 	defer enc.Close()
 	return enc.Encode(doc)
+}
+
+// --- JMESPath query ---
+
+// applyJMESPathAndWrite applies a JMESPath expression to the data and writes the result.
+// The JMESPath result can be any JSON type (array, object, scalar, null), so this
+// function detects the result type and dispatches to the appropriate formatter.
+func applyJMESPathAndWrite(w io.Writer, data []json.RawMessage, opts Options) error {
+	// Convert []json.RawMessage to a native Go value for JMESPath evaluation.
+	var input interface{}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("jmespath: marshal input: %w", err)
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return fmt.Errorf("jmespath: unmarshal input: %w", err)
+	}
+
+	result, err := jmespath.Search(opts.Query, input)
+	if err != nil {
+		return fmt.Errorf("jmespath: %w", err)
+	}
+
+	// Clear query to prevent infinite recursion when delegating to WriteList/WriteSingle.
+	opts.Query = ""
+
+	// Marshal the result back to JSON and detect its type.
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("jmespath: marshal result: %w", err)
+	}
+
+	// Null result → empty output.
+	if result == nil || string(resultJSON) == "null" {
+		_, err := fmt.Fprintln(w, "null")
+		return err
+	}
+
+	// Array result → delegate to WriteList.
+	if arr, ok := result.([]interface{}); ok {
+		items := make([]json.RawMessage, 0, len(arr))
+		for _, item := range arr {
+			b, err := json.Marshal(item)
+			if err != nil {
+				return fmt.Errorf("jmespath: marshal array item: %w", err)
+			}
+			items = append(items, b)
+		}
+		return WriteList(w, items, opts)
+	}
+
+	// Single value (object, string, number, boolean) → delegate to WriteSingle.
+	return WriteSingle(w, resultJSON, opts)
+}
+
+// applyJMESPathSingleAndWrite applies a JMESPath expression to a single JSON object.
+// Unlike applyJMESPathAndWrite (which operates on arrays), this passes the object
+// directly to JMESPath so expressions like "username" work on the object's fields.
+func applyJMESPathSingleAndWrite(w io.Writer, data json.RawMessage, opts Options) error {
+	var input interface{}
+	if err := json.Unmarshal(data, &input); err != nil {
+		return fmt.Errorf("jmespath: unmarshal input: %w", err)
+	}
+
+	result, err := jmespath.Search(opts.Query, input)
+	if err != nil {
+		return fmt.Errorf("jmespath: %w", err)
+	}
+
+	// Clear query to prevent infinite recursion.
+	opts.Query = ""
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("jmespath: marshal result: %w", err)
+	}
+
+	if result == nil || string(resultJSON) == "null" {
+		_, err := fmt.Fprintln(w, "null")
+		return err
+	}
+
+	if arr, ok := result.([]interface{}); ok {
+		items := make([]json.RawMessage, 0, len(arr))
+		for _, item := range arr {
+			b, err := json.Marshal(item)
+			if err != nil {
+				return fmt.Errorf("jmespath: marshal array item: %w", err)
+			}
+			items = append(items, b)
+		}
+		return WriteList(w, items, opts)
+	}
+
+	return WriteSingle(w, resultJSON, opts)
 }
 
 // --- IDs formatter ---
