@@ -1074,7 +1074,8 @@
         "Validation errors include the specific field and expected format"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Structured errors are essential for LLM consumption — the error code and suggestion let an LLM diagnose and recover from failures programmatically.",
       "dependsOn": ["US-009"]
     },

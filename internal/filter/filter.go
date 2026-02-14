@@ -5,6 +5,16 @@ import (
 	"strings"
 )
 
+// FilterError is a structured error for invalid filter expressions.
+type FilterError struct {
+	Expression string // the raw filter expression that failed
+	Message    string // human-readable error message
+}
+
+func (e *FilterError) Error() string {
+	return e.Message
+}
+
 // Expression represents a parsed filter expression with field, operator, and value.
 type Expression struct {
 	Field    string
@@ -35,7 +45,10 @@ func Parse(expr string) (Expression, error) {
 			field := strings.TrimSpace(expr[:idx])
 			value := strings.TrimSpace(expr[idx+len(op):])
 			if field == "" {
-				return Expression{}, fmt.Errorf("invalid filter %q: missing field name", expr)
+				return Expression{}, &FilterError{
+					Expression: expr,
+					Message:    fmt.Sprintf("invalid filter %q: missing field name", expr),
+				}
 			}
 			return Expression{
 				Field:    field,
@@ -44,7 +57,10 @@ func Parse(expr string) (Expression, error) {
 			}, nil
 		}
 	}
-	return Expression{}, fmt.Errorf("invalid filter %q: expected format 'field=value', 'field!=value', 'field>=value', 'field<=value', 'field>value', or 'field<value'", expr)
+	return Expression{}, &FilterError{
+		Expression: expr,
+		Message:    fmt.Sprintf("invalid filter %q: expected format 'field=value', 'field!=value', 'field>=value', 'field<=value', 'field>value', or 'field<value'", expr),
+	}
 }
 
 // ToV1Query converts a filter expression to the JumpCloud V1 API

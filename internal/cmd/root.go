@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -34,7 +35,9 @@ interface.`,
 			if org := viper.GetString("org"); org != "" {
 				if !config.ProfileExists(org) {
 					available := strings.Join(config.ProfileNames(), ", ")
-					return fmt.Errorf("profile %q not found. Available profiles: %s", org, available)
+					return NewCLIError(ErrCodeConfigError,
+						fmt.Sprintf("profile %q not found. Available profiles: %s", org, available),
+						"Use 'jc auth login --profile <name>' to create a profile")
 				}
 				config.OverrideActiveProfile(org)
 			}
@@ -54,13 +57,17 @@ interface.`,
 				}
 			}
 			if !validFormat {
-				return fmt.Errorf("unknown output format %q. Valid formats: %s",
-					format, strings.Join(validOutputFormats, ", "))
+				return NewCLIError(ErrCodeValidationError,
+					fmt.Sprintf("unknown output format %q. Valid formats: %s",
+						format, strings.Join(validOutputFormats, ", ")),
+					"Use one of: json, table, csv, human, yaml, ndjson")
 			}
 
 			// Validate --fields and --exclude are mutually exclusive.
 			if viper.GetString("fields") != "" && viper.GetString("exclude") != "" {
-				return fmt.Errorf("--fields and --exclude are mutually exclusive")
+				return NewCLIError(ErrCodeValidationError,
+					"--fields and --exclude are mutually exclusive",
+					"Use either --fields to include specific fields or --exclude to remove them")
 			}
 
 			return nil
@@ -268,18 +275,35 @@ func levenshtein(a, b string) int {
 // Execute initializes config and runs the root command.
 func Execute() {
 	if err := config.Init(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		cliErr := WrapCLIError(ErrCodeConfigError, err.Error(),
+			"Check your config file at ~/.config/jc/config.yaml", err)
+		writeError(os.Stderr, cliErr, "json")
+		os.Exit(ExitGeneral)
 	}
 
 	rootCmd := NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {
-		// Check for ExitError with a specific exit code.
+		// Check for ExitError with a specific exit code (legacy path).
 		var exitErr *ExitError
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.Code)
 		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+
+		// Convert to structured CLIError and render.
+		cliErr := ToCLIError(err)
+		format := viper.GetString("defaults.output")
+		writeError(os.Stderr, cliErr, format)
+		os.Exit(cliErr.ExitCode())
+	}
+}
+
+// writeError renders a CLIError to w. When the output format is JSON,
+// the error is written as structured JSON. Otherwise, it's written as
+// human-readable text.
+func writeError(w io.Writer, cliErr *CLIError, format string) {
+	if format == "json" {
+		_ = cliErr.WriteJSON(w)
+	} else {
+		cliErr.WritePlain(w)
 	}
 }

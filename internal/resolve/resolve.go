@@ -246,7 +246,11 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("%s %q not found", cfg.NameField, name)
+		return "", &ResolveError{
+			ResourceType: cfg.NameField,
+			Identifier:   name,
+			Message:      fmt.Sprintf("%s %q not found", cfg.NameField, name),
+		}
 	case 1:
 		return matches[0].ID, nil
 	default:
@@ -254,9 +258,25 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 		for i, m := range matches {
 			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
 		}
-		return "", fmt.Errorf("ambiguous %s %q matched %d resources:\n%s",
-			cfg.NameField, name, len(matches), strings.Join(lines, "\n"))
+		return "", &ResolveError{
+			ResourceType: cfg.NameField,
+			Identifier:   name,
+			Message: fmt.Sprintf("ambiguous %s %q matched %d resources:\n%s",
+				cfg.NameField, name, len(matches), strings.Join(lines, "\n")),
+		}
 	}
+}
+
+// ResolveError is a structured error for resource resolution failures.
+// It carries the resource type and identifier for machine-readable error reporting.
+type ResolveError struct {
+	ResourceType string // e.g., "username", "hostname", "name"
+	Identifier   string // the name or ID that failed to resolve
+	Message      string // human-readable message
+}
+
+func (e *ResolveError) Error() string {
+	return e.Message
 }
 
 type match struct {
@@ -349,7 +369,11 @@ func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg Resou
 
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("%s %q not found", cfg.NameField, name)
+		return "", &ResolveError{
+			ResourceType: cfg.NameField,
+			Identifier:   name,
+			Message:      fmt.Sprintf("%s %q not found", cfg.NameField, name),
+		}
 	case 1:
 		return matches[0].ID, nil
 	default:
@@ -357,8 +381,12 @@ func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg Resou
 		for i, m := range matches {
 			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
 		}
-		return "", fmt.Errorf("ambiguous %s %q matched %d resources:\n%s",
-			cfg.NameField, name, len(matches), strings.Join(lines, "\n"))
+		return "", &ResolveError{
+			ResourceType: cfg.NameField,
+			Identifier:   name,
+			Message: fmt.Sprintf("ambiguous %s %q matched %d resources:\n%s",
+				cfg.NameField, name, len(matches), strings.Join(lines, "\n")),
+		}
 	}
 }
 
