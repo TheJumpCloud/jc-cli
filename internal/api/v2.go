@@ -189,7 +189,7 @@ func (c *V2Client) Create(ctx context.Context, endpoint string, reqBody any) (js
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
 	}
 

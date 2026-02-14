@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1911,6 +1912,803 @@ func TestGroupsDeviceList_HelpIncludesFilterSort(t *testing.T) {
 	}
 	if !strings.Contains(out, "--limit") {
 		t.Errorf("help missing --limit: %s", out)
+	}
+}
+
+// ========================================================================
+// Group Membership Tests
+// ========================================================================
+
+// membershipRecord tracks membership operations for test assertions.
+type membershipRecord struct {
+	GroupID string
+	Op      string
+	Type    string
+	ID      string
+}
+
+// startMembershipServer creates a combined V1+V2 mock server that handles:
+//   - V1: /systemusers (for user name resolution)
+//   - V1: /systems (for device name resolution)
+//   - V2: /usergroups, /usergroups/{id}/members
+//   - V2: /systemgroups, /systemgroups/{id}/membership
+func startMembershipServer(t *testing.T, users []map[string]any, devices []map[string]any, userGroups []map[string]any, deviceGroups []map[string]any, records *[]membershipRecord) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// V1: /systemusers — list for user name resolution.
+		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
+			resp := map[string]any{
+				"results":    users,
+				"totalCount": len(users),
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V1: /systems — list for device name resolution.
+		if r.URL.Path == "/systems" && r.Method == http.MethodGet {
+			resp := map[string]any{
+				"results":    devices,
+				"totalCount": len(devices),
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V2: /usergroups — list for group name resolution.
+		if r.URL.Path == "/usergroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(userGroups)
+			return
+		}
+
+		// V2: /systemgroups — list for group name resolution.
+		if r.URL.Path == "/systemgroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(deviceGroups)
+			return
+		}
+
+		// V2: /usergroups/{id}/members — membership operations.
+		if strings.HasSuffix(r.URL.Path, "/members") && r.Method == http.MethodPost {
+			parts := strings.Split(r.URL.Path, "/")
+			// /usergroups/{id}/members → parts[1]=usergroups, parts[2]=id, parts[3]=members
+			if len(parts) >= 4 && parts[1] == "usergroups" {
+				var body map[string]string
+				json.NewDecoder(r.Body).Decode(&body)
+
+				if records != nil {
+					*records = append(*records, membershipRecord{
+						GroupID: parts[2],
+						Op:      body["op"],
+						Type:    body["type"],
+						ID:      body["id"],
+					})
+				}
+
+				// Simulate 204 No Content success.
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+
+		// V2: /systemgroups/{id}/membership — membership operations.
+		if strings.HasSuffix(r.URL.Path, "/membership") && r.Method == http.MethodPost {
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) >= 4 && parts[1] == "systemgroups" {
+				var body map[string]string
+				json.NewDecoder(r.Body).Decode(&body)
+
+				if records != nil {
+					*records = append(*records, membershipRecord{
+						GroupID: parts[2],
+						Op:      body["op"],
+						Type:    body["type"],
+						ID:      body["id"],
+					})
+				}
+
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+}
+
+func membershipSampleUsers() []map[string]any {
+	return []map[string]any{
+		{"_id": "aa11bb22cc33dd44ee550001", "username": "jdoe", "email": "jdoe@acme.com"},
+		{"_id": "aa11bb22cc33dd44ee550002", "username": "jsmith", "email": "jsmith@acme.com"},
+	}
+}
+
+func membershipSampleDevices() []map[string]any {
+	return []map[string]any{
+		{"_id": "bb11cc22dd33ee44ff550001", "hostname": "JDOE-MBP", "os": "Mac OS X"},
+		{"_id": "bb11cc22dd33ee44ff550002", "hostname": "JSMITH-WIN", "os": "Windows"},
+	}
+}
+
+func setupMembershipTest(t *testing.T, records *[]membershipRecord) *httptest.Server {
+	t.Helper()
+	setupUsersTest(t)
+	// Point cache to a temp dir to avoid stale entries from real usage.
+	viper.Set("cache.directory", filepath.Join(t.TempDir(), "cache"))
+	ts := startMembershipServer(t, membershipSampleUsers(), membershipSampleDevices(), sampleGroups(), sampleDeviceGroups(), records)
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+	return ts
+}
+
+// --- Add Member Tests ---
+
+func TestGroupsAddMember_UserToGroup(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "aabbccddee112233aabb0001", "--user", "aa11bb22cc33dd44ee550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Added user") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 membership record, got %d", len(records))
+	}
+	if records[0].Op != "add" {
+		t.Errorf("op = %q, want %q", records[0].Op, "add")
+	}
+	if records[0].Type != "user" {
+		t.Errorf("type = %q, want %q", records[0].Type, "user")
+	}
+	if records[0].ID != "aa11bb22cc33dd44ee550001" {
+		t.Errorf("id = %q, want %q", records[0].ID, "aa11bb22cc33dd44ee550001")
+	}
+	if records[0].GroupID != "aabbccddee112233aabb0001" {
+		t.Errorf("groupID = %q, want %q", records[0].GroupID, "aabbccddee112233aabb0001")
+	}
+}
+
+func TestGroupsAddMember_UserByName(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "Engineering", "--user", "jdoe"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Added user") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	// Group name "Engineering" should resolve to group ID aabbccddee112233aabb0001.
+	if records[0].GroupID != "aabbccddee112233aabb0001" {
+		t.Errorf("groupID = %q, want %q", records[0].GroupID, "aabbccddee112233aabb0001")
+	}
+	// User "jdoe" should resolve to user ID u001...
+	if records[0].ID != "aa11bb22cc33dd44ee550001" {
+		t.Errorf("userID = %q, want %q", records[0].ID, "aa11bb22cc33dd44ee550001")
+	}
+}
+
+func TestGroupsAddMember_DeviceToGroup(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "dd11ee22ff33dd11ee220001", "--device", "bb11cc22dd33ee44ff550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Added device") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].Op != "add" {
+		t.Errorf("op = %q, want %q", records[0].Op, "add")
+	}
+	if records[0].Type != "system" {
+		t.Errorf("type = %q, want %q", records[0].Type, "system")
+	}
+}
+
+func TestGroupsAddMember_DeviceByName(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "macOS Fleet", "--device", "JDOE-MBP"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Added device") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].GroupID != "dd11ee22ff33dd11ee220001" {
+		t.Errorf("groupID = %q, want %q", records[0].GroupID, "dd11ee22ff33dd11ee220001")
+	}
+	if records[0].ID != "bb11cc22dd33ee44ff550001" {
+		t.Errorf("deviceID = %q, want %q", records[0].ID, "bb11cc22dd33ee44ff550001")
+	}
+}
+
+func TestGroupsAddMember_MissingUserOrDevice(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "Engineering"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --user/--device")
+	}
+	if !strings.Contains(err.Error(), "specify --user or --device") {
+		t.Errorf("error = %q, want to contain 'specify --user or --device'", err.Error())
+	}
+}
+
+func TestGroupsAddMember_BothUserAndDevice(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "Engineering", "--user", "jdoe", "--device", "JDOE-MBP"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for both --user and --device")
+	}
+	if !strings.Contains(err.Error(), "not both") {
+		t.Errorf("error = %q, want to contain 'not both'", err.Error())
+	}
+}
+
+func TestGroupsAddMember_MissingGroupArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing group argument")
+	}
+}
+
+func TestGroupsAddMember_AlreadyMember(t *testing.T) {
+	setupUsersTest(t)
+
+	// Create server that returns 409 Conflict.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/usergroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(sampleGroups())
+			return
+		}
+		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleUsers(), "totalCount": 2})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/members") && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"message":"already a member"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "Engineering", "--user", "jdoe"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "already a member") {
+		t.Errorf("output missing 'already a member': %s", buf.String())
+	}
+}
+
+func TestGroupsAddMember_APIEndpoint(t *testing.T) {
+	var capturedMethod, capturedPath string
+	var capturedBody map[string]string
+	setupUsersTest(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/usergroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(sampleGroups())
+			return
+		}
+		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleUsers(), "totalCount": 2})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/members") {
+			capturedMethod = r.Method
+			capturedPath = r.URL.Path
+			json.NewDecoder(r.Body).Decode(&capturedBody)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "aabbccddee112233aabb0001", "--user", "aa11bb22cc33dd44ee550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedMethod != "POST" {
+		t.Errorf("method = %q, want POST", capturedMethod)
+	}
+	if capturedPath != "/usergroups/aabbccddee112233aabb0001/members" {
+		t.Errorf("path = %q, want /usergroups/aabbccddee112233aabb0001/members", capturedPath)
+	}
+	if capturedBody["op"] != "add" {
+		t.Errorf("body op = %q, want add", capturedBody["op"])
+	}
+	if capturedBody["type"] != "user" {
+		t.Errorf("body type = %q, want user", capturedBody["type"])
+	}
+	if capturedBody["id"] != "aa11bb22cc33dd44ee550001" {
+		t.Errorf("body id = %q, want aa11bb22cc33dd44ee550001", capturedBody["id"])
+	}
+}
+
+func TestGroupsAddMember_DeviceAPIEndpoint(t *testing.T) {
+	var capturedPath string
+	var capturedBody map[string]string
+	setupUsersTest(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/systemgroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(sampleDeviceGroups())
+			return
+		}
+		if r.URL.Path == "/systems" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleDevices(), "totalCount": 2})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/membership") {
+			capturedPath = r.URL.Path
+			json.NewDecoder(r.Body).Decode(&capturedBody)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "dd11ee22ff33dd11ee220001", "--device", "bb11cc22dd33ee44ff550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if capturedPath != "/systemgroups/dd11ee22ff33dd11ee220001/membership" {
+		t.Errorf("path = %q, want /systemgroups/dd11ee22ff33dd11ee220001/membership", capturedPath)
+	}
+	if capturedBody["op"] != "add" {
+		t.Errorf("body op = %q, want add", capturedBody["op"])
+	}
+	if capturedBody["type"] != "system" {
+		t.Errorf("body type = %q, want system", capturedBody["type"])
+	}
+}
+
+// --- Remove Member Tests ---
+
+func TestGroupsRemoveMember_UserFromGroup(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "aabbccddee112233aabb0001", "--user", "aa11bb22cc33dd44ee550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Removed user") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].Op != "remove" {
+		t.Errorf("op = %q, want %q", records[0].Op, "remove")
+	}
+	if records[0].Type != "user" {
+		t.Errorf("type = %q, want %q", records[0].Type, "user")
+	}
+}
+
+func TestGroupsRemoveMember_DeviceFromGroup(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "dd11ee22ff33dd11ee220001", "--device", "bb11cc22dd33ee44ff550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Removed device") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].Op != "remove" {
+		t.Errorf("op = %q, want %q", records[0].Op, "remove")
+	}
+	if records[0].Type != "system" {
+		t.Errorf("type = %q, want %q", records[0].Type, "system")
+	}
+}
+
+func TestGroupsRemoveMember_ByName(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "Engineering", "--user", "jdoe"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Removed user") {
+		t.Errorf("output missing confirmation: %s", buf.String())
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].GroupID != "aabbccddee112233aabb0001" {
+		t.Errorf("groupID = %q, want %q", records[0].GroupID, "aabbccddee112233aabb0001")
+	}
+	if records[0].ID != "aa11bb22cc33dd44ee550001" {
+		t.Errorf("userID = %q, want %q", records[0].ID, "aa11bb22cc33dd44ee550001")
+	}
+}
+
+func TestGroupsRemoveMember_NotAMember(t *testing.T) {
+	setupUsersTest(t)
+
+	// Server returns 404 for membership removal (user is not a member).
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/usergroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(sampleGroups())
+			return
+		}
+		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleUsers(), "totalCount": 2})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/members") && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "Engineering", "--user", "jdoe"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "not a member") {
+		t.Errorf("output missing 'not a member': %s", buf.String())
+	}
+}
+
+func TestGroupsRemoveMember_MissingUserOrDevice(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "Engineering"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --user/--device")
+	}
+	if !strings.Contains(err.Error(), "specify --user or --device") {
+		t.Errorf("error = %q, want to contain 'specify --user or --device'", err.Error())
+	}
+}
+
+func TestGroupsRemoveMember_MissingGroupArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--user", "jdoe"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing group argument without --all")
+	}
+	if !strings.Contains(err.Error(), "requires a group") {
+		t.Errorf("error = %q, want to contain 'requires a group'", err.Error())
+	}
+}
+
+// --- Remove All Tests ---
+
+func TestGroupsRemoveMember_AllGroups(t *testing.T) {
+	var records []membershipRecord
+	ts := setupMembershipTest(t, &records)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--all", "--user", "aa11bb22cc33dd44ee550001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should attempt removal from all 3 sample user groups.
+	if len(records) != 3 {
+		t.Fatalf("expected 3 records (one per group), got %d", len(records))
+	}
+	for _, rec := range records {
+		if rec.Op != "remove" {
+			t.Errorf("op = %q, want remove", rec.Op)
+		}
+		if rec.Type != "user" {
+			t.Errorf("type = %q, want user", rec.Type)
+		}
+		if rec.ID != "aa11bb22cc33dd44ee550001" {
+			t.Errorf("userID = %q, want aa11bb22cc33dd44ee550001", rec.ID)
+		}
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Removed user") {
+		t.Errorf("output missing removal confirmations: %s", out)
+	}
+}
+
+func TestGroupsRemoveMember_AllGroupsNotMember(t *testing.T) {
+	setupUsersTest(t)
+
+	// All membership removals return 404 — user is not in any group.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/usergroups" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(sampleGroups())
+			return
+		}
+		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleUsers(), "totalCount": 2})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/members") && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--all", "--user", "jdoe"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "not a member of any groups") {
+		t.Errorf("output missing 'not a member of any groups': %s", buf.String())
+	}
+}
+
+func TestGroupsRemoveMember_AllRequiresUser(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--all"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --all without --user")
+	}
+	if !strings.Contains(err.Error(), "--all requires --user") {
+		t.Errorf("error = %q, want to contain '--all requires --user'", err.Error())
+	}
+}
+
+func TestGroupsRemoveMember_AllWithDevice(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--all", "--device", "JDOE-MBP"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --all with --device")
+	}
+	if !strings.Contains(err.Error(), "only supported with --user") {
+		t.Errorf("error = %q, want to contain 'only supported with --user'", err.Error())
+	}
+}
+
+// --- Help/Structure Tests ---
+
+func TestGroupsCmd_HelpIncludesAddRemoveMember(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "add-member") {
+		t.Errorf("help missing 'add-member': %s", out)
+	}
+	if !strings.Contains(out, "remove-member") {
+		t.Errorf("help missing 'remove-member': %s", out)
+	}
+}
+
+func TestGroupsAddMember_HelpShowsFlags(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "add-member", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--user") {
+		t.Errorf("help missing --user: %s", out)
+	}
+	if !strings.Contains(out, "--device") {
+		t.Errorf("help missing --device: %s", out)
+	}
+}
+
+func TestGroupsRemoveMember_HelpShowsFlags(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--user") {
+		t.Errorf("help missing --user: %s", out)
+	}
+	if !strings.Contains(out, "--device") {
+		t.Errorf("help missing --device: %s", out)
+	}
+	if !strings.Contains(out, "--all") {
+		t.Errorf("help missing --all: %s", out)
 	}
 }
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,6 +48,8 @@ func newGroupsCmd() *cobra.Command {
 
 	cmd.AddCommand(newGroupsUserCmd())
 	cmd.AddCommand(newGroupsDeviceCmd())
+	cmd.AddCommand(newGroupsAddMemberCmd())
+	cmd.AddCommand(newGroupsRemoveMemberCmd())
 
 	return cmd
 }
@@ -627,4 +630,332 @@ func runGroupsDeviceDelete(cmd *cobra.Command, identifier string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Device group %q deleted successfully.\n", group.Name)
 	return nil
+}
+
+// --- Group Membership Management ---
+
+func newGroupsAddMemberCmd() *cobra.Command {
+	var (
+		userFlag   string
+		deviceFlag string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "add-member <group-name-or-id>",
+		Short: "Add a member to a group",
+		Long: `Add a user or device to a JumpCloud group.
+
+Use --user to add a user to a user group, or --device to add a device to a device group.
+Exactly one of --user or --device must be specified.
+
+Examples:
+  jc groups add-member Engineering --user jdoe
+  jc groups add-member "macOS Fleet" --device JDOE-MBP`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGroupsAddMember(cmd, args[0], userFlag, deviceFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&userFlag, "user", "", "Username or user ID to add to a user group")
+	cmd.Flags().StringVar(&deviceFlag, "device", "", "Hostname or device ID to add to a device group")
+
+	return cmd
+}
+
+func runGroupsAddMember(cmd *cobra.Command, groupIdentifier, user, device string) error {
+	if user == "" && device == "" {
+		return fmt.Errorf("specify --user or --device")
+	}
+	if user != "" && device != "" {
+		return fmt.Errorf("specify only one of --user or --device, not both")
+	}
+
+	v2Client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ctx := cmd.Context()
+
+	if user != "" {
+		return addUserToGroup(ctx, cmd, v2Client, groupIdentifier, user)
+	}
+	return addDeviceToGroup(ctx, cmd, v2Client, groupIdentifier, device)
+}
+
+func addUserToGroup(ctx context.Context, cmd *cobra.Command, v2Client *api.V2Client, groupIdentifier, userIdentifier string) error {
+	groupID, err := resolveUserGroup(ctx, v2Client, groupIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving group: %w", err)
+	}
+
+	// Resolve the user via V1 API.
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	userID, err := resolveUser(ctx, v1Client, userIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving user: %w", err)
+	}
+
+	body := map[string]string{
+		"op":   "add",
+		"type": "user",
+		"id":   userID,
+	}
+
+	_, err = v2Client.Create(ctx, "/usergroups/"+groupID+"/members", body)
+	if err != nil {
+		// JumpCloud returns 409 Conflict when member already exists.
+		if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == 409 {
+			fmt.Fprintf(cmd.OutOrStdout(), "User %q is already a member of group %q.\n", userIdentifier, groupIdentifier)
+			return nil
+		}
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Added user %q to group %q.\n", userIdentifier, groupIdentifier)
+	return nil
+}
+
+func addDeviceToGroup(ctx context.Context, cmd *cobra.Command, v2Client *api.V2Client, groupIdentifier, deviceIdentifier string) error {
+	groupID, err := resolveDeviceGroup(ctx, v2Client, groupIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving group: %w", err)
+	}
+
+	// Resolve the device via V1 API.
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	deviceID, err := resolveDevice(ctx, v1Client, deviceIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving device: %w", err)
+	}
+
+	body := map[string]string{
+		"op":   "add",
+		"type": "system",
+		"id":   deviceID,
+	}
+
+	_, err = v2Client.Create(ctx, "/systemgroups/"+groupID+"/membership", body)
+	if err != nil {
+		if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == 409 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Device %q is already a member of group %q.\n", deviceIdentifier, groupIdentifier)
+			return nil
+		}
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Added device %q to group %q.\n", deviceIdentifier, groupIdentifier)
+	return nil
+}
+
+func newGroupsRemoveMemberCmd() *cobra.Command {
+	var (
+		userFlag   string
+		deviceFlag string
+		allFlag    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "remove-member <group-name-or-id>",
+		Short: "Remove a member from a group",
+		Long: `Remove a user or device from a JumpCloud group.
+
+Use --user to remove a user from a user group, or --device to remove a device from a device group.
+Exactly one of --user or --device must be specified.
+
+Use --all with --user to remove the user from ALL user groups.
+When --all is used, the positional group argument is not required.
+
+Examples:
+  jc groups remove-member Engineering --user jdoe
+  jc groups remove-member "macOS Fleet" --device JDOE-MBP
+  jc groups remove-member --all --user jdoe`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if allFlag {
+				if deviceFlag != "" {
+					return fmt.Errorf("--all is only supported with --user")
+				}
+				if userFlag == "" {
+					return fmt.Errorf("--all requires --user")
+				}
+				return runGroupsRemoveUserFromAll(cmd, userFlag)
+			}
+			if len(args) == 0 {
+				return fmt.Errorf("requires a group name or ID argument (or use --all)")
+			}
+			return runGroupsRemoveMember(cmd, args[0], userFlag, deviceFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&userFlag, "user", "", "Username or user ID to remove from a user group")
+	cmd.Flags().StringVar(&deviceFlag, "device", "", "Hostname or device ID to remove from a device group")
+	cmd.Flags().BoolVar(&allFlag, "all", false, "Remove user from ALL groups (requires --user)")
+
+	return cmd
+}
+
+func runGroupsRemoveMember(cmd *cobra.Command, groupIdentifier, user, device string) error {
+	if user == "" && device == "" {
+		return fmt.Errorf("specify --user or --device")
+	}
+	if user != "" && device != "" {
+		return fmt.Errorf("specify only one of --user or --device, not both")
+	}
+
+	v2Client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ctx := cmd.Context()
+
+	if user != "" {
+		return removeUserFromGroup(ctx, cmd, v2Client, groupIdentifier, user)
+	}
+	return removeDeviceFromGroup(ctx, cmd, v2Client, groupIdentifier, device)
+}
+
+func removeUserFromGroup(ctx context.Context, cmd *cobra.Command, v2Client *api.V2Client, groupIdentifier, userIdentifier string) error {
+	groupID, err := resolveUserGroup(ctx, v2Client, groupIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving group: %w", err)
+	}
+
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	userID, err := resolveUser(ctx, v1Client, userIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving user: %w", err)
+	}
+
+	body := map[string]string{
+		"op":   "remove",
+		"type": "user",
+		"id":   userID,
+	}
+
+	_, err = v2Client.Create(ctx, "/usergroups/"+groupID+"/members", body)
+	if err != nil {
+		// Not a member — treat as informative, not error.
+		if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == 404 {
+			fmt.Fprintf(cmd.OutOrStdout(), "User %q is not a member of group %q.\n", userIdentifier, groupIdentifier)
+			return nil
+		}
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Removed user %q from group %q.\n", userIdentifier, groupIdentifier)
+	return nil
+}
+
+func removeDeviceFromGroup(ctx context.Context, cmd *cobra.Command, v2Client *api.V2Client, groupIdentifier, deviceIdentifier string) error {
+	groupID, err := resolveDeviceGroup(ctx, v2Client, groupIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving group: %w", err)
+	}
+
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	deviceID, err := resolveDevice(ctx, v1Client, deviceIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving device: %w", err)
+	}
+
+	body := map[string]string{
+		"op":   "remove",
+		"type": "system",
+		"id":   deviceID,
+	}
+
+	_, err = v2Client.Create(ctx, "/systemgroups/"+groupID+"/membership", body)
+	if err != nil {
+		if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == 404 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Device %q is not a member of group %q.\n", deviceIdentifier, groupIdentifier)
+			return nil
+		}
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Removed device %q from group %q.\n", deviceIdentifier, groupIdentifier)
+	return nil
+}
+
+func runGroupsRemoveUserFromAll(cmd *cobra.Command, userIdentifier string) error {
+	v2Client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	ctx := cmd.Context()
+
+	userID, err := resolveUser(ctx, v1Client, userIdentifier)
+	if err != nil {
+		return fmt.Errorf("resolving user: %w", err)
+	}
+
+	// List all user groups, then remove the user from each.
+	result, err := v2Client.ListAll(ctx, "/usergroups", api.V2ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	var removed int
+	for _, raw := range result.Data {
+		var g struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &g); err != nil {
+			continue
+		}
+
+		body := map[string]string{
+			"op":   "remove",
+			"type": "user",
+			"id":   userID,
+		}
+
+		_, err := v2Client.Create(ctx, "/usergroups/"+g.ID+"/members", body)
+		if err != nil {
+			// 404 means not a member — skip silently.
+			if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == 404 {
+				continue
+			}
+			return fmt.Errorf("removing from group %q: %w", g.Name, err)
+		}
+		removed++
+		fmt.Fprintf(cmd.OutOrStdout(), "Removed user %q from group %q.\n", userIdentifier, g.Name)
+	}
+
+	if removed == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "User %q was not a member of any groups.\n", userIdentifier)
+	}
+
+	return nil
+}
+
+// asAPIError checks if an error is an *api.APIError and returns it.
+func asAPIError(err error) (*api.APIError, bool) {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr, true
+	}
+	return nil, false
 }

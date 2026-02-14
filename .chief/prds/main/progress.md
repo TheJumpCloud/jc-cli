@@ -33,6 +33,10 @@
 - Device group default fields: id, name, description, type (same as user groups)
 - `UserGroupConfig` / `DeviceGroupConfig` in resolve package for V2 name-to-ID resolution
 - Device groups: `jc groups device list/get/create/update/delete` — mirrors user groups exactly with `/systemgroups` endpoint
+- V2 membership API: single POST with `op` field ("add"/"remove") — user groups `/usergroups/{id}/members`, device groups `/systemgroups/{id}/membership`
+- V2 `Create()` accepts 200, 201, and 204 (No Content) — needed for membership endpoints
+- Membership tests need both V1+V2 clients: `setupMembershipTest()` creates combined server, sets cache dir to temp
+- `asAPIError()` in groups.go for clean `errors.As()` type assertion on API errors
 
 ---
 
@@ -211,4 +215,23 @@
   - All device group commands reuse `newV2Client`, `getConfirmReader`, `overrideConfirmReader` — zero duplication needed
   - The `groups` parent command now shows both `user` and `device` subcommands in help
   - Device group default fields match user groups: id, name, description, type
+---
+
+## 2026-02-13 - US-026
+- Implemented group membership management (add-member, remove-member) commands
+- Files changed:
+  - `internal/cmd/groups.go` — added `newGroupsAddMemberCmd()`, `newGroupsRemoveMemberCmd()`, `addUserToGroup()`, `addDeviceToGroup()`, `removeUserFromGroup()`, `removeDeviceFromGroup()`, `runGroupsRemoveUserFromAll()`, `asAPIError()` helper; registered add-member/remove-member on groups parent command; added `errors` import
+  - `internal/cmd/groups_test.go` — added 22 membership tests: add user (by ID, by name), add device (by ID, by name), missing/both flags, missing group arg, already-member (409), API endpoint verification (user + device), remove user/device (by ID, by name), not-a-member (404), remove-all from groups, remove-all not member, --all requires --user, --all with --device error, help structure tests
+  - `internal/api/v2.go` — added `http.StatusNoContent` (204) as accepted status code in `Create()` method for membership operations
+  - `.chief/prds/main/prd.json` — marked US-026 as complete
+- **Learnings for future iterations:**
+  - V2 membership API uses a single POST endpoint with `op` field ("add"/"remove") in the body — not separate endpoints
+  - User groups: `POST /api/v2/usergroups/{id}/members` with `{"op":"add","type":"user","id":"<user_id>"}`
+  - Device groups: `POST /api/v2/systemgroups/{id}/membership` with `{"op":"add","type":"system","id":"<device_id>"}`
+  - Membership endpoints return 204 No Content on success — the V2 `Create()` method needed updating to accept this status
+  - Membership commands need both V1 (user/device resolution) and V2 (group operations) clients — test servers must handle both API versions
+  - `setupUsersTest()` sets `cache.enabled=true` by default — tests MUST set `cache.directory` to a temp dir to avoid stale entries from real `~/.cache/jc/` polluting results
+  - 409 Conflict = already a member (informative, not error); 404 on remove = not a member (informative, not error)
+  - `--all --user` removes from ALL user groups by listing all groups and attempting removal from each (404 = not a member, skip silently)
+  - `asAPIError()` helper uses `errors.As()` for clean API error type assertions
 ---

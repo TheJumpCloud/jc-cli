@@ -554,7 +554,8 @@
         "V2 Graph/membership API endpoints used correctly"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Group membership uses V2 Graph API: POST /api/v2/usergroups/{id}/members and /api/v2/systemgroups/{id}/membership.",
       "dependsOn": ["US-024", "US-025"]
     },
