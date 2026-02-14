@@ -1054,7 +1054,8 @@
         "Schema includes field types: string, bool, int, datetime, array, object"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "The schema system is what makes jc truly LLM-friendly — it provides self-describing metadata. Schema should be auto-generated from Cobra command definitions and resource type metadata.",
       "dependsOn": ["US-011", "US-015"]
     },

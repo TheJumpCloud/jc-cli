@@ -523,3 +523,24 @@
   - Config integration pattern: CLI flags default to hardcoded values, but `cmd.Flags().Changed()` checks if user explicitly set the flag; if not, read from Viper config — gives config.yaml lower priority than CLI flags
   - MCP config keys use same `coerceValue()` pattern as other config sections — ensures booleans and ints are stored with correct types in YAML
 ---
+
+## 2026-02-13 - US-050
+- Implemented Schema System (`jc schema` commands)
+- **New files:**
+  - `internal/schema/schema.go` — shared schema package with `ResourceSchema`, `FieldDef`, `CommandManifest`, `CommandEntry`, `FlagEntry` types; `Resources` map with 8 resource types; `ResourceNames()`, `GetResource()`, `AllResources()`, `BuildCommandManifest()` functions; detailed field definitions with name/type/description/required for every resource
+  - `internal/schema/schema_test.go` — 18 tests: resource names sorted, all expected resources present, valid/invalid resource lookup, all resources have fields, field types valid, fields have descriptions, required fields, default fields subset of fields, verbs and versions, sort fields, AllResources count/sort, command manifest structure/global flags/includes schema/descriptions/flag types
+  - `internal/cmd/schema.go` — `newSchemaCmd()` parent + `newSchemaResourcesCmd()` + `newSchemaCommandsCmd()`; dynamic `jc schema <resource>` via `RunE` catch-all; `writeJSON()` helper; shell completion for resource names
+  - `internal/cmd/schema_test.go` — 21 tests: resources JSON/sorted/includes fields, users JSON/field definitions/field types/required fields/sort fields, devices JSON, commands JSON/includes all groups/has subcommands/global flags, unknown resource error, help text, root includes schema, groups V2, insights no filter, always JSON output, pretty-printed, all resources have field types, all expected field types present
+- **Files changed:**
+  - `internal/cmd/root.go` — registered `newSchemaCmd()` in root command
+  - `internal/mcp/resources.go` — refactored to use shared `schema` package instead of local type definitions; removed `resourceSchema`, `commandManifest`, `commandEntry`, `flagEntry`, `schemas`, `validSchemaResources()`, `buildCommandManifest()` — all replaced by `schema.ResourceSchema`, `schema.Resources`, `schema.ResourceNames()`, `schema.AllResources()`, `schema.BuildCommandManifest()`
+  - `.chief/prds/main/prd.json` — marked US-050 as complete
+- **Architecture decision:** Extracted schema data from `internal/mcp/` into a new `internal/schema/` package to avoid `cmd` → `mcp` dependency. Both MCP resources and CLI schema commands use the same single source of truth.
+- **Learnings for future iterations:**
+  - `ResourceSchema` now includes `Fields []FieldDef` (name/type/description/required) and `SortFields []string` — richer than the original MCP-only `resourceSchema`
+  - `jc schema <resource>` uses dynamic `RunE` on the parent command with `cobra.ArbitraryArgs` — allows arbitrary resource names without pre-defined subcommands
+  - Schema output bypasses the output engine and writes JSON directly — schema is always JSON regardless of `--output` flag
+  - `ValidArgsFunction` on schema cmd provides tab completion for resource names
+  - When refactoring shared code from `mcp` to `schema`, the MCP tests still pass because the data is structurally identical — just the import path changed
+  - Schema package is a pure-data leaf package (depends only on `version`) — no circular dependency risk
+---
