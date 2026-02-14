@@ -64,6 +64,10 @@
 - Saved searches stored in Viper under `insights.saved_searches.<name>` as map; `getSavedSearches()` manually type-asserts each field
 - `writeInsightsConfig` var for test override (no-op in tests); `setSavedSearch(t, name, fields)` pre-populates Viper for run/saved tests
 - `runInsightsRun()` delegates to `runInsightsQuery()` — saves raw flag values so `--last` recalculates from current time
+- Output formats: `FormatJSON`, `FormatTable`, `FormatCSV`, `FormatHuman`, `FormatYAML`, `FormatNDJSON` — all registered in `ValidFormats`
+- NDJSON: `writeNDJSONList()` emits one compact JSON object per line; empty list → no output
+- YAML: `jsonToYAMLNode()` recursively converts JSON → `yaml.Node` with explicit type tags for ordered key output
+- `yaml.MapSlice` is yaml/v2 only — yaml/v3 uses `yaml.Node` with `MappingNode` kind for ordered maps
 
 ---
 
@@ -403,4 +407,21 @@
   - `runInsightsRun` delegates to `runInsightsQuery()` — zero code duplication for execution logic
   - `ValidArgsFunction` on `run` command enables tab completion for saved search names
   - Non-existent saved search error includes list of available searches (when any exist) for discoverability
+---
+
+## 2026-02-13 - US-041
+- Implemented NDJSON and YAML output formats in the output engine
+- Files changed:
+  - `internal/output/output.go` — added `FormatNDJSON` and `FormatYAML` constants to `ValidFormats`; added `writeNDJSONList()`, `writeNDJSONSingle()`, `writeYAMLList()`, `writeYAMLSingle()`, `jsonToYAMLNode()` formatters; added switch cases in `WriteList()` and `WriteSingle()`; imported `go.yaml.in/yaml/v3`
+  - `internal/output/output_test.go` — added 16 new tests: NDJSON (list, empty, single line, sorted keys, single, fields, exclude), YAML (list, empty, sorted keys, single, single sorted keys, types, fields, exclude, nested objects); updated `TestFormatIsValid` to expect yaml/ndjson as valid
+  - `go.mod` — `go.yaml.in/yaml/v3` promoted from indirect to direct dependency
+  - `.chief/prds/main/prd.json` — marked US-041 as complete
+- **Learnings for future iterations:**
+  - `yaml.MapSlice`/`yaml.MapItem` don't exist in yaml/v3 — use `yaml.Node` with `MappingNode` kind and explicit key/value content pairs for ordered output
+  - `jsonToYAMLNode()` recursively converts JSON → YAML nodes with explicit type tags (`!!str`, `!!int`, `!!bool`, `!!null`) for correct type preservation
+  - NDJSON reuses `sortedJSON()` + `json.Compact()` — one compact JSON object per line with sorted keys
+  - NDJSON empty list produces no output (not `[]`) — matches convention for streaming formats
+  - YAML empty list produces `[]` — matches convention for document formats
+  - Both formats respect `--fields`/`--exclude`/`--all` since field filtering happens before format dispatch in `WriteList()`/`WriteSingle()`
+  - `go.yaml.in/yaml/v3` was already an indirect dependency via Viper — `go mod tidy` promotes it to direct
 ---

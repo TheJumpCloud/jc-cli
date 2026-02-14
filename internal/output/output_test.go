@@ -37,8 +37,9 @@ func TestFormatIsValid(t *testing.T) {
 		{FormatTable, true},
 		{FormatCSV, true},
 		{FormatHuman, true},
-		{Format("yaml"), false},
-		{Format("ndjson"), false},
+		{FormatYAML, true},
+		{FormatNDJSON, true},
+		{Format("xml"), false},
 		{Format(""), false},
 	}
 	for _, tt := range tests {
@@ -348,6 +349,312 @@ func TestWriteList_Human(t *testing.T) {
 	}
 	if !strings.Contains(got, "asmith") {
 		t.Error("human list should contain second user")
+	}
+}
+
+// --- NDJSON output ---
+
+func TestWriteList_NDJSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{Format: FormatNDJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("NDJSON should have 2 lines, got %d", len(lines))
+	}
+
+	// Each line must be valid JSON.
+	for i, line := range lines {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Errorf("line %d is not valid JSON: %v", i, err)
+		}
+	}
+}
+
+func TestWriteList_NDJSON_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, nil, Options{Format: FormatNDJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != "" {
+		t.Errorf("empty NDJSON should produce no output, got %q", buf.String())
+	}
+}
+
+func TestWriteList_NDJSON_SingleLine(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"a": 1, "b": 2}`)}
+	err := WriteList(&buf, data, Options{Format: FormatNDJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	// Must be a single line with no newlines inside.
+	if strings.Count(got, "\n") != 0 {
+		t.Errorf("NDJSON single item should be one line, got %q", got)
+	}
+	// Must not have indentation.
+	if strings.Contains(got, "  ") {
+		t.Errorf("NDJSON should not be indented, got %q", got)
+	}
+}
+
+func TestWriteList_NDJSON_SortedKeys(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"zebra":1,"alpha":2}`)}
+	err := WriteList(&buf, data, Options{Format: FormatNDJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	alphaIdx := strings.Index(got, `"alpha"`)
+	zebraIdx := strings.Index(got, `"zebra"`)
+	if alphaIdx >= zebraIdx {
+		t.Error("NDJSON keys should be alphabetically sorted")
+	}
+}
+
+func TestWriteSingle_NDJSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{Format: FormatNDJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	// Single line, valid JSON object.
+	if strings.Count(got, "\n") != 0 {
+		t.Errorf("NDJSON single should be one line, got %q", got)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(got), &m); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+}
+
+func TestWriteList_NDJSON_Fields(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatNDJSON,
+		Fields: []string{"username"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	for i, line := range lines {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Errorf("line %d is not valid JSON: %v", i, err)
+		}
+		if len(m) != 1 {
+			t.Errorf("line %d: expected 1 field, got %d", i, len(m))
+		}
+		if _, ok := m["username"]; !ok {
+			t.Errorf("line %d: username should be present", i)
+		}
+	}
+}
+
+func TestWriteList_NDJSON_Exclude(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatNDJSON,
+		DefaultFields: []string{"username", "email", "activated"},
+		Exclude:       []string{"activated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	for i, line := range lines {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Errorf("line %d is not valid JSON: %v", i, err)
+		}
+		if _, ok := m["activated"]; ok {
+			t.Errorf("line %d: activated should be excluded", i)
+		}
+	}
+}
+
+// --- YAML output ---
+
+func TestWriteList_YAML(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"alice","age":30}`),
+		rawMsg(`{"name":"bob","age":25}`),
+	}
+	err := WriteList(&buf, data, Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// YAML sequence items start with "- ".
+	if !strings.Contains(got, "- ") {
+		t.Errorf("YAML list should contain sequence markers, got %q", got)
+	}
+	if !strings.Contains(got, "name: alice") {
+		t.Errorf("YAML should contain 'name: alice', got %q", got)
+	}
+	if !strings.Contains(got, "name: bob") {
+		t.Errorf("YAML should contain 'name: bob', got %q", got)
+	}
+}
+
+func TestWriteList_YAML_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, nil, Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if got != "[]" {
+		t.Errorf("empty YAML list = %q, want %q", got, "[]")
+	}
+}
+
+func TestWriteList_YAML_SortedKeys(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"zebra":1,"alpha":2}`)}
+	err := WriteList(&buf, data, Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	alphaIdx := strings.Index(got, "alpha:")
+	zebraIdx := strings.Index(got, "zebra:")
+	if alphaIdx < 0 || zebraIdx < 0 {
+		t.Fatalf("YAML should contain both keys, got %q", got)
+	}
+	if alphaIdx >= zebraIdx {
+		t.Error("YAML keys should be alphabetically sorted")
+	}
+}
+
+func TestWriteSingle_YAML(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// Single resource should be a YAML mapping (not a sequence).
+	if strings.HasPrefix(strings.TrimSpace(got), "-") {
+		t.Errorf("single YAML should be a mapping, not a sequence: %q", got)
+	}
+	if !strings.Contains(got, "username: jdoe") {
+		t.Errorf("YAML should contain 'username: jdoe', got %q", got)
+	}
+}
+
+func TestWriteSingle_YAML_SortedKeys(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, singleUser(), Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	idIdx := strings.Index(got, "_id:")
+	usernameIdx := strings.Index(got, "username:")
+	if idIdx >= usernameIdx {
+		t.Error("YAML keys should be alphabetically sorted: _id before username")
+	}
+}
+
+func TestWriteList_YAML_Types(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"active":true,"count":42,"name":"test","notes":null}`)}
+	err := WriteList(&buf, data, Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "active: true") {
+		t.Errorf("YAML should preserve booleans, got %q", got)
+	}
+	if !strings.Contains(got, "count: 42") {
+		t.Errorf("YAML should preserve integers, got %q", got)
+	}
+	if !strings.Contains(got, "name: test") {
+		t.Errorf("YAML should render strings, got %q", got)
+	}
+	if !strings.Contains(got, "notes: null") {
+		t.Errorf("YAML should render nulls, got %q", got)
+	}
+}
+
+func TestWriteList_YAML_Fields(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format: FormatYAML,
+		Fields: []string{"username"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "username:") {
+		t.Error("YAML should contain username field")
+	}
+	if strings.Contains(got, "email:") {
+		t.Error("YAML should not contain email (not in --fields)")
+	}
+	if strings.Contains(got, "_id:") {
+		t.Error("YAML should not contain _id (not in --fields)")
+	}
+}
+
+func TestWriteList_YAML_Exclude(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, sampleUsers(), Options{
+		Format:        FormatYAML,
+		DefaultFields: []string{"username", "email", "activated"},
+		Exclude:       []string{"activated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if strings.Contains(got, "activated:") {
+		t.Error("YAML should not contain excluded 'activated' field")
+	}
+	if !strings.Contains(got, "username:") {
+		t.Error("YAML should contain username field")
+	}
+}
+
+func TestWriteList_YAML_NestedObjects(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"user":{"name":"jdoe","role":"admin"}}`)}
+	err := WriteList(&buf, data, Options{Format: FormatYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "user:") {
+		t.Errorf("YAML should contain nested object key, got %q", got)
+	}
+	if !strings.Contains(got, "name: jdoe") {
+		t.Errorf("YAML should render nested values, got %q", got)
 	}
 }
 

@@ -13,20 +13,23 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 // Format represents a supported output format.
 type Format string
 
 const (
-	FormatJSON  Format = "json"
-	FormatTable Format = "table"
-	FormatCSV   Format = "csv"
-	FormatHuman Format = "human"
+	FormatJSON   Format = "json"
+	FormatTable  Format = "table"
+	FormatCSV    Format = "csv"
+	FormatHuman  Format = "human"
+	FormatYAML   Format = "yaml"
+	FormatNDJSON Format = "ndjson"
 )
 
 // ValidFormats is the set of supported format strings.
-var ValidFormats = []Format{FormatJSON, FormatTable, FormatCSV, FormatHuman}
+var ValidFormats = []Format{FormatJSON, FormatTable, FormatCSV, FormatHuman, FormatYAML, FormatNDJSON}
 
 // IsValid returns true if f is a recognized format.
 func (f Format) IsValid() bool {
@@ -125,6 +128,10 @@ func WriteList(w io.Writer, data []json.RawMessage, opts Options) error {
 		return writeCSV(w, data, effectiveFields)
 	case FormatHuman:
 		return writeHumanList(w, data, effectiveFields)
+	case FormatNDJSON:
+		return writeNDJSONList(w, data)
+	case FormatYAML:
+		return writeYAMLList(w, data)
 	default:
 		return writeJSONList(w, data)
 	}
@@ -159,6 +166,10 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 		return writeCSV(w, []json.RawMessage{data}, effectiveFields)
 	case FormatHuman:
 		return writeHumanSingle(w, data)
+	case FormatNDJSON:
+		return writeNDJSONSingle(w, data)
+	case FormatYAML:
+		return writeYAMLSingle(w, data)
 	default:
 		return writeJSONSingle(w, data)
 	}
@@ -443,6 +454,129 @@ func writeHumanList(w io.Writer, data []json.RawMessage, defaultFields []string)
 		}
 	}
 	return nil
+}
+
+// --- NDJSON formatter ---
+
+func writeNDJSONList(w io.Writer, data []json.RawMessage) error {
+	for _, raw := range data {
+		sorted, err := sortedJSON(raw)
+		if err != nil {
+			return err
+		}
+		// Compact JSON — one object per line, no indentation.
+		var buf bytes.Buffer
+		if err := json.Compact(&buf, sorted); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, buf.String()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeNDJSONSingle(w io.Writer, data json.RawMessage) error {
+	return writeNDJSONList(w, []json.RawMessage{data})
+}
+
+// --- YAML formatter ---
+
+// jsonToYAMLNode converts a json.RawMessage to a yaml.Node with sorted keys.
+func jsonToYAMLNode(raw json.RawMessage) (*yaml.Node, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+	}
+
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return nil, err
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}, nil
+	case '{':
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &m); err != nil {
+			return nil, err
+		}
+		keys := sortedKeys(m)
+		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		for _, k := range keys {
+			keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+			valNode, err := jsonToYAMLNode(m[k])
+			if err != nil {
+				return nil, err
+			}
+			node.Content = append(node.Content, keyNode, valNode)
+		}
+		return node, nil
+	case '[':
+		var arr []json.RawMessage
+		if err := json.Unmarshal(trimmed, &arr); err != nil {
+			return nil, err
+		}
+		node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, item := range arr {
+			child, err := jsonToYAMLNode(item)
+			if err != nil {
+				return nil, err
+			}
+			node.Content = append(node.Content, child)
+		}
+		return node, nil
+	default:
+		// Number or boolean.
+		var v interface{}
+		if err := json.Unmarshal(trimmed, &v); err != nil {
+			return nil, err
+		}
+		switch val := v.(type) {
+		case bool:
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%t", val)}, nil
+		case float64:
+			// Use compact representation for integers.
+			if val == float64(int64(val)) {
+				return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: fmt.Sprintf("%d", int64(val))}, nil
+			}
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: fmt.Sprintf("%g", val)}, nil
+		default:
+			return &yaml.Node{Kind: yaml.ScalarNode, Value: fmt.Sprintf("%v", val)}, nil
+		}
+	}
+}
+
+func writeYAMLList(w io.Writer, data []json.RawMessage) error {
+	if len(data) == 0 {
+		_, err := fmt.Fprintln(w, "[]")
+		return err
+	}
+
+	seqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, raw := range data {
+		node, err := jsonToYAMLNode(raw)
+		if err != nil {
+			return err
+		}
+		seqNode.Content = append(seqNode.Content, node)
+	}
+
+	doc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{seqNode}}
+	enc := yaml.NewEncoder(w)
+	defer enc.Close()
+	return enc.Encode(doc)
+}
+
+func writeYAMLSingle(w io.Writer, data json.RawMessage) error {
+	node, err := jsonToYAMLNode(data)
+	if err != nil {
+		return err
+	}
+	doc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{node}}
+	enc := yaml.NewEncoder(w)
+	defer enc.Close()
+	return enc.Encode(doc)
 }
 
 // --- IDs formatter ---

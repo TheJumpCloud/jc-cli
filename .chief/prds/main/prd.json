@@ -852,7 +852,8 @@
         "Both formats respect --fields and --exclude flags"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "NDJSON is critical for SIEM tools (Splunk, Elastic) that ingest one event per line. YAML is useful for IaC workflows. Both are simple additions to the output engine.",
       "dependsOn": ["US-009"]
     },
