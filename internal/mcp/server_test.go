@@ -960,3 +960,237 @@ func TestJsonResult(t *testing.T) {
 		t.Errorf("expected JSON output, got %q", tc.Text)
 	}
 }
+
+// --- Tool allow/block list integration tests ---
+
+func TestMCP_BlockedToolNotRegistered(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		BlockedTools: []string{"jc_ping"},
+	})
+
+	ctx := context.Background()
+	result, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	for _, tool := range result.Tools {
+		if tool.Name == "jc_ping" {
+			t.Error("expected jc_ping to be filtered out by block list")
+		}
+	}
+}
+
+func TestMCP_BlockedToolCallFails(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		BlockedTools: []string{"jc_ping"},
+	})
+
+	ctx := context.Background()
+	_, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "jc_ping"})
+	if err == nil {
+		t.Fatal("expected error calling blocked tool")
+	}
+}
+
+func TestMCP_AllowListFiltersTools(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		AllowedTools: []string{"jc_ping", "users_list"},
+	})
+
+	ctx := context.Background()
+	result, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+
+	if !names["jc_ping"] {
+		t.Error("expected jc_ping to be allowed")
+	}
+	if !names["users_list"] {
+		t.Error("expected users_list to be allowed")
+	}
+	if names["devices_list"] {
+		t.Error("expected devices_list to be filtered out (not in allow list)")
+	}
+	if names["users_delete"] {
+		t.Error("expected users_delete to be filtered out (not in allow list)")
+	}
+
+	// Only 2 tools should be registered.
+	if len(result.Tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(result.Tools))
+	}
+}
+
+func TestMCP_WildcardAllowPattern(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		AllowedTools: []string{"users_*", "jc_ping"},
+	})
+
+	ctx := context.Background()
+	result, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+
+	// All users tools should be present.
+	if !names["users_list"] {
+		t.Error("expected users_list allowed by wildcard")
+	}
+	if !names["users_get"] {
+		t.Error("expected users_get allowed by wildcard")
+	}
+	if !names["users_delete"] {
+		t.Error("expected users_delete allowed by wildcard")
+	}
+	if !names["jc_ping"] {
+		t.Error("expected jc_ping allowed explicitly")
+	}
+	// Other tools should be filtered.
+	if names["devices_list"] {
+		t.Error("expected devices_list filtered out")
+	}
+}
+
+func TestMCP_WildcardBlockPattern(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		BlockedTools: []string{"devices_*"},
+	})
+
+	ctx := context.Background()
+	result, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+
+	// Users tools should still be present.
+	if !names["users_list"] {
+		t.Error("expected users_list allowed")
+	}
+	// All device tools should be blocked.
+	if names["devices_list"] {
+		t.Error("expected devices_list blocked by wildcard")
+	}
+	if names["devices_erase"] {
+		t.Error("expected devices_erase blocked by wildcard")
+	}
+}
+
+func TestMCP_BlockPrecedenceOverAllow(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{
+		AllowedTools: []string{"users_*"},
+		BlockedTools: []string{"users_delete"},
+	})
+
+	ctx := context.Background()
+	result, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+
+	if !names["users_list"] {
+		t.Error("expected users_list allowed")
+	}
+	if names["users_delete"] {
+		t.Error("expected users_delete blocked (block takes precedence over allow)")
+	}
+}
+
+func TestMCP_ReadOnlyEquivalentToBlockMutations(t *testing.T) {
+	setupTest(t)
+	_, cs := connectTestServer(t, Options{ReadOnly: true})
+
+	ctx := context.Background()
+
+	// Mutation tools should return read-only error.
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "users_create",
+		Arguments: map[string]any{"username": "test", "email": "test@test.com"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error for mutation in read-only mode")
+	}
+	tc, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result.Content[0])
+	}
+	if !strings.Contains(tc.Text, "read-only") {
+		t.Errorf("expected read-only error, got %q", tc.Text)
+	}
+}
+
+func TestMCP_ListToolNames(t *testing.T) {
+	setupTest(t)
+	server := NewServer(Options{
+		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
+	})
+
+	names := server.ListToolNames()
+	if len(names) == 0 {
+		t.Fatal("expected at least one tool name")
+	}
+
+	// Verify sorted order.
+	for i := 1; i < len(names); i++ {
+		if names[i] < names[i-1] {
+			t.Errorf("tool names not sorted: %q before %q", names[i-1], names[i])
+		}
+	}
+
+	// Verify key tools present.
+	nameSet := map[string]bool{}
+	for _, n := range names {
+		nameSet[n] = true
+	}
+	for _, expected := range []string{"jc_ping", "users_list", "users_get", "devices_list", "groups_list"} {
+		if !nameSet[expected] {
+			t.Errorf("expected tool %q in list", expected)
+		}
+	}
+}
+
+func TestMCP_ListToolNames_WithFilter(t *testing.T) {
+	setupTest(t)
+	server := NewServer(Options{
+		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
+		AllowedTools: []string{"jc_ping"},
+	})
+
+	names := server.ListToolNames()
+	if len(names) != 1 {
+		t.Fatalf("expected 1 tool, got %d: %v", len(names), names)
+	}
+	if names[0] != "jc_ping" {
+		t.Errorf("expected jc_ping, got %q", names[0])
+	}
+}

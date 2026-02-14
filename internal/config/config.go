@@ -361,6 +361,8 @@ var ValidConfigKeys = []string{
 	"mcp.audit_log",
 	"mcp.plan_first",
 	"mcp.sse_port",
+	"mcp.allowed_tools",
+	"mcp.blocked_tools",
 	"ask.provider",
 	"ask.api_key",
 	"ask.model",
@@ -428,6 +430,17 @@ func MCPSSEPort() int {
 		return 8080
 	}
 	return port
+}
+
+// MCPAllowedTools returns the configured allowed tool patterns (whitelist).
+// If empty, all tools are allowed (subject to blocked_tools).
+func MCPAllowedTools() []string {
+	return viper.GetStringSlice("mcp.allowed_tools")
+}
+
+// MCPBlockedTools returns the configured blocked tool patterns (blacklist).
+func MCPBlockedTools() []string {
+	return viper.GetStringSlice("mcp.blocked_tools")
 }
 
 // IsValidConfigKey returns true if key is a known config key.

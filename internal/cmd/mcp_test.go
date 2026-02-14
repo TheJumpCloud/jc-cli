@@ -204,3 +204,91 @@ func TestMcpServeCmd_SSEExamples(t *testing.T) {
 		t.Error("expected help to mention sse_port config key")
 	}
 }
+
+func TestMcpServeCmd_AllowBlockListDocs(t *testing.T) {
+	rootCmd := NewRootCmd()
+	mcpCmd, _, err := rootCmd.Find([]string{"mcp", "serve"})
+	if err != nil {
+		t.Fatalf("find mcp serve: %v", err)
+	}
+
+	help := mcpCmd.Long
+	if !strings.Contains(help, "allowed_tools") {
+		t.Error("expected help to mention allowed_tools config key")
+	}
+	if !strings.Contains(help, "blocked_tools") {
+		t.Error("expected help to mention blocked_tools config key")
+	}
+	if !strings.Contains(help, "jc mcp tools") {
+		t.Error("expected help to mention 'jc mcp tools' command")
+	}
+}
+
+func TestMcpToolsCmd_Help(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"mcp", "tools", "--help"})
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "allow") {
+		t.Error("expected help to mention allow")
+	}
+	if !strings.Contains(output, "block") {
+		t.Error("expected help to mention block")
+	}
+}
+
+func TestMcpToolsCmd_ListsTools(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"mcp", "tools"})
+	var stdout, stderr bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
+
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "jc_ping") {
+		t.Error("expected output to include jc_ping")
+	}
+	if !strings.Contains(output, "users_list") {
+		t.Error("expected output to include users_list")
+	}
+	if !strings.Contains(output, "devices_list") {
+		t.Error("expected output to include devices_list")
+	}
+
+	// Footer on stderr.
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "tools") {
+		t.Error("expected stderr to contain tool count footer")
+	}
+}
+
+func TestMcpCmd_IncludesToolsSubcommand(t *testing.T) {
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs([]string{"mcp", "--help"})
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "tools") {
+		t.Error("expected mcp help to mention tools subcommand")
+	}
+}

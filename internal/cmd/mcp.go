@@ -31,6 +31,7 @@ Configure in Claude Desktop:
 	}
 
 	cmd.AddCommand(newMcpServeCmd())
+	cmd.AddCommand(newMcpToolsCmd())
 	return cmd
 }
 
@@ -69,6 +70,14 @@ Configuration can be set in config.yaml under the 'mcp' section:
     audit_log: true
     plan_first: true
     sse_port: 8080
+    allowed_tools: []
+    blocked_tools: []
+
+Tool Allow/Block Lists:
+  Use allowed_tools and blocked_tools to control which tools are available.
+  Patterns use glob-style matching (e.g., "users_*", "devices_erase").
+  Block list takes precedence over allow list.
+  Use 'jc mcp tools' to see which tools are available after filtering.
 
 SSE Examples:
   jc mcp serve --transport sse
@@ -103,10 +112,50 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 	return cmd
 }
 
+func newMcpToolsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tools",
+		Short: "List available MCP tools",
+		Long: `List all MCP tools that would be available when starting the server.
+Respects the allow/block list configuration in config.yaml:
+
+  mcp:
+    allowed_tools: ["users_*", "devices_list"]
+    blocked_tools: ["devices_erase"]
+
+Use --read-only to additionally see which tools survive read-only mode.
+
+Tool names use underscore-separated resource_verb format (e.g., users_list,
+devices_get, groups_add_member).`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			readOnly, _ := cmd.Flags().GetBool("read-only")
+			return runMcpTools(cmd, readOnly)
+		},
+	}
+}
+
+func runMcpTools(cmd *cobra.Command, readOnly bool) error {
+	server := mcp.NewServer(mcp.Options{
+		RateLimit:    60,
+		ReadOnly:     readOnly,
+		AllowedTools: config.MCPAllowedTools(),
+		BlockedTools: config.MCPBlockedTools(),
+	})
+
+	tools := server.ListToolNames()
+	for _, name := range tools {
+		fmt.Fprintln(cmd.OutOrStdout(), name)
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "── %d tools ──\n", len(tools))
+	return nil
+}
+
 func runMcpServe(rateLimit int, readOnly bool, transport string, port int, corsOrigin, tlsCert, tlsKey string) error {
 	server := mcp.NewServer(mcp.Options{
-		RateLimit: rateLimit,
-		ReadOnly:  readOnly,
+		RateLimit:    rateLimit,
+		ReadOnly:     readOnly,
+		AllowedTools: config.MCPAllowedTools(),
+		BlockedTools: config.MCPBlockedTools(),
 	})
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.

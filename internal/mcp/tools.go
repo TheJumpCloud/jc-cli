@@ -951,7 +951,12 @@ func describeCommand(parts []string) string {
 // --- Tool infrastructure (addTool, addTypedTool, result helpers) ---
 
 // addTool wraps mcp.AddTool with rate limiting and audit logging.
+// Tools that are filtered out by the allow/block list are not registered.
 func (s *Server) addTool(name, description string, handler func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error)) {
+	if !s.toolFilter.isAllowed(name) {
+		return
+	}
+
 	tool := &mcp.Tool{
 		Name:        name,
 		Description: description,
@@ -986,10 +991,16 @@ func (s *Server) addTool(name, description string, handler func(ctx context.Cont
 	}
 
 	mcp.AddTool(s.mcpServer, tool, wrappedHandler)
+	s.toolNames = append(s.toolNames, name)
 }
 
 // addTypedTool wraps mcp.AddTool with typed input args, rate limiting, and audit logging.
+// Tools that are filtered out by the allow/block list are not registered.
 func addTypedTool[In any](s *Server, name, description string, handler func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error)) {
+	if !s.toolFilter.isAllowed(name) {
+		return
+	}
+
 	tool := &mcp.Tool{
 		Name:        name,
 		Description: description,
@@ -1024,6 +1035,7 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 	}
 
 	mcp.AddTool(s.mcpServer, tool, wrappedHandler)
+	s.toolNames = append(s.toolNames, name)
 }
 
 // textResult creates a simple text result.

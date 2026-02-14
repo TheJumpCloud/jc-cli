@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -23,10 +24,12 @@ import (
 
 // Server wraps the MCP SDK server with rate limiting and audit logging.
 type Server struct {
-	mcpServer *mcp.Server
-	limiter   *rateLimiter
-	auditLog  *auditLogger
-	readOnly  bool
+	mcpServer  *mcp.Server
+	limiter    *rateLimiter
+	auditLog   *auditLogger
+	readOnly   bool
+	toolFilter *toolFilter
+	toolNames  []string // registered tool names, in registration order
 
 	mu       sync.Mutex
 	listener net.Listener // SSE listener, set during RunSSE
@@ -40,6 +43,12 @@ type Options struct {
 	ReadOnly bool
 	// AuditLogPath overrides the default audit log path.
 	AuditLogPath string
+	// AllowedTools is a list of glob patterns for tools that are allowed.
+	// If empty, all tools are allowed (subject to BlockedTools).
+	AllowedTools []string
+	// BlockedTools is a list of glob patterns for tools that are blocked.
+	// Block list takes precedence over allow list.
+	BlockedTools []string
 }
 
 // nowFunc is overridable for tests.
@@ -75,10 +84,11 @@ func NewServer(opts Options) *Server {
 	al := newAuditLogger(auditPath)
 
 	s := &Server{
-		mcpServer: mcpServer,
-		limiter:   newRateLimiter(opts.RateLimit),
-		auditLog:  al,
-		readOnly:  opts.ReadOnly,
+		mcpServer:  mcpServer,
+		limiter:    newRateLimiter(opts.RateLimit),
+		auditLog:   al,
+		readOnly:   opts.ReadOnly,
+		toolFilter: newToolFilter(opts.AllowedTools, opts.BlockedTools),
 	}
 
 	s.registerTools()
@@ -104,6 +114,14 @@ func (s *Server) RunWithTransport(ctx context.Context, t mcp.Transport) error {
 // MCPServer returns the underlying MCP server (for testing).
 func (s *Server) MCPServer() *mcp.Server {
 	return s.mcpServer
+}
+
+// ListToolNames returns the names of all registered tools, sorted.
+func (s *Server) ListToolNames() []string {
+	sorted := make([]string, len(s.toolNames))
+	copy(sorted, s.toolNames)
+	sort.Strings(sorted)
+	return sorted
 }
 
 // SSEConfig configures the SSE HTTP server.
