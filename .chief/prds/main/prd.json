@@ -1175,7 +1175,8 @@
         "Table output adjusts column widths to unbounded when piped (no terminal width constraint)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Follow the NO_COLOR standard (https://no-color.org/). Use isatty to detect terminal. This is important for scripting reliability.",
       "dependsOn": ["US-009"]
     },

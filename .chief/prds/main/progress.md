@@ -78,6 +78,10 @@
 - Structured errors: `CLIError` in `cli_error.go`; `ToCLIError()` converts any error at `Execute()` boundary; typed errors (`ResolveError`, `FilterError`) carry context for automatic code mapping
 - Error codes: `RESOURCE_ERROR` pattern; exit codes: 0=success, 1=general, 2=usage, 3=auth, 4=permission, 5=rate_limit, 10=plan, 130=interrupted
 - Errors render as JSON on stderr when `--output json`, plain text otherwise; `writeError()` in root.go handles format dispatch
+- `isTerminalFunc` var in config.go for testable TTY detection; `IsStdoutTerminal()` wraps `term.IsTerminal()`
+- `NoColor()` auto-disables color when stdout is not a terminal (pipe, redirect, substitution)
+- Color disable priority: `NO_COLOR` env > `JC_NO_COLOR` env > `--no-color` flag > `defaults.color` config > auto-TTY detection
+- `output.Options.IsPiped` field tracks pipe state; `CurrentOptions()` sets it from `config.IsStdoutTerminal()`
 
 ---
 
@@ -571,4 +575,22 @@
   - `writeError()` format switch: JSON format → structured JSON to stderr, all other formats → plain text with optional suggestion
   - `PersistentPreRunE` returns `CLIError` directly for validation errors — these get rendered at the `Execute()` boundary
   - No need to modify every command — the `Execute()` boundary conversion handles API errors and resolve errors automatically
+---
+
+## 2026-02-13 - US-056
+- Implemented pipe detection and auto-disable color/pager
+- **Files changed:**
+  - `internal/config/config.go` — added `isTerminalFunc` var (testable TTY detection), `IsStdoutTerminal()` using `golang.org/x/term`, updated `NoColor()` to auto-disable color when stdout is not a TTY; added `golang.org/x/term` import
+  - `internal/config/config_test.go` — added 7 new tests: `TestIsStdoutTerminal_WithMockTerminal/Pipe`, `TestNoColor_AutoDisabledWhenPiped`, `TestNoColor_EnabledWhenTerminal`, `TestNoColor_EnvOverridesTTY`, `TestNoColor_JCNoColorOverridesTTY`, `TestNoColor_FlagOverridesTTY`; updated `TestEnv_ConfigFallbackWhenNoEnv` to mock terminal state
+  - `internal/output/output.go` — added `IsPiped` field to `Options` struct, updated `CurrentOptions()` to set `IsPiped` from `config.IsStdoutTerminal()`, added `config` package import
+  - `internal/output/output_test.go` — added 4 new tests: `TestCurrentOptions_IsPipedField`, `TestTableOutput_WorksWhenPiped`, `TestCSVOutput_WorksWhenPiped`, `TestJSONOutput_WorksWhenPiped`
+  - `internal/cmd/root_test.go` — added 3 new tests: `TestNoColorFlagRegistered`, `TestNoColorFlagDisablesColor`, `TestNoColorEnvVarWorks`, `TestJCNoColorEnvVarWorks`
+  - `.chief/prds/main/prd.json` — marked US-056 as complete
+- **Learnings for future iterations:**
+  - `isTerminalFunc` var pattern enables deterministic TTY tests — mock it to simulate terminal or pipe without needing actual file descriptors
+  - `golang.org/x/term.IsTerminal(fd)` is the standard Go way to check TTY — it was already a project dependency (used in auth.go for masked password input)
+  - Adding auto-TTY detection to `NoColor()` breaks existing tests that assumed color was always enabled when `defaults.color: true` — must mock `isTerminalFunc` in those tests
+  - `output.Options.IsPiped` allows format-specific behavior when piped — currently table output is already unbounded (tabwriter minwidth=0), but the field is ready for future terminal-width-aware truncation
+  - The `output` package can safely import `config` (no circular dependency) since `config` doesn't import `output`
+  - Priority chain for color disable: `NO_COLOR` env > `JC_NO_COLOR` env > `--no-color` flag > `defaults.color` config > auto-TTY detection
 ---

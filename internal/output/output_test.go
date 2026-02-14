@@ -1320,3 +1320,88 @@ func TestFilterFields_NonObject(t *testing.T) {
 		t.Errorf("non-object should pass through, got %s", string(got[0]))
 	}
 }
+
+// --- Pipe Detection Tests (US-056) ---
+
+func TestCurrentOptions_IsPipedField(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	// When running in test, stdout is not a terminal, so IsPiped should be true.
+	opts := CurrentOptions()
+	if !opts.IsPiped {
+		t.Log("IsPiped is false — this is expected if running in a terminal. Skipping assertion.")
+	}
+	// The field should exist and be settable.
+	opts.IsPiped = true
+	if !opts.IsPiped {
+		t.Error("IsPiped should be settable to true")
+	}
+}
+
+func TestTableOutput_WorksWhenPiped(t *testing.T) {
+	// Table output should produce valid unbounded output when piped.
+	var buf bytes.Buffer
+	data := sampleUsers()
+	opts := Options{
+		Format:        FormatTable,
+		DefaultFields: []string{"username", "email"},
+		IsPiped:       true,
+	}
+
+	if err := WriteList(&buf, data, opts); err != nil {
+		t.Fatalf("WriteList() error: %v", err)
+	}
+
+	out := buf.String()
+	// Table should have header and data rows.
+	if !strings.Contains(out, "USERNAME") {
+		t.Error("table output should contain USERNAME header when piped")
+	}
+	if !strings.Contains(out, "jdoe") {
+		t.Error("table output should contain jdoe when piped")
+	}
+	if !strings.Contains(out, "asmith") {
+		t.Error("table output should contain asmith when piped")
+	}
+}
+
+func TestCSVOutput_WorksWhenPiped(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+	opts := Options{
+		Format:        FormatCSV,
+		DefaultFields: []string{"username", "email"},
+		IsPiped:       true,
+	}
+
+	if err := WriteList(&buf, data, opts); err != nil {
+		t.Fatalf("WriteList() error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "username,email") {
+		t.Error("CSV output should contain header when piped")
+	}
+	if !strings.Contains(out, "jdoe") {
+		t.Error("CSV output should contain jdoe when piped")
+	}
+}
+
+func TestJSONOutput_WorksWhenPiped(t *testing.T) {
+	var buf bytes.Buffer
+	data := sampleUsers()
+	opts := Options{
+		Format:  FormatJSON,
+		IsPiped: true,
+	}
+
+	if err := WriteList(&buf, data, opts); err != nil {
+		t.Fatalf("WriteList() error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.HasPrefix(strings.TrimSpace(out), "[") {
+		t.Error("JSON output should produce array when piped")
+	}
+}

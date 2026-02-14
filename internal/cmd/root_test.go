@@ -807,6 +807,79 @@ func TestPlanFlagIsPersistent(t *testing.T) {
 	}
 }
 
+// --- Pipe Detection Tests (US-056) ---
+
+func TestNoColorFlagRegistered(t *testing.T) {
+	rootCmd := NewRootCmd()
+	flag := rootCmd.PersistentFlags().Lookup("no-color")
+	if flag == nil {
+		t.Fatal("expected --no-color to be a persistent flag")
+	}
+}
+
+func TestNoColorFlagDisablesColor(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("JC_NO_COLOR", "")
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	rootCmd, _ := newTestRootWithSub()
+	rootCmd.SetArgs([]string{"--no-color", "testcmd"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !config.NoColor() {
+		t.Error("config.NoColor() should be true when --no-color flag is set")
+	}
+}
+
+func TestNoColorEnvVarWorks(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "1")
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	if !config.NoColor() {
+		t.Error("config.NoColor() should be true when NO_COLOR env var is set")
+	}
+}
+
+func TestJCNoColorEnvVarWorks(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("JC_NO_COLOR", "1")
+
+	if err := config.Init(); err != nil {
+		t.Fatalf("config.Init() error: %v", err)
+	}
+
+	if !config.NoColor() {
+		t.Error("config.NoColor() should be true when JC_NO_COLOR env var is set")
+	}
+}
+
 // --- Priority Chain Tests (US-003) ---
 
 // TestPriorityChain_FlagOverridesEnvOverridesConfig verifies the full

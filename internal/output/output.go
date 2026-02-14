@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/spf13/viper"
 	"go.yaml.in/yaml/v3"
 )
@@ -66,6 +67,10 @@ type Options struct {
 
 	// All overrides DefaultFields to show all available fields (--all flag).
 	All bool
+
+	// IsPiped is true when stdout is not a terminal (piped, redirected, or captured).
+	// Table output uses unbounded column widths when piped so that data is not truncated.
+	IsPiped bool
 }
 
 // CurrentOptions reads output options from Viper flags and config.
@@ -77,6 +82,7 @@ func CurrentOptions() Options {
 		Fields:  splitCommaFlag(viper.GetString("fields")),
 		Exclude: splitCommaFlag(viper.GetString("exclude")),
 		All:     viper.GetBool("all"),
+		IsPiped: !config.IsStdoutTerminal(),
 	}
 }
 

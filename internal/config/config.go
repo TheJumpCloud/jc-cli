@@ -9,6 +9,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/keychain"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 )
 
 // DefaultConfig is the YAML content written when no config file exists.
@@ -243,9 +244,26 @@ func Output() string {
 	return viper.GetString("defaults.output")
 }
 
+// isTerminalFunc abstracts TTY detection for testing. In production it uses
+// golang.org/x/term.IsTerminal.
+var isTerminalFunc = func(fd int) bool {
+	return term.IsTerminal(fd)
+}
+
+// IsStdoutTerminal returns true if stdout is connected to a terminal (TTY).
+// When stdout is piped (|), redirected (>), or captured ($(...)), this
+// returns false.
+func IsStdoutTerminal() bool {
+	return isTerminalFunc(int(os.Stdout.Fd()))
+}
+
 // NoColor returns true if color output should be disabled.
-// Color is disabled if JC_NO_COLOR or NO_COLOR is set to any non-empty value,
-// or if the --no-color flag is passed.
+// Color is disabled if:
+//   - NO_COLOR env var is set (https://no-color.org/ standard)
+//   - JC_NO_COLOR env var is set
+//   - --no-color flag is passed
+//   - defaults.color is false in config
+//   - stdout is not a TTY (piped, redirected, or captured)
 func NoColor() bool {
 	// Check standard NO_COLOR env var (https://no-color.org/)
 	if v := os.Getenv("NO_COLOR"); v != "" {
@@ -261,6 +279,10 @@ func NoColor() bool {
 	}
 	// Check config defaults.color (inverted: color=false means no-color=true)
 	if !viper.GetBool("defaults.color") {
+		return true
+	}
+	// Auto-detect: disable color when stdout is not a terminal.
+	if !IsStdoutTerminal() {
 		return true
 	}
 	return false

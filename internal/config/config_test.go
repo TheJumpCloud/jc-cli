@@ -521,8 +521,14 @@ profiles:
 	if got := Output(); got != "csv" {
 		t.Errorf("Output() = %q, want %q", got, "csv")
 	}
+
+	// Simulate terminal to test color config fallback (test stdout is piped).
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
 	if NoColor() {
-		t.Error("NoColor() should be false when no env var set and config has color: true")
+		t.Error("NoColor() should be false when no env var set, config has color: true, and stdout is a terminal")
 	}
 }
 
@@ -1137,5 +1143,152 @@ func TestSetConfigValue_Persists(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "less") {
 		t.Errorf("config file should contain 'less', got: %s", string(data))
+	}
+}
+
+// --- Pipe Detection / TTY Tests (US-056) ---
+
+func TestIsStdoutTerminal_WithMockTerminal(t *testing.T) {
+	// Override isTerminalFunc to simulate a terminal.
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
+	if !IsStdoutTerminal() {
+		t.Error("IsStdoutTerminal() = false, want true when terminal is simulated")
+	}
+}
+
+func TestIsStdoutTerminal_WithMockPipe(t *testing.T) {
+	// Override isTerminalFunc to simulate a pipe.
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return false }
+	defer func() { isTerminalFunc = orig }()
+
+	if IsStdoutTerminal() {
+		t.Error("IsStdoutTerminal() = true, want false when pipe is simulated")
+	}
+}
+
+func TestNoColor_AutoDisabledWhenPiped(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("JC_NO_COLOR", "")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Simulate piped output (not a terminal).
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return false }
+	defer func() { isTerminalFunc = orig }()
+
+	if !NoColor() {
+		t.Error("NoColor() = false, want true when stdout is not a terminal")
+	}
+}
+
+func TestNoColor_EnabledWhenTerminal(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("JC_NO_COLOR", "")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Simulate terminal output.
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
+	if NoColor() {
+		t.Error("NoColor() = true, want false when stdout is a terminal and color is enabled")
+	}
+}
+
+func TestNoColor_EnvOverridesTTY(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Simulate terminal (color would be on normally).
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
+	// But NO_COLOR env var forces it off.
+	t.Setenv("NO_COLOR", "1")
+	if !NoColor() {
+		t.Error("NoColor() = false, want true when NO_COLOR is set even with TTY")
+	}
+}
+
+func TestNoColor_JCNoColorOverridesTTY(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Simulate terminal.
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
+	// JC_NO_COLOR forces color off.
+	t.Setenv("JC_NO_COLOR", "1")
+	if !NoColor() {
+		t.Error("NoColor() = false, want true when JC_NO_COLOR is set even with TTY")
+	}
+}
+
+func TestNoColor_FlagOverridesTTY(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("JC_NO_COLOR", "")
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Simulate terminal.
+	orig := isTerminalFunc
+	isTerminalFunc = func(fd int) bool { return true }
+	defer func() { isTerminalFunc = orig }()
+
+	// --no-color flag forces color off.
+	viper.Set("no-color", true)
+	if !NoColor() {
+		t.Error("NoColor() = false, want true when --no-color flag is set even with TTY")
 	}
 }
