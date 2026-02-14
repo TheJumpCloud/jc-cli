@@ -81,6 +81,16 @@
 - When adding subcommands that need their own `PersistentPreRunE`, chain to parent's pre-run manually (Cobra does not auto-chain)
 - Config commands in `internal/cmd/config.go`: `config view` uses `viper.AllSettings()` + redaction; `config set` validates against `ValidConfigKeys` with `coerceValue()` for type safety
 - `config.SetConfigValue(key, value)` is the general-purpose config setter; `coerceValue()` handles string→int/bool coercion for known keys
+- `AuthPolicyConfig` in resolve: CacheKey `auth-policies`, ListEndpoint `/authn/policies`, NameField `name`, IDField `id` (V2 pattern)
+- `IPListConfig` in resolve: CacheKey `iplists`, ListEndpoint `/iplists`, NameField `name`, IDField `id` (V2 pattern)
+- Auth policies use V2 client at `/authn/policies`; enable/disable are convenience commands toggling `disabled` field
+- `--conditions` flag accepts raw JSON for auth policy conditions tree (nested `all`/`any`/`not` operators)
+- Simulator engine in `internal/simulator/`: pure logic, no API deps; `EvaluatePolicy()` + `EvaluatePolicies()` with three-valued logic (`TriTrue`/`TriFalse`/`TriUnknown`)
+- `IPListResolver` func type for dependency injection — simulator calls resolver to fetch IP list entries without importing API packages
+- IP matching in `internal/simulator/ipmatch.go`: `MatchIP()` supports single IP, CIDR, IP ranges
+- Simulate command builds `SimulationContext` from flags + API data; missing flags → `unknown` for dependent conditions
+- Blast-radius fetches policy targets, resolves group members via V2 `/usergroups/{id}/members`, deduplicates with `seen` map
+- Combined V1+V2 mock servers for simulate tests: single `httptest.Server` routing `/api/systemusers` (V1) and `/api/v2/authn/policies` (V2)
 ---
 
 ## 2026-02-13 - US-001
@@ -979,4 +989,41 @@
   - JumpCloud V2 graph associations are asymmetric — users can associate with applications/systems but NOT commands/policies. Those are only reachable from devices/device groups. A per-source validation map catches these at the CLI layer with clear messages instead of cryptic HTTP 400s.
   - Cobra's `cmd.Flags()` includes all flags (local AND inherited persistent), so when `cmd` IS the root command, `Root().PersistentFlags()` and `cmd.Flags()` have complete overlap. A `seen` map deduplicates without changing behavior for subcommands with unique local flags.
   - When tightening validation, all existing tests must be audited for now-invalid combos — several tests used `user→user_group` which became invalid under per-source rules.
+---
+
+## 2026-02-14 - Authentication Policies, IP Lists & Policy Simulator
+- **Status:** COMPLETE
+- What was implemented:
+  - **IP Lists CRUD** (`jc iplists`): Full V2 resource at `/iplists` with list/get/create/update/delete subcommands. Default fields: id, name, description. Uses V2 client with V2 resolver for name-to-ID resolution. Plan mode for create/update/delete. `--ips` flag accepts comma-separated IP addresses/CIDRs.
+  - **Authentication Policies CRUD** (`jc auth-policies`): Full V2 resource at `/authn/policies` with list/get/create/update/delete/enable/disable subcommands. Default fields: id, name, disabled, type, conditions. `--conditions` flag accepts raw JSON for the conditions tree. Enable/disable are convenience commands that toggle the `disabled` field.
+  - **Simulator Engine** (`internal/simulator/`): Pure logic package with no API dependencies. Three-valued logic (`TriTrue`/`TriFalse`/`TriUnknown`) for condition evaluation when context data is missing. Evaluates conditions tree recursively (handles `all`, `any`, `not` operators plus leaf predicates: `ipAddressIn`, `deviceManaged`, `deviceEncrypted`, `locationIn`). Deny-first evaluation ordering. `IPListResolver` function type for dependency injection.
+  - **IP Matching** (`internal/simulator/ipmatch.go`): Supports single IP, CIDR notation (`10.0.0.0/8`), and IP ranges (`10.0.0.1-10.0.0.255`). Uses `net.ParseCIDR`/`net.ParseIP` from stdlib.
+  - **Simulate command** (`jc auth-policies simulate <policy> --user <user> [--ip] [--device] [--location]`): User-centric simulation resolves policy (V2), user (V1), group memberships (V2 graph `/users/{id}/memberof`), optional device status (V1 `/systems/{id}`), and IP list entries (V2 `/iplists/{id}`). Missing flags result in `unknown` for dependent conditions.
+  - **Blast-radius command** (`jc auth-policies blast-radius <policy> [--limit N]`): Policy-centric analysis fetches policy targets, resolves group members via V2 `/usergroups/{id}/members`, deduplicates across groups, outputs affected users. `allUsers` target falls back to V1 `/systemusers` listing.
+  - **Schema entries**: Added `auth-policies` and `iplists` resource schemas with field definitions, verbs, default fields. Added command manifest entries for both resources including simulate/blast-radius flags.
+  - **MCP tools**: 12 new tools — `auth_policies_list/get/create/update/delete/simulate/blast_radius` and `iplists_list/get/create/update/delete`. Destructive operations use plan-first safety pattern. Input types with `jsonschema` struct tags for auto-inferred schemas.
+  - **Error codes**: Added `AUTH_POLICY_NOT_FOUND` and `IP_LIST_NOT_FOUND` to structured error system.
+- Files changed:
+  - `internal/cmd/iplists.go` — new IP Lists command group with list/get/create/update/delete (250 lines)
+  - `internal/cmd/iplists_test.go` — 18 tests covering CRUD, plan mode, error cases, help text
+  - `internal/cmd/auth_policies.go` — new Auth Policies command group with list/get/create/update/delete/enable/disable/simulate/blast-radius (550 lines)
+  - `internal/cmd/auth_policies_test.go` — 36 tests covering CRUD, enable/disable, simulate (IP match/no match/unknown/group-targeted/device), blast-radius (group/all-users/limit/dedup), help text
+  - `internal/simulator/simulator.go` — simulator engine with three-valued condition evaluation, deny-first ordering (300 lines)
+  - `internal/simulator/simulator_test.go` — 12 tests: allow/deny/mfa/deny-first/disabled/unknown/nested conditions/no match
+  - `internal/simulator/ipmatch.go` — IP matching for single IPs, CIDRs, and ranges (80 lines)
+  - `internal/simulator/ipmatch_test.go` — 9 tests covering all match types and edge cases
+  - `internal/cmd/cli_error.go` — added `ErrCodeAuthPolicyNotFound`, `ErrCodeIPListNotFound`
+  - `internal/schema/schema.go` — added `auth-policies` and `iplists` resource schemas + command manifest entries
+  - `internal/schema/schema_test.go` — updated resource count 8→10, added to expected resource list
+  - `internal/cmd/schema_test.go` — updated resource count 8→10
+  - `internal/mcp/tools.go` — registered 12 new MCP tools with input types and plan-first safety
+  - `internal/resolve/resolve.go` — added `AuthPolicyConfig` and `IPListConfig` resource configs
+  - `internal/cmd/root.go` — registered `newAuthPoliciesCmd()` and `newIPListsCmd()`
+- **Learnings:**
+  - Three-valued logic (`TriTrue`/`TriFalse`/`TriUnknown`) is essential for client-side policy simulation — when context data is missing (no `--ip` flag), conditions must evaluate to `unknown` rather than false, which propagates through `all`/`any`/`not` operators correctly.
+  - Combined V1+V2 mock servers (single `httptest.Server` handling both API versions via URL path routing) are needed when simulate commands fetch data from multiple API versions — user resolution via V1, group memberships via V2 graph, policy data via V2.
+  - The `IPListResolver` function type enables clean dependency injection for IP list lookups during condition evaluation — the simulator package stays pure (no API imports), while the cmd layer provides the resolver closure that fetches from V2 API.
+  - `parseDeviceStatus()` extracts managed status from `agentVersion != ""` and encryption from nested `fde.active` — both require careful null/type checking on raw JSON.
+  - `fetchUserGroupIDs()` via V2 graph `/users/{id}/memberof` returns association objects with `{id, type}` — extract `id` fields and return as string slice for group membership matching.
+  - Blast-radius deduplication uses a `seen` map of user IDs when aggregating members from multiple target groups — prevents duplicate entries in output.
 ---
