@@ -3,10 +3,15 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/spf13/viper"
 )
 
 // startAdminsServer creates a mock JumpCloud V1 server that handles /users endpoint.
@@ -18,11 +23,79 @@ func startAdminsServer(t *testing.T, admins []map[string]any) *httptest.Server {
 
 		// GET /users — list endpoint (V1-style).
 		if r.URL.Path == "/users" && r.Method == http.MethodGet {
+			skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			if limit == 0 {
+				limit = 100
+			}
+			end := skip + limit
+			if end > len(admins) {
+				end = len(admins)
+			}
+			var page []map[string]any
+			if skip < len(admins) {
+				page = admins[skip:end]
+			}
+			if page == nil {
+				page = []map[string]any{}
+			}
 			json.NewEncoder(w).Encode(map[string]any{
-				"results":    admins,
+				"results":    page,
 				"totalCount": len(admins),
 			})
 			return
+		}
+
+		// POST /users — create admin.
+		if r.URL.Path == "/users" && r.Method == http.MethodPost {
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			body["_id"] = "newadminnewadminnewadm01"
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(body)
+			return
+		}
+
+		// Routes under /users/{id}.
+		if strings.HasPrefix(r.URL.Path, "/users/") {
+			id := strings.TrimPrefix(r.URL.Path, "/users/")
+			switch r.Method {
+			case http.MethodGet:
+				for _, a := range admins {
+					if a["_id"] == id {
+						json.NewEncoder(w).Encode(a)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			case http.MethodPut:
+				for _, a := range admins {
+					if a["_id"] == id {
+						var body map[string]any
+						json.NewDecoder(r.Body).Decode(&body)
+						for k, v := range body {
+							a[k] = v
+						}
+						json.NewEncoder(w).Encode(a)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			case http.MethodDelete:
+				for _, a := range admins {
+					if a["_id"] == id {
+						json.NewEncoder(w).Encode(a)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
 		}
 
 		w.WriteHeader(http.StatusNotFound)
@@ -402,6 +475,307 @@ func TestAdminsList_RoleInOutput(t *testing.T) {
 	}
 }
 
+// --- Get Tests ---
+
+func TestAdminsGet_ByID(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "get", "aabbccddee112233aabb2001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["email"] != "admin@acme.com" {
+		t.Errorf("email = %v, want admin@acme.com", result["email"])
+	}
+}
+
+func TestAdminsGet_ByEmail(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "get", "admin@acme.com"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["_id"] != "aabbccddee112233aabb2001" {
+		t.Errorf("_id = %v, want aabbccddee112233aabb2001", result["_id"])
+	}
+}
+
+func TestAdminsGet_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "get", "nobody@acme.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not found admin")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestAdminsGet_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "get"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+// --- Create Tests ---
+
+func TestAdminsCreate(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "create", "--email", "new@acme.com", "--role", "Manager"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["email"] != "new@acme.com" {
+		t.Errorf("email = %v, want new@acme.com", result["email"])
+	}
+	if result["_id"] != "newadminnewadminnewadm01" {
+		t.Errorf("_id = %v, want newadminnewadminnewadm01", result["_id"])
+	}
+}
+
+func TestAdminsCreate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"admins", "create", "--email", "new@acme.com", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+	if !strings.Contains(errBuf.String(), "create") {
+		t.Errorf("plan should mention 'create', got: %s", errBuf.String())
+	}
+}
+
+func TestAdminsCreate_MissingEmail(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "create"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --email")
+	}
+}
+
+// --- Update Tests ---
+
+func TestAdminsUpdate(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "update", "aabbccddee112233aabb2001", "--role", "Read Only"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if result["roleName"] != "Read Only" {
+		t.Errorf("roleName = %v, want 'Read Only'", result["roleName"])
+	}
+}
+
+func TestAdminsUpdate_NoFields(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "update", "aabbccddee112233aabb2001"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no fields to update")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("error should mention 'no fields to update', got: %v", err)
+	}
+}
+
+func TestAdminsUpdate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"admins", "update", "aabbccddee112233aabb2001", "--role", "Manager", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+}
+
+// --- Delete Tests ---
+
+func TestAdminsDelete_Force(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "delete", "aabbccddee112233aabb2001", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "admin@acme.com") {
+		t.Errorf("output should mention admin email: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "deleted successfully") {
+		t.Errorf("output should confirm deletion: %s", buf.String())
+	}
+}
+
+func TestAdminsDelete_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"admins", "delete", "aabbccddee112233aabb2001", "--plan"})
+
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+	if !strings.Contains(errBuf.String(), "delete") {
+		t.Errorf("plan should mention 'delete', got: %s", errBuf.String())
+	}
+}
+
+func TestAdminsDelete_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("cache.directory", t.TempDir())
+	ts := startAdminsServer(t, sampleAdmins())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "delete", "nobody@acme.com", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not found admin")
+	}
+}
+
+func TestAdminsDelete_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"admins", "delete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
 // --- Help Tests ---
 
 func TestAdminsHelp_Subcommands(t *testing.T) {
@@ -418,8 +792,10 @@ func TestAdminsHelp_Subcommands(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "list") {
-		t.Errorf("help should contain subcommand 'list', got:\n%s", out)
+	for _, sub := range []string{"list", "get", "create", "update", "delete"} {
+		if !strings.Contains(out, sub) {
+			t.Errorf("help should contain subcommand %q, got:\n%s", sub, out)
+		}
 	}
 }
 

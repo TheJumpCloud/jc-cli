@@ -103,7 +103,7 @@ var Resources = map[string]ResourceSchema{
 	"devices": {
 		Resource:      "devices",
 		APIVersion:    "v1",
-		Verbs:         []string{"list", "get", "delete", "lock", "restart", "erase"},
+		Verbs:         []string{"list", "get", "update", "delete", "search", "lock", "restart", "erase"},
 		DefaultFields: []string{"displayName", "hostname", "os", "osVersion", "lastContact", "agentVersion"},
 		Fields: []FieldDef{
 			{Name: "_id", Type: "string", Description: "Unique device identifier"},
@@ -260,7 +260,7 @@ var Resources = map[string]ResourceSchema{
 	"admins": {
 		Resource:      "admins",
 		APIVersion:    "v2",
-		Verbs:         []string{"list"},
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
 		DefaultFields: []string{"id", "email", "role", "enableMultiFactor"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique administrator identifier"},
@@ -383,7 +383,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc devices",
 				Description: "Manage JumpCloud devices (systems)",
-				Subcommands: []string{"list", "get", "delete", "lock", "restart", "erase"},
+				Subcommands: []string{"list", "get", "update", "delete", "search", "lock", "restart", "erase"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field, prefix - for descending (list)"},
@@ -434,12 +434,16 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc admins",
-				Description: "List JumpCloud administrators",
-				Subcommands: []string{"list"},
+				Description: "Manage JumpCloud administrators",
+				Subcommands: []string{"list", "get", "create", "update", "delete"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},
 					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
+					{Name: "email", Type: "string", Description: "Admin email address (create, required)"},
+					{Name: "role", Type: "string", Description: "Admin role name (create/update)"},
+					{Name: "enable-mfa", Type: "bool", Description: "Enable multi-factor authentication (create/update)"},
+					{Name: "disable-mfa", Type: "bool", Description: "Disable multi-factor authentication (update)"},
 				},
 			},
 			{

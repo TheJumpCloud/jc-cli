@@ -133,6 +133,14 @@ var PolicyConfig = ResourceConfig{
 	IDField:      "id",
 }
 
+// AdminConfig is the resolution config for JumpCloud administrators (V1 API).
+var AdminConfig = ResourceConfig{
+	CacheKey:     "admins",
+	ListEndpoint: "/users",
+	NameField:    "email",
+	IDField:      "_id",
+}
+
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
 //
 // Resolution order:
