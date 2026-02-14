@@ -30,12 +30,14 @@ func newDevicesCmd() *cobra.Command {
 		Use:     "devices",
 		Aliases: []string{"d"},
 		Short:   "Manage JumpCloud devices",
-		Long:    "List, get, delete, and send MDM commands to JumpCloud systems (devices).\n\nAliases: d, devices",
+		Long:    "List, get, update, delete, search, and send MDM commands to JumpCloud systems (devices).\n\nAliases: d, devices",
 	}
 
 	cmd.AddCommand(newDevicesListCmd())
 	cmd.AddCommand(newDevicesGetCmd())
+	cmd.AddCommand(newDevicesUpdateCmd())
 	cmd.AddCommand(newDevicesDeleteCmd())
+	cmd.AddCommand(newDevicesSearchCmd())
 	cmd.AddCommand(newDevicesLockCmd())
 	cmd.AddCommand(newDevicesRestartCmd())
 	cmd.AddCommand(newDevicesEraseCmd())
@@ -280,6 +282,152 @@ func runDevicesDeleteStdin(cmd *cobra.Command) error {
 	if result.Failed > 0 {
 		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
 	}
+	return nil
+}
+
+func newDevicesUpdateCmd() *cobra.Command {
+	var (
+		displayName                    string
+		allowSshPasswordAuthentication bool
+		allowMultiFactorAuthentication bool
+		allowPublicKeyAuthentication   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <hostname-or-id>",
+		Short: "Update a device",
+		Long: `Update an existing JumpCloud device (system).
+
+Accepts a hostname or 24-character hex system ID.
+Specify only the fields you want to change. The updated device object is returned.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDevicesUpdate(cmd, args[0], displayName, allowSshPasswordAuthentication, allowMultiFactorAuthentication, allowPublicKeyAuthentication)
+		},
+	}
+
+	cmd.Flags().StringVar(&displayName, "displayName", "", "Device display name")
+	cmd.Flags().BoolVar(&allowSshPasswordAuthentication, "allowSshPasswordAuthentication", false, "Allow SSH password authentication")
+	cmd.Flags().BoolVar(&allowMultiFactorAuthentication, "allowMultiFactorAuthentication", false, "Allow multi-factor authentication")
+	cmd.Flags().BoolVar(&allowPublicKeyAuthentication, "allowPublicKeyAuthentication", false, "Allow public key authentication")
+
+	return cmd
+}
+
+func runDevicesUpdate(cmd *cobra.Command, identifier, displayName string, allowSshPwd, allowMFA, allowPubKey bool) error {
+	body := map[string]any{}
+
+	if cmd.Flags().Changed("displayName") {
+		body["displayName"] = displayName
+	}
+	if cmd.Flags().Changed("allowSshPasswordAuthentication") {
+		body["allowSshPasswordAuthentication"] = allowSshPwd
+	}
+	if cmd.Flags().Changed("allowMultiFactorAuthentication") {
+		body["allowMultiFactorAuthentication"] = allowMFA
+	}
+	if cmd.Flags().Changed("allowPublicKeyAuthentication") {
+		body["allowPublicKeyAuthentication"] = allowPubKey
+	}
+
+	if len(body) == 0 {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --displayName)")
+	}
+
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "device",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveDevice(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/systems/"+id, body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newDevicesSearchCmd() *cobra.Command {
+	var (
+		limitFlag int
+		sortFlag  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search devices",
+		Long: `Search JumpCloud systems (devices) using V1 POST search.
+
+Performs a server-side search across device fields.
+Mirrors the user search pattern using POST /search/systems.
+
+Examples:
+  jc devices search macbook
+  jc devices search "alice-mbp" --limit 10`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDevicesSearch(cmd, args[0], limitFlag, sortFlag)
+		},
+	}
+
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
+	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending)")
+
+	return cmd
+}
+
+func runDevicesSearch(cmd *cobra.Command, query string, limit int, sort string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	searchBody := map[string]any{
+		"searchFilter": map[string]any{
+			"searchTerm": query,
+		},
+	}
+
+	result, err := client.Search(cmd.Context(), "/search/systems", searchBody, api.SearchOptions{
+		Limit: limit,
+		Sort:  sort,
+	})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = deviceDefaultFields
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		writeListFooter(cmd, len(result.Data), result.TotalCount)
+	}
+
 	return nil
 }
 

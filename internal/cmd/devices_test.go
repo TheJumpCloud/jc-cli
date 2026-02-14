@@ -18,6 +18,45 @@ func startDevicesServer(t *testing.T, devices []map[string]any) *httptest.Server
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		// POST /search/systems — search endpoint.
+		if r.URL.Path == "/search/systems" && r.Method == http.MethodPost {
+			var searchReq map[string]any
+			json.NewDecoder(r.Body).Decode(&searchReq)
+
+			// Extract search term.
+			var searchTerm string
+			if sf, ok := searchReq["searchFilter"].(map[string]any); ok {
+				if st, ok := sf["searchTerm"].(string); ok {
+					searchTerm = strings.ToLower(st)
+				}
+			}
+
+			// Filter devices by search term (case-insensitive substring across fields).
+			var results []map[string]any
+			for _, d := range devices {
+				if searchTerm == "" {
+					results = append(results, d)
+					continue
+				}
+				for _, v := range d {
+					if s, ok := v.(string); ok && strings.Contains(strings.ToLower(s), searchTerm) {
+						results = append(results, d)
+						break
+					}
+				}
+			}
+			if results == nil {
+				results = []map[string]any{}
+			}
+
+			resp := map[string]any{
+				"results":    results,
+				"totalCount": len(results),
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
 		// GET /systems — list endpoint.
 		if r.URL.Path == "/systems" && r.Method == http.MethodGet {
 			skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
@@ -71,6 +110,23 @@ func startDevicesServer(t *testing.T, devices []map[string]any) *httptest.Server
 			case http.MethodGet:
 				for _, d := range devices {
 					if d["_id"] == id {
+						json.NewEncoder(w).Encode(d)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+
+			case http.MethodPut:
+				for _, d := range devices {
+					if d["_id"] == id {
+						var body map[string]any
+						json.NewDecoder(r.Body).Decode(&body)
+						// Merge updates.
+						for k, v := range body {
+							d[k] = v
+						}
 						json.NewEncoder(w).Encode(d)
 						return
 					}
@@ -739,11 +795,10 @@ func TestDevicesCmd_Help(t *testing.T) {
 	}
 
 	help := out.String()
-	if !strings.Contains(help, "list") {
-		t.Errorf("devices help should mention 'list' subcommand:\n%s", help)
-	}
-	if !strings.Contains(help, "get") {
-		t.Errorf("devices help should mention 'get' subcommand:\n%s", help)
+	for _, sub := range []string{"list", "get", "update", "delete", "search"} {
+		if !strings.Contains(help, sub) {
+			t.Errorf("devices help should mention '%s' subcommand:\n%s", sub, help)
+		}
 	}
 }
 
@@ -1643,5 +1698,164 @@ func TestDevicesEraseCmd_Help(t *testing.T) {
 	}
 	if !strings.Contains(help, "irreversible") {
 		t.Errorf("erase help should warn about irreversibility:\n%s", help)
+	}
+}
+
+// --- Devices Update Tests ---
+
+func TestDevicesUpdate(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "update", "aaa111aaa111aaa111aaa111", "--displayName", "NEW-NAME"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, out.String())
+	}
+	if result["displayName"] != "NEW-NAME" {
+		t.Errorf("displayName = %v, want NEW-NAME", result["displayName"])
+	}
+}
+
+func TestDevicesUpdate_NoFields(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "update", "aaa111aaa111aaa111aaa111"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no fields to update")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("error should mention 'no fields to update', got: %v", err)
+	}
+}
+
+func TestDevicesUpdate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"devices", "update", "aaa111aaa111aaa111aaa111", "--displayName", "TEST", "--plan"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ExitError for plan mode")
+	}
+	if !strings.Contains(errBuf.String(), "update") {
+		t.Errorf("plan should mention 'update', got: %s", errBuf.String())
+	}
+}
+
+func TestDevicesUpdate_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "update", "nonexistent", "--displayName", "X"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not found device")
+	}
+}
+
+func TestDevicesUpdate_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "update"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+// --- Devices Search Tests ---
+
+func TestDevicesSearch(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "search", "alice"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, out.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d results, want 1 (alice)", len(result))
+	}
+}
+
+func TestDevicesSearch_NoResults(t *testing.T) {
+	setupUsersTest(t)
+	ts := startDevicesServer(t, sampleDevices())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "search", "nonexistent-xyz"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, out.String())
+	}
+	if len(result) != 0 {
+		t.Errorf("got %d results, want 0", len(result))
+	}
+}
+
+func TestDevicesSearch_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"devices", "search"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
 	}
 }
