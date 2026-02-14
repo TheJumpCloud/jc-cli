@@ -1,4 +1,8 @@
 ## Codebase Patterns
+- Insights commands use `InsightsClient` (POST-based, not V1/V2); `newInsightsClient` var for test injection; `overrideInsightsClient(t, serverURL)` pattern
+- `resolveInsightsTimeRange()` translates `--last`/`--start`/`--end` to RFC 3339 strings — reusable for count/distinct (US-039)
+- `InsightsNowFunc` (exported) enables cross-package test overrides for deterministic time tests
+- `startInsightsServerWithCapture()` returns captured body pointer — inspect exact API request in tests
 - OAuth 2.0: `TokenCache` caches bearer tokens with 30s pre-expiry refresh; `bearerAuthTransport` injects `Authorization: Bearer`; `oauthTokenURL` + `nowFunc` + `newOAuthClient` vars for test overrides
 - Client secret keychain: `<profile>:client_secret` account name avoids collision with API key stored under `<profile>`
 - Dual auth transport: `authTransport` (x-api-key) vs `bearerAuthTransport` (Bearer) — selected at client construction time, transparent to callers
@@ -606,4 +610,36 @@
   - `loggingTransport` redacts both `x-api-key` and `Authorization` headers — Bearer tokens are just as sensitive as API keys
   - `config.AuthMethod()` defaults to `api_key` when not set — backwards compatible, existing profiles work unchanged
   - 30-second buffer before token expiry ensures proactive refresh, not reactive 401 handling
+---
+
+## 2026-02-13 - US-038
+- What was implemented:
+  - `jc insights query --service <svc> --last <time>` — queries Directory Insights events via POST /events
+  - `--service` flag (required) — validates against `ValidInsightsServices` list; supports comma-separated multi-service queries (e.g. `sso,ldap`)
+  - `--last` flag — time range shortcut: `24h`, `7d`, `30d`, `1m` (relative to now); also supports `last 7d` prefix format
+  - `--start` / `--end` flags — absolute time range: dates (`2026-02-01`) or RFC 3339 (`2026-02-01T00:00:00Z`)
+  - `--last` and `--start` are mutually exclusive (validated before API calls)
+  - `--event-type` flag — filters by event type via `search_term_filter` in request body (e.g. `sso_auth_failed`)
+  - `--limit` flag — caps total events returned; passed to InsightsClient pagination
+  - `--sort` flag — server-side sort (e.g. `-timestamp` for descending)
+  - Default fields: timestamp, event_type, initiated_by, client_ip, success
+  - All output formats supported: JSON (default), table, CSV, human, IDs, quiet
+  - Footer to stderr: "── N items ──"
+  - Invalid service names produce clear error with list of valid services
+  - Missing time range produces clear error: "either --last or --start is required"
+  - Exported `InsightsNowFunc` (was unexported `insightsNowFunc`) for cross-package test overrides
+  - `newInsightsClient` package-level var for test injection (same pattern as `newV1Client`, `newV2Client`)
+- Files changed:
+  - internal/cmd/insights.go — new insights command group with query subcommand (175 lines)
+  - internal/cmd/insights_test.go — 24 tests: JSON, default fields, table, footer, empty results, multi-service, all service, event-type filter, limit, sort, start/end time, --last flag, endpoint verification, invalid service, missing service, no time range, --last/--start mutual exclusivity, invalid time format, API error, quiet, help tests (subcommands, query flags, root includes insights), valid services validation
+  - internal/cmd/root.go — registered `newInsightsCmd()`
+  - internal/api/insights.go — exported `InsightsNowFunc` for cross-package test access
+  - internal/api/insights_test.go — updated all references from `insightsNowFunc` to `InsightsNowFunc`
+  - .chief/prds/main/prd.json — marked US-038 passes
+- **Learnings for future iterations:**
+  - Insights commands use `InsightsClient` (POST-based), not V1Client or V2Client — different constructor var pattern needed (`newInsightsClient`)
+  - Time range resolution (`resolveInsightsTimeRange`) is a pure function that translates `--last`/`--start`/`--end` flags to RFC 3339 strings — easy to test and reuse for count/distinct commands (US-039)
+  - Exporting `InsightsNowFunc` (following `SetOAuthTokenURL` pattern) enables cross-package test overrides for deterministic time-based tests
+  - `--service` is `MarkFlagRequired` — Cobra handles the "missing required flag" error automatically, no custom validation needed
+  - `startInsightsServerWithCapture` pattern returns a pointer to the captured body map — allows tests to inspect exactly what was sent to the API
 ---

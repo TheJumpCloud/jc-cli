@@ -18,8 +18,8 @@ const (
 	InsightsBaseURL = "https://console.jumpcloud.com/insights/directory/v1"
 )
 
-// nowFunc is used to get the current time. Tests can override this.
-var insightsNowFunc = time.Now
+// InsightsNowFunc is used to get the current time. Tests can override this.
+var InsightsNowFunc = time.Now
 
 // InsightsClient is a JumpCloud Directory Insights API client.
 // It handles POST-based event queries with automatic pagination.
@@ -333,7 +333,7 @@ func ParseTimeRange(input string) (time.Time, error) {
 	// Try duration shortcut (e.g., "24h", "7d", "30d").
 	if matches := durationRegexp.FindStringSubmatch(input); matches != nil {
 		n, _ := strconv.Atoi(matches[1])
-		now := insightsNowFunc()
+		now := InsightsNowFunc()
 		switch matches[2] {
 		case "h":
 			return now.Add(-time.Duration(n) * time.Hour), nil

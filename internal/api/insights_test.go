@@ -662,9 +662,9 @@ func TestValidateService_EmptyIgnored(t *testing.T) {
 
 func TestParseTimeRange_Hours(t *testing.T) {
 	fixed := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
-	old := insightsNowFunc
-	insightsNowFunc = func() time.Time { return fixed }
-	defer func() { insightsNowFunc = old }()
+	old := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return fixed }
+	defer func() { InsightsNowFunc = old }()
 
 	result, err := ParseTimeRange("24h")
 	if err != nil {
@@ -678,9 +678,9 @@ func TestParseTimeRange_Hours(t *testing.T) {
 
 func TestParseTimeRange_Days(t *testing.T) {
 	fixed := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
-	old := insightsNowFunc
-	insightsNowFunc = func() time.Time { return fixed }
-	defer func() { insightsNowFunc = old }()
+	old := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return fixed }
+	defer func() { InsightsNowFunc = old }()
 
 	result, err := ParseTimeRange("7d")
 	if err != nil {
@@ -694,9 +694,9 @@ func TestParseTimeRange_Days(t *testing.T) {
 
 func TestParseTimeRange_Months(t *testing.T) {
 	fixed := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
-	old := insightsNowFunc
-	insightsNowFunc = func() time.Time { return fixed }
-	defer func() { insightsNowFunc = old }()
+	old := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return fixed }
+	defer func() { InsightsNowFunc = old }()
 
 	result, err := ParseTimeRange("1m")
 	if err != nil {
@@ -710,9 +710,9 @@ func TestParseTimeRange_Months(t *testing.T) {
 
 func TestParseTimeRange_LastPrefix(t *testing.T) {
 	fixed := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
-	old := insightsNowFunc
-	insightsNowFunc = func() time.Time { return fixed }
-	defer func() { insightsNowFunc = old }()
+	old := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return fixed }
+	defer func() { InsightsNowFunc = old }()
 
 	result, err := ParseTimeRange("last 30d")
 	if err != nil {
@@ -755,9 +755,9 @@ func TestParseTimeRange_Invalid(t *testing.T) {
 
 func TestParseTimeRange_LastHours(t *testing.T) {
 	fixed := time.Date(2026, 2, 13, 12, 0, 0, 0, time.UTC)
-	old := insightsNowFunc
-	insightsNowFunc = func() time.Time { return fixed }
-	defer func() { insightsNowFunc = old }()
+	old := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return fixed }
+	defer func() { InsightsNowFunc = old }()
 
 	result, err := ParseTimeRange("last 1h")
 	if err != nil {

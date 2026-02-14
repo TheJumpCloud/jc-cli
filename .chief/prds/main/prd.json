@@ -793,7 +793,8 @@
         "Invalid service name produces error with list of valid services"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
+      "inProgress": false,
       "notes": "Directory Insights is JumpCloud's audit/event API. Services map to event sources. The --last shortcut is ergonomic for common time ranges.",
       "dependsOn": ["US-037"]
     },

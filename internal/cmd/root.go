@@ -90,6 +90,7 @@ interface.`,
 	rootCmd.AddCommand(newGraphCmd())
 	rootCmd.AddCommand(newAdminsCmd())
 	rootCmd.AddCommand(newBulkCmd())
+	rootCmd.AddCommand(newInsightsCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
