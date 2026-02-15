@@ -109,6 +109,12 @@ interface.`,
 	rootCmd.AddCommand(newExplainCmd())
 	rootCmd.AddCommand(newAskCmd())
 	rootCmd.AddCommand(newOrgCmd())
+	rootCmd.AddCommand(newSystemInsightsCmd())
+	rootCmd.AddCommand(newRADIUSCmd())
+	rootCmd.AddCommand(newPolicyTemplatesCmd())
+	rootCmd.AddCommand(newPolicyGroupsCmd())
+	rootCmd.AddCommand(newAppleMDMCmd())
+	rootCmd.AddCommand(newUserStatesCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -297,6 +303,8 @@ var builtinCommands = map[string]bool{
 	"users": true, "devices": true, "groups": true, "commands": true,
 	"policies": true, "apps": true, "graph": true, "admins": true, "iplists": true, "auth-policies": true,
 	"software": true, "ldap": true, "ad": true, "org": true,
+	"system-insights": true, "radius": true, "policy-templates": true,
+	"policy-groups": true, "apple-mdm": true, "user-states": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.

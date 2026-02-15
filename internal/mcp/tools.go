@@ -267,6 +267,80 @@ type appUpdateInput struct {
 	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type systemInsightsListInput struct {
+	Table    string   `json:"table" jsonschema:"System insights table name (e.g. os_version, disk_encryption, apps)"`
+	SystemID string   `json:"system_id,omitempty" jsonschema:"Device hostname or ID to filter results"`
+	Limit    int      `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+	Sort     string   `json:"sort,omitempty" jsonschema:"Field to sort by"`
+	Filter   []string `json:"filter,omitempty" jsonschema:"Filter expressions (e.g. field=value)"`
+}
+
+type radiusCreateInput struct {
+	Name           string `json:"name" jsonschema:"RADIUS server name"`
+	SharedSecret   string `json:"shared_secret" jsonschema:"RADIUS shared secret"`
+	AuthPort       int    `json:"auth_port,omitempty" jsonschema:"Authentication port (default 1812)"`
+	AccountingPort int    `json:"accounting_port,omitempty" jsonschema:"Accounting port (default 1813)"`
+}
+
+type radiusUpdateInput struct {
+	Identifier     string `json:"identifier" jsonschema:"RADIUS server name or ID to update"`
+	Name           string `json:"name,omitempty" jsonschema:"New server name"`
+	SharedSecret   string `json:"shared_secret,omitempty" jsonschema:"New shared secret"`
+	AuthPort       int    `json:"auth_port,omitempty" jsonschema:"New authentication port"`
+	AccountingPort int    `json:"accounting_port,omitempty" jsonschema:"New accounting port"`
+	Execute        bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type appleMDMCreateInput struct {
+	Name    string `json:"name" jsonschema:"MDM configuration name"`
+	OrgName string `json:"org_name,omitempty" jsonschema:"Organization name for the MDM certificate"`
+}
+
+type appleMDMUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Apple MDM name or ID to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New MDM configuration name"`
+	OrgName    string `json:"org_name,omitempty" jsonschema:"New organization name"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type policyGroupCreateInput struct {
+	Name        string `json:"name" jsonschema:"Policy group name"`
+	Description string `json:"description,omitempty" jsonschema:"Policy group description"`
+}
+
+type policyGroupUpdateInput struct {
+	Identifier  string `json:"identifier" jsonschema:"Policy group name or ID to update"`
+	Name        string `json:"name,omitempty" jsonschema:"New policy group name"`
+	Description string `json:"description,omitempty" jsonschema:"New description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type userStateCreateInput struct {
+	User      string `json:"user" jsonschema:"User name or ID"`
+	State     string `json:"state" jsonschema:"Target state: suspended or activated"`
+	StartDate string `json:"start_date" jsonschema:"Date for state change (YYYY-MM-DD or RFC 3339)"`
+	EndDate   string `json:"end_date,omitempty" jsonschema:"Optional end date to revert the state change"`
+}
+
+type orgUpdateInput struct {
+	ID           string `json:"id" jsonschema:"Organization ID"`
+	Name         string `json:"name,omitempty" jsonschema:"New organization display name"`
+	SettingsJSON string `json:"settings_json,omitempty" jsonschema:"Raw JSON for organization settings"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type sshKeyAddInput struct {
+	User      string `json:"user" jsonschema:"Username or ID of the user"`
+	Name      string `json:"name" jsonschema:"Label for the SSH key"`
+	PublicKey string `json:"public_key" jsonschema:"SSH public key string"`
+}
+
+type sshKeyDeleteInput struct {
+	User    string `json:"user" jsonschema:"Username or ID of the user"`
+	KeyID   string `json:"key_id" jsonschema:"SSH key ID to delete"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type graphTraverseInput struct {
 	From string `json:"from" jsonschema:"Source resource as type:name-or-id (e.g. user:jdoe, user_group:Engineering). Types: user, device, user_group, device_group, application"`
 	To   string `json:"to" jsonschema:"Target resource type (e.g. application, system, user_group, active_directory, ldap_server)"`
@@ -340,6 +414,24 @@ func (s *Server) registerTools() {
 
 	// --- Graph tools ---
 	s.registerGraphTools()
+
+	// --- System Insights tools ---
+	s.registerSystemInsightsTools()
+
+	// --- RADIUS tools ---
+	s.registerRADIUSTools()
+
+	// --- Policy Templates tools ---
+	s.registerPolicyTemplateTools()
+
+	// --- Apple MDM tools ---
+	s.registerAppleMDMTools()
+
+	// --- Policy Groups tools ---
+	s.registerPolicyGroupTools()
+
+	// --- User States tools ---
+	s.registerUserStateTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -589,6 +681,73 @@ func (s *Server) registerUserTools() {
 			return rawListResult(result.Data, result.TotalCount)
 		},
 	)
+
+	addTypedTool(s, "users_ssh_keys_list", "List SSH keys for a JumpCloud user.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.UserConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/systemusers/"+id+"/sshkeys", api.ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing SSH keys: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "users_ssh_keys_add", "Add an SSH key to a JumpCloud user.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sshKeyAddInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{
+				"name":       args.Name,
+				"public_key": args.PublicKey,
+			}
+			data, err := client.Create(ctx, "/systemusers/"+id+"/sshkeys", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("adding SSH key: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "users_ssh_keys_delete", "Delete an SSH key from a JumpCloud user. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sshKeyDeleteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "SSH key", args.KeyID, args.KeyID, map[string]string{"user": args.User})
+			}
+			_, err = client.Delete(ctx, "/systemusers/"+id+"/sshkeys/"+args.KeyID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting SSH key: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("SSH key %q deleted successfully", args.KeyID)), nil, nil
+		},
+	)
 }
 
 func (s *Server) registerDeviceTools() {
@@ -725,6 +884,28 @@ func (s *Server) registerDeviceTools() {
 				return errorResult(fmt.Sprintf("searching devices: %v", err)), nil, nil
 			}
 			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "devices_fde_key", "Retrieve the Full Disk Encryption recovery key for a device.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			v1Client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V1 client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, v1Client, args.Identifier, resolve.DeviceConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			v2Client, v2Err := newV2ClientFunc()
+			if v2Err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", v2Err)), nil, nil
+			}
+			data, err := v2Client.Get(ctx, "/systems/"+id+"/fdekey")
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting FDE key: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
 		},
 	)
 }
@@ -2423,6 +2604,51 @@ func (s *Server) registerOrgTools() {
 			return textResult(string(data)), nil, nil
 		},
 	)
+
+	addTypedTool(s, "org_settings", "View the full settings for a JumpCloud organization.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/organizations/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting organization settings: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "org_update", "Update a JumpCloud organization. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args orgUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["displayName"] = args.Name
+			}
+			if args.SettingsJSON != "" {
+				var settings map[string]any
+				if err := json.Unmarshal([]byte(args.SettingsJSON), &settings); err != nil {
+					return errorResult(fmt.Sprintf("invalid settings_json: %v", err)), nil, nil
+				}
+				body["settings"] = settings
+			}
+			if !args.Execute {
+				return planResult("update", "organization", args.ID, args.ID, body)
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Update(ctx, "/organizations/"+args.ID, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating organization: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
 }
 
 func (s *Server) registerAdminTools() {
@@ -3256,6 +3482,574 @@ func (s *Server) addTool(name, description string, handler func(ctx context.Cont
 
 	mcp.AddTool(s.mcpServer, tool, wrappedHandler)
 	s.toolNames = append(s.toolNames, name)
+}
+
+func (s *Server) registerSystemInsightsTools() {
+	addTypedTool(s, "system_insights_list_table", "Query a system insights table (e.g. os_version, disk_encryption, apps). Returns osquery data from enrolled devices.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args systemInsightsListInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts := api.V2ListOptions{Limit: args.Limit, Sort: args.Sort}
+			if len(args.Filter) > 0 {
+				exprs, parseErr := filter.ParseAll(args.Filter)
+				if parseErr != nil {
+					return errorResult(fmt.Sprintf("invalid filter: %v", parseErr)), nil, nil
+				}
+				opts.Filter = filter.ToV2Queries(exprs)
+			}
+			if args.SystemID != "" {
+				v1Client, v1Err := newV1ClientFunc()
+				if v1Err != nil {
+					return errorResult(fmt.Sprintf("creating V1 client: %v", v1Err)), nil, nil
+				}
+				sysID, resolveErr := resolveV1(ctx, v1Client, args.SystemID, resolve.DeviceConfig)
+				if resolveErr != nil {
+					return errorResult(resolveErr.Error()), nil, nil
+				}
+				opts.Filter = append(opts.Filter, "system_id:eq:"+sysID)
+			}
+			result, err := client.ListAll(ctx, "/systeminsights/"+args.Table, opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("querying system insights: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	s.addTool("system_insights_tables", "List all available system insights table names.",
+		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			tables := []string{
+				"alf", "alf_exceptions", "alf_explicit_auths", "apps", "authorized_keys",
+				"azure_instance_metadata", "azure_instance_tags", "battery", "bitlocker_info",
+				"browser_plugins", "certificates", "chassis_info", "chrome_extensions",
+				"connectivity", "crashes", "cups_destinations", "disk_encryption", "disk_info",
+				"dns_resolvers", "etc_hosts", "firefox_addons", "groups",
+				"ie_extensions", "interface_addresses", "interface_details", "kernel_info",
+				"launchd", "linux_packages", "logged_in_users", "logical_drives",
+				"managed_policies", "mounts", "os_version", "patches", "programs",
+				"python_packages", "safari_extensions", "scheduled_tasks", "secureboot",
+				"services", "shadow", "shared_folders", "shared_resources",
+				"sharing_preferences", "sip_config", "startup_items", "system_controls",
+				"system_info", "tpm_info", "uptime", "usb_devices", "user_assist",
+				"user_groups", "user_ssh_keys", "users", "wifi_networks", "wifi_status",
+				"windows_security_center", "windows_security_products",
+			}
+			return textResult(strings.Join(tables, "\n")), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerRADIUSTools() {
+	addTypedTool(s, "radius_list", "List all RADIUS servers. Returns objects with _id, name, networkSourceIp, authPort, accountingPort.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV1ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/radiusservers", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing RADIUS servers: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "radius_get", "Get a single RADIUS server by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.RADIUSServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/radiusservers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting RADIUS server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "radius_create", "Create a new RADIUS server.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args radiusCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name":         args.Name,
+				"sharedSecret": args.SharedSecret,
+			}
+			if args.AuthPort > 0 {
+				body["authPort"] = args.AuthPort
+			}
+			if args.AccountingPort > 0 {
+				body["accountingPort"] = args.AccountingPort
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/radiusservers", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating RADIUS server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "radius_update", "Update a RADIUS server. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args radiusUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.RADIUSServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.SharedSecret != "" {
+				body["sharedSecret"] = args.SharedSecret
+			}
+			if args.AuthPort > 0 {
+				body["authPort"] = args.AuthPort
+			}
+			if args.AccountingPort > 0 {
+				body["accountingPort"] = args.AccountingPort
+			}
+			if !args.Execute {
+				return planResult("update", "RADIUS server", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/radiusservers/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating RADIUS server: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "radius_delete", "Delete a RADIUS server. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveV1(ctx, client, args.Identifier, resolve.RADIUSServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "RADIUS server", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/radiusservers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting RADIUS server: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("RADIUS server %q deleted successfully", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerPolicyTemplateTools() {
+	addTypedTool(s, "policy_templates_list", "List all policy templates. Returns objects with id, name, description, osMetaFamily.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/policytemplates", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing policy templates: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "policy_templates_get", "Get a single policy template by ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/policytemplates/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting policy template: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerAppleMDMTools() {
+	addTypedTool(s, "apple_mdm_list", "List all Apple MDM configurations.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/applemdms", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing Apple MDM configs: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_get", "Get an Apple MDM configuration by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AppleMDMConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/applemdms/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting Apple MDM config: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_create", "Create a new Apple MDM configuration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{"name": args.Name}
+			if args.OrgName != "" {
+				body["orgName"] = args.OrgName
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/applemdms", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Apple MDM config: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_update", "Update an Apple MDM configuration. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AppleMDMConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.OrgName != "" {
+				body["orgName"] = args.OrgName
+			}
+			if !args.Execute {
+				return planResult("update", "Apple MDM configuration", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/applemdms/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating Apple MDM config: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_delete", "Delete an Apple MDM configuration. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AppleMDMConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "Apple MDM configuration", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/applemdms/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting Apple MDM config: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Apple MDM configuration %q deleted successfully", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_enrollment_profiles", "List enrollment profiles for an Apple MDM configuration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AppleMDMConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/applemdms/"+id+"/enrollmentprofiles", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing enrollment profiles: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "apple_mdm_devices", "List managed devices for an Apple MDM configuration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AppleMDMConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/applemdms/"+id+"/devices", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing MDM devices: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+}
+
+func (s *Server) registerPolicyGroupTools() {
+	addTypedTool(s, "policy_groups_list", "List all policy groups. Returns objects with id, name, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/policygroups", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing policy groups: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "policy_groups_get", "Get a single policy group by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/policygroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting policy group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policy_groups_create", "Create a new policy group.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args policyGroupCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{"name": args.Name}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/policygroups", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating policy group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policy_groups_update", "Update a policy group. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args policyGroupUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.Description != "" {
+				body["description"] = args.Description
+			}
+			if !args.Execute {
+				return planResult("update", "policy group", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/policygroups/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating policy group: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "policy_groups_delete", "Delete a policy group. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.PolicyGroupConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "policy group", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/policygroups/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting policy group: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Policy group %q deleted successfully", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerUserStateTools() {
+	addTypedTool(s, "user_states_list", "List all scheduled user state changes.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/bulk/userstates", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing user states: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "user_states_get", "Get a scheduled user state change by ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/bulk/userstates/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting user state: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "user_states_create", "Schedule a user state change (suspend or reactivate on a given date).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args userStateCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			v1Client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V1 client: %v", err)), nil, nil
+			}
+			userID, err := resolveV1(ctx, v1Client, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{
+				"user_id":    userID,
+				"state":      args.State,
+				"start_date": args.StartDate,
+			}
+			if args.EndDate != "" {
+				body["end_date"] = args.EndDate
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/bulk/userstates", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating user state: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "user_states_delete", "Delete a scheduled user state change. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "user state change", args.Identifier, args.Identifier, nil)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			_, err = client.Delete(ctx, "/bulk/userstates/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting user state: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("User state change %q deleted successfully", args.Identifier)), nil, nil
+		},
+	)
 }
 
 // addTypedTool wraps mcp.AddTool with typed input args, rate limiting, and audit logging.

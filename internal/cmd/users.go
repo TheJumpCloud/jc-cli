@@ -60,6 +60,9 @@ func newUsersCmd() *cobra.Command {
 	cmd.AddCommand(newUsersUnlockCmd())
 	cmd.AddCommand(newUsersResetMFACmd())
 	cmd.AddCommand(newUsersResetPasswordCmd())
+	cmd.AddCommand(newUsersSSHKeysCmd())
+	cmd.AddCommand(newUsersSSHKeyAddCmd())
+	cmd.AddCommand(newUsersSSHKeyDeleteCmd())
 
 	return cmd
 }
@@ -712,6 +715,186 @@ func runUsersResetPassword(cmd *cobra.Command, identifier string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "User %s password reset triggered successfully.\n", user.Username)
+	return nil
+}
+
+// --- SSH Key sub-commands ---
+
+var sshKeyDefaultFields = []string{"_id", "name", "public_key"}
+
+func newUsersSSHKeysCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ssh-keys <username-or-id>",
+		Short: "List SSH keys for a user",
+		Long: `List all SSH keys registered for a JumpCloud user.
+
+Accepts a username or 24-character hex user ID.
+Default fields: _id, name, public_key.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersSSHKeys(cmd, args[0])
+		},
+	}
+}
+
+func runUsersSSHKeys(cmd *cobra.Command, identifier string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.ListAll(cmd.Context(), "/systemusers/"+id+"/sshkeys", api.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = sshKeyDefaultFields
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		writeListFooter(cmd, len(result.Data), result.TotalCount)
+	}
+
+	return nil
+}
+
+func newUsersSSHKeyAddCmd() *cobra.Command {
+	var (
+		nameFlag      string
+		publicKeyFlag string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "ssh-key-add <username-or-id>",
+		Short: "Add an SSH key to a user",
+		Long: `Add an SSH public key to a JumpCloud user.
+
+Accepts a username or 24-character hex user ID.
+Required flags: --name, --public-key.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersSSHKeyAdd(cmd, args[0], nameFlag, publicKeyFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&nameFlag, "name", "", "Label for the SSH key (required)")
+	cmd.Flags().StringVar(&publicKeyFlag, "public-key", "", "SSH public key string (required)")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("public-key")
+
+	return cmd
+}
+
+func runUsersSSHKeyAdd(cmd *cobra.Command, identifier, name, publicKey string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:     "add",
+			Resource:   "SSH key",
+			Target:     identifier,
+			Effects:    []string{"name: " + name, "public_key: " + publicKey[:min(40, len(publicKey))] + "..."},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	body := map[string]any{
+		"name":       name,
+		"public_key": publicKey,
+	}
+
+	result, err := client.Create(cmd.Context(), "/systemusers/"+id+"/sshkeys", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newUsersSSHKeyDeleteCmd() *cobra.Command {
+	var keyIDFlag string
+
+	cmd := &cobra.Command{
+		Use:     "ssh-key-delete <username-or-id>",
+		Aliases: []string{"ssh-key-rm"},
+		Short:   "Delete an SSH key from a user",
+		Long: `Delete an SSH public key from a JumpCloud user.
+
+Accepts a username or 24-character hex user ID.
+Required flag: --key-id.
+Use --force to skip the confirmation prompt.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersSSHKeyDelete(cmd, args[0], keyIDFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&keyIDFlag, "key-id", "", "SSH key ID to delete (required)")
+	_ = cmd.MarkFlagRequired("key-id")
+
+	return cmd
+}
+
+func runUsersSSHKeyDelete(cmd *cobra.Command, identifier, keyID string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveUser(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "SSH key",
+			Target:   fmt.Sprintf("key %s from user %s", keyID, identifier),
+			Effects:  []string{"Remove SSH key " + keyID},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Delete SSH key %s from user %s? [y/N] ", keyID, identifier)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	_, err = client.Delete(cmd.Context(), "/systemusers/"+id+"/sshkeys/"+keyID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "SSH key %s deleted successfully.\n", keyID)
 	return nil
 }
 

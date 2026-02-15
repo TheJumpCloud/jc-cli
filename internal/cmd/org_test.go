@@ -3,10 +3,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 // startOrgServer creates a mock JumpCloud server that handles /organizations endpoints.
@@ -36,6 +39,13 @@ func startOrgServer(t *testing.T, orgs []map[string]any) *httptest.Server {
 			}
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+
+		// PUT /organizations/{id} — update endpoint.
+		if strings.HasPrefix(r.URL.Path, "/organizations/") && r.Method == http.MethodPut {
+			body, _ := io.ReadAll(r.Body)
+			w.Write(body)
 			return
 		}
 
@@ -141,5 +151,62 @@ func TestOrgGet_NotFound(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error for not-found org, got nil")
+	}
+}
+
+func TestOrgSettings(t *testing.T) {
+	setupUsersTest(t)
+	orgs := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "displayName": "My Org", "settings": map[string]any{"passwordPolicy": map[string]any{"minLength": 8}}},
+	}
+	ts := startOrgServer(t, orgs)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"org", "settings", "aabb0011223344556677aa01"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "My Org") {
+		t.Errorf("expected org data in output")
+	}
+}
+
+func TestOrgUpdate(t *testing.T) {
+	setupUsersTest(t)
+	orgs := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "displayName": "My Org"},
+	}
+	ts := startOrgServer(t, orgs)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"org", "update", "aabb0011223344556677aa01", "--name", "New Name"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOrgUpdatePlan(t *testing.T) {
+	setupUsersTest(t)
+	viper.Set("plan", true)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"org", "update", "aabb0011223344556677aa01", "--name", "New Name"})
+	err := cmd.Execute()
+	// Plan mode returns ExitError with code 10.
+	if err == nil {
+		t.Fatal("expected plan exit error")
 	}
 }

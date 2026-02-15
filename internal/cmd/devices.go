@@ -41,6 +41,7 @@ func newDevicesCmd() *cobra.Command {
 	cmd.AddCommand(newDevicesLockCmd())
 	cmd.AddCommand(newDevicesRestartCmd())
 	cmd.AddCommand(newDevicesEraseCmd())
+	cmd.AddCommand(newDevicesFDEKeyCmd())
 
 	return cmd
 }
@@ -542,4 +543,46 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Device %s %s command sent successfully.\n", device.Hostname, action)
 	return nil
+}
+
+func newDevicesFDEKeyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "fde-key <hostname-or-id>",
+		Short: "Retrieve the FDE recovery key for a device",
+		Long: `Retrieve the Full Disk Encryption (FileVault/BitLocker) recovery key for a device.
+
+Accepts a hostname or 24-character hex system ID.
+The recovery key is returned as a JSON object with a "key" field.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDevicesFDEKey(cmd, args[0])
+		},
+	}
+}
+
+func runDevicesFDEKey(cmd *cobra.Command, identifier string) error {
+	// Resolve device using V1 client.
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveDevice(cmd.Context(), v1Client, identifier)
+	if err != nil {
+		return err
+	}
+
+	// FDE key endpoint is V2.
+	v2Client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	result, err := v2Client.Get(cmd.Context(), "/systems/"+id+"/fdekey")
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }

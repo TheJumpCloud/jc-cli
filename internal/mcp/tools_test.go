@@ -1367,3 +1367,155 @@ func TestRawListResult_NilData(t *testing.T) {
 		t.Errorf("expected empty data array, got %d items", len(data))
 	}
 }
+
+// --- Batch 5: MCP Tool Input Validation Edge Cases ---
+
+func TestMCP_UsersGet_EmptyIdentifier(t *testing.T) {
+	setupToolTest(t)
+
+	// Start a server that returns empty results (resolve will fail to find anything).
+	users := []map[string]any{}
+	ts := startV1Server(t, users, nil, nil)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "users_get", map[string]any{"identifier": ""})
+
+	// Empty identifier should produce an error (resolve finds no match).
+	if !result.IsError {
+		text := getResultText(t, result)
+		t.Fatalf("expected error for empty identifier, got success: %s", text)
+	}
+}
+
+func TestMCP_UsersCreate_MissingFields(t *testing.T) {
+	setupToolTest(t)
+
+	ts := startV1Server(t, nil, nil, nil)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+
+	// username and email are required (no omitempty in struct tag).
+	// MCP SDK validates required fields and returns an error at the transport level.
+	ctx := context.Background()
+	_, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "users_create",
+		Arguments: map[string]any{},
+	})
+	if err == nil {
+		t.Fatal("expected SDK validation error for missing required fields")
+	}
+	if !strings.Contains(err.Error(), "required") && !strings.Contains(err.Error(), "missing") {
+		t.Errorf("expected error about required/missing fields, got: %v", err)
+	}
+}
+
+func TestMCP_UsersDelete_PlanFirst_ReturnsPreview(t *testing.T) {
+	setupToolTest(t)
+
+	users := []map[string]any{
+		{"_id": "aabbccddee112233aabbcc01", "username": "alice"},
+	}
+	ts := startV1Server(t, users, nil, nil)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+
+	// Without execute=true, should return plan (not actually delete).
+	result := callTool(t, cs, "users_delete", map[string]any{
+		"identifier": "aabbccddee112233aabbcc01",
+		"execute":    false,
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", getResultText(t, result))
+	}
+	text := getResultText(t, result)
+	var plan map[string]any
+	if err := json.Unmarshal([]byte(text), &plan); err != nil {
+		t.Fatalf("parse plan: %v", err)
+	}
+	if plan["plan"] != true {
+		t.Error("expected plan=true for execute=false")
+	}
+	if plan["action"] != "delete" {
+		t.Errorf("expected action=delete, got %v", plan["action"])
+	}
+}
+
+func TestMCP_DevicesUpdate_EmptyBody(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	// Provide identifier but no update fields → should get "no fields to update" error.
+	result := callTool(t, cs, "devices_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc01",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected error for devices_update with no fields")
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "no fields to update") {
+		t.Errorf("expected 'no fields to update' error, got: %s", text)
+	}
+}
+
+func TestMCP_InsightsQuery_InvalidService(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	result := callTool(t, cs, "insights_query", map[string]any{
+		"service": "nonexistent_bogus_service",
+		"last":    "24h",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected error for invalid insights service")
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "invalid service") {
+		t.Errorf("expected 'invalid service' error, got: %s", text)
+	}
+}
+
+func TestMCP_GraphBind_MissingFields(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	// graph_bind requires "from" and "to" in "type:identifier" format.
+	// Empty strings should fail parseGraphFrom validation.
+	result := callTool(t, cs, "graph_bind", map[string]any{
+		"from":    "",
+		"to":      "",
+		"execute": true,
+	})
+
+	if !result.IsError {
+		t.Fatal("expected error for graph_bind with empty from/to")
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "invalid from format") && !strings.Contains(text, "invalid") {
+		t.Errorf("expected validation error for empty from/to, got: %s", text)
+	}
+}
+
+func TestMCP_ReadOnlyMode_BlocksCreate(t *testing.T) {
+	setupToolTest(t)
+
+	cs := connectToolTestServer(t, Options{ReadOnly: true})
+
+	result := callTool(t, cs, "users_create", map[string]any{
+		"username": "newuser",
+		"email":    "new@test.com",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected error for create in read-only mode")
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "read-only") {
+		t.Errorf("expected 'read-only' error, got: %s", text)
+	}
+}

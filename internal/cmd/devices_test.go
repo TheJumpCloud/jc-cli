@@ -1859,3 +1859,88 @@ func TestDevicesSearch_MissingArg(t *testing.T) {
 		t.Fatal("expected error for missing argument")
 	}
 }
+
+// startFDEKeyServer creates a combined V1 + V2 server for FDE key tests.
+func startFDEKeyServer(t *testing.T, devices []map[string]any, fdeKeys map[string]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// V1: GET /api/systems → device list (for name resolution)
+		v1Path := strings.TrimPrefix(r.URL.Path, "/api")
+		if v1Path == "/systems" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": devices, "totalCount": len(devices)}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// V2: GET /api/v2/systems/{id}/fdekey → FDE recovery key
+		v2Path := strings.TrimPrefix(r.URL.Path, "/api/v2")
+		if strings.HasSuffix(v2Path, "/fdekey") && r.Method == http.MethodGet {
+			id := strings.TrimPrefix(v2Path, "/systems/")
+			id = strings.TrimSuffix(id, "/fdekey")
+			if key, ok := fdeKeys[id]; ok {
+				json.NewEncoder(w).Encode(map[string]string{"key": key})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, `{"message":"FDE key not found"}`)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+}
+
+func TestDevicesFDEKey(t *testing.T) {
+	setupUsersTest(t)
+	devices := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "hostname": "mac-1", "os": "Mac OS X"},
+	}
+	fdeKeys := map[string]string{
+		"aabb0011223344556677aa01": "ABCD-1234-EFAB-5678",
+	}
+	server := startFDEKeyServer(t, devices, fdeKeys)
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+	overrideV2Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"devices", "fde-key", "aabb0011223344556677aa01"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "ABCD-1234-EFAB-5678") {
+		t.Errorf("expected FDE key in output, got: %s", buf.String())
+	}
+}
+
+func TestDevicesFDEKey_MissingArg(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"devices", "fde-key"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+func TestDevicesFDEKey_Help(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"devices", "fde-key", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Full Disk Encryption") {
+		t.Error("expected FDE description in help")
+	}
+}

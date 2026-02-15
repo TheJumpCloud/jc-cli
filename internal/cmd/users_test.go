@@ -2828,3 +2828,133 @@ func TestUsersList_ExcludeFlag_Table(t *testing.T) {
 		t.Error("USERNAME should still be present")
 	}
 }
+
+// --- SSH Key Tests ---
+
+func startSSHKeysServer(t *testing.T, users []map[string]any, sshKeys map[string][]map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := strings.TrimPrefix(r.URL.Path, "/api")
+
+		// GET /systemusers — for resolver
+		if path == "/systemusers" && r.Method == http.MethodGet {
+			resp := map[string]any{"results": users, "totalCount": len(users)}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// SSH key routes: /systemusers/{id}/sshkeys[/{keyId}]
+		if strings.HasPrefix(path, "/systemusers/") && strings.Contains(path, "/sshkeys") {
+			parts := strings.SplitN(strings.TrimPrefix(path, "/systemusers/"), "/", 3)
+			userID := parts[0]
+
+			switch r.Method {
+			case http.MethodGet:
+				keys := sshKeys[userID]
+				if keys == nil {
+					keys = []map[string]any{}
+				}
+				resp := map[string]any{"results": keys, "totalCount": len(keys)}
+				json.NewEncoder(w).Encode(resp)
+			case http.MethodPost:
+				body, _ := io.ReadAll(r.Body)
+				w.WriteHeader(http.StatusCreated)
+				w.Write(body)
+			case http.MethodDelete:
+				w.WriteHeader(http.StatusNoContent)
+			}
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+}
+
+func TestUsersSSHKeys(t *testing.T) {
+	setupUsersTest(t)
+	users := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "username": "jdoe"},
+	}
+	sshKeys := map[string][]map[string]any{
+		"aabb0011223344556677aa01": {
+			{"_id": "aabb0011223344556677bb01", "name": "laptop-key", "public_key": "ssh-rsa AAAA..."},
+		},
+	}
+	server := startSSHKeysServer(t, users, sshKeys)
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"users", "ssh-keys", "aabb0011223344556677aa01"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "laptop-key") {
+		t.Errorf("expected laptop-key in output, got: %s", buf.String())
+	}
+}
+
+func TestUsersSSHKeyAdd(t *testing.T) {
+	setupUsersTest(t)
+	users := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "username": "jdoe"},
+	}
+	server := startSSHKeysServer(t, users, nil)
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"users", "ssh-key-add", "aabb0011223344556677aa01", "--name", "work-key", "--public-key", "ssh-rsa AAAA..."})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUsersSSHKeyDelete(t *testing.T) {
+	setupUsersTest(t)
+	users := []map[string]any{
+		{"_id": "aabb0011223344556677aa01", "username": "jdoe"},
+	}
+	sshKeys := map[string][]map[string]any{
+		"aabb0011223344556677aa01": {
+			{"_id": "aabb0011223344556677bb01", "name": "old-key"},
+		},
+	}
+	server := startSSHKeysServer(t, users, sshKeys)
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"users", "ssh-key-delete", "aabb0011223344556677aa01", "--key-id", "aabb0011223344556677bb01", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "deleted successfully") {
+		t.Errorf("expected success message, got: %s", buf.String())
+	}
+}
+
+func TestUsersSSHKeyAdd_Help(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"users", "ssh-key-add", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "SSH public key") {
+		t.Error("expected SSH key description in help")
+	}
+}

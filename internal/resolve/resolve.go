@@ -157,6 +157,30 @@ var ActiveDirectoryConfig = ResourceConfig{
 	IDField:      "id",
 }
 
+// RADIUSServerConfig is the resolution config for JumpCloud RADIUS servers (V1 API).
+var RADIUSServerConfig = ResourceConfig{
+	CacheKey:     "radius",
+	ListEndpoint: "/radiusservers",
+	NameField:    "name",
+	IDField:      "_id",
+}
+
+// AppleMDMConfig is the resolution config for JumpCloud Apple MDM configurations (V2 API).
+var AppleMDMConfig = ResourceConfig{
+	CacheKey:     "apple-mdm",
+	ListEndpoint: "/applemdms",
+	NameField:    "name",
+	IDField:      "id",
+}
+
+// PolicyGroupConfig is the resolution config for JumpCloud policy groups (V2 API).
+var PolicyGroupConfig = ResourceConfig{
+	CacheKey:     "policy-groups",
+	ListEndpoint: "/policygroups",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // AdminConfig is the resolution config for JumpCloud administrators (V1 API).
 var AdminConfig = ResourceConfig{
 	CacheKey:     "admins",
