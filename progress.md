@@ -96,6 +96,10 @@
 - Real API `targets`: `{users: {inclusions: ["all"]}, userGroups: {inclusions: [...]}}` → flat `AllUsers bool` + `UserGroups []string`
 - Real API `locationIn`: `{countries: ["SG"]}` object format (not bare array)
 - `isIPListID()` in simulator: 24-char hex = IP list ID (resolve via API); otherwise = direct IP/CIDR
+- Custom emails keyed by type enum string (not ID/name) — `isValidCustomEmailType()` validates before API call; no resolver needed
+- Command triggers: V1 `POST /command/trigger/{name}` — fire-and-forget with raw trigger name, not command ID
+- Samba domains: V2 sub-resource at `/ldapservers/{id}/sambadomains` — uses parent LDAP resolver + `--domain-id` for sub-resource addressing
+- Application templates: V1 read-only at `/application-templates` — JumpCloud-provided, referenced by ID from `jc apps` output
 ---
 
 ## 2026-02-13 - US-001
@@ -1193,6 +1197,31 @@
   - Schema test resource counts are a coupling point — hardcoded `14` in two separate test files (`internal/schema/schema_test.go` and `internal/cmd/schema_test.go`) must be updated when adding resources.
   - System Insights uses a single command with table name as positional arg rather than 62 subcommands — much cleaner design for large uniform API surfaces.
   - V2 sub-resource endpoints (Apple MDM enrollment profiles, devices) follow the same `ListAll` pattern as top-level resources — bare JSON arrays with Link header pagination.
+---
+
+### Tier 2 API Coverage — Custom Emails, Command Triggers, Samba Domains, App Templates
+- **Date:** 2026-02-15
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commit:** `b963036`
+- What was implemented:
+  - Added 4 Tier 2 API features reaching ~92% API coverage.
+  - **Resource schemas expanded from 23 to 25.** MCP tools expanded from 145 to 158 (+13).
+  - **Custom Email Templates** (new file): V2 CRUD keyed by type enum string (not ID/name). `jc custom-emails templates/get/create/update/delete`. Endpoints `GET /customemail/templates` (list definitions) and `GET/POST/PUT/DELETE /customemails/{type}` (config CRUD). 8 valid email types validated before API call. No resolver needed. Default fields: `type, displayName, description` (templates), `type, subject, title` (config). 10 tests.
+  - **Command Triggers** (extend commands.go): `jc commands trigger <trigger-name> [--data '{}']`. V1 `POST /command/trigger/{name}`. Fire-and-forget — no command resolution needed. Optional `--data` flag passes raw JSON payload. Output via `WriteSingle()`. No plan mode (idempotent). 5 tests.
+  - **Samba Domains** (extend ldap.go): V2 CRUD sub-resource of LDAP servers. `jc ldap samba-domains/samba-domain-get/samba-domain-create/samba-domain-update/samba-domain-delete`. Endpoint `/ldapservers/{id}/sambadomains`. Uses existing `resolveLDAP()` for parent LDAP server resolution. `--domain-id` required flag for get/update/delete. Default fields: `id, name, sid`. Plan mode for mutations. 8 tests.
+  - **Application Templates** (new file): V1 read-only via `jc app-templates list/get`. Endpoint `/application-templates`. V1 wrapped response (`{results, totalCount}`). Default fields: `_id, name, displayName, displayLabel, active`. No mutations, no resolver. 5 tests.
+  - 13 new MCP tools: custom emails (5), command trigger (1), samba domains (5), app templates (2).
+  - 8 new input types for MCP tools: `commandTriggerInput`, `customEmailTypeInput`, `customEmailCreateInput`, `customEmailUpdateInput`, `customEmailDeleteInput`, `sambaDomainGetInput`, `sambaDomainCreateInput`, `sambaDomainUpdateInput`, `sambaDomainDeleteInput`.
+  - Schema test counts updated from 23 to 25 in both test files.
+- Files changed:
+  - New: `custom_emails.go`, `custom_emails_test.go`, `app_templates.go`, `app_templates_test.go` (4 new files)
+  - Modified: `commands.go`, `commands_test.go`, `ldap.go`, `ldap_test.go`, `root.go`, `schema_test.go` (cmd), `tools.go` (mcp), `tools_test.go` (mcp), `schema.go`, `schema_test.go` (schema) (10 modified files)
+  - Total: 14 files, +2,316 lines
+- **Learnings:**
+  - Custom emails use type enum as the resource key instead of name/ID — unusual pattern that doesn't need a resolver. Validation happens client-side against a hardcoded enum.
+  - Command triggers use raw trigger names (strings, not IDs) — different from `commands run` which resolves command names to IDs.
+  - Samba domains follow the same V2 sub-resource pattern as Apple MDM enrollment profiles — parent resolution + sub-resource CRUD.
+  - Workday Import was intentionally skipped — API endpoints removed from current JumpCloud OpenAPI spec.
 ---
 
 ### Tier 1 API Coverage — G Suite, Office 365, Duo, Software Extensions
