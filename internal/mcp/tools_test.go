@@ -309,7 +309,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"groups_device_list", "groups_device_get", "groups_device_create", "groups_device_update", "groups_device_delete",
 		// Commands
 		"commands_list", "commands_get", "commands_create", "commands_update", "commands_delete",
-		"commands_run", "commands_results",
+		"commands_run", "commands_results", "commands_trigger",
 		// Policies
 		"policies_list", "policies_get", "policies_create", "policies_update", "policies_delete", "policies_results",
 		// Auth Policies
@@ -339,6 +339,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"duo_apps", "duo_app_get", "duo_app_create", "duo_app_delete",
 		// LDAP
 		"ldap_list", "ldap_get", "ldap_create", "ldap_update", "ldap_delete",
+		"ldap_samba_domains_list", "ldap_samba_domain_get", "ldap_samba_domain_create", "ldap_samba_domain_update", "ldap_samba_domain_delete",
 		// AD
 		"ad_list", "ad_get", "ad_create", "ad_update", "ad_delete",
 		// System Insights
@@ -354,6 +355,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
 		// User States
 		"user_states_list", "user_states_get", "user_states_create", "user_states_delete",
+		// Custom Emails
+		"custom_emails_templates", "custom_emails_get", "custom_emails_create", "custom_emails_update", "custom_emails_delete",
+		// App Templates
+		"app_templates_list", "app_templates_get",
 		// Utility
 		"recipe_run", "plan", "explain",
 	}
@@ -370,8 +375,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 145 {
-		t.Errorf("expected 145 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 158 {
+		t.Errorf("expected 158 tools, got %d", len(result.Tools))
 	}
 }
 

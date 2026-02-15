@@ -29,7 +29,7 @@ func newLDAPCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ldap",
 		Short: "Manage JumpCloud LDAP servers",
-		Long:  "List, get, create, update, and delete JumpCloud LDAP server integrations.",
+		Long:  "List, get, create, update, and delete JumpCloud LDAP server integrations, including Samba domain sub-resources.",
 	}
 
 	cmd.AddCommand(newLDAPListCmd())
@@ -37,6 +37,11 @@ func newLDAPCmd() *cobra.Command {
 	cmd.AddCommand(newLDAPCreateCmd())
 	cmd.AddCommand(newLDAPUpdateCmd())
 	cmd.AddCommand(newLDAPDeleteCmd())
+	cmd.AddCommand(newLDAPSambaDomainsCmd())
+	cmd.AddCommand(newLDAPSambaDomainGetCmd())
+	cmd.AddCommand(newLDAPSambaDomainCreateCmd())
+	cmd.AddCommand(newLDAPSambaDomainUpdateCmd())
+	cmd.AddCommand(newLDAPSambaDomainDeleteCmd())
 
 	return cmd
 }
@@ -364,5 +369,304 @@ func runLDAPDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "LDAP server %q deleted successfully.\n", ldapServer.Name)
+	return nil
+}
+
+// --- Samba Domain sub-resource commands ---
+
+// sambaDomainDefaultFields is the default field subset shown for samba domain output.
+var sambaDomainDefaultFields = []string{"id", "name", "sid"}
+
+func newLDAPSambaDomainsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "samba-domains <ldap-name-or-id>",
+		Aliases: []string{"samba-ls"},
+		Short:   "List Samba domains for an LDAP server",
+		Long: `List all Samba domains configured on a JumpCloud LDAP server.
+
+Accepts an LDAP server name or 24-character hex ID.
+Default fields: id, name, sid.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLDAPSambaDomainsList(cmd, args[0])
+		},
+	}
+
+	return cmd
+}
+
+func runLDAPSambaDomainsList(cmd *cobra.Command, ldapIdentifier string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.ListAll(cmd.Context(), "/ldapservers/"+ldapID+"/sambadomains", api.V2ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = sambaDomainDefaultFields
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+	}
+
+	return nil
+}
+
+func newLDAPSambaDomainGetCmd() *cobra.Command {
+	var domainID string
+
+	cmd := &cobra.Command{
+		Use:   "samba-domain-get <ldap-name-or-id>",
+		Short: "Get a Samba domain by ID",
+		Long: `Get a single Samba domain from a JumpCloud LDAP server.
+
+Requires --domain-id to identify the specific Samba domain.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLDAPSambaDomainGet(cmd, args[0], domainID)
+		},
+	}
+
+	cmd.Flags().StringVar(&domainID, "domain-id", "", "Samba domain ID (required)")
+	_ = cmd.MarkFlagRequired("domain-id")
+
+	return cmd
+}
+
+func runLDAPSambaDomainGet(cmd *cobra.Command, ldapIdentifier, domainID string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Get(cmd.Context(), "/ldapservers/"+ldapID+"/sambadomains/"+domainID)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = sambaDomainDefaultFields
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newLDAPSambaDomainCreateCmd() *cobra.Command {
+	var (
+		name string
+		sid  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "samba-domain-create <ldap-name-or-id>",
+		Short: "Create a Samba domain on an LDAP server",
+		Long: `Create a new Samba domain on a JumpCloud LDAP server.
+
+Required flags: --name, --sid.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLDAPSambaDomainCreate(cmd, args[0], name, sid)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Samba domain workgroup name (required)")
+	cmd.Flags().StringVar(&sid, "sid", "", "Samba domain security identifier (required)")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("sid")
+
+	return cmd
+}
+
+func runLDAPSambaDomainCreate(cmd *cobra.Command, ldapIdentifier, name, sid string) error {
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "Samba domain",
+			Target:     name + " on LDAP " + ldapIdentifier,
+			Effects:    []string{"name: " + name, "sid: " + sid},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	body := map[string]any{
+		"name": name,
+		"sid":  sid,
+	}
+
+	result, err := client.Create(cmd.Context(), "/ldapservers/"+ldapID+"/sambadomains", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = sambaDomainDefaultFields
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newLDAPSambaDomainUpdateCmd() *cobra.Command {
+	var (
+		domainID string
+		name     string
+		sid      string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "samba-domain-update <ldap-name-or-id>",
+		Short: "Update a Samba domain on an LDAP server",
+		Long: `Update an existing Samba domain on a JumpCloud LDAP server.
+
+Requires --domain-id. Specify only the fields you want to change.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLDAPSambaDomainUpdate(cmd, args[0], domainID, name, sid)
+		},
+	}
+
+	cmd.Flags().StringVar(&domainID, "domain-id", "", "Samba domain ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "New workgroup name")
+	cmd.Flags().StringVar(&sid, "sid", "", "New security identifier")
+	_ = cmd.MarkFlagRequired("domain-id")
+
+	return cmd
+}
+
+func runLDAPSambaDomainUpdate(cmd *cobra.Command, ldapIdentifier, domainID, name, sid string) error {
+	body := map[string]any{}
+	if cmd.Flags().Changed("name") {
+		body["name"] = name
+	}
+	if cmd.Flags().Changed("sid") {
+		body["sid"] = sid
+	}
+
+	if len(body) == 0 {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --sid)")
+	}
+
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "Samba domain",
+			Target:     domainID + " on LDAP " + ldapIdentifier,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/ldapservers/"+ldapID+"/sambadomains/"+domainID, body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = sambaDomainDefaultFields
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newLDAPSambaDomainDeleteCmd() *cobra.Command {
+	var domainID string
+
+	cmd := &cobra.Command{
+		Use:     "samba-domain-delete <ldap-name-or-id>",
+		Aliases: []string{"samba-rm"},
+		Short:   "Delete a Samba domain from an LDAP server",
+		Long: `Delete a Samba domain from a JumpCloud LDAP server.
+
+Requires --domain-id. Use --force to skip the confirmation prompt.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLDAPSambaDomainDelete(cmd, args[0], domainID)
+		},
+	}
+
+	cmd.Flags().StringVar(&domainID, "domain-id", "", "Samba domain ID (required)")
+	_ = cmd.MarkFlagRequired("domain-id")
+
+	return cmd
+}
+
+func runLDAPSambaDomainDelete(cmd *cobra.Command, ldapIdentifier, domainID string) error {
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "delete",
+			Resource: "Samba domain",
+			Target:   domainID + " on LDAP " + ldapIdentifier,
+			Effects:  []string{"Remove Samba domain"},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Delete Samba domain %q from LDAP %q? [y/N] ", domainID, ldapIdentifier)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.Delete(cmd.Context(), "/ldapservers/"+ldapID+"/sambadomains/"+domainID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Samba domain %q deleted successfully.\n", domainID)
 	return nil
 }

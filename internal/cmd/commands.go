@@ -38,6 +38,7 @@ func newCommandsCmd() *cobra.Command {
 	cmd.AddCommand(newCommandsDeleteCmd())
 	cmd.AddCommand(newCommandsRunCmd())
 	cmd.AddCommand(newCommandsResultsCmd())
+	cmd.AddCommand(newCommandsTriggerCmd())
 
 	return cmd
 }
@@ -513,6 +514,55 @@ func runCommandsResults(cmd *cobra.Command, commandIdentifier string, limit int,
 	}
 
 	return nil
+}
+
+func newCommandsTriggerCmd() *cobra.Command {
+	var dataFlag string
+
+	cmd := &cobra.Command{
+		Use:   "trigger <trigger-name>",
+		Short: "Fire a command trigger by name",
+		Long: `Fire a JumpCloud command trigger by its trigger name.
+
+The trigger name is the string configured on the command's "trigger" field,
+not the command name or ID. Optionally pass a JSON payload with --data.
+
+Examples:
+  jc commands trigger deploy-agents
+  jc commands trigger run-backup --data '{"env":"production"}'`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCommandsTrigger(cmd, args[0], dataFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&dataFlag, "data", "", "JSON payload to send with the trigger")
+
+	return cmd
+}
+
+func runCommandsTrigger(cmd *cobra.Command, triggerName, data string) error {
+	client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	var body any
+	if data != "" {
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+			return fmt.Errorf("invalid --data JSON: %w", err)
+		}
+		body = parsed
+	}
+
+	result, err := client.Post(cmd.Context(), "/command/trigger/"+triggerName, body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
 
 // flattenCommandResults extracts nested fields (response.data.output, response.error,

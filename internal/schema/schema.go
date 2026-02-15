@@ -156,7 +156,7 @@ var Resources = map[string]ResourceSchema{
 	"commands": {
 		Resource:      "commands",
 		APIVersion:    "v1",
-		Verbs:         []string{"list", "get", "create", "update", "delete", "run", "results"},
+		Verbs:         []string{"list", "get", "create", "update", "delete", "run", "results", "trigger"},
 		DefaultFields: []string{"name", "commandType", "command", "schedule", "scheduleRepeatType"},
 		Fields: []FieldDef{
 			{Name: "_id", Type: "string", Description: "Unique command identifier"},
@@ -299,7 +299,7 @@ var Resources = map[string]ResourceSchema{
 	"ldap": {
 		Resource:      "ldap",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get", "create", "update", "delete"},
+		Verbs:         []string{"list", "get", "create", "update", "delete", "samba-domains", "samba-domain-get", "samba-domain-create", "samba-domain-update", "samba-domain-delete"},
 		DefaultFields: []string{"id", "name", "userLockoutAction", "userPasswordExpirationAction"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique LDAP server identifier"},
@@ -529,6 +529,44 @@ var Resources = map[string]ResourceSchema{
 		IDField:       "",
 		NameField:     "",
 	},
+	"custom-emails": {
+		Resource:      "custom-emails",
+		APIVersion:    "v2",
+		Verbs:         []string{"templates", "get", "create", "update", "delete"},
+		DefaultFields: []string{"type", "subject", "title"},
+		Fields: []FieldDef{
+			{Name: "type", Type: "string", Description: "Email template type (e.g. activate_user_custom)"},
+			{Name: "subject", Type: "string", Description: "Email subject line"},
+			{Name: "title", Type: "string", Description: "Email title"},
+			{Name: "body", Type: "string", Description: "Email body text"},
+			{Name: "header", Type: "string", Description: "Email header text"},
+			{Name: "button", Type: "string", Description: "Email button text"},
+		},
+		FilterSupport: false,
+		SortSupport:   false,
+		IDField:       "",
+		NameField:     "type",
+	},
+	"app-templates": {
+		Resource:      "app-templates",
+		APIVersion:    "v1",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"_id", "name", "displayName", "displayLabel", "active"},
+		Fields: []FieldDef{
+			{Name: "_id", Type: "string", Description: "Unique application template identifier"},
+			{Name: "name", Type: "string", Description: "Template name"},
+			{Name: "displayName", Type: "string", Description: "Display name"},
+			{Name: "displayLabel", Type: "string", Description: "Display label"},
+			{Name: "active", Type: "bool", Description: "Whether the template is active"},
+			{Name: "organization", Type: "string", Description: "Organization ID"},
+			{Name: "config", Type: "object", Description: "Template configuration"},
+		},
+		FilterSupport: false,
+		SortSupport:   true,
+		SortFields:    []string{"name", "displayName"},
+		IDField:       "_id",
+		NameField:     "name",
+	},
 }
 
 // ResourceNames returns the sorted list of all resource type names.
@@ -631,12 +669,13 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc commands",
 				Description: "Manage JumpCloud commands",
-				Subcommands: []string{"list", "get", "create", "update", "delete", "run", "results"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "run", "results", "trigger"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},
 					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
 					{Name: "type", Type: "string", Description: "Command type filter: linux, mac, windows (list)"},
+					{Name: "data", Type: "string", Description: "JSON payload for trigger"},
 				},
 			},
 			{
@@ -730,14 +769,16 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc ldap",
 				Description: "Manage JumpCloud LDAP servers",
-				Subcommands: []string{"list", "get", "create", "update", "delete"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "samba-domains", "samba-domain-get", "samba-domain-create", "samba-domain-update", "samba-domain-delete"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},
 					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
-					{Name: "name", Type: "string", Description: "LDAP server name (create/update)"},
+					{Name: "name", Type: "string", Description: "LDAP server name (create/update) or samba domain workgroup name"},
 					{Name: "user-lockout-action", Type: "string", Description: "Action on user lockout (create/update)"},
 					{Name: "user-password-expiration-action", Type: "string", Description: "Action on password expiration (create/update)"},
+					{Name: "domain-id", Type: "string", Description: "Samba domain ID (samba-domain-get/update/delete)"},
+					{Name: "sid", Type: "string", Description: "Samba domain security identifier (samba-domain-create/update)"},
 				},
 			},
 			{
@@ -856,6 +897,28 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "name", Type: "string", Description: "Duo account name (create)"},
 					{Name: "app-id", Type: "string", Description: "Duo application ID (app-get, app-delete)"},
 					{Name: "api-host", Type: "string", Description: "Duo API host (app-create)"},
+				},
+			},
+			{
+				Path:        "jc custom-emails",
+				Description: "Manage custom email templates",
+				Subcommands: []string{"templates", "get", "create", "update", "delete"},
+				Flags: []FlagEntry{
+					{Name: "type", Type: "string", Description: "Custom email type (create, required)"},
+					{Name: "subject", Type: "string", Description: "Email subject line (create/update)"},
+					{Name: "title", Type: "string", Description: "Email title (create/update)"},
+					{Name: "body", Type: "string", Description: "Email body text (create/update)"},
+					{Name: "header", Type: "string", Description: "Email header text (create/update)"},
+					{Name: "button", Type: "string", Description: "Email button text (create/update)"},
+				},
+			},
+			{
+				Path:        "jc app-templates",
+				Description: "View application templates",
+				Subcommands: []string{"list", "get"},
+				Flags: []FlagEntry{
+					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
+					{Name: "sort", Type: "string", Description: "Sort field (list)"},
 				},
 			},
 			{

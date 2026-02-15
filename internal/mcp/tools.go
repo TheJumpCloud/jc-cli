@@ -383,6 +383,66 @@ type graphBindInput struct {
 	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type commandTriggerInput struct {
+	TriggerName string `json:"trigger_name" jsonschema:"Name of the command trigger to fire"`
+	Data        string `json:"data,omitempty" jsonschema:"Optional JSON payload to send with the trigger"`
+}
+
+type customEmailTypeInput struct {
+	EmailType string `json:"email_type" jsonschema:"Custom email type (e.g. activate_user_custom, password_expiration)"`
+}
+
+type customEmailCreateInput struct {
+	EmailType string `json:"email_type" jsonschema:"Custom email type (e.g. activate_user_custom, password_expiration)"`
+	Subject   string `json:"subject" jsonschema:"Email subject line"`
+	Title     string `json:"title,omitempty" jsonschema:"Email title"`
+	Body      string `json:"body,omitempty" jsonschema:"Email body text"`
+	Header    string `json:"header,omitempty" jsonschema:"Email header text"`
+	Button    string `json:"button,omitempty" jsonschema:"Email button text"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type customEmailUpdateInput struct {
+	EmailType string `json:"email_type" jsonschema:"Custom email type to update"`
+	Subject   string `json:"subject,omitempty" jsonschema:"New email subject line"`
+	Title     string `json:"title,omitempty" jsonschema:"New email title"`
+	Body      string `json:"body,omitempty" jsonschema:"New email body text"`
+	Header    string `json:"header,omitempty" jsonschema:"New email header text"`
+	Button    string `json:"button,omitempty" jsonschema:"New email button text"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type customEmailDeleteInput struct {
+	EmailType string `json:"email_type" jsonschema:"Custom email type to delete"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type sambaDomainGetInput struct {
+	LDAPServer string `json:"ldap_server" jsonschema:"LDAP server name or ID"`
+	DomainID   string `json:"domain_id" jsonschema:"Samba domain ID"`
+}
+
+type sambaDomainCreateInput struct {
+	LDAPServer string `json:"ldap_server" jsonschema:"LDAP server name or ID"`
+	Name       string `json:"name" jsonschema:"Samba domain workgroup name"`
+	SID        string `json:"sid" jsonschema:"Samba domain security identifier"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type sambaDomainUpdateInput struct {
+	LDAPServer string `json:"ldap_server" jsonschema:"LDAP server name or ID"`
+	DomainID   string `json:"domain_id" jsonschema:"Samba domain ID"`
+	Name       string `json:"name,omitempty" jsonschema:"New workgroup name"`
+	SID        string `json:"sid,omitempty" jsonschema:"New security identifier"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type sambaDomainDeleteInput struct {
+	LDAPServer string `json:"ldap_server" jsonschema:"LDAP server name or ID"`
+	DomainID   string `json:"domain_id" jsonschema:"Samba domain ID"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type insightsDistinctInput struct {
 	Service   string `json:"service" jsonschema:"Event service to query (sso/radius/ldap/user_portal/admin/mdm/directory/software/systems/password_manager/all)"`
 	Field     string `json:"field" jsonschema:"Field to get distinct values for (e.g. event_type, initiated_by)"`
@@ -472,6 +532,12 @@ func (s *Server) registerTools() {
 
 	// --- Duo tools ---
 	s.registerDuoTools()
+
+	// --- Custom Emails tools ---
+	s.registerCustomEmailTools()
+
+	// --- App Templates tools ---
+	s.registerAppTemplateTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -1620,6 +1686,28 @@ func (s *Server) registerCommandTools() {
 			return rawListResult(result.Data, result.TotalCount)
 		},
 	)
+
+	addTypedTool(s, "commands_trigger", "Fire a command trigger by name. Triggers run pre-configured commands without needing a command ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args commandTriggerInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			var body any
+			if args.Data != "" {
+				var parsed map[string]any
+				if err := json.Unmarshal([]byte(args.Data), &parsed); err != nil {
+					return errorResult(fmt.Sprintf("invalid data JSON: %v", err)), nil, nil
+				}
+				body = parsed
+			}
+			result, err := client.Post(ctx, "/command/trigger/"+args.TriggerName, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("triggering command: %v", err)), nil, nil
+			}
+			return textResult(string(result)), nil, nil
+		},
+	)
 }
 
 func (s *Server) registerPolicyTools() {
@@ -2557,6 +2645,132 @@ func (s *Server) registerLDAPTools() {
 				return errorResult(fmt.Sprintf("deleting LDAP server: %v", err)), nil, nil
 			}
 			return textResult(fmt.Sprintf("LDAP server %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	// --- Samba Domains (sub-resource of LDAP servers) ---
+
+	addTypedTool(s, "ldap_samba_domains_list", "List samba domains for a JumpCloud LDAP server.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			ldapID, err := r.Resolve(ctx, args.Identifier, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/ldapservers/"+ldapID+"/sambadomains", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing samba domains: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "ldap_samba_domain_get", "Get a specific samba domain for a JumpCloud LDAP server.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sambaDomainGetInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			ldapID, err := r.Resolve(ctx, args.LDAPServer, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+args.DomainID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting samba domain: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_samba_domain_create", "Create a samba domain for a JumpCloud LDAP server. Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sambaDomainCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			ldapID, err := r.Resolve(ctx, args.LDAPServer, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+				"sid":  args.SID,
+			}
+			if !args.Execute {
+				return planResult("create", "samba domain", args.Name, "", body)
+			}
+			data, err := client.Create(ctx, "/ldapservers/"+ldapID+"/sambadomains", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating samba domain: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_samba_domain_update", "Update a samba domain for a JumpCloud LDAP server. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sambaDomainUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			ldapID, err := r.Resolve(ctx, args.LDAPServer, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.SID != "" {
+				body["sid"] = args.SID
+			}
+			if !args.Execute {
+				return planResult("update", "samba domain", args.DomainID, args.DomainID, body)
+			}
+			data, err := client.Update(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+args.DomainID, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating samba domain: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "ldap_samba_domain_delete", "Delete a samba domain from a JumpCloud LDAP server. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args sambaDomainDeleteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			ldapID, err := r.Resolve(ctx, args.LDAPServer, resolve.LDAPServerConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "samba domain", args.DomainID, args.DomainID, nil)
+			}
+			_, err = client.Delete(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+args.DomainID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting samba domain: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Samba domain %q deleted successfully.", args.DomainID)), nil, nil
 		},
 	)
 }
@@ -4528,6 +4742,161 @@ func textResult(text string) *mcp.CallToolResult {
 			&mcp.TextContent{Text: text},
 		},
 	}
+}
+
+func (s *Server) registerCustomEmailTools() {
+	addTypedTool(s, "custom_emails_templates", "List available custom email template definitions from JumpCloud.",
+		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/customemail/templates", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing custom email templates: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "custom_emails_get", "Get custom email configuration for a specific email type.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailTypeInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/customemails/"+args.EmailType)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting custom email config: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "custom_emails_create", "Create a custom email configuration. Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"subject": args.Subject,
+			}
+			if args.Title != "" {
+				body["title"] = args.Title
+			}
+			if args.Body != "" {
+				body["body"] = args.Body
+			}
+			if args.Header != "" {
+				body["header"] = args.Header
+			}
+			if args.Button != "" {
+				body["button"] = args.Button
+			}
+			if !args.Execute {
+				return planResult("create", "custom email", args.EmailType, "", body)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/customemails/"+args.EmailType, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating custom email: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "custom_emails_update", "Update a custom email configuration. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{}
+			if args.Subject != "" {
+				body["subject"] = args.Subject
+			}
+			if args.Title != "" {
+				body["title"] = args.Title
+			}
+			if args.Body != "" {
+				body["body"] = args.Body
+			}
+			if args.Header != "" {
+				body["header"] = args.Header
+			}
+			if args.Button != "" {
+				body["button"] = args.Button
+			}
+			if !args.Execute {
+				return planResult("update", "custom email", args.EmailType, args.EmailType, body)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Update(ctx, "/customemails/"+args.EmailType, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating custom email: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "custom_emails_delete", "Delete a custom email configuration. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailDeleteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "custom email", args.EmailType, args.EmailType, nil)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			_, err = client.Delete(ctx, "/customemails/"+args.EmailType)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting custom email: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Custom email %q deleted successfully.", args.EmailType)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerAppTemplateTools() {
+	addTypedTool(s, "app_templates_list", "List available JumpCloud application templates. Returns templates with _id, name, displayName, displayLabel, active.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV1ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/application-templates", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing application templates: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, result.TotalCount)
+		},
+	)
+
+	addTypedTool(s, "app_templates_get", "Get a single JumpCloud application template by ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/application-templates/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting application template: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
 }
 
 // jsonResult creates a JSON result from a value.

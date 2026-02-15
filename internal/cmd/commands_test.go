@@ -1682,3 +1682,137 @@ func TestCommandsResultsHelpIncludesFlags(t *testing.T) {
 		}
 	}
 }
+
+// ========================================================================
+// Trigger Tests
+// ========================================================================
+
+// startTriggerServer creates a mock server for /command/trigger/{name} endpoints.
+func startTriggerServer(t *testing.T) (*httptest.Server, *[]string) {
+	t.Helper()
+	var triggered []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasPrefix(r.URL.Path, "/command/trigger/") && r.Method == http.MethodPost {
+			name := strings.TrimPrefix(r.URL.Path, "/command/trigger/")
+			triggered = append(triggered, name)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"triggered": []string{"aaa111aaa111aaa111aaa111"},
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	return ts, &triggered
+}
+
+func TestCommandsTriggerSuccess(t *testing.T) {
+	setupUsersTest(t)
+	ts, triggered := startTriggerServer(t)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "trigger", "deploy-agents"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\nOutput: %s", err, buf.String())
+	}
+
+	if len(*triggered) != 1 || (*triggered)[0] != "deploy-agents" {
+		t.Errorf("expected trigger 'deploy-agents', got %v", *triggered)
+	}
+}
+
+func TestCommandsTriggerWithData(t *testing.T) {
+	setupUsersTest(t)
+
+	var receivedBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/command/trigger/") && r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{"triggered": []string{"aaa111aaa111aaa111aaa111"}})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "trigger", "run-backup", "--data", `{"env":"production"}`})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if receivedBody["env"] != "production" {
+		t.Errorf("expected env=production in body, got %v", receivedBody)
+	}
+}
+
+func TestCommandsTriggerInvalidJSON(t *testing.T) {
+	setupUsersTest(t)
+	ts, _ := startTriggerServer(t)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "trigger", "deploy", "--data", "not-json"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid JSON data")
+	}
+	if !strings.Contains(err.Error(), "invalid --data JSON") {
+		t.Errorf("expected 'invalid --data JSON' error, got: %v", err)
+	}
+}
+
+func TestCommandsTriggerMissingArg(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "trigger"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing argument")
+	}
+}
+
+func TestCommandsTriggerHelp(t *testing.T) {
+	setupUsersTest(t)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "trigger", "--help"})
+	_ = cmd.Execute()
+
+	help := buf.String()
+	if !strings.Contains(help, "--data") {
+		t.Errorf("trigger help should include --data flag, got: %s", help)
+	}
+	if !strings.Contains(help, "trigger name") {
+		t.Errorf("trigger help should mention 'trigger name', got: %s", help)
+	}
+}
