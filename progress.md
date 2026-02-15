@@ -1224,6 +1224,28 @@
   - Workday Import was intentionally skipped — API endpoints removed from current JumpCloud OpenAPI spec.
 ---
 
+### Security Hardening — 6 Bug Fixes
+- **Date:** 2026-02-15
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commit:** `5b07d39`
+- What was implemented:
+  - Fixed 6 security and correctness issues across 4 files. No new files — all changes to existing code.
+  - **Fix 1 — Config secret redaction** (`config.go`): `redactAPIKeys()` renamed to `redactSecrets()`, now also redacts `profiles.*.client_secret` and top-level `ask.api_key`. Keychain refs (`keychain://...`) preserved as-is. 3 new tests.
+  - **Fix 2 — SSE server timeouts** (`server.go`): Extracted `buildHTTPServer()` helper with `ReadHeaderTimeout` (10s), `ReadTimeout` (30s), `WriteTimeout` (60s), `IdleTimeout` (120s), `MaxHeaderBytes` (1MB). Prevents slowloris attacks on MCP SSE transport. 1 new test.
+  - **Fix 3 — Alias flag-value skipping** (`root.go`): Replaced `range`-based loop with index-based `for i := 0; i < len(args); i++` so `i++` actually skips flag values. Added `--query` to value-taking flag list. Handles `--flag=value` form (no skip needed). 3 new tests.
+  - **Fix 4 — Alias quoted args** (`root.go`): Replaced `strings.Fields(expansion)` with `recipe.ParseCommandArgs(expansion)` for proper single/double-quote handling. Aliases like `users list --filter 'suspended:eq:true'` now produce 4 tokens, not 5. 2 new tests.
+  - **Fix 5 — Recipe HTTP hardening** (`recipe.go`): Replaced `var recipeHTTPGet = http.Get` with `var recipeHTTPClient = &http.Client{Timeout: 30 * time.Second}`. Added `io.LimitReader(resp.Body, 10<<20)` to cap response at 10MB. Updated 3 existing tests, 1 new test.
+  - **Fix 6 — Audit log redaction** (`server.go`): Added `redactParams()` function and `sensitiveParamKeys` set (`shared_secret`, `password`, `api_key`, `public_key`, `client_secret`, `token`). Called in `auditLogger.log()` before encoding. Invalid/empty JSON returns unchanged. 3 new tests.
+  - **13 new tests total**, all passing. All existing tests continue to pass.
+- Files changed:
+  - Modified: `config.go`, `config_test.go`, `recipe.go`, `recipe_test.go`, `root.go`, `root_test.go`, `server.go`, `server_test.go` (8 files)
+  - Total: 8 files, +411 / -43 lines
+- **Learnings:**
+  - `range`-based `for i, arg := range args` + `continue` does NOT skip the next element — it only skips the current iteration. Must use index-based loop with explicit `i++` to skip flag values.
+  - `io.LimitReader` silently truncates — it doesn't return an error when the limit is hit. Tests must account for truncated content being potentially valid.
+  - `recipe.ParseCommandArgs()` returns `[]string` (no error return) — plan incorrectly assumed a two-value return. Always check actual function signatures.
+---
+
 ### Tier 1 API Coverage — G Suite, Office 365, Duo, Software Extensions
 - **Date:** 2026-02-15
 - What was implemented:
