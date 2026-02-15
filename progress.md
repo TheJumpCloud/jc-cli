@@ -1164,3 +1164,33 @@
   - Graph bind/unbind in MCP needed helper functions (`parseGraphFrom`, `parseGraphTarget`) because the `--from type:id` CLI flag pattern doesn't map directly to MCP's typed JSON inputs — MCP uses separate `source_type`, `source_id`, `target_type`, `target_id` fields instead.
   - `flattenAssociations()` extracts `to.type` and `to.id` from nested graph response objects — MCP consumers prefer flat key-value pairs over deeply nested JSON.
 ---
+
+## 2026-02-15 - Tier 3 API Coverage: 9 New Features
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commit:** `edff06d`
+- What was implemented:
+  - Added 9 new JumpCloud API features across 6 new command files and 3 existing file extensions.
+  - **Resource schemas expanded from 14 to 20.** MCP tools expanded by ~31 (95 → 126 total).
+  - **System Insights** (new file): Query 62 osquery tables via `jc system-insights <table>`. V2 `GET /systeminsights/{table}`. Includes `--system-id` filter for per-device queries. `tables` subcommand lists available table names. 4 tests.
+  - **RADIUS Servers** (new file): Full V1 CRUD via `jc radius list/get/create/update/delete`. Endpoint `/radiusservers`. Resolver config: `RADIUSServerConfig`. Default fields: `_id, name, networkSourceIp, authPort, accountingPort`. 5 tests.
+  - **Policy Templates** (new file): V2 read-only via `jc policy-templates list/get`. Endpoint `/policytemplates`. Default fields: `id, name, description, osMetaFamily`. 3 tests.
+  - **Apple MDM** (new file): V2 CRUD + sub-resources via `jc apple-mdm list/get/create/update/delete/enrollment-profiles/devices`. Endpoints `/applemdms`, `/applemdms/{id}/enrollmentprofiles`, `/applemdms/{id}/devices`. Resolver config: `AppleMDMConfig`. 7 tests.
+  - **Policy Groups** (new file): V2 CRUD via `jc policy-groups list/get/create/update/delete`. Endpoint `/policygroups`. Resolver config: `PolicyGroupConfig`. 5 tests.
+  - **Bulk User States** (new file): V2 CRUD for scheduled suspend/reactivate via `jc user-states list/get/create/delete`. Endpoint `/bulk/userstates`. State validation (`suspended`/`activated`). 6 tests.
+  - **FDE Key** (extend devices.go): `jc devices fde-key <hostname-or-id>`. V2 `GET /systems/{id}/fdekey`. Returns disk encryption recovery key. 3 tests.
+  - **SSH Keys** (extend users.go): `jc users ssh-keys/ssh-key-add/ssh-key-delete`. V1 endpoints `/systemusers/{id}/sshkeys`. Plan mode for add/delete. 4 tests.
+  - **Org Settings/Update** (extend org.go): `jc org settings <id>` and `jc org update <id> --name/--settings-json`. V1 `GET/PUT /organizations/{id}`. `--settings-json` accepts raw JSON for complex fields. Plan mode for update. 3 tests.
+  - 3 new resolver configs: `RADIUSServerConfig`, `AppleMDMConfig`, `PolicyGroupConfig`.
+  - 3 new error codes: `RADIUS_NOT_FOUND`, `APPLE_MDM_NOT_FOUND`, `POLICY_GROUP_NOT_FOUND`.
+  - 31 new MCP tools across 6 new registration methods + 3 existing method extensions.
+  - Schema test counts updated from 14 to 20 in both `schema_test.go` and `cmd/schema_test.go`.
+- Files changed:
+  - New: `system_insights.go`, `radius.go`, `policy_templates.go`, `apple_mdm.go`, `policy_groups.go`, `user_states.go` + matching `_test.go` files (12 new files)
+  - Modified: `devices.go`, `devices_test.go`, `users.go`, `users_test.go`, `org.go`, `org_test.go`, `root.go`, `cli_error.go`, `schema_test.go` (cmd), `tools.go` (mcp), `resolve.go`, `schema.go`, `schema_test.go` (schema) (14 modified files)
+  - Total: 26 files, +4,325 lines
+- **Learnings:**
+  - Background agents commonly confuse `github.com/99designs/keyring` with `github.com/zalando/go-keyring` — both agents independently made this mistake and self-corrected. Worth noting in MEMORY.md.
+  - Schema test resource counts are a coupling point — hardcoded `14` in two separate test files (`internal/schema/schema_test.go` and `internal/cmd/schema_test.go`) must be updated when adding resources.
+  - System Insights uses a single command with table name as positional arg rather than 62 subcommands — much cleaner design for large uniform API surfaces.
+  - V2 sub-resource endpoints (Apple MDM enrollment profiles, devices) follow the same `ListAll` pattern as top-level resources — bare JSON arrays with Link header pagination.
+---
