@@ -281,7 +281,7 @@ var Resources = map[string]ResourceSchema{
 	"software": {
 		Resource:      "software",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get", "create", "update", "delete"},
+		Verbs:         []string{"list", "get", "create", "update", "delete", "statuses", "associations", "reclaim-license"},
 		DefaultFields: []string{"id", "displayName", "createdAt", "updatedAt"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique software app identifier"},
@@ -458,6 +458,52 @@ var Resources = map[string]ResourceSchema{
 		SortSupport:   false,
 		IDField:       "id",
 		NameField:     "",
+	},
+	"gsuite": {
+		Resource:      "gsuite",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "translation-rules", "import-users"},
+		DefaultFields: []string{"id", "name", "defaultDomain"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique G Suite integration identifier"},
+			{Name: "name", Type: "string", Description: "G Suite integration name"},
+			{Name: "defaultDomain", Type: "string", Description: "Default domain for the G Suite directory"},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name"},
+		IDField:       "id",
+		NameField:     "name",
+	},
+	"office365": {
+		Resource:      "office365",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "translation-rules", "import-users"},
+		DefaultFields: []string{"id", "name", "defaultDomain"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique Office 365 integration identifier"},
+			{Name: "name", Type: "string", Description: "Office 365 integration name"},
+			{Name: "defaultDomain", Type: "string", Description: "Default domain for the Office 365 directory"},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name"},
+		IDField:       "id",
+		NameField:     "name",
+	},
+	"duo": {
+		Resource:      "duo",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "create", "delete", "apps", "app-get", "app-create", "app-delete"},
+		DefaultFields: []string{"id", "name"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique Duo account identifier"},
+			{Name: "name", Type: "string", Description: "Duo account name"},
+		},
+		FilterSupport: false,
+		SortSupport:   false,
+		IDField:       "id",
+		NameField:     "name",
 	},
 	"insights": {
 		Resource:      "insights",
@@ -672,7 +718,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc software",
 				Description: "Manage JumpCloud software apps",
-				Subcommands: []string{"list", "get", "create", "update", "delete"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "statuses", "associations", "reclaim-license"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field (list)"},
@@ -780,6 +826,36 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "state", Type: "string", Description: "Target state: suspended or activated (create, required)"},
 					{Name: "start-date", Type: "string", Description: "Date for state change (create, required)"},
 					{Name: "end-date", Type: "string", Description: "Optional end date to revert (create)"},
+				},
+			},
+			{
+				Path:        "jc gsuite",
+				Description: "Manage JumpCloud Google Workspace (G Suite) integrations",
+				Subcommands: []string{"list", "get", "translation-rules", "import-users"},
+				Flags: []FlagEntry{
+					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
+					{Name: "sort", Type: "string", Description: "Sort field (list)"},
+					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
+				},
+			},
+			{
+				Path:        "jc office365",
+				Description: "Manage JumpCloud Office 365 integrations",
+				Subcommands: []string{"list", "get", "translation-rules", "import-users"},
+				Flags: []FlagEntry{
+					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
+					{Name: "sort", Type: "string", Description: "Sort field (list)"},
+					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
+				},
+			},
+			{
+				Path:        "jc duo",
+				Description: "Manage JumpCloud Duo accounts and applications",
+				Subcommands: []string{"list", "get", "create", "delete", "apps", "app-get", "app-create", "app-delete"},
+				Flags: []FlagEntry{
+					{Name: "name", Type: "string", Description: "Duo account name (create)"},
+					{Name: "app-id", Type: "string", Description: "Duo application ID (app-get, app-delete)"},
+					{Name: "api-host", Type: "string", Description: "Duo API host (app-create)"},
 				},
 			},
 			{

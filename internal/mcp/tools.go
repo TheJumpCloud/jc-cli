@@ -341,6 +341,37 @@ type sshKeyDeleteInput struct {
 	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type duoCreateInput struct {
+	Name string `json:"name" jsonschema:"Duo account name"`
+}
+
+type duoAppCreateInput struct {
+	Account string `json:"account" jsonschema:"Duo account name or ID"`
+	Name    string `json:"name" jsonschema:"Duo application name"`
+	APIHost string `json:"api_host" jsonschema:"Duo API host"`
+}
+
+type duoAppGetInput struct {
+	Account string `json:"account" jsonschema:"Duo account name or ID"`
+	AppID   string `json:"app_id" jsonschema:"Duo application ID"`
+}
+
+type duoAppDeleteInput struct {
+	Account string `json:"account" jsonschema:"Duo account name or ID"`
+	AppID   string `json:"app_id" jsonschema:"Duo application ID"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type softwareStatusesInput struct {
+	Identifier string `json:"identifier" jsonschema:"Software app name or ID"`
+}
+
+type softwareReclaimInput struct {
+	Identifier string `json:"identifier" jsonschema:"Software app name or ID"`
+	DeviceID   string `json:"device_id" jsonschema:"Device hostname or ID"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type graphTraverseInput struct {
 	From string `json:"from" jsonschema:"Source resource as type:name-or-id (e.g. user:jdoe, user_group:Engineering). Types: user, device, user_group, device_group, application"`
 	To   string `json:"to" jsonschema:"Target resource type (e.g. application, system, user_group, active_directory, ldap_server)"`
@@ -432,6 +463,15 @@ func (s *Server) registerTools() {
 
 	// --- User States tools ---
 	s.registerUserStateTools()
+
+	// --- G Suite tools ---
+	s.registerGsuiteTools()
+
+	// --- Office 365 tools ---
+	s.registerOffice365Tools()
+
+	// --- Duo tools ---
+	s.registerDuoTools()
 
 	// --- Recipe tools ---
 	s.registerRecipeTools()
@@ -2330,6 +2370,70 @@ func (s *Server) registerSoftwareTools() {
 			return textResult(fmt.Sprintf("Software app %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+
+	addTypedTool(s, "software_statuses", "List deployment statuses for a JumpCloud software app. Shows per-device installation status.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args softwareStatusesInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/softwareapps/"+id+"/statuses", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing software statuses: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "software_associations", "List device associations for a JumpCloud software app.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args softwareStatusesInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/softwareapps/"+id+"/associations?targets=system", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing software associations: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "software_reclaim_license", "Reclaim a software license from a device. Set execute=true to reclaim; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args softwareReclaimInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			v2, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(v2)
+			appID, err := r.Resolve(ctx, args.Identifier, resolve.SoftwareAppConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("reclaim-license", "software app", args.Identifier, appID, map[string]any{"device": args.DeviceID})
+			}
+			body := map[string]any{"device_id": args.DeviceID}
+			_, err = v2.Create(ctx, "/softwareapps/"+appID+"/reclaim-licenses", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("reclaiming license: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("License reclaimed from device %q for software app %q.", args.DeviceID, args.Identifier)), nil, nil
+		},
+	)
 }
 
 func (s *Server) registerLDAPTools() {
@@ -4048,6 +4152,327 @@ func (s *Server) registerUserStateTools() {
 				return errorResult(fmt.Sprintf("deleting user state: %v", err)), nil, nil
 			}
 			return textResult(fmt.Sprintf("User state change %q deleted successfully", args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerGsuiteTools() {
+	addTypedTool(s, "gsuite_list", "List all JumpCloud Google Workspace (G Suite) integrations.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/gsuites", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing G Suite integrations: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "gsuite_get", "Get a single JumpCloud G Suite integration by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.GsuiteConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/gsuites/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting G Suite integration: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "gsuite_translation_rules", "List translation rules for a G Suite integration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.GsuiteConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/gsuites/"+id+"/translationrules", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "gsuite_import_users", "List importable users from a G Suite integration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.GsuiteConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/gsuites/"+id+"/import/users", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+}
+
+func (s *Server) registerOffice365Tools() {
+	addTypedTool(s, "office365_list", "List all JumpCloud Office 365 integrations.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/office365s", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing Office 365 integrations: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "office365_get", "Get a single JumpCloud Office 365 integration by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.Office365Config)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/office365s/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting Office 365 integration: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "office365_translation_rules", "List translation rules for an Office 365 integration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.Office365Config)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/office365s/"+id+"/translationrules", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "office365_import_users", "List importable users from an Office 365 integration.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.Office365Config)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/office365s/"+id+"/import/users", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+}
+
+func (s *Server) registerDuoTools() {
+	addTypedTool(s, "duo_list", "List all JumpCloud Duo accounts.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/duo/accounts", api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing Duo accounts: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "duo_get", "Get a single JumpCloud Duo account by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/duo/accounts/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting Duo account: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "duo_create", "Create a new JumpCloud Duo account.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args duoCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			body := map[string]any{"name": args.Name}
+			data, err := client.Create(ctx, "/duo/accounts", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Duo account: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "duo_delete", "Delete a JumpCloud Duo account. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "Duo account", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/duo/accounts/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting Duo account: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Duo account %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "duo_apps", "List Duo applications for a Duo account.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, fmt.Sprintf("/duo/accounts/%s/applications", id), api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing Duo applications: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "duo_app_get", "Get a specific Duo application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppGetInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			accountID, err := r.Resolve(ctx, args.Account, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, fmt.Sprintf("/duo/accounts/%s/applications/%s", accountID, args.AppID))
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting Duo application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "duo_app_create", "Create a Duo application for a Duo account.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			accountID, err := r.Resolve(ctx, args.Account, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{
+				"name":    args.Name,
+				"apiHost": args.APIHost,
+			}
+			data, err := client.Create(ctx, fmt.Sprintf("/duo/accounts/%s/applications", accountID), body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Duo application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "duo_app_delete", "Delete a Duo application. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppDeleteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			accountID, err := r.Resolve(ctx, args.Account, resolve.DuoAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "Duo application", args.AppID, args.AppID, nil)
+			}
+			_, err = client.Delete(ctx, fmt.Sprintf("/duo/accounts/%s/applications/%s", accountID, args.AppID))
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting Duo application: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Duo application %q deleted successfully.", args.AppID)), nil, nil
 		},
 	)
 }

@@ -329,6 +329,14 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"org_list", "org_get", "org_settings", "org_update",
 		// Software
 		"software_list", "software_get", "software_create", "software_update", "software_delete",
+		"software_statuses", "software_associations", "software_reclaim_license",
+		// G Suite
+		"gsuite_list", "gsuite_get", "gsuite_translation_rules", "gsuite_import_users",
+		// Office 365
+		"office365_list", "office365_get", "office365_translation_rules", "office365_import_users",
+		// Duo
+		"duo_list", "duo_get", "duo_create", "duo_delete",
+		"duo_apps", "duo_app_get", "duo_app_create", "duo_app_delete",
 		// LDAP
 		"ldap_list", "ldap_get", "ldap_create", "ldap_update", "ldap_delete",
 		// AD
@@ -362,8 +370,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 126 {
-		t.Errorf("expected 126 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 145 {
+		t.Errorf("expected 145 tools, got %d", len(result.Tools))
 	}
 }
 

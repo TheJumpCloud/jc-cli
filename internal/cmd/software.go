@@ -37,6 +37,9 @@ func newSoftwareCmd() *cobra.Command {
 	cmd.AddCommand(newSoftwareCreateCmd())
 	cmd.AddCommand(newSoftwareUpdateCmd())
 	cmd.AddCommand(newSoftwareDeleteCmd())
+	cmd.AddCommand(newSoftwareStatusesCmd())
+	cmd.AddCommand(newSoftwareAssociationsCmd())
+	cmd.AddCommand(newSoftwareReclaimLicenseCmd())
 
 	return cmd
 }
@@ -358,5 +361,185 @@ func runSoftwareDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Software app %q deleted successfully.\n", app.DisplayName)
+	return nil
+}
+
+// softwareStatusDefaultFields is the default field subset shown for software status output.
+var softwareStatusDefaultFields = []string{"systemId", "status", "lastUpdate"}
+
+func newSoftwareStatusesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "statuses <name-or-id>",
+		Short: "List deployment statuses for a software app",
+		Long: `List deployment statuses for a JumpCloud software app.
+
+Accepts a software app displayName or 24-character hex ID.
+Returns per-device deployment status information.
+
+Default fields: systemId, status, lastUpdate.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSoftwareStatuses(cmd, args[0])
+		},
+	}
+
+	return cmd
+}
+
+func runSoftwareStatuses(cmd *cobra.Command, identifier string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveSoftwareApp(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.ListAll(cmd.Context(), "/softwareapps/"+id+"/statuses", api.V2ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = softwareStatusDefaultFields
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+	}
+
+	return nil
+}
+
+func newSoftwareAssociationsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "associations <name-or-id>",
+		Short: "List associations for a software app",
+		Long: `List system associations for a JumpCloud software app.
+
+Accepts a software app displayName or 24-character hex ID.
+Returns the list of systems associated with the software app.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSoftwareAssociations(cmd, args[0])
+		},
+	}
+
+	return cmd
+}
+
+func runSoftwareAssociations(cmd *cobra.Command, identifier string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveSoftwareApp(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	result, err := client.ListAll(cmd.Context(), "/softwareapps/"+id+"/associations?targets=system", api.V2ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+
+	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+		return err
+	}
+
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+	}
+
+	return nil
+}
+
+func newSoftwareReclaimLicenseCmd() *cobra.Command {
+	var deviceFlag string
+
+	cmd := &cobra.Command{
+		Use:   "reclaim-license <name-or-id>",
+		Short: "Reclaim a software license from a device",
+		Long: `Reclaim a software app license from a specific device.
+
+Accepts a software app displayName or 24-character hex ID.
+Requires --device with the target device hostname or ID.
+Use --force to skip the confirmation prompt.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSoftwareReclaimLicense(cmd, args[0], deviceFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&deviceFlag, "device", "", "Device hostname or ID (required)")
+	_ = cmd.MarkFlagRequired("device")
+
+	return cmd
+}
+
+func runSoftwareReclaimLicense(cmd *cobra.Command, identifier, device string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	id, err := resolveSoftwareApp(cmd.Context(), client, identifier)
+	if err != nil {
+		return err
+	}
+
+	// Resolve device hostname or ID.
+	v1Client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	deviceID, err := resolveDevice(cmd.Context(), v1Client, device)
+	if err != nil {
+		return err
+	}
+
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "reclaim-license",
+			Resource: "software app",
+			Target:   fmt.Sprintf("%s (device: %s)", id, deviceID),
+			Effects:  []string{"Reclaim software license from device"},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	// Confirmation prompt (unless --force is set).
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Reclaim license for software app %q from device %q? [y/N] ", id, deviceID)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	body := map[string]any{
+		"systemId": deviceID,
+	}
+
+	_, err = client.Create(cmd.Context(), "/softwareapps/"+id+"/reclaim-licenses", body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "License reclaimed successfully for software app %s from device %s.\n", id, deviceID)
 	return nil
 }

@@ -115,6 +115,9 @@ interface.`,
 	rootCmd.AddCommand(newPolicyGroupsCmd())
 	rootCmd.AddCommand(newAppleMDMCmd())
 	rootCmd.AddCommand(newUserStatesCmd())
+	rootCmd.AddCommand(newGsuiteCmd())
+	rootCmd.AddCommand(newOffice365Cmd())
+	rootCmd.AddCommand(newDuoCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -305,6 +308,7 @@ var builtinCommands = map[string]bool{
 	"software": true, "ldap": true, "ad": true, "org": true,
 	"system-insights": true, "radius": true, "policy-templates": true,
 	"policy-groups": true, "apple-mdm": true, "user-states": true,
+	"gsuite": true, "office365": true, "duo": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.

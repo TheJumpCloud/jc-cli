@@ -52,8 +52,79 @@ func startSoftwareServer(t *testing.T, apps []map[string]any) *httptest.Server {
 
 		// Routes under /softwareapps/{id}.
 		if strings.HasPrefix(r.URL.Path, "/softwareapps/") {
-			id := strings.TrimPrefix(r.URL.Path, "/softwareapps/")
+			rest := strings.TrimPrefix(r.URL.Path, "/softwareapps/")
+			parts := strings.SplitN(rest, "/", 2)
+			id := parts[0]
 
+			// Sub-resource: GET /softwareapps/{id}/statuses
+			if len(parts) == 2 && parts[1] == "statuses" && r.Method == http.MethodGet {
+				// Check that the app exists.
+				var found bool
+				for _, app := range apps {
+					if app["id"] == id {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.WriteHeader(http.StatusNotFound)
+					w.Write([]byte(`{"message":"Not Found"}`))
+					return
+				}
+				statuses := []map[string]any{
+					{"systemId": "aabbccddee112233aabb0001", "status": "installed", "lastUpdate": "2024-06-01T12:00:00Z"},
+					{"systemId": "aabbccddee112233aabb0002", "status": "pending", "lastUpdate": "2024-06-02T08:00:00Z"},
+				}
+				json.NewEncoder(w).Encode(statuses)
+				return
+			}
+
+			// Sub-resource: GET /softwareapps/{id}/associations?targets=system
+			if len(parts) == 2 && parts[1] == "associations" && r.Method == http.MethodGet {
+				targets := r.URL.Query().Get("targets")
+				if targets != "system" {
+					json.NewEncoder(w).Encode([]map[string]any{})
+					return
+				}
+				var found bool
+				for _, app := range apps {
+					if app["id"] == id {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.WriteHeader(http.StatusNotFound)
+					w.Write([]byte(`{"message":"Not Found"}`))
+					return
+				}
+				associations := []map[string]any{
+					{"to": map[string]any{"id": "aabbccddee112233aabb0001", "type": "system"}, "attributes": nil},
+					{"to": map[string]any{"id": "aabbccddee112233aabb0002", "type": "system"}, "attributes": nil},
+				}
+				json.NewEncoder(w).Encode(associations)
+				return
+			}
+
+			// Sub-resource: POST /softwareapps/{id}/reclaim-licenses
+			if len(parts) == 2 && parts[1] == "reclaim-licenses" && r.Method == http.MethodPost {
+				var found bool
+				for _, app := range apps {
+					if app["id"] == id {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.WriteHeader(http.StatusNotFound)
+					w.Write([]byte(`{"message":"Not Found"}`))
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			// Find the app by ID for GET/PUT/DELETE.
 			var found map[string]any
 			for _, app := range apps {
 				if app["id"] == id {
@@ -492,5 +563,154 @@ func TestSoftwareDelete_Cancel(t *testing.T) {
 	stderr := errBuf.String()
 	if !strings.Contains(stderr, "Cancelled.") {
 		t.Errorf("stderr should contain 'Cancelled.', got: %q", stderr)
+	}
+}
+
+// --- Statuses Tests ---
+
+func TestSoftwareStatuses(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleSoftwareApps()
+	ts := startSoftwareServer(t, apps)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "statuses", "aabbccddee112233aabb5001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if len(result) != 2 {
+		t.Errorf("got %d statuses, want 2", len(result))
+	}
+	if result[0]["status"] != "installed" {
+		t.Errorf("first status = %q, want 'installed'", result[0]["status"])
+	}
+}
+
+func TestSoftwareStatuses_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleSoftwareApps()
+	ts := startSoftwareServer(t, apps)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "statuses", "NonExistentApp"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for not-found software app, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+// --- Associations Tests ---
+
+func TestSoftwareAssociations(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleSoftwareApps()
+	ts := startSoftwareServer(t, apps)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "associations", "aabbccddee112233aabb5001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if len(result) != 2 {
+		t.Errorf("got %d associations, want 2", len(result))
+	}
+	// Verify nested "to" field is present.
+	to, ok := result[0]["to"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'to' field to be a map, got %T", result[0]["to"])
+	}
+	if to["type"] != "system" {
+		t.Errorf("first association to.type = %q, want 'system'", to["type"])
+	}
+}
+
+// --- Reclaim License Tests ---
+
+func TestSoftwareReclaimLicense(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleSoftwareApps()
+	ts := startSoftwareServer(t, apps)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
+
+	// Use a 24-char hex device ID so resolver short-circuits without V1 API call.
+	deviceID := "aabbccddee112233aabb0001"
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "reclaim-license", "aabbccddee112233aabb5001", "--device", deviceID, "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "License reclaimed successfully") {
+		t.Errorf("output should confirm license reclaim, got: %s", out)
+	}
+}
+
+func TestSoftwareReclaimLicense_Plan(t *testing.T) {
+	setupUsersTest(t)
+	apps := sampleSoftwareApps()
+	ts := startSoftwareServer(t, apps)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
+
+	deviceID := "aabbccddee112233aabb0001"
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "reclaim-license", "aabbccddee112233aabb5001", "--device", deviceID, "--plan"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ExitError for plan mode, got nil")
+	}
+	var exitErr *ExitError
+	if !errorAs(err, &exitErr) {
+		t.Fatalf("expected ExitError, got: %T: %v", err, err)
+	}
+	if exitErr.Code != 10 {
+		t.Errorf("exit code = %d, want 10", exitErr.Code)
 	}
 }

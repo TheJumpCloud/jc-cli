@@ -1194,3 +1194,25 @@
   - System Insights uses a single command with table name as positional arg rather than 62 subcommands — much cleaner design for large uniform API surfaces.
   - V2 sub-resource endpoints (Apple MDM enrollment profiles, devices) follow the same `ListAll` pattern as top-level resources — bare JSON arrays with Link header pagination.
 ---
+
+### Tier 1 API Coverage — G Suite, Office 365, Duo, Software Extensions
+- **Date:** 2026-02-15
+- What was implemented:
+  - Added 4 Tier 1 API features: G Suite, Office 365, Duo MFA, and Software extensions.
+  - **Resource schemas expanded from 20 to 23.** MCP tools expanded from 126 to 145 (+19).
+  - **G Suite** (new file): V2 read-only with sub-resources via `jc gsuite list/get/translation-rules/import-users`. Endpoint `/gsuites`. Resolver config: `GsuiteConfig`. Default fields: `id, name, defaultDomain`. 8 tests.
+  - **Office 365** (new file): V2 read-only with sub-resources via `jc office365 list/get/translation-rules/import-users`. Endpoint `/office365s`. Resolver config: `Office365Config`. Nearly identical pattern to G Suite. 8 tests.
+  - **Duo MFA** (new file): V2 two-level resource via `jc duo list/get/create/delete/apps/app-get/app-create/app-delete`. Endpoints `/duo/accounts`, `/duo/accounts/{id}/applications`. Resolver config: `DuoAccountConfig`. Plan mode for create/delete. 503 lines. Tests for all operations.
+  - **Software Extensions** (extend software.go): Added `statuses`, `associations`, `reclaim-license` subcommands. Sub-resource endpoints `/softwareapps/{id}/statuses`, `/softwareapps/{id}/associations?targets=system`, `/softwareapps/{id}/reclaim-licenses`. 5 new tests.
+  - 3 new resolver configs: `GsuiteConfig`, `Office365Config`, `DuoAccountConfig`.
+  - 19 new MCP tools: gsuite (4), office365 (4), duo (8), software extensions (3).
+  - Schema test counts updated from 20 to 23.
+- Files changed:
+  - New: `gsuite.go`, `gsuite_test.go`, `office365.go`, `office365_test.go`, `duo.go`, `duo_test.go` (6 new files)
+  - Modified: `software.go`, `software_test.go`, `root.go`, `resolve.go`, `schema.go`, `schema_test.go` (schema), `schema_test.go` (cmd), `tools.go` (mcp), `tools_test.go` (mcp) (9 modified files)
+  - Total: 15 files
+- **Learnings:**
+  - G Suite and Office 365 are structurally nearly identical — the same test patterns and command structures apply. Could be templatized but YAGNI.
+  - Duo is a two-level resource (accounts → applications) — uses separate subcommands rather than nested `cobra.Command` hierarchy for simplicity.
+  - Software sub-resource MCP tools reuse the same `softwareStatusesInput` struct for both statuses and associations since both only need an identifier.
+---

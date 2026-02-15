@@ -189,6 +189,30 @@ var AdminConfig = ResourceConfig{
 	IDField:      "_id",
 }
 
+// GsuiteConfig is the resolution config for JumpCloud Google Workspace integrations (V2 API).
+var GsuiteConfig = ResourceConfig{
+	CacheKey:     "gsuites",
+	ListEndpoint: "/gsuites",
+	NameField:    "name",
+	IDField:      "id",
+}
+
+// Office365Config is the resolution config for JumpCloud Office 365 integrations (V2 API).
+var Office365Config = ResourceConfig{
+	CacheKey:     "office365",
+	ListEndpoint: "/office365s",
+	NameField:    "name",
+	IDField:      "id",
+}
+
+// DuoAccountConfig is the resolution config for JumpCloud Duo accounts (V2 API).
+var DuoAccountConfig = ResourceConfig{
+	CacheKey:     "duo",
+	ListEndpoint: "/duo/accounts",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID.
 //
 // Resolution order:
