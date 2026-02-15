@@ -223,3 +223,110 @@ func TestToV2Queries(t *testing.T) {
 		t.Errorf("queries[1] = %q, want %q", queries[1], "type:ne:custom")
 	}
 }
+
+// --- Edge Cases ---
+
+func TestParse_ValueWithColons(t *testing.T) {
+	e, err := Parse("timestamp>=2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "timestamp" {
+		t.Errorf("field = %q, want %q", e.Field, "timestamp")
+	}
+	if e.Operator != "gte" {
+		t.Errorf("operator = %q, want %q", e.Operator, "gte")
+	}
+	if e.Value != "2026-01-01T00:00:00Z" {
+		t.Errorf("value = %q, want %q", e.Value, "2026-01-01T00:00:00Z")
+	}
+}
+
+func TestParse_ValueWithEquals(t *testing.T) {
+	// Only the first = is the operator; rest is part of the value.
+	e, err := Parse("query=name=john")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "query" {
+		t.Errorf("field = %q, want %q", e.Field, "query")
+	}
+	if e.Operator != "eq" {
+		t.Errorf("operator = %q, want %q", e.Operator, "eq")
+	}
+	if e.Value != "name=john" {
+		t.Errorf("value = %q, want %q", e.Value, "name=john")
+	}
+}
+
+func TestParse_UnicodeValue(t *testing.T) {
+	e, err := Parse("name=Müller")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Value != "Müller" {
+		t.Errorf("value = %q, want %q", e.Value, "Müller")
+	}
+}
+
+func TestParse_FieldWithDots(t *testing.T) {
+	e, err := Parse("addresses.locality=Denver")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "addresses.locality" {
+		t.Errorf("field = %q, want %q", e.Field, "addresses.locality")
+	}
+	if e.Value != "Denver" {
+		t.Errorf("value = %q, want %q", e.Value, "Denver")
+	}
+}
+
+func TestParse_OnlyOperator(t *testing.T) {
+	// ">=" is matched as: `>=` at idx=0 fails (idx > 0 check), then `=` at idx=1
+	// succeeds with field=">" and value="". This is a quirk of the parser.
+	e, err := Parse(">=")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	// The ">" becomes the field name and "=" is the operator.
+	if e.Field != ">" || e.Operator != "eq" || e.Value != "" {
+		t.Errorf("got {%q, %q, %q}, want {>, eq, \"\"}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_WhitespaceValue(t *testing.T) {
+	e, err := Parse("field= ")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	// TrimSpace should produce empty value.
+	if e.Value != "" {
+		t.Errorf("value = %q, want empty string", e.Value)
+	}
+}
+
+func TestParse_EmptyString(t *testing.T) {
+	_, err := Parse("")
+	if err == nil {
+		t.Fatal("expected error for empty string, got nil")
+	}
+}
+
+func TestToV1Query_SpecialChars(t *testing.T) {
+	e := Expression{Field: "timestamp", Operator: "gte", Value: "2026-01-01T00:00:00Z"}
+	got := e.ToV1Query()
+	want := "timestamp:$gte:2026-01-01T00:00:00Z"
+	if got != want {
+		t.Errorf("ToV1Query = %q, want %q", got, want)
+	}
+}
+
+func TestToV2Query_EmptyValue(t *testing.T) {
+	e := Expression{Field: "department", Operator: "eq", Value: ""}
+	got := e.ToV2Query()
+	want := "department:eq:"
+	if got != want {
+		t.Errorf("ToV2Query = %q, want %q", got, want)
+	}
+}

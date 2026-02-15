@@ -734,6 +734,90 @@ func TestParseLinkNext_NoNext(t *testing.T) {
 	}
 }
 
+// --- V2 Pagination Edge Cases ---
+
+func TestV2Client_ListAll_EmptyArrayResponse(t *testing.T) {
+	var requestCount atomic.Int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		// Empty array, no Link header.
+		w.Write([]byte(`[]`))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/usergroups", V2ListOptions{})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 0 {
+		t.Errorf("got %d results, want 0", len(result.Data))
+	}
+	// Should make exactly 1 request and stop.
+	if got := requestCount.Load(); got != 1 {
+		t.Errorf("made %d requests, want 1", got)
+	}
+}
+
+func TestV2Client_ListAll_LinkHeaderWithEmptyPage(t *testing.T) {
+	var requestCount atomic.Int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		// Return empty array but with a Link: next header.
+		// This should NOT cause an infinite loop.
+		nextURL := fmt.Sprintf("<http://%s/usergroups?limit=100&skip=100>; rel=\"next\"", r.Host)
+		w.Header().Set("Link", nextURL)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/usergroups", V2ListOptions{})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 0 {
+		t.Errorf("got %d results, want 0", len(result.Data))
+	}
+	// Should stop after 1 request because len(pageItems)==0 guard.
+	if got := requestCount.Load(); got != 1 {
+		t.Errorf("made %d requests, want 1 (should stop on empty page despite Link header)", got)
+	}
+}
+
+func TestV2Client_ListAll_LimitOne(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := r.URL.Query().Get("limit")
+		if limit != "1" {
+			t.Errorf("expected limit=1 in request, got limit=%s", limit)
+		}
+
+		var items []map[string]any
+		for i := range 50 {
+			items = append(items, map[string]any{"id": fmt.Sprintf("id-%d", i)})
+		}
+		// Return many items but user wants only 1.
+		nextURL := fmt.Sprintf("<http://%s/usergroups?limit=1&skip=1>; rel=\"next\"", r.Host)
+		w.Header().Set("Link", nextURL)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v2Response(items))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/usergroups", V2ListOptions{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 1 {
+		t.Errorf("got %d results, want 1", len(result.Data))
+	}
+}
+
 // --- V2 Pagination with Multiple Link Relations ---
 
 func TestV2Client_ListAll_LinkHeaderWithPrevAndNext(t *testing.T) {

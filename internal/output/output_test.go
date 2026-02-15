@@ -1712,3 +1712,261 @@ func TestCurrentOptions_QueryField(t *testing.T) {
 		t.Errorf("Query = %q, want %q", opts.Query, "[*].username")
 	}
 }
+
+// --- Batch 2: Output Engine Edge Cases ---
+
+func TestWriteList_CSV_SpecialCharacters(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"Doe, Jane","notes":"said \"hello\"","bio":"line1\nline2"}`),
+	}
+	err := WriteList(&buf, data, Options{Format: FormatCSV})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// Commas in values must be quoted.
+	if !strings.Contains(got, `"Doe, Jane"`) {
+		t.Errorf("CSV should quote values with commas, got %q", got)
+	}
+	// Double quotes must be escaped as "".
+	if !strings.Contains(got, `"said ""hello"""`) {
+		t.Errorf("CSV should escape double quotes, got %q", got)
+	}
+}
+
+func TestWriteList_CSV_NullFields(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"alice","notes":null}`),
+	}
+	err := WriteList(&buf, data, Options{Format: FormatCSV})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected header + 1 data row, got %d lines", len(lines))
+	}
+	// Null field should appear as "null" string in CSV.
+	if !strings.Contains(lines[1], "null") {
+		t.Errorf("CSV should render null fields as 'null', got %q", lines[1])
+	}
+}
+
+func TestWriteList_Table_NullAndMissingFields(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"alice","notes":null}`),
+		rawMsg(`{"name":"bob"}`),
+	}
+	err := WriteList(&buf, data, Options{
+		Format:        FormatTable,
+		DefaultFields: []string{"name", "notes"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// Both rows should be present without panics.
+	if !strings.Contains(got, "alice") || !strings.Contains(got, "bob") {
+		t.Errorf("table should contain both rows, got %q", got)
+	}
+}
+
+func TestWriteList_Table_EmptyStringValues(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"","email":""}`),
+	}
+	err := WriteList(&buf, data, Options{Format: FormatTable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// Should not contain "null" — empty strings are empty, not null.
+	if strings.Contains(got, "null") {
+		t.Errorf("table should not contain 'null' for empty strings, got %q", got)
+	}
+	// Should at least have a header row.
+	if !strings.Contains(strings.ToUpper(got), "EMAIL") {
+		t.Errorf("table should contain header 'EMAIL', got %q", got)
+	}
+}
+
+func TestWriteList_CSV_UnicodeValues(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"name":"Jörg","city":"Zürich"}`),
+	}
+	err := WriteList(&buf, data, Options{Format: FormatCSV})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Jörg") {
+		t.Errorf("CSV should preserve Unicode, got %q", got)
+	}
+	if !strings.Contains(got, "Zürich") {
+		t.Errorf("CSV should preserve Unicode, got %q", got)
+	}
+}
+
+func TestWriteList_EmptySlice(t *testing.T) {
+	tests := []struct {
+		name   string
+		format Format
+		want   string
+	}{
+		{"json", FormatJSON, "[]\n"},
+		{"ndjson", FormatNDJSON, ""},
+		{"csv", FormatCSV, ""},
+		{"table", FormatTable, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := WriteList(&buf, []json.RawMessage{}, Options{Format: tt.format})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if buf.String() != tt.want {
+				t.Errorf("WriteList(empty) with %s = %q, want %q", tt.format, buf.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteList_NilSlice(t *testing.T) {
+	tests := []struct {
+		name   string
+		format Format
+		want   string
+	}{
+		{"json", FormatJSON, "[]\n"},
+		{"ndjson", FormatNDJSON, ""},
+		{"csv", FormatCSV, ""},
+		{"table", FormatTable, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := WriteList(&buf, nil, Options{Format: tt.format})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if buf.String() != tt.want {
+				t.Errorf("WriteList(nil) with %s = %q, want %q", tt.format, buf.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteSingle_NullRawMessage(t *testing.T) {
+	// null RawMessage passes through sortedJSON which unmarshals null into
+	// nil map, producing "{}". Verify it doesn't panic and produces valid JSON.
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, json.RawMessage("null"), Options{Format: FormatJSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	// Verify the output is valid JSON (either "null" or "{}").
+	if !json.Valid([]byte(got)) {
+		t.Errorf("WriteSingle(null) produced invalid JSON: %q", got)
+	}
+}
+
+// --- Batch 4: JMESPath Edge Cases ---
+
+func TestWriteList_Query_TopLevelNonexistentKey(t *testing.T) {
+	// Querying a top-level key that doesn't exist on a bare array.
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"a":1}`)}
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "nonexistent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if got != "null" {
+		t.Errorf("query for nonexistent top-level key = %q, want %q", got, "null")
+	}
+}
+
+func TestWriteList_Query_IndexThenField(t *testing.T) {
+	// Extract a scalar from a specific array index.
+	var buf bytes.Buffer
+	data := []json.RawMessage{rawMsg(`{"username":"alice"}`)}
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[0].username",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if got != `"alice"` {
+		t.Errorf("query result = %q, want %q", got, `"alice"`)
+	}
+}
+
+func TestWriteList_Query_ProjectionRename(t *testing.T) {
+	// JMESPath multi-select hash to rename fields.
+	var buf bytes.Buffer
+	data := []json.RawMessage{
+		rawMsg(`{"username":"alice","email":"alice@acme.com"}`),
+		rawMsg(`{"username":"bob","email":"bob@acme.com"}`),
+	}
+	err := WriteList(&buf, data, Options{
+		Format: FormatJSON,
+		Query:  "[*].{u: username}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(result))
+	}
+	if result[0]["u"] != "alice" {
+		t.Errorf("result[0].u = %v, want alice", result[0]["u"])
+	}
+}
+
+func TestWriteSingle_Query_NonexistentField(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, rawMsg(`{"a":1}`), Options{
+		Format: FormatJSON,
+		Query:  "missing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if got != "null" {
+		t.Errorf("query for missing field = %q, want %q", got, "null")
+	}
+}
+
+func TestWriteSingle_Query_ExtractsNestedField(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteSingle(&buf, rawMsg(`{"profile":{"email":"alice@acme.com"}}`), Options{
+		Format: FormatJSON,
+		Query:  "profile.email",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if got != `"alice@acme.com"` {
+		t.Errorf("query result = %q, want %q", got, `"alice@acme.com"`)
+	}
+}

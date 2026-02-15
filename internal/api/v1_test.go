@@ -759,6 +759,180 @@ func TestV1Client_Search_WithSort(t *testing.T) {
 	}
 }
 
+// --- Pagination Edge Cases ---
+
+func TestV1Client_ListAll_NullResultsArray(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Server returns null results (not an empty array).
+		w.Write([]byte(`{"results": null, "totalCount": 0}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	_, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
+	// json.Unmarshal(null, &[]json.RawMessage{}) returns nil error with nil slice,
+	// but our code does json.Unmarshal(listResp.Results, &pageItems) where
+	// listResp.Results is json.RawMessage("null"). This actually succeeds and
+	// sets pageItems to nil. len(nil) == 0 so pagination stops.
+	// However, the Results field is json.RawMessage which may be "null" bytes.
+	// Let's verify the behavior:
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+}
+
+func TestV1Client_ListAll_ExactPageBoundary(t *testing.T) {
+	totalItems := 200
+	var requestCount atomic.Int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+		var items []map[string]any
+		for i := skip; i < skip+limit && i < totalItems; i++ {
+			items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response(items, totalItems))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{PageSize: 100})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 200 {
+		t.Errorf("got %d results, want 200", len(result.Data))
+	}
+	// With totalCount=200 and pageSize=100: page1 gets 100 (skip=0), page2 gets 100 (skip=100).
+	// After page2, skip=200 >= totalCount=200, so it stops. Exactly 2 requests.
+	if got := requestCount.Load(); got != 2 {
+		t.Errorf("made %d requests, want 2", got)
+	}
+}
+
+func TestV1Client_ListAll_TotalCountMismatch(t *testing.T) {
+	// Server claims totalCount=50 but only returns 10 items total.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+
+		var items []map[string]any
+		if skip == 0 {
+			for i := range 10 {
+				items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+			}
+		}
+		// Second page returns empty (server lied about totalCount).
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response(items, 50))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	// Should stop when len(pageItems)==0, returning what we got.
+	if len(result.Data) != 10 {
+		t.Errorf("got %d results, want 10", len(result.Data))
+	}
+}
+
+func TestV1Client_ListAll_LimitOne(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit != 1 {
+			t.Errorf("expected limit=1 in request, got limit=%d", limit)
+		}
+
+		var items []map[string]any
+		for i := range 50 {
+			items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response(items[:limit], 50))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 1 {
+		t.Errorf("got %d results, want 1", len(result.Data))
+	}
+}
+
+func TestV1Client_ListAll_NegativeLimit(t *testing.T) {
+	totalItems := 5
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var items []map[string]any
+		for i := range totalItems {
+			items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v1Response(items, totalItems))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	// Negative limit should behave like no limit (opts.Limit > 0 check fails).
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{Limit: -1})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != totalItems {
+		t.Errorf("got %d results, want %d (all items)", len(result.Data), totalItems)
+	}
+}
+
+func TestV1Client_ListAll_EmptyIntermediatePage(t *testing.T) {
+	var requestCount atomic.Int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := requestCount.Add(1)
+
+		var items []map[string]any
+		switch page {
+		case 1:
+			for i := range 100 {
+				items = append(items, map[string]any{"_id": fmt.Sprintf("id-%d", i)})
+			}
+		case 2:
+			// Empty second page before totalCount reached.
+			items = []map[string]any{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		// Claim 500 total, but second page is empty.
+		w.Write(v1Response(items, 500))
+	}))
+	defer ts.Close()
+
+	c := newTestV1Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/systemusers", ListOptions{PageSize: 100})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	// Should stop on empty page (len(pageItems) == 0), not loop forever.
+	if len(result.Data) != 100 {
+		t.Errorf("got %d results, want 100", len(result.Data))
+	}
+	if got := requestCount.Load(); got != 2 {
+		t.Errorf("made %d requests, want 2", got)
+	}
+}
+
 func TestNewV1Client_NoAPIKey(t *testing.T) {
 	resetViper()
 	defer resetViper()
