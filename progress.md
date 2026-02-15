@@ -1,3 +1,16 @@
+## PRD Status: 100% COMPLETE (2026-02-15)
+
+All 60 user stories (US-001 through US-060) across 5 priority tiers are fully implemented and tested:
+- **Priority 0 — Foundation:** 10/10 (CLI skeleton, auth, HTTP transport, V1 client, output engine, global flags)
+- **Priority 1 — Core Resources:** 12/12 (users/devices CRUD, search, MDM, name resolution, completions, filtering, field selection, config)
+- **Priority 2 — V2 API & Plan Mode:** 14/14 (V2 client, groups, commands, policies, apps, graph, admins, bulk ops, plan mode, OAuth, multi-org)
+- **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
+- **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
+
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes.
+
+---
+
 ## Codebase Patterns
 - Recipe engine in `internal/recipe/`: `Parse()` → `Recipe` struct → `Execute(dispatcher, params, progressW)` → `*ExecutionResult`
 - `CommandDispatcher` func type: receives parsed args, returns stdout + error; `NewDispatcher(newRootCmd)` creates Cobra-backed dispatcher
