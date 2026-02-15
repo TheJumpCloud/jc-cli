@@ -182,6 +182,92 @@ profiles:
 	}
 }
 
+func TestConfigView_RedactsClientSecret(t *testing.T) {
+	setupConfigTest(t, `active_profile: default
+defaults:
+  output: json
+profiles:
+  default:
+    api_key: "keychain://jc/default"
+    client_secret: "my-super-secret-client-1234"
+`)
+
+	rootCmd := NewRootCmd()
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&bytes.Buffer{})
+	rootCmd.SetArgs([]string{"config", "view"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := out.String()
+	if strings.Contains(content, "my-super-secret-client-1234") {
+		t.Error("plaintext client_secret should not appear in config view output")
+	}
+	if !strings.Contains(content, "****1234") {
+		t.Errorf("config view should show redacted client_secret with last 4 chars, got: %s", content)
+	}
+}
+
+func TestConfigView_RedactsAskAPIKey(t *testing.T) {
+	setupConfigTest(t, `active_profile: default
+defaults:
+  output: json
+profiles:
+  default:
+    api_key: "keychain://jc/default"
+ask:
+  api_key: "sk-ant-secret-key-9999"
+  provider: anthropic
+`)
+
+	rootCmd := NewRootCmd()
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&bytes.Buffer{})
+	rootCmd.SetArgs([]string{"config", "view"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := out.String()
+	if strings.Contains(content, "sk-ant-secret-key-9999") {
+		t.Error("plaintext ask.api_key should not appear in config view output")
+	}
+	if !strings.Contains(content, "****9999") {
+		t.Errorf("config view should show redacted ask.api_key, got: %s", content)
+	}
+}
+
+func TestConfigView_ClientSecretKeychainRefNotRedacted(t *testing.T) {
+	setupConfigTest(t, `active_profile: default
+defaults:
+  output: json
+profiles:
+  default:
+    api_key: "keychain://jc/default"
+    client_secret: "keychain://jc/default:client_secret"
+`)
+
+	rootCmd := NewRootCmd()
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&bytes.Buffer{})
+	rootCmd.SetArgs([]string{"config", "view"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := out.String()
+	if !strings.Contains(content, "keychain://jc/default:client_secret") {
+		t.Errorf("keychain ref for client_secret should be shown as-is, got: %s", content)
+	}
+}
+
 func TestConfigView_ActiveProfileHighlighted(t *testing.T) {
 	setupConfigTest(t, `active_profile: prod
 defaults:

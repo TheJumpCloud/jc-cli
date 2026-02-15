@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/version"
 )
 
@@ -325,17 +326,22 @@ func expandAliases(args []string) ([]string, string) {
 		return args, ""
 	}
 
-	// Find the first positional arg (skip flags).
+	// Find the first positional arg (skip flags and their values).
 	firstArgIdx := -1
-	for i, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		if !strings.HasPrefix(arg, "-") {
 			firstArgIdx = i
 			break
 		}
-		// Skip flag values (e.g., --output json).
-		if (arg == "--output" || arg == "-o" || arg == "--org" || arg == "--api-key" ||
-			arg == "--fields" || arg == "--exclude") && i+1 < len(args) {
+		// --flag=value form: no skip needed.
+		if strings.Contains(arg, "=") {
 			continue
+		}
+		// Skip the value argument for flags that take a value.
+		if arg == "--output" || arg == "-o" || arg == "--org" || arg == "--api-key" ||
+			arg == "--fields" || arg == "--exclude" || arg == "--query" {
+			i++ // skip the value argument
 		}
 	}
 	if firstArgIdx < 0 {
@@ -356,7 +362,7 @@ func expandAliases(args []string) ([]string, string) {
 
 	// Expand: replace the alias name with the aliased command tokens.
 	// Use the recipe package's ParseCommandArgs for proper quote handling.
-	tokens := strings.Fields(expansion)
+	tokens := recipe.ParseCommandArgs(expansion)
 
 	expanded := make([]string, 0, len(args)-1+len(tokens))
 	expanded = append(expanded, args[:firstArgIdx]...)

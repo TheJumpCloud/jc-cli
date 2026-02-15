@@ -138,6 +138,19 @@ type SSEConfig struct {
 	APIKey string
 }
 
+// buildHTTPServer creates an http.Server with hardened timeout and header settings.
+func buildHTTPServer(cfg SSEConfig, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
+	}
+}
+
 // RunSSE starts the MCP server as an HTTP+SSE server. It blocks until the
 // context is cancelled or the server encounters a fatal error.
 func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
@@ -158,10 +171,7 @@ func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
 		h = corsMiddleware(cfg.CORSOrigin, h)
 	}
 
-	srv := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: h,
-	}
+	srv := buildHTTPServer(cfg, h)
 
 	// Configure TLS if cert and key are provided.
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {
@@ -322,6 +332,31 @@ func newAuditLogger(path string) *auditLogger {
 	return al
 }
 
+// sensitiveParamKeys are parameter names that should be redacted in audit logs.
+var sensitiveParamKeys = map[string]bool{
+	"shared_secret": true,
+	"password":      true,
+	"api_key":       true,
+	"public_key":    true,
+	"client_secret": true,
+	"token":         true,
+}
+
+// redactParams replaces sensitive parameter values in a JSON object with a placeholder.
+func redactParams(raw json.RawMessage) json.RawMessage {
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return raw
+	}
+	for k := range m {
+		if sensitiveParamKeys[k] {
+			m[k] = "****REDACTED****"
+		}
+	}
+	out, _ := json.Marshal(m)
+	return out
+}
+
 func (al *auditLogger) log(tool string, params json.RawMessage, success bool, errMsg string) {
 	al.mu.Lock()
 	defer al.mu.Unlock()
@@ -331,7 +366,7 @@ func (al *auditLogger) log(tool string, params json.RawMessage, success bool, er
 	_ = al.enc.Encode(auditEntry{
 		Timestamp:  nowFunc().UTC().Format(time.RFC3339),
 		Tool:       tool,
-		Parameters: params,
+		Parameters: redactParams(params),
 		Success:    success,
 		Error:      errMsg,
 	})

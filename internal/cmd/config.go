@@ -44,8 +44,8 @@ The active profile is highlighted in the output.`,
 func runConfigView(cmd *cobra.Command, args []string) error {
 	settings := viper.AllSettings()
 
-	// Redact API keys in profiles.
-	redactAPIKeys(settings)
+	// Redact secrets (API keys, client secrets, ask API key).
+	redactSecrets(settings)
 
 	// Highlight active profile.
 	activeProfile := config.ActiveProfile()
@@ -107,30 +107,35 @@ func sortMapKeys(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-// redactAPIKeys walks the config settings and replaces API key values
-// with redacted versions (****<last4>).
-func redactAPIKeys(settings map[string]interface{}) {
-	profiles, ok := settings["profiles"]
-	if !ok {
-		return
-	}
-
-	profileMap, ok := profiles.(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	for _, profile := range profileMap {
-		p, ok := profile.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if apiKey, ok := p["api_key"].(string); ok && apiKey != "" {
-			if keychain.IsKeychainRef(apiKey) {
-				// Show keychain ref as-is (it's not a secret).
-				continue
+// redactSecrets walks the config settings and replaces sensitive values
+// (API keys, client secrets, ask API key) with redacted versions (****<last4>).
+func redactSecrets(settings map[string]interface{}) {
+	// Redact profiles.*.api_key and profiles.*.client_secret.
+	if profiles, ok := settings["profiles"]; ok {
+		if profileMap, ok := profiles.(map[string]interface{}); ok {
+			for _, profile := range profileMap {
+				p, ok := profile.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, key := range []string{"api_key", "client_secret"} {
+					if val, ok := p[key].(string); ok && val != "" {
+						if keychain.IsKeychainRef(val) {
+							continue
+						}
+						p[key] = api.RedactKey(val)
+					}
+				}
 			}
-			p["api_key"] = api.RedactKey(apiKey)
+		}
+	}
+
+	// Redact ask.api_key (top-level).
+	if askCfg, ok := settings["ask"]; ok {
+		if askMap, ok := askCfg.(map[string]interface{}); ok {
+			if val, ok := askMap["api_key"].(string); ok && val != "" {
+				askMap["api_key"] = api.RedactKey(val)
+			}
 		}
 	}
 }

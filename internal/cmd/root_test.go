@@ -708,6 +708,120 @@ func TestExpandAliases_WithGlobalFlagsBeforeAlias(t *testing.T) {
 	}
 }
 
+func TestExpandAliases_WithValueTakingFlagBeforeAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"myalias": "users list",
+	})
+
+	// --output json should skip "json" as flag value, not treat as alias.
+	args := []string{"--output", "json", "myalias"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	// Should be: --output json users list
+	if len(expanded) != 4 {
+		t.Fatalf("expected 4 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[0] != "--output" || expanded[1] != "json" {
+		t.Errorf("flag and value should be preserved, got: %v", expanded[:2])
+	}
+	if expanded[2] != "users" || expanded[3] != "list" {
+		t.Errorf("alias should expand at index 2, got: %v", expanded[2:])
+	}
+}
+
+func TestExpandAliases_WithQueryFlagBeforeAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"myalias": "users list",
+	})
+
+	args := []string{"--query", "[].username", "myalias"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 4 {
+		t.Fatalf("expected 4 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[2] != "users" {
+		t.Errorf("alias should expand after --query value, got: %v", expanded)
+	}
+}
+
+func TestExpandAliases_WithFlagEqualsBeforeAlias(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"myalias": "users list",
+	})
+
+	args := []string{"--output=json", "myalias"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 3 {
+		t.Fatalf("expected 3 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[0] != "--output=json" {
+		t.Errorf("--flag=value should be preserved, got: %s", expanded[0])
+	}
+	if expanded[1] != "users" {
+		t.Errorf("alias should expand after --flag=value, got: %v", expanded[1:])
+	}
+}
+
+func TestExpandAliases_QuotedArgs(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"suspended": "users list --filter 'suspended:eq:true'",
+	})
+
+	args := []string{"suspended"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	// Should be: users list --filter suspended:eq:true (4 tokens, not 5)
+	if len(expanded) != 4 {
+		t.Fatalf("expected 4 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[3] != "suspended:eq:true" {
+		t.Errorf("quoted filter should be preserved as single token, got: %q", expanded[3])
+	}
+}
+
+func TestExpandAliases_DoubleQuotedArgs(t *testing.T) {
+	viper.Reset()
+	defer viper.Reset()
+
+	viper.Set("aliases", map[string]interface{}{
+		"myalias": `users list --filter "email:eq:test@example.com"`,
+	})
+
+	args := []string{"myalias"}
+	expanded, warning := expandAliases(args)
+	if warning != "" {
+		t.Errorf("unexpected warning: %s", warning)
+	}
+	if len(expanded) != 4 {
+		t.Fatalf("expected 4 tokens, got %d: %v", len(expanded), expanded)
+	}
+	if expanded[3] != "email:eq:test@example.com" {
+		t.Errorf("double-quoted arg should be preserved as single token, got: %q", expanded[3])
+	}
+}
+
 func TestAlias_IntegrationWithCommand(t *testing.T) {
 	viper.Reset()
 	defer viper.Reset()

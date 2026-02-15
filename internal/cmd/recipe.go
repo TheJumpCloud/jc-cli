@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -34,8 +35,11 @@ func getRecipeInputReader() InputReader {
 	return defaultInput
 }
 
-// recipeHTTPGet fetches a URL. Overridable in tests.
-var recipeHTTPGet = http.Get
+// recipeHTTPClient is used for fetching recipes from URLs. Overridable in tests.
+var recipeHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// maxRecipeBodySize is the maximum allowed size for a recipe fetched via HTTP.
+const maxRecipeBodySize = 10 << 20 // 10 MB
 
 // newRootCmdForRecipe creates a fresh root command for recipe step dispatch.
 // This is a package-level var so tests can override it.
@@ -507,7 +511,7 @@ func runRecipeImport(cmd *cobra.Command, args []string) error {
 
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 		// Fetch from URL.
-		resp, err := recipeHTTPGet(source)
+		resp, err := recipeHTTPClient.Get(source)
 		if err != nil {
 			return fmt.Errorf("fetching recipe: %w", err)
 		}
@@ -517,7 +521,7 @@ func runRecipeImport(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("fetching recipe: HTTP %d", resp.StatusCode)
 		}
 
-		data, err = io.ReadAll(resp.Body)
+		data, err = io.ReadAll(io.LimitReader(resp.Body, maxRecipeBodySize))
 		if err != nil {
 			return fmt.Errorf("reading response: %w", err)
 		}

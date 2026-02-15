@@ -1115,11 +1115,6 @@ func TestRecipeImport_URL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Override http.Get to use test server.
-	origGet := recipeHTTPGet
-	recipeHTTPGet = http.Get
-	t.Cleanup(func() { recipeHTTPGet = origGet })
-
 	// Confirm import.
 	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"y"}})
 
@@ -1205,6 +1200,43 @@ func TestRecipeImport_URL_HTTPError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "HTTP 404") {
 		t.Errorf("error should mention HTTP status, got: %q", err.Error())
+	}
+}
+
+func TestRecipeImport_URL_OversizedBody(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	totalSent := 0
+	// Serve a body larger than maxRecipeBodySize (10 MB).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
+		// Write invalid YAML that is larger than the limit.
+		// After LimitReader truncates, this will be invalid YAML.
+		chunk := []byte("- invalid: [unclosed\n")
+		for totalSent < 11<<20 { // 11 MB
+			n, err := w.Write(chunk)
+			if err != nil {
+				return
+			}
+			totalSent += n
+		}
+	}))
+	defer srv.Close()
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"y"}})
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/huge.yaml"})
+
+	err := cmd.Execute()
+	// The truncated body should fail recipe parsing.
+	if err == nil {
+		t.Fatal("expected error for oversized body")
 	}
 }
 

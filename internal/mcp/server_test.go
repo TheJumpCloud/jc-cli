@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1192,5 +1193,90 @@ func TestMCP_ListToolNames_WithFilter(t *testing.T) {
 	}
 	if names[0] != "jc_ping" {
 		t.Errorf("expected jc_ping, got %q", names[0])
+	}
+}
+
+func TestBuildHTTPServer_HasTimeouts(t *testing.T) {
+	cfg := SSEConfig{Addr: ":9999"}
+	srv := buildHTTPServer(cfg, http.DefaultServeMux)
+
+	if srv.Addr != ":9999" {
+		t.Errorf("Addr = %q, want :9999", srv.Addr)
+	}
+	if srv.ReadHeaderTimeout == 0 {
+		t.Error("ReadHeaderTimeout should be non-zero")
+	}
+	if srv.ReadTimeout == 0 {
+		t.Error("ReadTimeout should be non-zero")
+	}
+	if srv.WriteTimeout == 0 {
+		t.Error("WriteTimeout should be non-zero")
+	}
+	if srv.IdleTimeout == 0 {
+		t.Error("IdleTimeout should be non-zero")
+	}
+	if srv.MaxHeaderBytes == 0 {
+		t.Error("MaxHeaderBytes should be non-zero")
+	}
+}
+
+func TestRedactParams_RedactsSensitiveKeys(t *testing.T) {
+	input := json.RawMessage(`{"name":"test","shared_secret":"s3cret","password":"hunter2","normal":"ok"}`)
+	result := redactParams(input)
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(result, &m); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if m["shared_secret"] != "****REDACTED****" {
+		t.Errorf("shared_secret should be redacted, got: %v", m["shared_secret"])
+	}
+	if m["password"] != "****REDACTED****" {
+		t.Errorf("password should be redacted, got: %v", m["password"])
+	}
+	if m["name"] != "test" {
+		t.Errorf("name should be preserved, got: %v", m["name"])
+	}
+	if m["normal"] != "ok" {
+		t.Errorf("normal should be preserved, got: %v", m["normal"])
+	}
+}
+
+func TestRedactParams_PreservesNonSensitive(t *testing.T) {
+	input := json.RawMessage(`{"endpoint":"/users","limit":50,"filter":"name:eq:test"}`)
+	result := redactParams(input)
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(result, &m); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if m["endpoint"] != "/users" {
+		t.Errorf("endpoint should be preserved, got: %v", m["endpoint"])
+	}
+	if m["limit"] != float64(50) {
+		t.Errorf("limit should be preserved, got: %v", m["limit"])
+	}
+}
+
+func TestRedactParams_EmptyAndInvalid(t *testing.T) {
+	// Empty JSON object.
+	result := redactParams(json.RawMessage(`{}`))
+	if string(result) != "{}" {
+		t.Errorf("empty object should return {}, got: %s", result)
+	}
+
+	// Invalid JSON — returns as-is.
+	invalid := json.RawMessage(`not json`)
+	result = redactParams(invalid)
+	if string(result) != "not json" {
+		t.Errorf("invalid JSON should be returned as-is, got: %s", result)
+	}
+
+	// Null — returns as-is.
+	result = redactParams(json.RawMessage(`null`))
+	if string(result) != "null" {
+		t.Errorf("null should be returned as-is, got: %s", result)
 	}
 }
