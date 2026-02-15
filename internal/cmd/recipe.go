@@ -521,9 +521,13 @@ func runRecipeImport(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("fetching recipe: HTTP %d", resp.StatusCode)
 		}
 
-		data, err = io.ReadAll(io.LimitReader(resp.Body, maxRecipeBodySize))
+		// Read one extra byte so we can reliably detect over-limit responses.
+		data, err = io.ReadAll(io.LimitReader(resp.Body, maxRecipeBodySize+1))
 		if err != nil {
 			return fmt.Errorf("reading response: %w", err)
+		}
+		if int64(len(data)) > maxRecipeBodySize {
+			return fmt.Errorf("recipe file too large: exceeds %d bytes", maxRecipeBodySize)
 		}
 	} else {
 		// Read from local file.

@@ -849,15 +849,15 @@ func TestRecipeCreate_Success(t *testing.T) {
 
 	// Simulate: name, desc, param(name, desc, required), empty param, step(name, cmd), empty step
 	overrideRecipeInputReader(t, &multiLineInput{lines: []string{
-		"my-new-recipe",    // name
+		"my-new-recipe",      // name
 		"A brand new recipe", // description
-		"target",           // param name
-		"Target user",      // param desc
-		"y",                // param required
-		"",                 // empty param name (stop params)
-		"greet",            // step name
-		"users list",       // step command
-		"",                 // empty step name (stop steps)
+		"target",             // param name
+		"Target user",        // param desc
+		"y",                  // param required
+		"",                   // empty param name (stop params)
+		"greet",              // step name
+		"users list",         // step command
+		"",                   // empty step name (stop steps)
 	}})
 
 	cmd := NewRootCmd()
@@ -1234,9 +1234,47 @@ func TestRecipeImport_URL_OversizedBody(t *testing.T) {
 	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/huge.yaml"})
 
 	err := cmd.Execute()
-	// The truncated body should fail recipe parsing.
 	if err == nil {
 		t.Fatal("expected error for oversized body")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention size limit, got: %q", err.Error())
+	}
+}
+
+func TestRecipeImport_URL_OversizedBodyValidPrefixRejected(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	validPrefix := []byte("name: oversized-valid\nsteps:\n  - name: step1\n    command: version\n")
+	padding := bytes.Repeat([]byte(" "), int(maxRecipeBodySize)+1024)
+	body := append(validPrefix, padding...)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	overrideRecipeInputReader(t, &multiLineInput{lines: []string{"y"}})
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"recipe", "import", srv.URL + "/huge-valid-prefix.yaml"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for oversized body with valid YAML prefix")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention size limit, got: %q", err.Error())
+	}
+
+	if _, statErr := os.Stat(filepath.Join(recipeDir, "oversized-valid.yaml")); statErr == nil {
+		t.Fatal("recipe should not be saved when body exceeds maxRecipeBodySize")
 	}
 }
 
