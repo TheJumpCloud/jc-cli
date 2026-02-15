@@ -296,15 +296,58 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 
 	expectedTools := []string{
 		"jc_ping",
+		// Users
 		"users_list", "users_get", "users_create", "users_update", "users_delete",
 		"users_lock", "users_unlock", "users_reset_mfa", "users_reset_password",
-		"devices_list", "devices_get", "devices_lock", "devices_restart", "devices_erase",
+		"users_search", "users_ssh_keys_list", "users_ssh_keys_add", "users_ssh_keys_delete",
+		// Devices
+		"devices_list", "devices_get", "devices_update", "devices_delete", "devices_search",
+		"devices_lock", "devices_restart", "devices_erase", "devices_fde_key",
+		// Groups
 		"groups_list", "groups_add_member", "groups_remove_member",
-		"insights_query", "insights_count",
-		"commands_list", "commands_run",
-		"policies_list",
-		"recipe_run",
-		"plan", "explain",
+		"groups_user_list", "groups_user_get", "groups_user_create", "groups_user_update", "groups_user_delete",
+		"groups_device_list", "groups_device_get", "groups_device_create", "groups_device_update", "groups_device_delete",
+		// Commands
+		"commands_list", "commands_get", "commands_create", "commands_update", "commands_delete",
+		"commands_run", "commands_results",
+		// Policies
+		"policies_list", "policies_get", "policies_create", "policies_update", "policies_delete", "policies_results",
+		// Auth Policies
+		"auth_policies_list", "auth_policies_get", "auth_policies_create", "auth_policies_update", "auth_policies_delete",
+		"auth_policies_enable", "auth_policies_disable", "auth_policies_simulate", "auth_policies_blast_radius",
+		// IP Lists
+		"iplists_list", "iplists_get", "iplists_create", "iplists_update", "iplists_delete",
+		// Insights
+		"insights_query", "insights_count", "insights_distinct",
+		// Apps
+		"apps_list", "apps_get", "apps_create", "apps_update", "apps_delete",
+		// Graph
+		"graph_traverse", "graph_bind", "graph_unbind",
+		// Admins
+		"admins_list", "admins_get", "admins_create", "admins_update", "admins_delete",
+		// Org
+		"org_list", "org_get", "org_settings", "org_update",
+		// Software
+		"software_list", "software_get", "software_create", "software_update", "software_delete",
+		// LDAP
+		"ldap_list", "ldap_get", "ldap_create", "ldap_update", "ldap_delete",
+		// AD
+		"ad_list", "ad_get", "ad_create", "ad_update", "ad_delete",
+		// System Insights
+		"system_insights_list_table", "system_insights_tables",
+		// RADIUS
+		"radius_list", "radius_get", "radius_create", "radius_update", "radius_delete",
+		// Policy Templates
+		"policy_templates_list", "policy_templates_get",
+		// Apple MDM
+		"apple_mdm_list", "apple_mdm_get", "apple_mdm_create", "apple_mdm_update", "apple_mdm_delete",
+		"apple_mdm_enrollment_profiles", "apple_mdm_devices",
+		// Policy Groups
+		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
+		// User States
+		"user_states_list", "user_states_get", "user_states_create", "user_states_delete",
+		// Utility
+		"recipe_run", "plan", "explain",
 	}
 
 	toolNames := make(map[string]bool)
@@ -318,9 +361,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		}
 	}
 
-	// Verify total count.
-	if len(result.Tools) < len(expectedTools) {
-		t.Errorf("expected at least %d tools, got %d", len(expectedTools), len(result.Tools))
+	// Verify exact count — update when adding/removing tools.
+	if len(result.Tools) != 126 {
+		t.Errorf("expected 126 tools, got %d", len(result.Tools))
 	}
 }
 
