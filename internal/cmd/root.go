@@ -28,7 +28,7 @@ func NewRootCmd() *cobra.Command {
 It covers the full JumpCloud API surface (v1, v2, Directory Insights) with
 built-in MCP server support, a recipe system, plan mode, and conversational
 interface.`,
-		Version:       version.Number,
+		Version:       strings.TrimPrefix(version.Number, "v"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -179,7 +179,8 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the jc version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", version.Number)
+			v := strings.TrimPrefix(version.Number, "v")
+			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", v)
 		},
 	}
 }
