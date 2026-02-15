@@ -30,8 +30,8 @@ jc insights query --service sso --last 24h -t
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 20 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, RADIUS, LDAP, Active Directory, Apple MDM, software apps, policy groups, policy templates, system insights, user states, and organizations.
-- **AI-native** — built-in [MCP server](#mcp-server) with 126 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 25 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, RADIUS, LDAP, Active Directory, Apple MDM, software apps, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
+- **AI-native** — built-in [MCP server](#mcp-server) with 158 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -124,7 +124,7 @@ jc users delete jdoe --plan
 | `users` | list, get, search, create, update, delete, lock, unlock, reset-mfa, reset-password, ssh-keys, ssh-key-add, ssh-key-delete | Manage system users and SSH keys |
 | `devices` | list, get, search, update, delete, lock, restart, erase, fde-key | Manage devices, MDM commands, and recovery keys |
 | `groups` | user (list/get/create/update/delete), device (list/get/create/update/delete), add-member, remove-member | Manage user and device groups |
-| `commands` | list, get, create, update, delete, run, results | Manage and execute commands |
+| `commands` | list, get, create, update, delete, run, results, trigger | Manage and execute commands |
 | `policies` | list, get, create, update, delete, results | Manage policies and view status |
 | `apps` | list, get, create, update, delete | Manage SSO applications |
 | `admins` | list, get, create, update, delete | Manage administrator accounts |
@@ -133,8 +133,8 @@ jc users delete jdoe --plan
 | `insights` | query, count, distinct, save, saved, run | Query Directory Insights events |
 | `graph` | traverse, bind, unbind | Traverse and manage resource associations |
 | `org` | list, get, settings, update | View and update organization settings |
-| `software` | list, get, create, update, delete | Manage software apps (V2) |
-| `ldap` | list, get, create, update, delete | Manage LDAP server integrations |
+| `software` | list, get, create, update, delete, statuses, associations, reclaim-license | Manage software apps (V2) |
+| `ldap` | list, get, create, update, delete, samba-domains, samba-domain-get/create/update/delete | Manage LDAP server integrations |
 | `ad` | list, get, create, update, delete | Manage Active Directory integrations |
 | `radius` | list, get, create, update, delete | Manage RADIUS server integrations |
 | `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices | Manage Apple MDM configurations |
@@ -142,6 +142,11 @@ jc users delete jdoe --plan
 | `policy-groups` | list, get, create, update, delete | Manage policy groups |
 | `system-insights` | \<table\>, tables | Query osquery system insights (62 tables) |
 | `user-states` | list, get, create, delete | Schedule bulk user suspend/reactivate |
+| `gsuite` | list, get, translation-rules, import-users | Manage G Suite directory integrations |
+| `office365` | list, get, translation-rules, import-users | Manage Office 365 directory integrations |
+| `duo` | list, get, create, delete, apps, app-get, app-create, app-delete | Manage Duo MFA accounts and applications |
+| `custom-emails` | templates, get, create, update, delete | Manage custom email templates |
+| `app-templates` | list, get | Browse application templates |
 | `bulk` | users | Bulk operations from CSV files |
 | `recipe` | list, show, run, create, import, export, validate | Multi-step workflow engine |
 | `auth` | login, logout, status, switch | Manage credentials and profiles |
@@ -209,6 +214,8 @@ jc commands delete "Patch"                        # Delete (with confirmation)
 jc commands run "Install Agent" --device JDOE-MBP # Run on a device
 jc commands run "Patch All" --device-group "macOS Fleet"  # Run on device group
 jc commands results "Install Agent" -t            # View execution results
+jc commands trigger my-webhook-trigger            # Fire a command trigger by name
+jc commands trigger my-trigger --data '{"key":"value"}'  # With JSON payload
 ```
 
 ### Policies
@@ -299,12 +306,17 @@ jc software list -t                               # List managed software apps
 jc software get "Google Chrome"                   # Get by name or ID
 jc software create --name "Zoom" --package-id com.zoom.us
 jc software delete "Zoom"
+jc software statuses "Google Chrome" -t          # View install statuses
+jc software associations "Google Chrome" -t      # View device associations
+jc software reclaim-license "Zoom"               # Reclaim unused license
 
 # LDAP Servers
 jc ldap list -t                                   # List LDAP server integrations
 jc ldap get "Corp LDAP"                           # Get by name or ID
 jc ldap create --name "New LDAP"
 jc ldap delete "Corp LDAP"
+jc ldap samba-domains "Corp LDAP" -t             # List Samba domains
+jc ldap samba-domain-create "Corp LDAP" --name "CORP" --sid "S-1-5-21-..."
 
 # Active Directory
 jc ad list -t                                     # List AD integrations
@@ -325,6 +337,46 @@ jc apple-mdm enrollment-profiles "Corp MDM" -t   # List enrollment profiles
 jc apple-mdm devices "Corp MDM" -t               # List managed devices
 jc apple-mdm create --name "New MDM"
 jc apple-mdm delete "Corp MDM"
+```
+
+### Directory Integrations
+
+```bash
+# G Suite
+jc gsuite list -t                                # List G Suite integrations
+jc gsuite get "Acme GSuite"                      # Get by name or ID
+jc gsuite translation-rules "Acme GSuite" -t     # View attribute mapping rules
+jc gsuite import-users "Acme GSuite"             # Trigger user import
+
+# Office 365
+jc office365 list -t                             # List Office 365 integrations
+jc office365 get "Acme O365"                     # Get by name or ID
+jc office365 translation-rules "Acme O365" -t   # View attribute mapping rules
+jc office365 import-users "Acme O365"            # Trigger user import
+
+# Duo MFA
+jc duo list -t                                   # List Duo accounts
+jc duo get "Acme Duo"                            # Get by name or ID
+jc duo create --name "New Duo Account"
+jc duo delete "Acme Duo"
+jc duo apps "Acme Duo" -t                        # List Duo applications
+jc duo app-create "Acme Duo" --name "VPN App"
+jc duo app-delete "Acme Duo" --app-id abc123...
+```
+
+### Custom Emails & App Templates
+
+```bash
+# Custom Email Templates
+jc custom-emails templates -t                    # List available email types
+jc custom-emails get activate_user_custom        # View email config by type
+jc custom-emails create activate_user_custom --subject "Welcome!" --body "<html>..."
+jc custom-emails update activate_user_custom --subject "Welcome to Acme!"
+jc custom-emails delete activate_user_custom     # Reset to default
+
+# Application Templates (read-only catalog)
+jc app-templates list -t                         # Browse SSO app templates
+jc app-templates get <template-id>               # View template details
 ```
 
 ### Policy Management
@@ -393,7 +445,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**126 tools available** covering all 20 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
+**158 tools available** covering all 25 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), custom emails, app templates, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -721,17 +773,17 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 20 resource types + utilities
+  cmd/                  CLI commands (Cobra) — 25 resource types + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
   resolve/              Name-to-ID resolution with file-based caching
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
-  mcp/                  MCP server (official Go SDK) — 126 tools
+  mcp/                  MCP server (official Go SDK) — 158 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
-  schema/               Machine-readable CLI schema (20 resource schemas)
+  schema/               Machine-readable CLI schema (25 resource schemas)
   simulator/            Auth policy simulator (three-valued logic)
   plan/                 Plan mode rendering
   version/              Build-time version injection
