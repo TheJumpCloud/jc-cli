@@ -3,6 +3,7 @@ package component
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -275,6 +276,21 @@ func padToWidth(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-w)
+}
+
+// ExtractColumnNames returns sorted field names from a JSON object.
+// Useful for deriving table columns when no defaults are defined.
+func ExtractColumnNames(data json.RawMessage) []string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(obj))
+	for k := range obj {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ExtractID extracts the ID field value from a JSON row.

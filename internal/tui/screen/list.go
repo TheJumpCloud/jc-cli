@@ -140,6 +140,14 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.totalCount = msg.TotalCount
 		l.table.Cursor = 0
 		l.table.Offset = 0
+
+		// Derive columns from data when schema has no default fields
+		// (e.g. system insights tables with varying schemas).
+		if len(l.entry.Schema.DefaultFields) == 0 && len(msg.Data) > 0 {
+			if cols := component.ExtractColumnNames(msg.Data[0]); len(cols) > 0 {
+				l.table.Columns = cols
+			}
+		}
 		return l, nil
 
 	case component.FilterChangedMsg:
