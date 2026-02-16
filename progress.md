@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard and clipboard.
 
 ---
 
@@ -1317,4 +1317,30 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `PivotField`/`PivotTargetKey` on `ResourceEntry` is a struct value copy, so `TablePickerScreen.selectTable()` automatically propagates pivot config without extra wiring.
   - V2 graph association types (e.g. `system`, `system_group`) differ from TUI registry keys (e.g. `devices`, `device-groups`). An explicit reverse map is cleaner than string manipulation.
   - Cobra `--help` shows only the `Long` description — test assertions must check `Long` text, not `Short`.
+
+### TUI Phase 2: Dashboard & Clipboard
+- **Date:** 2026-02-16
+- What was implemented:
+  - **Dashboard screen:** `DashboardScreen` shows resource counts for 7 key resources (users, devices, user/device groups, commands, policies, apps). Fetches concurrently using existing `FetchV1List`/`FetchV2List` — pre-warms cache for subsequent browsing. Accessible via `d` key from home screen.
+  - **Clipboard copy:** `c` key on list screen copies selected row's ID to system clipboard. On detail screen copies the resource ID. Uses `github.com/atotto/clipboard` (promoted from indirect to direct dependency).
+  - **Flash messages:** Transient status bar messages via `FlashMsg`/`ClearFlashMsg` types. App container sets flash text and auto-clears after 2 seconds using `tea.Tick`. Flash takes priority over loading indicator and help text in status bar rendering.
+  - **Pivot-aware copy:** List screen copy falls back to `PivotField` when schema has no `IDField` (e.g. System Insights rows copy `system_id`).
+  - **Testable clipboard:** `clipboardWriteFunc` var enables test injection — tests verify clipboard content and `FlashMsg` without touching real system clipboard.
+- Files added:
+  - `internal/tui/screen/dashboard.go` — Dashboard screen with concurrent count fetching
+  - `internal/tui/screen/dashboard_test.go` — 7 tests
+  - `internal/tui/component/statusbar_test.go` — 4 tests for flash rendering priority
+- Files modified:
+  - `internal/tui/nav.go` — `FlashMsg`, `ClearFlashMsg` types
+  - `internal/tui/keys.go` — `Copy` binding on `ListKeys` and `DetailKeys`
+  - `internal/tui/component/statusbar.go` — `Flash` field with priority rendering
+  - `internal/tui/app.go` — Flash message handling, updated help text (`d:dashboard`, `c:copy id`)
+  - `internal/tui/screen/home.go` — `d` key pushes `DashboardScreen`
+  - `internal/tui/screen/list.go` — `c` key copies selected row ID via `clipboardWriteFunc`
+  - `internal/tui/screen/detail.go` — `c` key copies resource ID
+  - `go.mod` — `atotto/clipboard` promoted to direct dependency
+- **Learnings:**
+  - Reusing `ListResultMsg` for dashboard counts avoids new message types and fetch methods. Each resource tracks its own generation ID in a map to distinguish responses.
+  - Flash messages follow "bubble up, handle at container" — screens produce `FlashMsg`, `App` owns the status bar and timer. Keeps screens decoupled.
+  - `var clipboardWriteFunc` is essential for CI — clipboard access may fail in headless environments.
 ---
