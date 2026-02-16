@@ -220,6 +220,23 @@ func (l *ListScreen) openDetail() tea.Cmd {
 		return nil
 	}
 
+	// Pivot navigation: redirect Enter to a different resource's detail screen.
+	if l.entry.PivotField != "" && l.entry.PivotTargetKey != "" {
+		pivotID := component.ExtractID(row, l.entry.PivotField)
+		if pivotID == "" {
+			return nil
+		}
+		targetEntry, ok := tui.RegistryByKey()[l.entry.PivotTargetKey]
+		if !ok {
+			return nil
+		}
+		return func() tea.Msg {
+			return tui.PushScreenMsg{
+				Screen: NewDetailScreen(targetEntry, pivotID, ""),
+			}
+		}
+	}
+
 	id := component.ExtractID(row, l.entry.Schema.IDField)
 	if id == "" {
 		return nil

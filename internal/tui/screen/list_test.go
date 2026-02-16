@@ -54,6 +54,93 @@ func TestListScreen_DeriveColumnsFromData(t *testing.T) {
 	}
 }
 
+func TestListScreen_PivotNavigation(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:            "system-insights",
+		DisplayName:    "System Insights: os_version",
+		Category:       tui.CategoryDevices,
+		ClientType:     tui.ClientV2,
+		ListEndpoint:   "/systeminsights/os_version",
+		PivotField:     "system_id",
+		PivotTargetKey: "devices",
+		Schema:         schema.ResourceSchema{DefaultFields: nil},
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Load data with a system_id field.
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"system_id":"abc123def456abc123def456","name":"macOS","version":"14.0"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "system-insights",
+		Data:        data,
+		TotalCount:  1,
+		Generation:  gen,
+	})
+
+	// Press Enter — should trigger pivot navigation.
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected a command from Enter key, got nil")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+
+	detail, ok := pushMsg.Screen.(*DetailScreen)
+	if !ok {
+		t.Fatalf("expected *DetailScreen, got %T", pushMsg.Screen)
+	}
+
+	// Should navigate to the devices resource, not system-insights.
+	if detail.entry.Key != "devices" {
+		t.Errorf("pivot target key = %q, want 'devices'", detail.entry.Key)
+	}
+	if detail.id != "abc123def456abc123def456" {
+		t.Errorf("pivot id = %q, want 'abc123def456abc123def456'", detail.id)
+	}
+}
+
+func TestListScreen_PivotWithEmptyFieldSkips(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:            "system-insights",
+		DisplayName:    "System Insights: os_version",
+		Category:       tui.CategoryDevices,
+		ClientType:     tui.ClientV2,
+		ListEndpoint:   "/systeminsights/os_version",
+		PivotField:     "system_id",
+		PivotTargetKey: "devices",
+		Schema:         schema.ResourceSchema{DefaultFields: nil},
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Load data without system_id field.
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"name":"macOS","version":"14.0"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "system-insights",
+		Data:        data,
+		TotalCount:  1,
+		Generation:  gen,
+	})
+
+	// Press Enter — should return nil (no pivot ID).
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil command when pivot field is missing, got non-nil")
+	}
+}
+
 func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",

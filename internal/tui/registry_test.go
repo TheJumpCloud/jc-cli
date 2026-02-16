@@ -178,6 +178,35 @@ func TestBuildRegistry_GroupsSplit(t *testing.T) {
 	}
 }
 
+func TestBuildRegistry_SystemInsightsPivot(t *testing.T) {
+	m := RegistryByKey()
+	si, ok := m["system-insights"]
+	if !ok {
+		t.Fatal("missing 'system-insights' entry")
+	}
+	if si.PivotField != "system_id" {
+		t.Errorf("system-insights PivotField = %q, want 'system_id'", si.PivotField)
+	}
+	if si.PivotTargetKey != "devices" {
+		t.Errorf("system-insights PivotTargetKey = %q, want 'devices'", si.PivotTargetKey)
+	}
+}
+
+func TestBuildRegistry_NoPivotByDefault(t *testing.T) {
+	m := RegistryByKey()
+	for key, entry := range m {
+		if key == "system-insights" {
+			continue
+		}
+		if entry.PivotField != "" {
+			t.Errorf("resource %q has unexpected PivotField = %q", key, entry.PivotField)
+		}
+		if entry.PivotTargetKey != "" {
+			t.Errorf("resource %q has unexpected PivotTargetKey = %q", key, entry.PivotTargetKey)
+		}
+	}
+}
+
 func TestAdminsEndpointOverride(t *testing.T) {
 	m := RegistryByKey()
 	e, ok := m["admins"]

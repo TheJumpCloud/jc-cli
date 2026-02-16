@@ -48,6 +48,8 @@ type ResourceEntry struct {
 	ListEndpoint    string                // API endpoint for listing
 	GetEndpoint     string                // API endpoint template for single get (with %s for ID)
 	GraphSourceType string                // V2 graph source type (e.g. "user"), empty if no associations
+	PivotField      string                // Row field whose value becomes the ID for pivot navigation
+	PivotTargetKey  string                // Registry key of the target resource to pivot to
 	Schema          schema.ResourceSchema // Full schema metadata
 }
 
@@ -260,7 +262,7 @@ func BuildRegistry() []ResourceEntry {
 
 		ep := listEndpoints[name]
 
-		entries = append(entries, ResourceEntry{
+		entry := ResourceEntry{
 			Key:             name,
 			DisplayName:     dn,
 			Category:        cat,
@@ -268,7 +270,16 @@ func BuildRegistry() []ResourceEntry {
 			ListEndpoint:    ep,
 			GraphSourceType: graphSourceTypes[name],
 			Schema:          s,
-		})
+		}
+
+		// System Insights rows have no ID of their own but contain a system_id
+		// that references a device. Pivot Enter to the device detail screen.
+		if name == "system-insights" {
+			entry.PivotField = "system_id"
+			entry.PivotTargetKey = "devices"
+		}
+
+		entries = append(entries, entry)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
