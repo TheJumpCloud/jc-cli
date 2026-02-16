@@ -42,6 +42,7 @@ type DetailScreen struct {
 	assocErr       string
 	assocTable     component.Table
 	assocGen       int64
+	assocNames     map[string]string // id → resolved name (shared across target types)
 }
 
 // NewDetailScreen creates a detail screen for a specific resource.
@@ -64,6 +65,7 @@ func NewDetailScreen(entry tui.ResourceEntry, id, name string) *DetailScreen {
 		assocTargets: targets,
 		assocData:    make(map[string][]json.RawMessage),
 		assocTable:   component.Table{Columns: []string{"type", "id"}},
+		assocNames:   make(map[string]string),
 	}
 }
 
@@ -157,6 +159,17 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.assocTable.Rows = msg.Data
 		d.assocTable.Cursor = 0
 		d.assocTable.Offset = 0
+		d.enrichAssocRows()
+		return d, d.resolveAssocNames()
+
+	case fetch.AssocNamesResolvedMsg:
+		if msg.Generation != d.assocGen {
+			return d, nil
+		}
+		for id, name := range msg.Names {
+			d.assocNames[id] = name
+		}
+		d.enrichAssocRows()
 		return d, nil
 
 	case tea.KeyMsg:
@@ -341,6 +354,74 @@ func (d *DetailScreen) openAssocDetail() tea.Cmd {
 	}
 }
 
+// resolveAssocNames builds name-resolution requests for association rows with unknown names.
+func (d *DetailScreen) resolveAssocNames() tea.Cmd {
+	rows := d.assocTable.Rows
+	if len(rows) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var reqs []fetch.AssocNameReq
+	registry := tui.RegistryByKey()
+
+	for _, row := range rows {
+		id := component.ExtractID(row, "id")
+		typ := component.ExtractName(row, "type")
+		if id == "" || typ == "" || seen[id] || d.assocNames[id] != "" {
+			continue
+		}
+		seen[id] = true
+
+		regKey := tui.RegistryKeyForGraphType(typ)
+		entry, ok := registry[regKey]
+		if !ok || entry.Schema.NameField == "" {
+			continue
+		}
+
+		reqs = append(reqs, fetch.AssocNameReq{
+			ID:        id,
+			V1:        entry.ClientType == tui.ClientV1,
+			Endpoint:  entry.ListEndpoint,
+			NameField: entry.Schema.NameField,
+		})
+	}
+
+	if len(reqs) == 0 {
+		return nil
+	}
+	return d.fetcher.ResolveAssocNames(reqs, d.assocGen)
+}
+
+// enrichAssocRows injects resolved names into the current association table rows.
+func (d *DetailScreen) enrichAssocRows() {
+	hasName := false
+	enriched := make([]json.RawMessage, len(d.assocTable.Rows))
+	for i, row := range d.assocTable.Rows {
+		id := component.ExtractID(row, "id")
+		name, ok := d.assocNames[id]
+		if !ok || name == "" {
+			enriched[i] = row
+			continue
+		}
+		hasName = true
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(row, &obj); err != nil {
+			enriched[i] = row
+			continue
+		}
+		nameBytes, _ := json.Marshal(name)
+		obj["name"] = nameBytes
+		enriched[i], _ = json.Marshal(obj)
+	}
+	d.assocTable.Rows = enriched
+	if hasName {
+		d.assocTable.Columns = []string{"type", "name", "id"}
+	} else {
+		d.assocTable.Columns = []string{"type", "id"}
+	}
+}
+
 func (d *DetailScreen) cycleTarget(delta int) tea.Cmd {
 	if len(d.assocTargets) == 0 {
 		return nil
@@ -365,6 +446,7 @@ func (d *DetailScreen) fetchAssocIfNeeded() tea.Cmd {
 		d.assocTable.Cursor = 0
 		d.assocTable.Offset = 0
 		d.assocErr = ""
+		d.enrichAssocRows()
 		return nil
 	}
 	return d.fetchAssoc()

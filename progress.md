@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser.
 
 ---
 
@@ -113,6 +113,12 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - Command triggers: V1 `POST /command/trigger/{name}` — fire-and-forget with raw trigger name, not command ID
 - Samba domains: V2 sub-resource at `/ldapservers/{id}/sambadomains` — uses parent LDAP resolver + `--domain-id` for sub-resource addressing
 - Application templates: V1 read-only at `/application-templates` — JumpCloud-provided, referenced by ID from `jc apps` output
+- TUI in `internal/tui/`: Bubbletea-based interactive browser. Import hierarchy: `style` (leaf) ← `component` ← `screen` ← `tui` ← `cmd/tui.go`. No cycles.
+- `ResourceEntry` struct enriches `schema.ResourceSchema` with TUI-specific fields: display name, category, client type, endpoints, graph source type, pivot config
+- `PivotField`/`PivotTargetKey` on `ResourceEntry`: generic cross-resource drill-down (e.g. System Insights `system_id` → device detail)
+- `RegistryKeyForGraphType()`: reverse map from V2 graph types (`system`, `user_group`) to registry keys (`devices`, `user-groups`) — enables association row drill-down
+- `BuildRegistry()` splits "groups" into "user-groups" and "device-groups" with correct V2 endpoints
+- Fetch layer uses generation-based staleness detection — stale responses silently discarded
 ---
 
 ## 2026-02-13 - US-001
@@ -1279,4 +1285,36 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - G Suite and Office 365 are structurally nearly identical — the same test patterns and command structures apply. Could be templatized but YAGNI.
   - Duo is a two-level resource (accounts → applications) — uses separate subcommands rather than nested `cobra.Command` hierarchy for simplicity.
   - Software sub-resource MCP tools reuse the same `softwareStatusesInput` struct for both statuses and associations since both only need an identifier.
+---
+
+### Interactive TUI Browser
+- **Date:** 2026-02-15 through 2026-02-16
+- What was implemented:
+  - **Full interactive TUI** (`jc tui`) using Bubbletea for browsing all 25 JumpCloud resources.
+  - **Architecture:** `internal/tui/` package with layered hierarchy — `style` (leaf) ← `component` ← `screen` ← `tui` ← `cmd/tui.go` (assembly). No circular dependencies.
+  - **Home screen:** Resources grouped by category (Identity, Devices, Security, Management, Applications, Integrations, Audit) with keyboard navigation.
+  - **List screen:** Generic `ListScreen` driven by `schema.ResourceSchema`. Supports filtering (field:op:value syntax), sorting (cycle fields, toggle direction), column toggling (default/all fields), and data refresh.
+  - **Detail screen:** Shows all resource fields with tab switching to associations. Associations tab shows V2 graph-linked resources with target type cycling (h/l keys).
+  - **System Insights picker:** `TablePickerScreen` lists 62 osquery tables with type-to-filter search. Columns derived dynamically from API response data (no schema required).
+  - **Insights query builder:** Custom screen for Directory Insights with service/time-range/event-type parameters.
+  - **Groups split:** Schema "groups" resource mapped to two TUI entries: "User Groups" and "Device Groups" with correct V2 endpoints.
+  - **Pivot navigation:** `PivotField`/`PivotTargetKey` on `ResourceEntry` enables cross-resource drill-down. System Insights rows pivot on `system_id` to device detail screen. Generic — any resource can declare a pivot.
+  - **Association drill-down:** Enter on association rows navigates to that resource's detail screen. `graphTypeToRegistryKey` reverse map converts V2 graph types (system, user_group, etc.) to TUI registry keys. Full navigation chain: Group list → Group detail → Associations tab → Enter on member → Member detail.
+  - **Registry:** `BuildRegistry()` creates `ResourceEntry` items from `schema.Resources`. `RegistryByKey()` provides O(1) lookup. Separate maps for categories, display names, list endpoints, client type overrides, graph source types.
+  - **Fetch layer:** `internal/tui/fetch/` with `Fetcher` supporting V1 list/detail, V2 list/detail, and V2 graph associations. Generation-based staleness detection. In-memory cache per resource key.
+  - **Key bindings:** Global (quit, back), navigation (j/k/Enter/g/G), list (/, s, S, r, a), detail (Tab, a, r), association (h/l/Enter).
+- Files added:
+  - `internal/cmd/tui.go` — command wiring
+  - `internal/tui/` — `keys.go`, `messages.go`, `navigator.go`, `registry.go`, `tui.go`
+  - `internal/tui/component/` — `filter.go`, `table.go`, `util.go`
+  - `internal/tui/fetch/` — `cache.go`, `fetch.go`
+  - `internal/tui/screen/` — `detail.go`, `home.go`, `insights_query.go`, `list.go`, `table_picker.go`
+  - `internal/tui/style/` — `style.go`
+  - Tests: `registry_test.go`, `list_test.go`, `detail_test.go`, `table_picker_test.go`, `fetch_test.go`, `component_test.go`
+- **Learnings:**
+  - Bubbletea's `tea.Model` interface works well with a screen stack (`Navigator`). Each screen is independent — push/pop via messages keeps coupling minimal.
+  - System Insights tables have no schema — columns must be derived dynamically from API response data. `ExtractColumnNames()` parses the first row's JSON keys.
+  - `PivotField`/`PivotTargetKey` on `ResourceEntry` is a struct value copy, so `TablePickerScreen.selectTable()` automatically propagates pivot config without extra wiring.
+  - V2 graph association types (e.g. `system`, `system_group`) differ from TUI registry keys (e.g. `devices`, `device-groups`). An explicit reverse map is cleaner than string manipulation.
+  - Cobra `--help` shows only the `Long` description — test assertions must check `Long` text, not `Short`.
 ---

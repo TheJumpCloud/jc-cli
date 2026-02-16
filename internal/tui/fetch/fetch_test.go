@@ -53,3 +53,35 @@ func TestFlattenAssociation_InvalidJSON(t *testing.T) {
 		t.Errorf("invalid JSON should pass through unchanged")
 	}
 }
+
+func TestExtractNameField(t *testing.T) {
+	data := json.RawMessage(`{"name":"My Policy","id":"abc123"}`)
+	got := extractNameField(data, "name")
+	if got != "My Policy" {
+		t.Errorf("extractNameField(name) = %q, want 'My Policy'", got)
+	}
+}
+
+func TestExtractNameField_MissingField(t *testing.T) {
+	data := json.RawMessage(`{"id":"abc123"}`)
+	got := extractNameField(data, "name")
+	if got != "" {
+		t.Errorf("extractNameField(missing) = %q, want empty", got)
+	}
+}
+
+func TestExtractNameField_EmptyFieldName(t *testing.T) {
+	data := json.RawMessage(`{"name":"test"}`)
+	got := extractNameField(data, "")
+	if got != "" {
+		t.Errorf("extractNameField(empty) = %q, want empty", got)
+	}
+}
+
+func TestExtractNameField_NonString(t *testing.T) {
+	data := json.RawMessage(`{"name":42}`)
+	got := extractNameField(data, "name")
+	if got != "" {
+		t.Errorf("extractNameField(non-string) = %q, want empty", got)
+	}
+}

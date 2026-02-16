@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -306,4 +307,89 @@ func (f *Fetcher) FetchV2Detail(resourceKey, endpoint, id string, gen int64) tea
 			Generation:  gen,
 		}
 	}
+}
+
+// AssocNameReq describes a single resource whose name should be resolved.
+type AssocNameReq struct {
+	ID        string
+	V1        bool   // true for V1 client, false for V2
+	Endpoint  string // list endpoint (e.g. "/policies")
+	NameField string // JSON field containing the name (e.g. "name")
+}
+
+// AssocNamesResolvedMsg carries resolved id→name mappings.
+type AssocNamesResolvedMsg struct {
+	Names      map[string]string // id → resolved name
+	Generation int64
+}
+
+// ResolveAssocNames concurrently fetches resources by ID to extract their names.
+func (f *Fetcher) ResolveAssocNames(reqs []AssocNameReq, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		names := make(map[string]string)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 10) // concurrency limit
+
+		for _, req := range reqs {
+			wg.Add(1)
+			go func(r AssocNameReq) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				ep := fmt.Sprintf("%s/%s", r.Endpoint, r.ID)
+				var data json.RawMessage
+				if r.V1 {
+					client, err := f.NewV1Client()
+					if err != nil {
+						return
+					}
+					data, _ = client.Get(ctx, ep)
+				} else {
+					client, err := f.NewV2Client()
+					if err != nil {
+						return
+					}
+					data, _ = client.Get(ctx, ep)
+				}
+
+				if data == nil {
+					return
+				}
+				name := extractNameField(data, r.NameField)
+				if name != "" {
+					mu.Lock()
+					names[r.ID] = name
+					mu.Unlock()
+				}
+			}(req)
+		}
+
+		wg.Wait()
+		return AssocNamesResolvedMsg{Names: names, Generation: gen}
+	}
+}
+
+// extractNameField extracts a string field from a JSON object.
+func extractNameField(data json.RawMessage, field string) string {
+	if field == "" {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return ""
+	}
+	raw, ok := obj[field]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
 }

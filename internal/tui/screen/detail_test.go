@@ -327,6 +327,110 @@ func TestDetailScreen_AssocEnterUnknownTypeIsNoop(t *testing.T) {
 	}
 }
 
+func TestDetailScreen_AssocNamesEnrichRows(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+	gen := d.assocGen
+
+	// Simulate association data.
+	assocData := []json.RawMessage{
+		json.RawMessage(`{"type":"system","id":"aaa111bbb222ccc333ddd444"}`),
+		json.RawMessage(`{"type":"system","id":"eee555fff666aaa777bbb888"}`),
+	}
+	d.Update(fetch.AssociationsResultMsg{
+		ResourceKey: "user-groups",
+		TargetType:  d.assocTargets[d.assocTargetIdx],
+		Data:        assocData,
+		Generation:  gen,
+	})
+
+	// Simulate names resolved.
+	d.Update(fetch.AssocNamesResolvedMsg{
+		Names:      map[string]string{"aaa111bbb222ccc333ddd444": "MacBook Pro", "eee555fff666aaa777bbb888": "iMac"},
+		Generation: gen,
+	})
+
+	// Columns should now include "name".
+	if len(d.assocTable.Columns) != 3 {
+		t.Fatalf("columns = %v, want 3 columns", d.assocTable.Columns)
+	}
+	if d.assocTable.Columns[1] != "name" {
+		t.Errorf("columns[1] = %q, want 'name'", d.assocTable.Columns[1])
+	}
+
+	// Rows should contain the name field.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(d.assocTable.Rows[0], &obj); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	json.Unmarshal(obj["name"], &name)
+	if name != "MacBook Pro" {
+		t.Errorf("row[0].name = %q, want 'MacBook Pro'", name)
+	}
+}
+
+func TestDetailScreen_AssocNamesStaleIgnored(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+	// Simulate stale names result.
+	d.Update(fetch.AssocNamesResolvedMsg{
+		Names:      map[string]string{"aaa111bbb222ccc333ddd444": "Stale"},
+		Generation: d.assocGen - 1,
+	})
+
+	// assocNames should be empty — stale result ignored.
+	if len(d.assocNames) != 0 {
+		t.Errorf("assocNames should be empty after stale result, got %d", len(d.assocNames))
+	}
+}
+
+func TestDetailScreen_AssocNamesPersistAcrossTargets(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Pre-populate a name.
+	d.assocNames["aaa111bbb222ccc333ddd444"] = "MacBook Pro"
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+	gen := d.assocGen
+
+	// Simulate data that includes the pre-resolved ID.
+	assocData := []json.RawMessage{
+		json.RawMessage(`{"type":"system","id":"aaa111bbb222ccc333ddd444"}`),
+	}
+	d.Update(fetch.AssociationsResultMsg{
+		ResourceKey: "user-groups",
+		TargetType:  d.assocTargets[d.assocTargetIdx],
+		Data:        assocData,
+		Generation:  gen,
+	})
+
+	// Name should already be enriched from the persistent cache.
+	if d.assocTable.Columns[1] != "name" {
+		t.Errorf("columns should include name from persistent cache, got %v", d.assocTable.Columns)
+	}
+
+	var obj map[string]json.RawMessage
+	json.Unmarshal(d.assocTable.Rows[0], &obj)
+	var name string
+	json.Unmarshal(obj["name"], &name)
+	if name != "MacBook Pro" {
+		t.Errorf("row name = %q, want 'MacBook Pro'", name)
+	}
+}
+
 func TestDetailScreen_AssocCacheAvoidsFetch(t *testing.T) {
 	d := NewDetailScreen(testUserEntry(), "abc123", "John")
 	d.data = json.RawMessage(`{"_id":"abc123","username":"john"}`)
