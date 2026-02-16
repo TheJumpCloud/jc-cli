@@ -146,6 +146,116 @@ func (f *Fetcher) FetchV2List(resourceKey, endpoint string, opts api.V2ListOptio
 	}
 }
 
+// InsightsResultMsg is sent when an Insights query completes.
+type InsightsResultMsg struct {
+	ResourceKey string
+	Data        []json.RawMessage
+	Generation  int64
+	Err         error
+}
+
+// FetchInsightsList fetches Insights events as a tea.Cmd.
+func (f *Fetcher) FetchInsightsList(resourceKey string, query api.InsightsQuery, opts api.InsightsQueryOptions, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewInsights()
+		if err != nil {
+			return InsightsResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		result, err := client.QueryEvents(ctx, query, opts)
+		if err != nil {
+			return InsightsResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		return InsightsResultMsg{
+			ResourceKey: resourceKey,
+			Data:        result.Data,
+			Generation:  gen,
+		}
+	}
+}
+
+// AssociationsResultMsg is sent when an associations fetch completes.
+type AssociationsResultMsg struct {
+	ResourceKey string
+	TargetType  string
+	Data        []json.RawMessage
+	Generation  int64
+	Err         error
+}
+
+// FetchAssociations fetches V2 graph associations for a resource.
+func (f *Fetcher) FetchAssociations(resourceKey, graphEndpoint, id, targetType string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewV2Client()
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: targetType, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		endpoint := fmt.Sprintf("%s/%s/associations?targets=%s", graphEndpoint, id, targetType)
+		result, err := client.ListAll(ctx, endpoint, api.V2ListOptions{})
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: targetType, Generation: gen, Err: err}
+		}
+
+		// Flatten nested {"to":{"type":"...","id":"..."}} to top-level.
+		flattened := make([]json.RawMessage, 0, len(result.Data))
+		for _, item := range result.Data {
+			flat := flattenAssociation(item)
+			flattened = append(flattened, flat)
+		}
+
+		return AssociationsResultMsg{
+			ResourceKey: resourceKey,
+			TargetType:  targetType,
+			Data:        flattened,
+			Generation:  gen,
+		}
+	}
+}
+
+// flattenAssociation extracts "to.type" and "to.id" to top level.
+func flattenAssociation(data json.RawMessage) json.RawMessage {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+
+	toRaw, ok := obj["to"]
+	if !ok {
+		return data
+	}
+
+	var to map[string]json.RawMessage
+	if err := json.Unmarshal(toRaw, &to); err != nil {
+		return data
+	}
+
+	result := make(map[string]json.RawMessage)
+	// Copy non-"to" fields.
+	for k, v := range obj {
+		if k != "to" {
+			result[k] = v
+		}
+	}
+	// Promote "to" sub-fields.
+	for k, v := range to {
+		result[k] = v
+	}
+
+	out, err := json.Marshal(result)
+	if err != nil {
+		return data
+	}
+	return out
+}
+
 // FetchV1Detail fetches a single V1 resource.
 func (f *Fetcher) FetchV1Detail(resourceKey, endpoint, id string, gen int64) tea.Cmd {
 	return func() tea.Msg {

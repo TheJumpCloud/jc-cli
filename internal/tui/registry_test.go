@@ -17,6 +17,16 @@ func TestBuildRegistry_AllListableResourcesMapped(t *testing.T) {
 		if skipInTUI[name] {
 			continue
 		}
+		// "groups" is split into "user-groups" and "device-groups".
+		if name == "groups" {
+			if !entryKeys["user-groups"] {
+				t.Error("schema resource 'groups' not mapped as 'user-groups' in TUI registry")
+			}
+			if !entryKeys["device-groups"] {
+				t.Error("schema resource 'groups' not mapped as 'device-groups' in TUI registry")
+			}
+			continue
+		}
 		if !entryKeys[name] {
 			t.Errorf("schema resource %q not mapped in TUI registry", name)
 		}
@@ -39,7 +49,8 @@ func TestBuildRegistry_SkipsNonListable(t *testing.T) {
 
 func TestBuildRegistry_Count(t *testing.T) {
 	entries := BuildRegistry()
-	want := len(schema.Resources) - len(skipInTUI)
+	// "groups" is one schema key but produces two entries (user-groups + device-groups).
+	want := len(schema.Resources) - len(skipInTUI) + 1
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -83,7 +94,7 @@ func TestBuildRegistry_SortedByCategoryThenName(t *testing.T) {
 
 func TestRegistryByKey(t *testing.T) {
 	m := RegistryByKey()
-	want := len(schema.Resources) - len(skipInTUI)
+	want := len(schema.Resources) - len(skipInTUI) + 1
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -113,7 +124,8 @@ func TestClientTypeMapping(t *testing.T) {
 		{"apps", ClientV1},
 		{"admins", ClientV1},
 		{"policies", ClientV2},
-		{"groups", ClientV2},
+		{"user-groups", ClientV2},
+		{"device-groups", ClientV2},
 		{"auth-policies", ClientV2},
 	}
 
@@ -126,6 +138,43 @@ func TestClientTypeMapping(t *testing.T) {
 		if e.ClientType != tt.want {
 			t.Errorf("%s client type = %d, want %d", tt.key, e.ClientType, tt.want)
 		}
+	}
+}
+
+func TestBuildRegistry_GroupsSplit(t *testing.T) {
+	m := RegistryByKey()
+
+	ug, ok := m["user-groups"]
+	if !ok {
+		t.Fatal("missing 'user-groups' entry")
+	}
+	if ug.DisplayName != "User Groups" {
+		t.Errorf("user-groups display name = %q, want 'User Groups'", ug.DisplayName)
+	}
+	if ug.ListEndpoint != "/usergroups" {
+		t.Errorf("user-groups endpoint = %q, want '/usergroups'", ug.ListEndpoint)
+	}
+	if ug.Category != CategoryIdentity {
+		t.Errorf("user-groups category = %q, want CategoryIdentity", ug.Category)
+	}
+
+	dg, ok := m["device-groups"]
+	if !ok {
+		t.Fatal("missing 'device-groups' entry")
+	}
+	if dg.DisplayName != "Device Groups" {
+		t.Errorf("device-groups display name = %q, want 'Device Groups'", dg.DisplayName)
+	}
+	if dg.ListEndpoint != "/systemgroups" {
+		t.Errorf("device-groups endpoint = %q, want '/systemgroups'", dg.ListEndpoint)
+	}
+	if dg.Category != CategoryDevices {
+		t.Errorf("device-groups category = %q, want CategoryDevices", dg.Category)
+	}
+
+	// Original "groups" key should not exist.
+	if _, ok := m["groups"]; ok {
+		t.Error("'groups' key should not exist — it should be split into user-groups and device-groups")
 	}
 }
 

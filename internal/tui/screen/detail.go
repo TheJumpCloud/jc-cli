@@ -32,6 +32,16 @@ type DetailScreen struct {
 	width      int
 	height     int
 	ready      bool
+
+	// Associations tab state.
+	activeTab      int // 0=fields, 1=associations
+	assocTargets   []string
+	assocTargetIdx int
+	assocData      map[string][]json.RawMessage
+	assocLoading   bool
+	assocErr       string
+	assocTable     component.Table
+	assocGen       int64
 }
 
 // NewDetailScreen creates a detail screen for a specific resource.
@@ -40,12 +50,20 @@ func NewDetailScreen(entry tui.ResourceEntry, id, name string) *DetailScreen {
 	s.Spinner = spinner.Dot
 	s.Style = style.Spinner
 
+	var targets []string
+	if entry.GraphSourceType != "" {
+		targets = tui.ValidAssocTargets[entry.GraphSourceType]
+	}
+
 	return &DetailScreen{
-		entry:   entry,
-		id:      id,
-		name:    name,
-		spinner: s,
-		fetcher: fetch.NewFetcher(),
+		entry:        entry,
+		id:           id,
+		name:         name,
+		spinner:      s,
+		fetcher:      fetch.NewFetcher(),
+		assocTargets: targets,
+		assocData:    make(map[string][]json.RawMessage),
+		assocTable:   component.Table{Columns: []string{"type", "id"}},
 	}
 }
 
@@ -126,10 +144,33 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return d, nil
 
+	case fetch.AssociationsResultMsg:
+		if msg.Generation != d.assocGen {
+			return d, nil
+		}
+		d.assocLoading = false
+		if msg.Err != nil {
+			d.assocErr = msg.Err.Error()
+			return d, nil
+		}
+		d.assocData[msg.TargetType] = msg.Data
+		d.assocTable.Rows = msg.Data
+		d.assocTable.Cursor = 0
+		d.assocTable.Offset = 0
+		return d, nil
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, tui.GlobalKeyMap.Back):
 			return d, func() tea.Msg { return tui.PopScreenMsg{} }
+
+		case key.Matches(msg, tui.DetailKeyMap.Tab):
+			if len(d.assocTargets) > 0 {
+				d.activeTab = 1 - d.activeTab
+				if d.activeTab == 1 {
+					return d, d.fetchAssocIfNeeded()
+				}
+			}
 
 		case key.Matches(msg, tui.DetailKeyMap.AllFields):
 			d.allFields = !d.allFields
@@ -138,9 +179,15 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, tui.DetailKeyMap.Refresh):
+			if d.activeTab == 1 {
+				return d, d.fetchAssoc()
+			}
 			return d, d.fetchDetail()
 
 		default:
+			if d.activeTab == 1 {
+				return d, d.handleAssocKeys(msg)
+			}
 			var cmd tea.Cmd
 			d.viewport, cmd = d.viewport.Update(msg)
 			return d, cmd
@@ -244,6 +291,73 @@ func formatDetailValue(v json.RawMessage) string {
 	return string(v)
 }
 
+func (d *DetailScreen) handleAssocKeys(msg tea.KeyMsg) tea.Cmd {
+	switch {
+	case msg.String() == "h", msg.String() == "left":
+		return d.cycleTarget(-1)
+	case msg.String() == "l", msg.String() == "right":
+		return d.cycleTarget(1)
+	case key.Matches(msg, tui.NavKeyMap.Up):
+		d.assocTable.MoveCursor(-1)
+	case key.Matches(msg, tui.NavKeyMap.Down):
+		d.assocTable.MoveCursor(1)
+	case key.Matches(msg, tui.NavKeyMap.Top):
+		d.assocTable.GoToTop()
+	case key.Matches(msg, tui.NavKeyMap.Bottom):
+		d.assocTable.GoToBottom()
+	}
+	return nil
+}
+
+func (d *DetailScreen) cycleTarget(delta int) tea.Cmd {
+	if len(d.assocTargets) == 0 {
+		return nil
+	}
+	d.assocTargetIdx += delta
+	if d.assocTargetIdx < 0 {
+		d.assocTargetIdx = len(d.assocTargets) - 1
+	}
+	if d.assocTargetIdx >= len(d.assocTargets) {
+		d.assocTargetIdx = 0
+	}
+	return d.fetchAssocIfNeeded()
+}
+
+func (d *DetailScreen) fetchAssocIfNeeded() tea.Cmd {
+	if len(d.assocTargets) == 0 {
+		return nil
+	}
+	target := d.assocTargets[d.assocTargetIdx]
+	if data, ok := d.assocData[target]; ok {
+		d.assocTable.Rows = data
+		d.assocTable.Cursor = 0
+		d.assocTable.Offset = 0
+		d.assocErr = ""
+		return nil
+	}
+	return d.fetchAssoc()
+}
+
+func (d *DetailScreen) fetchAssoc() tea.Cmd {
+	if len(d.assocTargets) == 0 || d.entry.GraphSourceType == "" {
+		return nil
+	}
+	target := d.assocTargets[d.assocTargetIdx]
+	graphEP := tui.GraphEndpoint(d.entry.GraphSourceType)
+	if graphEP == "" {
+		return nil
+	}
+	d.assocLoading = true
+	d.assocErr = ""
+	d.assocGen = fetch.NextGeneration()
+	gen := d.assocGen
+
+	return tea.Batch(
+		d.spinner.Tick,
+		d.fetcher.FetchAssociations(d.entry.Key, graphEP, d.id, target, gen),
+	)
+}
+
 func (d *DetailScreen) View() string {
 	var sb strings.Builder
 
@@ -275,11 +389,74 @@ func (d *DetailScreen) View() string {
 		return sb.String()
 	}
 
-	if d.ready {
-		sb.WriteString(d.viewport.View())
-	} else {
-		sb.WriteString(d.renderFields())
+	// Show tab header if associations are available.
+	if len(d.assocTargets) > 0 {
+		fieldsTab := " Fields "
+		assocTab := " Associations "
+		if d.activeTab == 0 {
+			fieldsTab = style.BreadcrumbActive.Render("[Fields]")
+			assocTab = style.Breadcrumb.Render(" Associations ")
+		} else {
+			fieldsTab = style.Breadcrumb.Render(" Fields ")
+			assocTab = style.BreadcrumbActive.Render("[Associations]")
+		}
+		sb.WriteString(fieldsTab + "  " + assocTab)
+		sb.WriteString("\n\n")
 	}
+
+	if d.activeTab == 0 {
+		if d.ready {
+			sb.WriteString(d.viewport.View())
+		} else {
+			sb.WriteString(d.renderFields())
+		}
+	} else {
+		sb.WriteString(d.renderAssociations())
+	}
+
+	return sb.String()
+}
+
+func (d *DetailScreen) renderAssociations() string {
+	var sb strings.Builder
+
+	// Target type selector.
+	for i, target := range d.assocTargets {
+		label := target
+		if i == d.assocTargetIdx {
+			label = style.FilterChip.Render(label)
+		} else {
+			label = style.DimRow.Render(label)
+		}
+		sb.WriteString(label + "  ")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(style.Help.Render("h/l: change target type"))
+	sb.WriteString("\n\n")
+
+	if d.assocLoading {
+		sb.WriteString(d.spinner.View())
+		sb.WriteString(" Loading associations...")
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	if d.assocErr != "" {
+		sb.WriteString(style.Error.Render("Error: " + d.assocErr))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	if len(d.assocTable.Rows) == 0 {
+		sb.WriteString(style.DimRow.Render("  No associations"))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	d.assocTable.Width = d.width
+	d.assocTable.Height = d.height - 14
+	sb.WriteString(d.assocTable.View())
+	sb.WriteString("\n")
 
 	return sb.String()
 }

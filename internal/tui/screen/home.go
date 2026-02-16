@@ -106,8 +106,20 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (h *HomeScreen) openResource() tea.Cmd {
 	entry := h.filtered[h.cursor]
-	return func() tea.Msg {
-		return tui.PushScreenMsg{Screen: NewListScreen(entry)}
+
+	switch entry.Key {
+	case "system-insights":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewTablePickerScreen(entry, tui.SystemInsightsTables)}
+		}
+	case "insights":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewInsightsFormScreen(entry)}
+		}
+	default:
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewListScreen(entry)}
+		}
 	}
 }
 
