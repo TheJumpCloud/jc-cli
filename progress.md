@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard and clipboard.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, and POST search.
 
 ---
 
@@ -114,7 +114,7 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - Samba domains: V2 sub-resource at `/ldapservers/{id}/sambadomains` — uses parent LDAP resolver + `--domain-id` for sub-resource addressing
 - Application templates: V1 read-only at `/application-templates` — JumpCloud-provided, referenced by ID from `jc apps` output
 - TUI in `internal/tui/`: Bubbletea-based interactive browser. Import hierarchy: `style` (leaf) ← `component` ← `screen` ← `tui` ← `cmd/tui.go`. No cycles.
-- `ResourceEntry` struct enriches `schema.ResourceSchema` with TUI-specific fields: display name, category, client type, endpoints, graph source type, pivot config
+- `ResourceEntry` struct enriches `schema.ResourceSchema` with TUI-specific fields: display name, category, client type, endpoints, graph source type, pivot config, search endpoint/fields
 - `PivotField`/`PivotTargetKey` on `ResourceEntry`: generic cross-resource drill-down (e.g. System Insights `system_id` → device detail)
 - `RegistryKeyForGraphType()`: reverse map from V2 graph types (`system`, `user_group`) to registry keys (`devices`, `user-groups`) — enables association row drill-down
 - `BuildRegistry()` splits "groups" into "user-groups" and "device-groups" with correct V2 endpoints
@@ -1343,4 +1343,23 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - Reusing `ListResultMsg` for dashboard counts avoids new message types and fetch methods. Each resource tracks its own generation ID in a map to distinguish responses.
   - Flash messages follow "bubble up, handle at container" — screens produce `FlashMsg`, `App` owns the status bar and timer. Keeps screens decoupled.
   - `var clipboardWriteFunc` is essential for CI — clipboard access may fail in headless environments.
+
+### TUI Phase 3: POST Search for Users & Devices
+- **Date:** 2026-02-16
+- What was implemented:
+  - **POST search routing:** TUI search (`~term` in filter bar) now uses POST `/search/systemusers` and `/search/systems` endpoints for users and devices respectively. These endpoints perform case-insensitive regex matching across multiple fields, replacing the simpler `?search=` query param for these two resources.
+  - **SearchEndpoint/SearchFields on ResourceEntry:** Two new fields on `ResourceEntry` — `SearchEndpoint` (POST path) and `SearchFields` (fields to search across). Populated from declarative lookup maps in `registry.go`.
+  - **FetchV1Search:** New `Fetcher` method that constructs the `searchFilter` body (`searchTerm` + `fields`) and delegates to `V1Client.Search()`. Supports combining search with filter expressions. Results cached with the same TTL as regular list fetches.
+  - **Fallback behavior:** Resources without `SearchEndpoint` (everything except users/devices) continue using the existing `?search=` query param path — no behavior change.
+  - **Search fields:** Users searches across `username`, `email`, `firstname`, `lastname`. Devices searches across `displayName`, `hostname`, `serialNumber`.
+- Files modified:
+  - `internal/tui/registry.go` — `SearchEndpoint`, `SearchFields` on `ResourceEntry`; `searchEndpoints`, `searchFields` lookup maps
+  - `internal/tui/fetch/fetch.go` — `FetchV1Search()` method with cache support
+  - `internal/tui/screen/list.go` — routing guard before `switch` block for POST search
+  - `internal/tui/registry_test.go` — verify search endpoint wiring for users/devices/policies/commands
+  - `internal/tui/fetch/fetch_test.go` — 3 tests: basic search, with filters, cache behavior
+  - `internal/tui/screen/list_test.go` — 2 tests: search endpoint presence/absence on entries
+- **Learnings:**
+  - The V1 POST search body uses `searchFilter: {searchTerm, fields}` at the top level, with `filter` alongside (not nested inside) for V1 filter expressions. `V1Client.Search()` injects `skip`/`limit`/`sort` into the body map for pagination.
+  - A single `if` guard before the `switch` block cleanly routes POST search without disrupting existing code paths. When `SearchEndpoint` is empty, execution falls through to the existing `?search=` logic.
 ---
