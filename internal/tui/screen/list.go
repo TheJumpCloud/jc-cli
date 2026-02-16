@@ -101,6 +101,8 @@ func (l *ListScreen) fetchData() tea.Cmd {
 		return l.fetcher.FetchV2List(l.entry.Key, l.entry.ListEndpoint, opts, gen)
 
 	default:
+		l.loading = false
+		l.err = "This resource type is not supported for browsing in the TUI"
 		return nil
 	}
 }

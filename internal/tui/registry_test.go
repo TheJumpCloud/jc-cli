@@ -6,7 +6,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/schema"
 )
 
-func TestBuildRegistry_AllResourcesMapped(t *testing.T) {
+func TestBuildRegistry_AllListableResourcesMapped(t *testing.T) {
 	entries := BuildRegistry()
 	entryKeys := make(map[string]bool)
 	for _, e := range entries {
@@ -14,15 +14,32 @@ func TestBuildRegistry_AllResourcesMapped(t *testing.T) {
 	}
 
 	for name := range schema.Resources {
+		if skipInTUI[name] {
+			continue
+		}
 		if !entryKeys[name] {
 			t.Errorf("schema resource %q not mapped in TUI registry", name)
 		}
 	}
 }
 
+func TestBuildRegistry_SkipsNonListable(t *testing.T) {
+	entries := BuildRegistry()
+	entryKeys := make(map[string]bool)
+	for _, e := range entries {
+		entryKeys[e.Key] = true
+	}
+
+	for name := range skipInTUI {
+		if entryKeys[name] {
+			t.Errorf("resource %q should be skipped in TUI", name)
+		}
+	}
+}
+
 func TestBuildRegistry_Count(t *testing.T) {
 	entries := BuildRegistry()
-	want := len(schema.Resources)
+	want := len(schema.Resources) - len(skipInTUI)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -66,8 +83,9 @@ func TestBuildRegistry_SortedByCategoryThenName(t *testing.T) {
 
 func TestRegistryByKey(t *testing.T) {
 	m := RegistryByKey()
-	if len(m) != len(schema.Resources) {
-		t.Errorf("RegistryByKey has %d entries, want %d", len(m), len(schema.Resources))
+	want := len(schema.Resources) - len(skipInTUI)
+	if len(m) != want {
+		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
 
 	entry, ok := m["users"]
@@ -93,10 +111,10 @@ func TestClientTypeMapping(t *testing.T) {
 		{"devices", ClientV1},
 		{"commands", ClientV1},
 		{"apps", ClientV1},
+		{"admins", ClientV1},
 		{"policies", ClientV2},
 		{"groups", ClientV2},
 		{"auth-policies", ClientV2},
-		{"insights", ClientInsights},
 	}
 
 	for _, tt := range tests {
@@ -108,5 +126,19 @@ func TestClientTypeMapping(t *testing.T) {
 		if e.ClientType != tt.want {
 			t.Errorf("%s client type = %d, want %d", tt.key, e.ClientType, tt.want)
 		}
+	}
+}
+
+func TestAdminsEndpointOverride(t *testing.T) {
+	m := RegistryByKey()
+	e, ok := m["admins"]
+	if !ok {
+		t.Fatal("missing 'admins' entry")
+	}
+	if e.ListEndpoint != "/users" {
+		t.Errorf("admins endpoint = %q, want '/users'", e.ListEndpoint)
+	}
+	if e.ClientType != ClientV1 {
+		t.Errorf("admins client type = %d, want ClientV1", e.ClientType)
 	}
 }

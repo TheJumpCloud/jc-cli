@@ -58,7 +58,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PushScreenMsg:
 		a.nav.Push(msg.Screen)
-		return a, msg.Screen.Init()
+		// Send window size so the new screen knows its dimensions.
+		updated, sizeCmd := msg.Screen.Update(tea.WindowSizeMsg{
+			Width:  a.width,
+			Height: a.height,
+		})
+		a.nav.Replace(updated.(Screen))
+		initCmd := updated.(Screen).Init()
+		return a, tea.Batch(sizeCmd, initCmd)
 
 	case PopScreenMsg:
 		if a.nav.Depth() <= 1 {
@@ -79,7 +86,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ReplaceScreenMsg:
 		a.nav.Replace(msg.Screen)
-		return a, msg.Screen.Init()
+		// Send window size so the new screen knows its dimensions.
+		updated, sizeCmd := msg.Screen.Update(tea.WindowSizeMsg{
+			Width:  a.width,
+			Height: a.height,
+		})
+		a.nav.Replace(updated.(Screen))
+		initCmd := updated.(Screen).Init()
+		return a, tea.Batch(sizeCmd, initCmd)
 	}
 
 	// Delegate to active screen.

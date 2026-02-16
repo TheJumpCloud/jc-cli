@@ -121,7 +121,7 @@ var listEndpoints = map[string]string{
 	"devices":          "/systems",
 	"commands":         "/commands",
 	"apps":             "/applications",
-	"admins":           "/administrators",
+	"admins":           "/users",
 	"org":              "/organizations",
 	"radius":           "/radiusservers",
 	"app-templates":    "/application-templates",
@@ -132,7 +132,6 @@ var listEndpoints = map[string]string{
 	"software":         "/softwareapps",
 	"ldap":             "/ldapservers",
 	"ad":               "/activedirectories",
-	"system-insights":  "/systeminsights",
 	"policy-templates": "/policytemplates",
 	"apple-mdm":        "/applemdms",
 	"policy-groups":    "/policygroups",
@@ -141,19 +140,42 @@ var listEndpoints = map[string]string{
 	"office365":        "/office365s",
 	"duo":              "/duo/accounts",
 	"custom-emails":    "/customemail/templates",
-	"insights":         "",
+}
+
+// clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
+// the actual client used by the CLI. For example, admins uses the V1 /users
+// endpoint even though the schema declares it as V2.
+var clientTypeOverrides = map[string]ClientType{
+	"admins": ClientV1,
+}
+
+// skipInTUI lists resources that cannot be browsed generically.
+// system-insights requires a table name; insights uses POST-based queries.
+var skipInTUI = map[string]bool{
+	"system-insights": true,
+	"insights":        true,
 }
 
 // BuildRegistry creates ResourceEntry items for all schema resources.
 func BuildRegistry() []ResourceEntry {
 	entries := make([]ResourceEntry, 0, len(schema.Resources))
 	for name, s := range schema.Resources {
+		// Skip resources that can't be browsed generically.
+		if skipInTUI[name] {
+			continue
+		}
+
 		ct := ClientV2
 		switch s.APIVersion {
 		case "v1":
 			ct = ClientV1
 		case "insights/v1":
 			ct = ClientInsights
+		}
+
+		// Apply client type overrides where schema doesn't match reality.
+		if override, ok := clientTypeOverrides[name]; ok {
+			ct = override
 		}
 
 		cat := resourceCategory[name]

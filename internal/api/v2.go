@@ -110,10 +110,17 @@ func (c *V2Client) ListAll(ctx context.Context, endpoint string, opts V2ListOpti
 			return nil, NewAPIError(resp.StatusCode, endpoint, body)
 		}
 
-		// V2 response is a bare JSON array.
+		// V2 response is typically a bare JSON array, but some endpoints
+		// return a wrapped object like {"results": [...]}.
 		var pageItems []json.RawMessage
 		if err := json.Unmarshal(body, &pageItems); err != nil {
-			return nil, fmt.Errorf("parsing response: %w", err)
+			var wrapped struct {
+				Results []json.RawMessage `json:"results"`
+			}
+			if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
+				return nil, fmt.Errorf("parsing response: %w", err)
+			}
+			pageItems = wrapped.Results
 		}
 
 		allResults = append(allResults, pageItems...)
