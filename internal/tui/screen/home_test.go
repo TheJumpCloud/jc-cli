@@ -119,6 +119,25 @@ func TestHomeScreen_EnterPushesListScreen(t *testing.T) {
 	}
 }
 
+func TestHomeScreen_DKeyPushesDashboard(t *testing.T) {
+	h := NewHomeScreen(testEntries())
+	h.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if cmd == nil {
+		t.Fatal("'d' should produce a command")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+	if pushMsg.Screen.Title() != "Dashboard" {
+		t.Errorf("pushed screen title = %q, want 'Dashboard'", pushMsg.Screen.Title())
+	}
+}
+
 func TestHomeScreen_ShowsVerbCount(t *testing.T) {
 	h := NewHomeScreen(testEntries())
 	h.Update(tea.WindowSizeMsg{Width: 80, Height: 40})

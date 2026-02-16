@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,10 @@ import (
 	"github.com/klaassen-consulting/jc/internal/tui/fetch"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
+
+// clipboardWriteFunc is the function used to write to clipboard.
+// Overridden in tests to avoid real clipboard access.
+var clipboardWriteFunc = clipboard.WriteAll
 
 // ListScreen displays a filterable, sortable list of resources.
 type ListScreen struct {
@@ -208,6 +213,9 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, tui.ListKeyMap.AllFields):
 			l.toggleAllFields()
+
+		case key.Matches(msg, tui.ListKeyMap.Copy):
+			return l, l.copySelectedID()
 		}
 	}
 
@@ -269,6 +277,30 @@ func (l *ListScreen) cycleSort() {
 	next := (idx + 1) % len(sortFields)
 	l.table.SortField = sortFields[next]
 	l.table.SortDesc = false
+}
+
+func (l *ListScreen) copySelectedID() tea.Cmd {
+	row := l.table.SelectedRow()
+	if row == nil {
+		return nil
+	}
+
+	// Use the schema ID field, falling back to pivot field for pivot-based screens.
+	idField := l.entry.Schema.IDField
+	if idField == "" {
+		idField = l.entry.PivotField
+	}
+	if idField == "" {
+		return nil
+	}
+
+	id := component.ExtractID(row, idField)
+	if id == "" {
+		return nil
+	}
+
+	_ = clipboardWriteFunc(id)
+	return func() tea.Msg { return tui.FlashMsg{Text: "Copied: " + id} }
 }
 
 func (l *ListScreen) toggleAllFields() {

@@ -97,10 +97,40 @@ func TestApp_HelpTextChangesWithDepth(t *testing.T) {
 	if !strings.Contains(homeHelp, "quit") {
 		t.Errorf("home help should contain 'quit', got %q", homeHelp)
 	}
+	if !strings.Contains(homeHelp, "dashboard") {
+		t.Errorf("home help should contain 'dashboard', got %q", homeHelp)
+	}
 
 	app.Update(PushScreenMsg{Screen: &mockScreen{title: "Users"}})
 	deepHelp := app.helpText()
 	if !strings.Contains(deepHelp, "back") {
 		t.Errorf("deep help should contain 'back', got %q", deepHelp)
+	}
+	if !strings.Contains(deepHelp, "copy id") {
+		t.Errorf("deep help should contain 'copy id', got %q", deepHelp)
+	}
+}
+
+func TestApp_FlashMessage(t *testing.T) {
+	app := NewApp(&mockScreen{title: "Home"})
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, cmd := app.Update(FlashMsg{Text: "Copied: abc123"})
+	if app.statusBar.Flash != "Copied: abc123" {
+		t.Errorf("flash = %q, want 'Copied: abc123'", app.statusBar.Flash)
+	}
+	if cmd == nil {
+		t.Fatal("FlashMsg should return a tick command for auto-clear")
+	}
+}
+
+func TestApp_ClearFlashMessage(t *testing.T) {
+	app := NewApp(&mockScreen{title: "Home"})
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	app.statusBar.Flash = "Some flash"
+
+	app.Update(ClearFlashMsg{})
+	if app.statusBar.Flash != "" {
+		t.Errorf("flash = %q, want empty after ClearFlashMsg", app.statusBar.Flash)
 	}
 }

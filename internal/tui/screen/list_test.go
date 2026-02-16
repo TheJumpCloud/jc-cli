@@ -141,6 +141,127 @@ func TestListScreen_PivotWithEmptyFieldSkips(t *testing.T) {
 	}
 }
 
+func TestListScreen_CopyIDProducesFlash(t *testing.T) {
+	// Override clipboard to avoid real clipboard access.
+	var copied string
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { copied = s; return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "users",
+		Data:        data,
+		TotalCount:  1,
+		Generation:  gen,
+	})
+
+	// Press 'c' to copy.
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if cmd == nil {
+		t.Fatal("'c' should return a command")
+	}
+
+	msg := cmd()
+	flash, ok := msg.(tui.FlashMsg)
+	if !ok {
+		t.Fatalf("expected FlashMsg, got %T", msg)
+	}
+	if flash.Text != "Copied: abc123def456abc123def456" {
+		t.Errorf("flash text = %q, want 'Copied: abc123def456abc123def456'", flash.Text)
+	}
+	if copied != "abc123def456abc123def456" {
+		t.Errorf("clipboard = %q, want 'abc123def456abc123def456'", copied)
+	}
+}
+
+func TestListScreen_CopyNoRowsIsNoop(t *testing.T) {
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if cmd != nil {
+		t.Error("copy with no rows should be nil")
+	}
+}
+
+func TestListScreen_CopyPivotField(t *testing.T) {
+	var copied string
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { copied = s; return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	entry := tui.ResourceEntry{
+		Key:            "system-insights",
+		DisplayName:    "System Insights: os_version",
+		Category:       tui.CategoryDevices,
+		ClientType:     tui.ClientV2,
+		ListEndpoint:   "/systeminsights/os_version",
+		PivotField:     "system_id",
+		PivotTargetKey: "devices",
+		Schema:         schema.ResourceSchema{DefaultFields: nil},
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"system_id":"abc123def456abc123def456","name":"macOS"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "system-insights",
+		Data:        data,
+		TotalCount:  1,
+		Generation:  gen,
+	})
+
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if cmd == nil {
+		t.Fatal("copy should return a command for pivot field")
+	}
+
+	msg := cmd()
+	flash, ok := msg.(tui.FlashMsg)
+	if !ok {
+		t.Fatalf("expected FlashMsg, got %T", msg)
+	}
+	if !ok || flash.Text != "Copied: abc123def456abc123def456" {
+		t.Errorf("flash text = %q", flash.Text)
+	}
+	if copied != "abc123def456abc123def456" {
+		t.Errorf("clipboard = %q", copied)
+	}
+}
+
 func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",

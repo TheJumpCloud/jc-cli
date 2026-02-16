@@ -177,6 +177,10 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, tui.GlobalKeyMap.Back):
 			return d, func() tea.Msg { return tui.PopScreenMsg{} }
 
+		case key.Matches(msg, tui.DetailKeyMap.Copy):
+			_ = clipboardWriteFunc(d.id)
+			return d, func() tea.Msg { return tui.FlashMsg{Text: "Copied: " + d.id} }
+
 		case key.Matches(msg, tui.DetailKeyMap.Tab):
 			if len(d.assocTargets) > 0 {
 				d.activeTab = 1 - d.activeTab

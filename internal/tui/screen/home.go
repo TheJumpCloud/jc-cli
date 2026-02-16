@@ -91,6 +91,10 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			h.filtering = true
 			h.filter.Focus()
 			return h, h.filter.Focus()
+		case msg.String() == "d":
+			return h, func() tea.Msg {
+				return tui.PushScreenMsg{Screen: NewDashboardScreen()}
+			}
 		case key.Matches(msg, tui.NavKeyMap.Top):
 			h.cursor = 0
 		case key.Matches(msg, tui.NavKeyMap.Bottom):

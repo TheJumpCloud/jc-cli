@@ -63,6 +63,7 @@ type ListKeys struct {
 	SortDir   key.Binding
 	Refresh   key.Binding
 	AllFields key.Binding
+	Copy      key.Binding
 }
 
 var ListKeyMap = ListKeys{
@@ -86,6 +87,10 @@ var ListKeyMap = ListKeys{
 		key.WithKeys("a"),
 		key.WithHelp("a", "all fields"),
 	),
+	Copy: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "copy id"),
+	),
 }
 
 // DetailKeys are for the detail screen.
@@ -93,6 +98,7 @@ type DetailKeys struct {
 	Tab       key.Binding
 	AllFields key.Binding
 	Refresh   key.Binding
+	Copy      key.Binding
 }
 
 var DetailKeyMap = DetailKeys{
@@ -107,5 +113,9 @@ var DetailKeyMap = DetailKeys{
 	Refresh: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "refresh"),
+	),
+	Copy: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "copy id"),
 	),
 }

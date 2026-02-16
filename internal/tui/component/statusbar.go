@@ -11,6 +11,7 @@ import (
 type StatusBar struct {
 	Breadcrumbs []string
 	Help        string
+	Flash       string
 	Loading     bool
 	Width       int
 }
@@ -34,9 +35,11 @@ func (s StatusBar) View() string {
 		}
 	}
 
-	// Right: help or loading.
+	// Right: flash, loading, or help.
 	right := s.Help
-	if s.Loading {
+	if s.Flash != "" {
+		right = style.Success.Render(s.Flash)
+	} else if s.Loading {
 		right = style.Spinner.Render("Loading...")
 	}
 

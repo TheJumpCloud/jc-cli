@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/klaassen-consulting/jc/internal/tui/component"
@@ -94,6 +96,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.nav.Replace(updated.(Screen))
 		initCmd := updated.(Screen).Init()
 		return a, tea.Batch(sizeCmd, initCmd)
+
+	case FlashMsg:
+		a.statusBar.Flash = msg.Text
+		return a, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+
+	case ClearFlashMsg:
+		a.statusBar.Flash = ""
+		return a, nil
 	}
 
 	// Delegate to active screen.
@@ -128,7 +138,7 @@ func (a *App) View() string {
 func (a *App) helpText() string {
 	depth := a.nav.Depth()
 	if depth <= 1 {
-		return "q:quit  /:filter  enter:open  ?:help"
+		return "q:quit  d:dashboard  /:filter  enter:open  ?:help"
 	}
-	return "esc:back  /:filter  s:sort  a:all fields  r:refresh  ?:help"
+	return "esc:back  /:filter  s:sort  c:copy id  a:all fields  r:refresh  ?:help"
 }

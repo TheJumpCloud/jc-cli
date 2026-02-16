@@ -431,6 +431,34 @@ func TestDetailScreen_AssocNamesPersistAcrossTargets(t *testing.T) {
 	}
 }
 
+func TestDetailScreen_CopyIDProducesFlash(t *testing.T) {
+	var copied string
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { copied = s; return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "John Doe")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"john"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if cmd == nil {
+		t.Fatal("'c' should return a command")
+	}
+
+	msg := cmd()
+	flash, ok := msg.(tui.FlashMsg)
+	if !ok {
+		t.Fatalf("expected FlashMsg, got %T", msg)
+	}
+	if flash.Text != "Copied: abc123def456abc123def456" {
+		t.Errorf("flash text = %q, want 'Copied: abc123def456abc123def456'", flash.Text)
+	}
+	if copied != "abc123def456abc123def456" {
+		t.Errorf("clipboard = %q, want 'abc123def456abc123def456'", copied)
+	}
+}
+
 func TestDetailScreen_AssocCacheAvoidsFetch(t *testing.T) {
 	d := NewDetailScreen(testUserEntry(), "abc123", "John")
 	d.data = json.RawMessage(`{"_id":"abc123","username":"john"}`)

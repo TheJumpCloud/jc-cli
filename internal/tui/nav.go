@@ -73,3 +73,11 @@ type PopScreenMsg struct{}
 type ReplaceScreenMsg struct {
 	Screen Screen
 }
+
+// FlashMsg shows a transient message in the status bar.
+type FlashMsg struct {
+	Text string
+}
+
+// ClearFlashMsg clears the flash message.
+type ClearFlashMsg struct{}
