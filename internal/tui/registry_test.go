@@ -207,6 +207,36 @@ func TestBuildRegistry_NoPivotByDefault(t *testing.T) {
 	}
 }
 
+func TestRegistryKeyForGraphType(t *testing.T) {
+	tests := []struct {
+		graphType string
+		wantKey   string
+	}{
+		{"user", "users"},
+		{"system", "devices"},
+		{"user_group", "user-groups"},
+		{"system_group", "device-groups"},
+		{"application", "apps"},
+		{"command", "commands"},
+		{"policy", "policies"},
+		{"radius_server", "radius"},
+		{"ldap_server", "ldap"},
+	}
+	for _, tt := range tests {
+		got := RegistryKeyForGraphType(tt.graphType)
+		if got != tt.wantKey {
+			t.Errorf("RegistryKeyForGraphType(%q) = %q, want %q", tt.graphType, got, tt.wantKey)
+		}
+	}
+}
+
+func TestRegistryKeyForGraphType_Unknown(t *testing.T) {
+	got := RegistryKeyForGraphType("nonexistent")
+	if got != "" {
+		t.Errorf("RegistryKeyForGraphType(nonexistent) = %q, want empty", got)
+	}
+}
+
 func TestAdminsEndpointOverride(t *testing.T) {
 	m := RegistryByKey()
 	e, ok := m["admins"]

@@ -85,6 +85,26 @@ func GraphEndpoint(sourceType string) string {
 	return graphEndpoints[sourceType]
 }
 
+// graphTypeToRegistryKey maps V2 graph association type identifiers back to
+// TUI registry keys, enabling drill-down from association rows.
+var graphTypeToRegistryKey = map[string]string{
+	"user":          "users",
+	"system":        "devices",
+	"user_group":    "user-groups",
+	"system_group":  "device-groups",
+	"application":   "apps",
+	"command":       "commands",
+	"policy":        "policies",
+	"radius_server": "radius",
+	"ldap_server":   "ldap",
+}
+
+// RegistryKeyForGraphType returns the TUI registry key for a V2 graph
+// association type (e.g. "system" → "devices"). Returns "" if unknown.
+func RegistryKeyForGraphType(graphType string) string {
+	return graphTypeToRegistryKey[graphType]
+}
+
 // resourceCategory maps schema resource names to their UI category.
 var resourceCategory = map[string]Category{
 	"users":       CategoryIdentity,

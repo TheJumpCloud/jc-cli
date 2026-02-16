@@ -305,8 +305,40 @@ func (d *DetailScreen) handleAssocKeys(msg tea.KeyMsg) tea.Cmd {
 		d.assocTable.GoToTop()
 	case key.Matches(msg, tui.NavKeyMap.Bottom):
 		d.assocTable.GoToBottom()
+	case key.Matches(msg, tui.NavKeyMap.Enter):
+		return d.openAssocDetail()
 	}
 	return nil
+}
+
+// openAssocDetail navigates from an association row to that resource's detail screen.
+func (d *DetailScreen) openAssocDetail() tea.Cmd {
+	row := d.assocTable.SelectedRow()
+	if row == nil {
+		return nil
+	}
+
+	assocID := component.ExtractID(row, "id")
+	if assocID == "" {
+		return nil
+	}
+
+	assocType := component.ExtractName(row, "type")
+	registryKey := tui.RegistryKeyForGraphType(assocType)
+	if registryKey == "" {
+		return nil
+	}
+
+	targetEntry, ok := tui.RegistryByKey()[registryKey]
+	if !ok {
+		return nil
+	}
+
+	return func() tea.Msg {
+		return tui.PushScreenMsg{
+			Screen: NewDetailScreen(targetEntry, assocID, ""),
+		}
+	}
 }
 
 func (d *DetailScreen) cycleTarget(delta int) tea.Cmd {

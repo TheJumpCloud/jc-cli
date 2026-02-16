@@ -199,6 +199,134 @@ func TestDetailScreen_StaleAssocResultIgnored(t *testing.T) {
 	}
 }
 
+func testUserGroupEntry() tui.ResourceEntry {
+	return tui.ResourceEntry{
+		Key:             "user-groups",
+		DisplayName:     "User Groups",
+		Category:        tui.CategoryIdentity,
+		ClientType:      tui.ClientV2,
+		ListEndpoint:    "/usergroups",
+		GraphSourceType: "user_group",
+		Schema:          schema.Resources["groups"],
+	}
+}
+
+func TestDetailScreen_AssocEnterNavigatesToDetail(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+	gen := d.assocGen
+
+	// Simulate association data with a user member.
+	assocData := []json.RawMessage{
+		json.RawMessage(`{"type":"system","id":"aaa111bbb222ccc333ddd444"}`),
+		json.RawMessage(`{"type":"system","id":"eee555fff666aaa777bbb888"}`),
+	}
+	d.Update(fetch.AssociationsResultMsg{
+		ResourceKey: "user-groups",
+		TargetType:  d.assocTargets[d.assocTargetIdx],
+		Data:        assocData,
+		Generation:  gen,
+	})
+
+	// Press Enter on the first association row.
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command from Enter on association row, got nil")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+
+	detail, ok := pushMsg.Screen.(*DetailScreen)
+	if !ok {
+		t.Fatalf("expected *DetailScreen, got %T", pushMsg.Screen)
+	}
+
+	// "system" graph type should navigate to "devices" registry key.
+	if detail.entry.Key != "devices" {
+		t.Errorf("assoc drill-down key = %q, want 'devices'", detail.entry.Key)
+	}
+	if detail.id != "aaa111bbb222ccc333ddd444" {
+		t.Errorf("assoc drill-down id = %q, want 'aaa111bbb222ccc333ddd444'", detail.id)
+	}
+}
+
+func TestDetailScreen_AssocEnterWithUserType(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+	// Navigate to a target type that has "user" associations.
+	// user_group targets: application, system, system_group
+	// We need to find the right target index, but let's just populate data directly.
+	d.assocLoading = false
+	d.assocTable.Rows = []json.RawMessage{
+		json.RawMessage(`{"type":"application","id":"aaa111bbb222ccc333ddd444"}`),
+	}
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command from Enter on application association")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+
+	detail := pushMsg.Screen.(*DetailScreen)
+	if detail.entry.Key != "apps" {
+		t.Errorf("assoc drill-down key = %q, want 'apps'", detail.entry.Key)
+	}
+}
+
+func TestDetailScreen_AssocEnterNoRowsIsNoop(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+	// No data loaded — Enter should be a no-op.
+	d.assocLoading = false
+	d.assocTable.Rows = nil
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("expected nil command when no association rows exist")
+	}
+}
+
+func TestDetailScreen_AssocEnterUnknownTypeIsNoop(t *testing.T) {
+	d := NewDetailScreen(testUserGroupEntry(), "grp001", "Developers")
+	d.data = json.RawMessage(`{"id":"grp001","name":"Developers"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Switch to associations tab and populate with unknown type.
+	d.Update(tea.KeyMsg{Type: tea.KeyTab})
+	d.assocLoading = false
+	d.assocTable.Rows = []json.RawMessage{
+		json.RawMessage(`{"type":"unknown_thing","id":"aaa111bbb222ccc333ddd444"}`),
+	}
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("expected nil command for unknown graph type")
+	}
+}
+
 func TestDetailScreen_AssocCacheAvoidsFetch(t *testing.T) {
 	d := NewDetailScreen(testUserEntry(), "abc123", "John")
 	d.data = json.RawMessage(`{"_id":"abc123","username":"john"}`)
