@@ -15,6 +15,10 @@ type App struct {
 	width     int
 	height    int
 	quitting  bool
+
+	// NewHelpScreen creates the help overlay. Set by the assembly layer
+	// (cmd/tui.go) to avoid circular imports between tui and screen packages.
+	NewHelpScreen func() Screen
 }
 
 // NewApp creates the TUI application with the given initial screen.
@@ -55,7 +59,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Help toggle (handled at app level).
 		if key.Matches(msg, GlobalKeyMap.Help) {
-			// Toggle help display — for now just pass through.
+			if a.nav.Current() != nil && a.nav.Current().Title() == "Help" {
+				// Already showing help — pop it (toggle behavior).
+				return a, func() tea.Msg { return PopScreenMsg{} }
+			}
+			if a.NewHelpScreen != nil {
+				return a, func() tea.Msg {
+					return PushScreenMsg{Screen: a.NewHelpScreen()}
+				}
+			}
 		}
 
 	case PushScreenMsg:

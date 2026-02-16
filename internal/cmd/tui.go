@@ -27,6 +27,7 @@ Navigate resources with keyboard shortcuts:
 			entries := tui.BuildRegistry()
 			home := screen.NewHomeScreen(entries)
 			app := tui.NewApp(home)
+			app.NewHelpScreen = func() tui.Screen { return screen.NewHelpScreen() }
 			p := tea.NewProgram(app, tea.WithAltScreen())
 			_, err := p.Run()
 			return err
