@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, and POST search.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, and help overlay.
 
 ---
 
@@ -1362,4 +1362,21 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - **Learnings:**
   - The V1 POST search body uses `searchFilter: {searchTerm, fields}` at the top level, with `filter` alongside (not nested inside) for V1 filter expressions. `V1Client.Search()` injects `skip`/`limit`/`sort` into the body map for pagination.
   - A single `if` guard before the `switch` block cleanly routes POST search without disrupting existing code paths. When `SearchEndpoint` is empty, execution falls through to the existing `?search=` logic.
+---
+
+### TUI Phase 4: Help Overlay
+- **Date:** 2026-02-16
+- What was implemented:
+  - **Help screen:** `HelpScreen` in `internal/tui/screen/help.go` renders a static keybinding reference with 7 sections: Global, Navigation, Home Screen, List Screen, Detail Screen, Filter Syntax, and Search.
+  - **Toggle behavior:** Pressing `?` pushes the help screen; pressing `?` or `Esc` while on help dismisses it. Toggle logic in `app.go` detects the help screen via `Title() == "Help"` to avoid popping non-help screens.
+  - **Factory injection:** `App.NewHelpScreen func() Screen` field set by `cmd/tui.go` (assembly layer) to avoid circular imports between `tui` and `screen` packages.
+  - **Filter/search syntax reference:** Help screen documents `field:op:value` filter expressions (eq, ne, gt, lt, ge, le, contains) and `~term` text search syntax.
+- Files modified:
+  - `internal/tui/screen/help.go` — new `HelpScreen` with static content rendering and `?`/`Esc` dismiss
+  - `internal/tui/screen/help_test.go` — 5 tests: Title, Esc pops, ? pops (toggle), View content verification, other keys ignored
+  - `internal/tui/app.go` — added `NewHelpScreen` field, replaced no-op `?` handler with toggle logic
+  - `internal/cmd/tui.go` — injected `NewHelpScreen` factory wiring
+- **Learnings:**
+  - Factory function injection is the standard Go pattern for breaking circular imports at the assembly layer. The `tui` package defines the interface (`Screen`), `screen` implements it, and `cmd/tui.go` wires them together.
+  - Title-based detection (`Title() == "Help"`) is a lightweight alternative to type assertions for identifying screens when the type isn't importable due to circular dependency constraints.
 ---
