@@ -322,6 +322,79 @@ func TestToV1Query_SpecialChars(t *testing.T) {
 	}
 }
 
+func TestParse_ColonShorthand(t *testing.T) {
+	// "field:value" should be treated as eq.
+	e, err := Parse("name:macOS")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "name" || e.Operator != "eq" || e.Value != "macOS" {
+		t.Errorf("got {%s, %s, %s}, want {name, eq, macOS}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_ColonOpValue(t *testing.T) {
+	// "field:op:value" — full API format.
+	e, err := Parse("name:ne:Windows")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "name" || e.Operator != "ne" || e.Value != "Windows" {
+		t.Errorf("got {%s, %s, %s}, want {name, ne, Windows}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_ColonOpValue_AllOps(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantOp   string
+		wantVal  string
+	}{
+		{"x:eq:1", "eq", "1"},
+		{"x:ne:2", "ne", "2"},
+		{"x:gt:3", "gt", "3"},
+		{"x:gte:4", "gte", "4"},
+		{"x:lt:5", "lt", "5"},
+		{"x:lte:6", "lte", "6"},
+	}
+	for _, tt := range tests {
+		e, err := Parse(tt.input)
+		if err != nil {
+			t.Errorf("Parse(%q) error: %v", tt.input, err)
+			continue
+		}
+		if e.Operator != tt.wantOp {
+			t.Errorf("Parse(%q) op = %q, want %q", tt.input, e.Operator, tt.wantOp)
+		}
+		if e.Value != tt.wantVal {
+			t.Errorf("Parse(%q) value = %q, want %q", tt.input, e.Value, tt.wantVal)
+		}
+	}
+}
+
+func TestParse_ColonInvalidOp_FallsBackToEq(t *testing.T) {
+	// "field:notanop:value" — "notanop" is not a valid operator,
+	// so the whole "notanop:value" becomes the eq value.
+	e, err := Parse("name:notanop:value")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "name" || e.Operator != "eq" || e.Value != "notanop:value" {
+		t.Errorf("got {%s, %s, %s}, want {name, eq, notanop:value}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_ColonValueWithColons(t *testing.T) {
+	// "field:value:with:colons" → eq with full value preserved.
+	e, err := Parse("ts:2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "ts" || e.Operator != "eq" || e.Value != "2026-01-01T00:00:00Z" {
+		t.Errorf("got {%s, %s, %s}, want {ts, eq, 2026-01-01T00:00:00Z}", e.Field, e.Operator, e.Value)
+	}
+}
+
 func TestToV2Query_EmptyValue(t *testing.T) {
 	e := Expression{Field: "department", Operator: "eq", Value: ""}
 	got := e.ToV2Query()

@@ -57,9 +57,30 @@ func Parse(expr string) (Expression, error) {
 			}, nil
 		}
 	}
+	// Support "field:value" as shorthand for "field=value" (eq).
+	// Also support "field:op:value" (e.g. "name:eq:macOS") — the JumpCloud API native format.
+	if parts := strings.SplitN(expr, ":", 3); len(parts) >= 2 {
+		field := strings.TrimSpace(parts[0])
+		if field != "" {
+			if len(parts) == 3 {
+				// "field:op:value" format.
+				op := strings.TrimSpace(parts[1])
+				value := strings.TrimSpace(parts[2])
+				// Validate operator.
+				validOps := map[string]bool{"eq": true, "ne": true, "gt": true, "gte": true, "lt": true, "lte": true}
+				if validOps[op] {
+					return Expression{Field: field, Operator: op, Value: value}, nil
+				}
+			}
+			// "field:value" → eq.
+			value := strings.TrimSpace(strings.Join(parts[1:], ":"))
+			return Expression{Field: field, Operator: "eq", Value: value}, nil
+		}
+	}
+
 	return Expression{}, &FilterError{
 		Expression: expr,
-		Message:    fmt.Sprintf("invalid filter %q: expected format 'field=value', 'field!=value', 'field>=value', 'field<=value', 'field>value', or 'field<value'", expr),
+		Message:    fmt.Sprintf("invalid filter %q: expected format 'field=value', 'field:value', 'field!=value', 'field>=value', 'field<=value', 'field>value', or 'field<value'", expr),
 	}
 }
 

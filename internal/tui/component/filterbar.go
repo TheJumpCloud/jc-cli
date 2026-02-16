@@ -28,7 +28,7 @@ type FilterBar struct {
 // NewFilterBar creates a new filter bar component.
 func NewFilterBar() FilterBar {
 	ti := textinput.New()
-	ti.Placeholder = "Filter (field=value) or search (~term)..."
+	ti.Placeholder = "Filter (field:value or field=value) or search (~term)..."
 	ti.CharLimit = 256
 	return FilterBar{input: ti}
 }
