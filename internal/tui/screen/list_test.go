@@ -262,6 +262,51 @@ func TestListScreen_CopyPivotField(t *testing.T) {
 	}
 }
 
+func TestListScreen_SearchUsesPostEndpoint(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:            "users",
+		DisplayName:    "Users",
+		Category:       tui.CategoryIdentity,
+		ClientType:     tui.ClientV1,
+		ListEndpoint:   "/systemusers",
+		SearchEndpoint: "/search/systemusers",
+		SearchFields:   []string{"username", "email", "firstname", "lastname"},
+		Schema:         schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Verify that the entry has SearchEndpoint populated.
+	if ls.entry.SearchEndpoint == "" {
+		t.Error("expected SearchEndpoint to be set")
+	}
+	if len(ls.entry.SearchFields) != 4 {
+		t.Errorf("expected 4 search fields, got %d", len(ls.entry.SearchFields))
+	}
+}
+
+func TestListScreen_NoSearchEndpointForPolicies(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:          "policies",
+		DisplayName:  "Policies",
+		Category:     tui.CategoryManagement,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: "/policies",
+		Schema:       schema.Resources["policies"],
+	}
+
+	ls := NewListScreen(entry)
+
+	// Policies should not have a search endpoint.
+	if ls.entry.SearchEndpoint != "" {
+		t.Errorf("policies should have empty SearchEndpoint, got %q", ls.entry.SearchEndpoint)
+	}
+	if len(ls.entry.SearchFields) != 0 {
+		t.Errorf("policies should have no SearchFields, got %d", len(ls.entry.SearchFields))
+	}
+}
+
 func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",

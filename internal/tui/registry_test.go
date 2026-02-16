@@ -237,6 +237,35 @@ func TestRegistryKeyForGraphType_Unknown(t *testing.T) {
 	}
 }
 
+func TestBuildRegistry_SearchEndpoints(t *testing.T) {
+	m := RegistryByKey()
+
+	tests := []struct {
+		key            string
+		wantEndpoint   string
+		wantFieldCount int
+	}{
+		{"users", "/search/systemusers", 4},
+		{"devices", "/search/systems", 3},
+		{"policies", "", 0},
+		{"commands", "", 0},
+	}
+
+	for _, tt := range tests {
+		e, ok := m[tt.key]
+		if !ok {
+			t.Errorf("missing resource %q", tt.key)
+			continue
+		}
+		if e.SearchEndpoint != tt.wantEndpoint {
+			t.Errorf("%s SearchEndpoint = %q, want %q", tt.key, e.SearchEndpoint, tt.wantEndpoint)
+		}
+		if len(e.SearchFields) != tt.wantFieldCount {
+			t.Errorf("%s SearchFields count = %d, want %d", tt.key, len(e.SearchFields), tt.wantFieldCount)
+		}
+	}
+}
+
 func TestAdminsEndpointOverride(t *testing.T) {
 	m := RegistryByKey()
 	e, ok := m["admins"]

@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/filter"
 )
 
 // Default TTLs for cache entries.
@@ -94,6 +95,55 @@ func (f *Fetcher) FetchV1List(resourceKey, endpoint string, opts api.ListOptions
 		defer cancel()
 
 		result, err := client.ListAll(ctx, endpoint, opts)
+		if err != nil {
+			return ListResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		f.Cache.Set(cacheKey, result.Data, ListTTL)
+
+		return ListResultMsg{
+			ResourceKey: resourceKey,
+			Data:        result.Data,
+			TotalCount:  result.TotalCount,
+			Generation:  gen,
+		}
+	}
+}
+
+// FetchV1Search uses POST /search/ endpoints for more powerful case-insensitive
+// multi-field search. Only users and devices have these endpoints.
+func (f *Fetcher) FetchV1Search(resourceKey, searchEndpoint, term string, fields []string, sort string, filters []filter.Expression, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		cacheKey := fmt.Sprintf("v1search:%s:%s:%s:%v", resourceKey, searchEndpoint, term, filters)
+
+		if data, ok := f.Cache.Get(cacheKey); ok {
+			return ListResultMsg{
+				ResourceKey: resourceKey,
+				Data:        data,
+				TotalCount:  len(data),
+				Generation:  gen,
+			}
+		}
+
+		client, err := f.NewV1Client()
+		if err != nil {
+			return ListResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		searchBody := map[string]any{
+			"searchFilter": map[string]any{
+				"searchTerm": term,
+				"fields":     fields,
+			},
+		}
+		if len(filters) > 0 {
+			searchBody["filter"] = filter.ToV1Queries(filters)
+		}
+
+		result, err := client.Search(ctx, searchEndpoint, searchBody, api.SearchOptions{Sort: sort})
 		if err != nil {
 			return ListResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
 		}

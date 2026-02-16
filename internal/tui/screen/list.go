@@ -80,6 +80,14 @@ func (l *ListScreen) fetchData() tea.Cmd {
 	}
 	search = l.filterBar.SearchTerm()
 
+	// Use POST search endpoint for resources that support it (users, devices).
+	if search != "" && l.entry.SearchEndpoint != "" && l.entry.ClientType == tui.ClientV1 {
+		return l.fetcher.FetchV1Search(
+			l.entry.Key, l.entry.SearchEndpoint, search,
+			l.entry.SearchFields, l.sortString(), filters, gen,
+		)
+	}
+
 	switch l.entry.ClientType {
 	case tui.ClientV1:
 		opts := api.ListOptions{

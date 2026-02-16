@@ -50,6 +50,8 @@ type ResourceEntry struct {
 	GraphSourceType string                // V2 graph source type (e.g. "user"), empty if no associations
 	PivotField      string                // Row field whose value becomes the ID for pivot navigation
 	PivotTargetKey  string                // Registry key of the target resource to pivot to
+	SearchEndpoint  string                // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
+	SearchFields    []string              // Fields to search across (e.g. ["username","email","firstname","lastname"])
 	Schema          schema.ResourceSchema // Full schema metadata
 }
 
@@ -60,6 +62,19 @@ var graphSourceTypes = map[string]string{
 	"user-groups":   "user_group",
 	"device-groups": "device_group",
 	"apps":          "application",
+}
+
+// searchEndpoints maps resource keys to their POST search endpoint.
+// Only V1 resources with dedicated /search/ endpoints are listed here.
+var searchEndpoints = map[string]string{
+	"users":   "/search/systemusers",
+	"devices": "/search/systems",
+}
+
+// searchFields maps resource keys to the fields searched by POST search.
+var searchFields = map[string][]string{
+	"users":   {"username", "email", "firstname", "lastname"},
+	"devices": {"displayName", "hostname", "serialNumber"},
 }
 
 // graphEndpoints maps graph source types to their V2 API endpoint prefix.
@@ -289,6 +304,8 @@ func BuildRegistry() []ResourceEntry {
 			ClientType:      ct,
 			ListEndpoint:    ep,
 			GraphSourceType: graphSourceTypes[name],
+			SearchEndpoint:  searchEndpoints[name],
+			SearchFields:    searchFields[name],
 			Schema:          s,
 		}
 
