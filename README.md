@@ -28,6 +28,8 @@ jc devices list --filter "os:eq:Mac OS X" -t
 jc insights query --service sso --last 24h -t
 ```
 
+See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page reference covering all commands, filtering, TUI keybindings, AI features, and common workflows.
+
 ---
 
 ## Why jc?
