@@ -70,6 +70,15 @@ var helpSections = []helpSection{
 		},
 	},
 	{
+		Title: "Event Detail",
+		Bindings: []helpBinding{
+			{"c", "Copy event JSON"},
+			{"e", "Export event"},
+			{"x", "AI explanation"},
+			{"j / k", "Scroll"},
+		},
+	},
+	{
 		Title: "Filter Syntax",
 		Bindings: []helpBinding{
 			{"field:op:value", "Filter expression"},

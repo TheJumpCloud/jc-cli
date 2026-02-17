@@ -50,7 +50,7 @@ func TestHelpScreen_ViewContent(t *testing.T) {
 	view := h.View()
 
 	// Check section headers are present.
-	for _, header := range []string{"Global", "Navigation", "Home Screen", "List Screen", "Detail Screen", "Filter Syntax", "Search"} {
+	for _, header := range []string{"Global", "Navigation", "Home Screen", "List Screen", "Detail Screen", "Event Detail", "Filter Syntax", "Search"} {
 		if !strings.Contains(view, header) {
 			t.Errorf("view should contain section header %q", header)
 		}

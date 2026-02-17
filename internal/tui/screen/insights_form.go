@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -110,6 +111,11 @@ func (f *InsightsFormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return f, nil
 			case key.Matches(msg, tui.ListKeyMap.Refresh):
 				return f, f.submitQuery()
+			case key.Matches(msg, tui.NavKeyMap.Enter):
+				row := f.table.SelectedRow()
+				if row != nil {
+					return f, pushEventDetail(row)
+				}
 			case key.Matches(msg, tui.NavKeyMap.Up):
 				f.table.MoveCursor(-1)
 			case key.Matches(msg, tui.NavKeyMap.Down):
@@ -175,6 +181,13 @@ func (f *InsightsFormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return f, nil
+}
+
+// pushEventDetail returns a cmd that pushes an EventDetailScreen for the given row.
+func pushEventDetail(row json.RawMessage) tea.Cmd {
+	return func() tea.Msg {
+		return tui.PushScreenMsg{Screen: NewEventDetailScreen(row)}
+	}
 }
 
 func (f *InsightsFormScreen) moveFocus(delta int) {
@@ -355,7 +368,7 @@ func (f *InsightsFormScreen) viewResults(sb *strings.Builder) string {
 	sb.WriteString("\n")
 	sb.WriteString(f.table.View())
 	sb.WriteString("\n")
-	sb.WriteString(style.Help.Render("esc: back to form  r: re-run query  j/k: scroll"))
+	sb.WriteString(style.Help.Render("esc: back to form  r: re-run query  j/k: scroll  enter: detail"))
 	sb.WriteString("\n")
 
 	return sb.String()
