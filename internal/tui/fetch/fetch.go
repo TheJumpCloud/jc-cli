@@ -271,6 +271,51 @@ func (f *Fetcher) FetchAssociations(resourceKey, graphEndpoint, id, targetType s
 	}
 }
 
+// FetchMembership fetches group members via the dedicated membership endpoint.
+// User groups use /usergroups/{id}/members, device groups use /systemgroups/{id}/membership.
+// The response is a bare array of {id, type, ...} objects (no "to" wrapper).
+func (f *Fetcher) FetchMembership(resourceKey, memberEndpoint, id, memberType string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewV2Client()
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: memberType, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		endpoint := fmt.Sprintf("%s/%s/%s", memberEndpoint, id, "members")
+		if memberType == "system" {
+			endpoint = fmt.Sprintf("%s/%s/%s", memberEndpoint, id, "membership")
+		}
+		result, err := client.ListAll(ctx, endpoint, api.V2ListOptions{})
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: memberType, Generation: gen, Err: err}
+		}
+
+		// Inject "type" field so the association table can display and drill-down.
+		enriched := make([]json.RawMessage, 0, len(result.Data))
+		for _, item := range result.Data {
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(item, &obj); err != nil {
+				enriched = append(enriched, item)
+				continue
+			}
+			typeBytes, _ := json.Marshal(memberType)
+			obj["type"] = typeBytes
+			out, _ := json.Marshal(obj)
+			enriched = append(enriched, out)
+		}
+
+		return AssociationsResultMsg{
+			ResourceKey: resourceKey,
+			TargetType:  memberType,
+			Data:        enriched,
+			Generation:  gen,
+		}
+	}
+}
+
 // flattenAssociation extracts "to.type" and "to.id" to top level.
 func flattenAssociation(data json.RawMessage) json.RawMessage {
 	var obj map[string]json.RawMessage
