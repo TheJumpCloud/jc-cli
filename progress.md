@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, and help overlay.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks.
 
 ---
 
@@ -1379,4 +1379,47 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - **Learnings:**
   - Factory function injection is the standard Go pattern for breaking circular imports at the assembly layer. The `tui` package defines the interface (`Screen`), `screen` implements it, and `cmd/tui.go` wires them together.
   - Title-based detection (`Title() == "Help"`) is a lightweight alternative to type assertions for identifying screens when the type isn't importable due to circular dependency constraints.
+
+### TUI Phase 5: Export
+- **Date:** 2026-02-17
+- What was implemented:
+  - **Export mode:** Two-step key interaction — press `e` to enter export mode, then choose format (`j` JSON clipboard, `c` CSV file, `J` JSON file). Any other key (including `Esc`) cancels.
+  - **List screen export:** Exports all loaded rows via `output.WriteList` to clipboard or `~/Downloads/jc-{resource}-{timestamp}.{ext}`.
+  - **Detail screen export:** Exports the full resource object via `output.WriteSingle` to clipboard (`j`) or JSON file (`J`). No CSV for single objects.
+  - **Shared helpers:** `internal/tui/screen/export.go` with `exportListToClipboard`, `exportListToFile`, `exportSingleToClipboard`, `exportSingleToFile`, and `exportFilePath`. Atomic file writes via temp file + `os.Rename`.
+  - **Help and statusbar:** Added `e  Export data` to both List and Detail sections in help screen. Added `e:export` to statusbar help text.
+- Files modified:
+  - `internal/tui/keys.go` — added `Export` key binding (`e`) to `ListKeys` and `DetailKeys`
+  - `internal/tui/screen/export.go` — new shared export helpers reusing the output engine
+  - `internal/tui/screen/export_test.go` — 6 tests: list clipboard, list JSON file, list CSV file, single clipboard, single file, file path format
+  - `internal/tui/screen/list.go` — added `exporting` state, modal key handler, export prompt rendering
+  - `internal/tui/screen/list_test.go` — 3 tests: export mode toggle, JSON clipboard export, no-rows noop
+  - `internal/tui/screen/detail.go` — added `exporting` state, modal key handler, export prompt rendering
+  - `internal/tui/screen/detail_test.go` — 3 tests: export mode toggle, JSON clipboard export, no-data noop
+  - `internal/tui/screen/help.go` — added export entry to List and Detail sections
+  - `internal/tui/app.go` — added `e:export` to statusbar help text
+- **Learnings:**
+  - Modal key capture (`exporting bool`) prevents conflicts with normal navigation keys (e.g., `j` for "down" vs `j` for "JSON clipboard"). The flag intercepts all keys when true, always resets itself, then dispatches or cancels.
+  - Reusing `output.WriteList`/`WriteSingle` with a `bytes.Buffer` target gives format-consistent output between CLI and TUI with zero duplication.
+---
+
+### TUI Phase 6: Bookmarks
+- **Date:** 2026-02-17
+- What was implemented:
+  - **Bookmark toggle:** Press `b` on the home screen to bookmark/unbookmark the selected resource. Flash message confirms action ("Bookmarked Users" / "Removed bookmark").
+  - **Bookmarks section:** Bookmarked resources appear in a "Bookmarks" category at the top of the home screen, duplicated from their normal category position for quick access.
+  - **Filter-aware:** Bookmarks section hides during filter mode (`/`) — filtered results display normally without bookmark clutter.
+  - **Persistence:** Bookmarks stored as `tui.bookmarks` string slice in config file via `config.SetTUIBookmarks()`. Survives across sessions.
+  - **Cursor-correct display:** `displayEntries()` method builds combined list (bookmarks + filtered) so cursor position always matches visual position across all operations (Enter, `b`, movement, `G`).
+- Files modified:
+  - `internal/config/config.go` — added `TUIBookmarks()`, `SetTUIBookmarks()`, `"tui.bookmarks"` to `ValidConfigKeys`
+  - `internal/config/config_test.go` — `TestTUIBookmarks` round-trip test (set/get/persist/clear)
+  - `internal/tui/screen/home.go` — bookmark state, `displayEntries()`, `toggleBookmark()`, `bookmarkedEntries()`, bookmarks section in View
+  - `internal/tui/screen/home_test.go` — 5 tests: toggle, section display, filter hiding, persistence, config loading
+  - `internal/tui/screen/help.go` — added `{"b", "Toggle bookmark"}` to Home Screen bindings
+  - `internal/tui/app.go` — added `b:bookmark` to home screen statusbar help text
+- **Learnings:**
+  - `displayEntries()` is the linchpin — without it, cursor indices would be off-by-N when bookmark entries are rendered in the view but absent from `h.filtered`. A single computed display list is the source of truth for all cursor operations.
+  - `bookmarkedEntries()` iterates `h.entries` (registry order), not the `bookmarks` map, to avoid Go's random map iteration causing UI jitter between renders.
+  - Var-based DI (`bookmarkLoader`/`bookmarkSaver`) lets tests inject mock config without viper init, following the same pattern as `newV1Client`, `isTerminalFunc`, etc.
 ---
