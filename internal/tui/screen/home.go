@@ -8,9 +8,16 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
+
+// bookmarkLoader loads bookmark keys from config. Replaceable for testing.
+var bookmarkLoader = func() []string { return config.TUIBookmarks() }
+
+// bookmarkSaver persists bookmark keys to config. Replaceable for testing.
+var bookmarkSaver = func(keys []string) error { return config.SetTUIBookmarks(keys) }
 
 // HomeScreen shows a categorized list of resources.
 type HomeScreen struct {
@@ -21,6 +28,7 @@ type HomeScreen struct {
 	filtering bool
 	width     int
 	height    int
+	bookmarks map[string]bool
 }
 
 // NewHomeScreen creates the home screen with all registry entries.
@@ -29,9 +37,15 @@ func NewHomeScreen(entries []tui.ResourceEntry) *HomeScreen {
 	ti.Placeholder = "Type to filter resources..."
 	ti.CharLimit = 64
 
+	bm := make(map[string]bool)
+	for _, k := range bookmarkLoader() {
+		bm[k] = true
+	}
+
 	h := &HomeScreen{
-		entries: entries,
-		filter:  ti,
+		entries:   entries,
+		filter:    ti,
+		bookmarks: bm,
 	}
 	h.filtered = entries
 	return h
@@ -40,6 +54,22 @@ func NewHomeScreen(entries []tui.ResourceEntry) *HomeScreen {
 func (h *HomeScreen) Title() string { return "Home" }
 
 func (h *HomeScreen) Init() tea.Cmd { return nil }
+
+// displayEntries returns the combined list for cursor indexing:
+// bookmarked entries first (when not filtering), then filtered entries.
+func (h *HomeScreen) displayEntries() []tui.ResourceEntry {
+	if h.filtering || len(h.bookmarks) == 0 {
+		return h.filtered
+	}
+	bmEntries := h.bookmarkedEntries()
+	if len(bmEntries) == 0 {
+		return h.filtered
+	}
+	result := make([]tui.ResourceEntry, 0, len(bmEntries)+len(h.filtered))
+	result = append(result, bmEntries...)
+	result = append(result, h.filtered...)
+	return result
+}
 
 func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -60,8 +90,9 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				h.filtering = false
 				h.filter.Blur()
-				if h.cursor < len(h.filtered) {
-					return h, h.openResource()
+				display := h.displayEntries()
+				if h.cursor < len(display) {
+					return h, h.openEntry(display[h.cursor])
 				}
 				return h, nil
 			case "up", "k":
@@ -84,8 +115,9 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, tui.NavKeyMap.Down):
 			h.moveCursor(1)
 		case key.Matches(msg, tui.NavKeyMap.Enter):
-			if h.cursor < len(h.filtered) {
-				return h, h.openResource()
+			display := h.displayEntries()
+			if h.cursor < len(display) {
+				return h, h.openEntry(display[h.cursor])
 			}
 		case key.Matches(msg, tui.ListKeyMap.Filter):
 			h.filtering = true
@@ -95,10 +127,13 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return h, func() tea.Msg {
 				return tui.PushScreenMsg{Screen: NewDashboardScreen()}
 			}
+		case msg.String() == "b":
+			return h, h.toggleBookmark()
 		case key.Matches(msg, tui.NavKeyMap.Top):
 			h.cursor = 0
 		case key.Matches(msg, tui.NavKeyMap.Bottom):
-			h.cursor = len(h.filtered) - 1
+			display := h.displayEntries()
+			h.cursor = len(display) - 1
 			if h.cursor < 0 {
 				h.cursor = 0
 			}
@@ -108,9 +143,7 @@ func (h *HomeScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return h, nil
 }
 
-func (h *HomeScreen) openResource() tea.Cmd {
-	entry := h.filtered[h.cursor]
-
+func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 	switch entry.Key {
 	case "system-insights":
 		return func() tea.Msg {
@@ -128,12 +161,13 @@ func (h *HomeScreen) openResource() tea.Cmd {
 }
 
 func (h *HomeScreen) moveCursor(delta int) {
+	display := h.displayEntries()
 	h.cursor += delta
 	if h.cursor < 0 {
 		h.cursor = 0
 	}
-	if h.cursor >= len(h.filtered) {
-		h.cursor = len(h.filtered) - 1
+	if h.cursor >= len(display) {
+		h.cursor = len(display) - 1
 	}
 	if h.cursor < 0 {
 		h.cursor = 0
@@ -160,6 +194,41 @@ func (h *HomeScreen) applyFilter() {
 	h.cursor = 0
 }
 
+func (h *HomeScreen) toggleBookmark() tea.Cmd {
+	display := h.displayEntries()
+	if h.cursor >= len(display) {
+		return nil
+	}
+	entry := display[h.cursor]
+	var flashText string
+	if h.bookmarks[entry.Key] {
+		delete(h.bookmarks, entry.Key)
+		flashText = "Removed bookmark"
+	} else {
+		h.bookmarks[entry.Key] = true
+		flashText = "Bookmarked " + entry.DisplayName
+	}
+
+	// Persist bookmark keys.
+	keys := make([]string, 0, len(h.bookmarks))
+	for k := range h.bookmarks {
+		keys = append(keys, k)
+	}
+	_ = bookmarkSaver(keys)
+
+	return func() tea.Msg { return tui.FlashMsg{Text: flashText} }
+}
+
+func (h *HomeScreen) bookmarkedEntries() []tui.ResourceEntry {
+	var result []tui.ResourceEntry
+	for _, e := range h.entries {
+		if h.bookmarks[e.Key] {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
 func (h *HomeScreen) View() string {
 	var sb strings.Builder
 
@@ -181,6 +250,12 @@ func (h *HomeScreen) View() string {
 
 	var groups []group
 	catMap := make(map[tui.Category]*group)
+
+	// Add bookmarks section at the top (only when not filtering and bookmarks exist).
+	bmEntries := h.bookmarkedEntries()
+	if !h.filtering && len(bmEntries) > 0 {
+		groups = append(groups, group{category: "Bookmarks", entries: bmEntries})
+	}
 
 	for _, e := range h.filtered {
 		g, ok := catMap[e.Category]

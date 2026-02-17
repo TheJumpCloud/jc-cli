@@ -42,6 +42,7 @@ var helpSections = []helpSection{
 		Title: "Home Screen",
 		Bindings: []helpBinding{
 			{"d", "Open dashboard"},
+			{"b", "Toggle bookmark"},
 			{"/", "Filter resources"},
 		},
 	},

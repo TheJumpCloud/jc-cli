@@ -150,7 +150,7 @@ func (a *App) View() string {
 func (a *App) helpText() string {
 	depth := a.nav.Depth()
 	if depth <= 1 {
-		return "q:quit  d:dashboard  /:filter  enter:open  ?:help"
+		return "q:quit  d:dashboard  b:bookmark  /:filter  enter:open  ?:help"
 	}
 	return "esc:back  /:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh  ?:help"
 }

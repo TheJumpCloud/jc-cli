@@ -369,6 +369,7 @@ var ValidConfigKeys = []string{
 	"ask.url",
 	"ask.max_commands",
 	"ask.confirm_before_execute",
+	"tui.bookmarks",
 }
 
 // SetConfigValue sets a config key using dot notation and writes the config
@@ -441,6 +442,17 @@ func MCPAllowedTools() []string {
 // MCPBlockedTools returns the configured blocked tool patterns (blacklist).
 func MCPBlockedTools() []string {
 	return viper.GetStringSlice("mcp.blocked_tools")
+}
+
+// TUIBookmarks returns the list of bookmarked resource keys for the TUI home screen.
+func TUIBookmarks() []string {
+	return viper.GetStringSlice("tui.bookmarks")
+}
+
+// SetTUIBookmarks persists the bookmark list to the config file.
+func SetTUIBookmarks(keys []string) error {
+	viper.Set("tui.bookmarks", keys)
+	return writeConfig()
 }
 
 // IsValidConfigKey returns true if key is a known config key.

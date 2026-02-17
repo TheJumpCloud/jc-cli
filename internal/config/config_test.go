@@ -1267,6 +1267,64 @@ func TestNoColor_JCNoColorOverridesTTY(t *testing.T) {
 	}
 }
 
+// --- TUI Bookmark Tests ---
+
+func TestTUIBookmarks(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "jc", "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Initially empty.
+	bm := TUIBookmarks()
+	if len(bm) != 0 {
+		t.Errorf("TUIBookmarks() = %v, want empty", bm)
+	}
+
+	// Set bookmarks.
+	if err := SetTUIBookmarks([]string{"users", "devices"}); err != nil {
+		t.Fatalf("SetTUIBookmarks() error: %v", err)
+	}
+
+	// Verify round-trip.
+	bm = TUIBookmarks()
+	if len(bm) != 2 {
+		t.Fatalf("TUIBookmarks() = %v, want 2 entries", bm)
+	}
+
+	found := map[string]bool{}
+	for _, k := range bm {
+		found[k] = true
+	}
+	if !found["users"] || !found["devices"] {
+		t.Errorf("TUIBookmarks() = %v, want [users, devices]", bm)
+	}
+
+	// Verify persistence.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("cannot read config: %v", err)
+	}
+	if !strings.Contains(string(data), "users") {
+		t.Error("config file should contain 'users' bookmark")
+	}
+
+	// Clear bookmarks.
+	if err := SetTUIBookmarks(nil); err != nil {
+		t.Fatalf("SetTUIBookmarks(nil) error: %v", err)
+	}
+	bm = TUIBookmarks()
+	if len(bm) != 0 {
+		t.Errorf("TUIBookmarks() after clear = %v, want empty", bm)
+	}
+}
+
 func TestNoColor_FlagOverridesTTY(t *testing.T) {
 	resetViper()
 	defer resetViper()
