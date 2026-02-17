@@ -122,6 +122,7 @@ interface.`,
 	rootCmd.AddCommand(newCustomEmailsCmd())
 	rootCmd.AddCommand(newAppTemplatesCmd())
 	rootCmd.AddCommand(newTUICmd())
+	rootCmd.AddCommand(newSetupCmd())
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -315,7 +316,7 @@ var builtinCommands = map[string]bool{
 	"policy-groups": true, "apple-mdm": true, "user-states": true,
 	"gsuite": true, "office365": true, "duo": true, "custom-emails": true, "app-templates": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
-	"tui": true,
+	"tui": true, "setup": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.
 	"u": true, "d": true, "g": true, "i": true,
