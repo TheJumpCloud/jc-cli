@@ -4,7 +4,7 @@
 
 > A modern, LLM-friendly command-line interface for JumpCloud.
 
-Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six output formats. Built-in MCP server for AI assistants. Interactive TUI browser. Recipe engine for multi-step workflows. Plan mode for safe mutation previews. Natural language interface via `jc ask`.
+Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six output formats. Built-in MCP server for AI assistants. Interactive TUI browser with full CRUD. Recipe engine for multi-step workflows. Plan mode for safe mutation previews. Natural language interface via `jc ask`.
 
 ---
 
@@ -126,7 +126,7 @@ jc users delete jdoe --plan
 jc tui
 ```
 
-Full-screen terminal UI with keyboard navigation, live filtering, sorting, detail views with associations, clipboard copy, export to JSON/CSV, and bookmarked resources on the home screen.
+Full-screen terminal UI with keyboard navigation, live filtering, sorting, detail views with associations, inline create/edit/delete, clipboard copy, export to JSON/CSV, and bookmarked resources on the home screen.
 
 ---
 
@@ -459,6 +459,10 @@ Full-screen terminal UI for browsing all 25 JumpCloud resource types. Features:
 - **Detail views** with associations, group membership, and related resources
 - **Directory Insights** — query events by service, time range, and event type; drill into individual events to see all fields
 - **AI event explanation** — press `x` on any event detail to get a plain-English explanation of what happened and whether it's concerning (requires `ask.provider` configured)
+- **Create** — press `n` from any list screen to open a schema-driven form; required fields marked with `*`
+- **Edit** — press `E` from a detail screen to edit the resource in a pre-filled form
+- **Delete** — press `d` from a detail screen; inline confirmation prompt before deletion
+- **Form navigation** — `j`/`k` to move between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel
 - **Clipboard** — copy resource IDs with `c`
 - **Export** — `e` then `j` (JSON clipboard), `c` (CSV file), or `J` (JSON file)
 - **Keyboard-driven** — `j`/`k` or arrows to navigate, Enter to drill in, Esc to go back, `?` for help
