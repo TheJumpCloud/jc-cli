@@ -106,9 +106,13 @@ jc tui
 | `c` | Copy ID to clipboard |
 | `e` | Export (then `j`=JSON clipboard, `c`=CSV file, `J`=JSON file) |
 | `r` | Refresh |
+| `n` | Create new resource (list screen) |
+| `d` | Delete resource (detail screen) |
+| `E` | Edit resource (detail screen) |
 | `d` | Open dashboard (home screen) |
 | `b` | Toggle bookmark |
 | `Tab` | Switch to associations (detail screen) |
+| `Ctrl+S` | Save form (create/edit screen) |
 | `x` | AI explanation (event detail) |
 | `?` | Help overlay |
 | `q` | Quit |

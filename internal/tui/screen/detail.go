@@ -33,7 +33,9 @@ type DetailScreen struct {
 	height     int
 	ready      bool
 
-	exporting bool
+	exporting  bool
+	confirming bool  // delete confirmation active
+	deleteGen  int64 // generation for the in-flight delete
 
 	// Associations tab state.
 	activeTab      int // 0=fields, 1=associations
@@ -174,10 +176,36 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.enrichAssocRows()
 		return d, nil
 
+	case fetch.MutationResultMsg:
+		if msg.Generation != d.deleteGen {
+			return d, nil
+		}
+		d.confirming = false
+		if msg.Err != nil {
+			d.err = msg.Err.Error()
+			return d, nil
+		}
+		displayName := d.entry.DisplayName
+		return d, tea.Batch(
+			func() tea.Msg { return tui.FlashMsg{Text: "Deleted " + displayName} },
+			func() tea.Msg { return tui.PopScreenMsg{} },
+			func() tea.Msg { return tui.RefreshListMsg{} },
+		)
+
 	case tea.KeyMsg:
 		// Export mode: intercept format keys or cancel.
 		if d.exporting {
 			return d, d.handleExportKey(msg)
+		}
+
+		// Delete confirmation mode.
+		if d.confirming {
+			if msg.String() == "y" {
+				return d, d.executeDelete()
+			}
+			// Any other key cancels.
+			d.confirming = false
+			return d, nil
 		}
 
 		switch {
@@ -211,6 +239,20 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, tui.DetailKeyMap.Export):
 			if d.data != nil {
 				d.exporting = true
+			}
+
+		case msg.String() == "d":
+			if d.data != nil && hasVerb(d.entry.Schema.Verbs, "delete") {
+				d.confirming = true
+			}
+
+		case msg.String() == "E":
+			if d.data != nil && hasVerb(d.entry.Schema.Verbs, "update") {
+				form := NewFormScreen(d.entry, "edit", d.data)
+				form.SetFetcher(d.fetcher)
+				return d, func() tea.Msg {
+					return tui.PushScreenMsg{Screen: form}
+				}
 			}
 
 		default:
@@ -318,6 +360,20 @@ func formatDetailValue(v json.RawMessage) string {
 	}
 
 	return string(v)
+}
+
+// executeDelete sends the async delete command via the fetcher.
+func (d *DetailScreen) executeDelete() tea.Cmd {
+	d.deleteGen = fetch.NextGeneration()
+	gen := d.deleteGen
+	switch d.entry.ClientType {
+	case tui.ClientV1:
+		return tea.Batch(d.spinner.Tick, d.fetcher.DeleteV1(d.entry.Key, d.entry.ListEndpoint, d.id, gen))
+	case tui.ClientV2:
+		return tea.Batch(d.spinner.Tick, d.fetcher.DeleteV2(d.entry.Key, d.entry.ListEndpoint, d.id, gen))
+	default:
+		return nil
+	}
 }
 
 func (d *DetailScreen) handleExportKey(msg tea.KeyMsg) tea.Cmd {
@@ -573,7 +629,14 @@ func (d *DetailScreen) View() string {
 		sb.WriteString(d.renderAssociations())
 	}
 
-	if d.exporting {
+	if d.confirming {
+		label := d.name
+		if label == "" {
+			label = d.id
+		}
+		sb.WriteString(style.Error.Render(fmt.Sprintf("Delete %q? y to confirm, any key to cancel", label)))
+		sb.WriteString("\n")
+	} else if d.exporting {
 		sb.WriteString(style.Help.Render("Export: [j]son clipboard  [J]son file  [esc] cancel"))
 		sb.WriteString("\n")
 	}

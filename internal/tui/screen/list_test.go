@@ -424,6 +424,82 @@ func TestListScreen_ExportNoRowsIsNoop(t *testing.T) {
 	}
 }
 
+func TestListScreen_CreatePushesForm(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:          "iplists",
+		DisplayName:  "IP Lists",
+		Category:     tui.CategorySecurity,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: "/iplists",
+		Schema:       schema.Resources["iplists"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if cmd == nil {
+		t.Fatal("expected command from 'n' key")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+
+	form, ok := pushMsg.Screen.(*FormScreen)
+	if !ok {
+		t.Fatalf("expected *FormScreen, got %T", pushMsg.Screen)
+	}
+	if form.mode != "create" {
+		t.Errorf("form mode = %q, want 'create'", form.mode)
+	}
+}
+
+func TestListScreen_CreateNoVerb(t *testing.T) {
+	// policy-templates don't have "create" verb.
+	entry := tui.ResourceEntry{
+		Key:          "policy-templates",
+		DisplayName:  "Policy Templates",
+		Category:     tui.CategoryApplications,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: "/policytemplates",
+		Schema:       schema.Resources["policy-templates"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if cmd != nil {
+		t.Error("should not push form for resource without create verb")
+	}
+}
+
+func TestListScreen_RefreshListMsg(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// RefreshListMsg should trigger a re-fetch.
+	_, cmd := ls.Update(tui.RefreshListMsg{})
+	if cmd == nil {
+		t.Error("RefreshListMsg should return a fetch command")
+	}
+	if !ls.loading {
+		t.Error("loading should be true after RefreshListMsg")
+	}
+}
+
 func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",

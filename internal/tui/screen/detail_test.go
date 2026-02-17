@@ -2,6 +2,7 @@ package screen
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -542,5 +543,159 @@ func TestDetailScreen_AssocCacheAvoidsFetch(t *testing.T) {
 	}
 	if len(d.assocTable.Rows) != 1 {
 		t.Errorf("table rows = %d, want 1 (from cache)", len(d.assocTable.Rows))
+	}
+}
+
+// --- Delete tests ---
+
+func TestDetailScreen_DeleteConfirm(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Press 'd' to enter confirmation mode.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if !d.confirming {
+		t.Error("expected confirming to be true after 'd'")
+	}
+
+	// View should show confirmation prompt.
+	view := d.View()
+	if !strings.Contains(view, "Delete") {
+		t.Error("view should contain 'Delete' prompt")
+	}
+}
+
+func TestDetailScreen_DeleteCancel(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Press 'd' to enter confirmation, then 'n' to cancel.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if d.confirming {
+		t.Error("expected confirming to be false after cancellation")
+	}
+}
+
+func TestDetailScreen_DeleteNoVerb(t *testing.T) {
+	// policy-templates don't have "delete" verb.
+	entry := tui.ResourceEntry{
+		Key:          "policy-templates",
+		DisplayName:  "Policy Templates",
+		Category:     tui.CategoryApplications,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: "/policytemplates",
+		Schema:       schema.Resources["policy-templates"],
+	}
+	d := NewDetailScreen(entry, "abc123def456abc123def456", "My Template")
+	d.data = json.RawMessage(`{"id":"abc123def456abc123def456","name":"My Template"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if d.confirming {
+		t.Error("should not enter confirming for resource without delete verb")
+	}
+}
+
+func TestDetailScreen_DeleteSuccess(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Enter confirmation and confirm.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	gen := d.deleteGen
+
+	// Simulate successful delete.
+	_, cmd := d.Update(fetch.MutationResultMsg{
+		ResourceKey: "users",
+		Generation:  gen,
+	})
+	if cmd == nil {
+		t.Fatal("expected batch command from successful delete")
+	}
+	if d.confirming {
+		t.Error("confirming should be false after mutation result")
+	}
+}
+
+func TestDetailScreen_DeleteError(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Enter confirmation and confirm.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	gen := d.deleteGen
+
+	// Simulate failed delete.
+	d.Update(fetch.MutationResultMsg{
+		ResourceKey: "users",
+		Generation:  gen,
+		Err:         fmt.Errorf("not found"),
+	})
+	if d.err != "not found" {
+		t.Errorf("err = %q, want 'not found'", d.err)
+	}
+}
+
+// --- Edit tests ---
+
+func TestDetailScreen_EditPushesForm(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice","email":"alice@example.com"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	if cmd == nil {
+		t.Fatal("expected command from 'E'")
+	}
+
+	msg := cmd()
+	pushMsg, ok := msg.(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected PushScreenMsg, got %T", msg)
+	}
+
+	form, ok := pushMsg.Screen.(*FormScreen)
+	if !ok {
+		t.Fatalf("expected *FormScreen, got %T", pushMsg.Screen)
+	}
+	if form.mode != "edit" {
+		t.Errorf("form mode = %q, want 'edit'", form.mode)
+	}
+}
+
+func TestDetailScreen_EditNoVerb(t *testing.T) {
+	// policy-templates don't have "update" verb.
+	entry := tui.ResourceEntry{
+		Key:          "policy-templates",
+		DisplayName:  "Policy Templates",
+		Category:     tui.CategoryApplications,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: "/policytemplates",
+		Schema:       schema.Resources["policy-templates"],
+	}
+	d := NewDetailScreen(entry, "abc123def456abc123def456", "My Template")
+	d.data = json.RawMessage(`{"id":"abc123def456abc123def456","name":"My Template"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	if cmd != nil {
+		t.Error("should not push form for resource without update verb")
+	}
+}
+
+func TestDetailScreen_EditNoDataIsNoop(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "alice")
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	if cmd != nil {
+		t.Error("should not push form when data is nil")
 	}
 }

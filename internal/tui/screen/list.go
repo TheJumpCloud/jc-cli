@@ -168,6 +168,10 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case component.FilterChangedMsg:
 		return l, l.fetchData()
 
+	case tui.RefreshListMsg:
+		l.fetcher.Cache.InvalidateResource(l.entry.Key)
+		return l, l.fetchData()
+
 	case spinner.TickMsg:
 		if l.loading {
 			var cmd tea.Cmd
@@ -235,6 +239,15 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, tui.ListKeyMap.Export):
 			if len(l.table.Rows) > 0 {
 				l.exporting = true
+			}
+
+		case msg.String() == "n":
+			if hasVerb(l.entry.Schema.Verbs, "create") {
+				form := NewFormScreen(l.entry, "create", nil)
+				form.SetFetcher(l.fetcher)
+				return l, func() tea.Msg {
+					return tui.PushScreenMsg{Screen: form}
+				}
 			}
 		}
 	}

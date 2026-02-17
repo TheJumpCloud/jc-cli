@@ -81,3 +81,6 @@ type FlashMsg struct {
 
 // ClearFlashMsg clears the flash message.
 type ClearFlashMsg struct{}
+
+// RefreshListMsg tells a list screen to re-fetch its data after a mutation.
+type RefreshListMsg struct{}

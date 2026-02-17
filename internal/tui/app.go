@@ -116,6 +116,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ClearFlashMsg:
 		a.statusBar.Flash = ""
 		return a, nil
+
+	case RefreshListMsg:
+		// Forward to all screens on the stack. The list screen will handle it
+		// even if PopScreenMsg hasn't been processed yet.
+		var cmds []tea.Cmd
+		for i := 0; i < len(a.nav.screens); i++ {
+			updated, cmd := a.nav.screens[i].Update(msg)
+			a.nav.screens[i] = updated.(Screen)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if len(cmds) > 0 {
+			return a, tea.Batch(cmds...)
+		}
+		return a, nil
 	}
 
 	// Delegate to active screen.

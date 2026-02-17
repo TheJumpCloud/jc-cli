@@ -56,6 +56,7 @@ var helpSections = []helpSection{
 			{"a", "Toggle all fields"},
 			{"c", "Copy ID to clipboard"},
 			{"e", "Export data"},
+			{"n", "Create new resource"},
 		},
 	},
 	{
@@ -67,6 +68,8 @@ var helpSections = []helpSection{
 			{"r", "Refresh data"},
 			{"c", "Copy ID to clipboard"},
 			{"e", "Export data"},
+			{"d", "Delete resource"},
+			{"E", "Edit resource"},
 		},
 	},
 	{

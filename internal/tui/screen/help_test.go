@@ -57,7 +57,7 @@ func TestHelpScreen_ViewContent(t *testing.T) {
 	}
 
 	// Check some key bindings are present.
-	for _, binding := range []string{"Quit", "Go back", "Move down", "Filter or search", "Copy ID", "Toggle help"} {
+	for _, binding := range []string{"Quit", "Go back", "Move down", "Filter or search", "Copy ID", "Toggle help", "Create new resource", "Delete resource", "Edit resource"} {
 		if !strings.Contains(view, binding) {
 			t.Errorf("view should contain binding description %q", binding)
 		}
