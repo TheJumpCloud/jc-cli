@@ -4,7 +4,7 @@
 
 > A modern, LLM-friendly command-line interface for JumpCloud.
 
-Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six output formats. Built-in MCP server for AI assistants. Recipe engine for multi-step workflows. Plan mode for safe mutation previews. Natural language interface via `jc ask`.
+Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six output formats. Built-in MCP server for AI assistants. Interactive TUI browser. Recipe engine for multi-step workflows. Plan mode for safe mutation previews. Natural language interface via `jc ask`.
 
 ---
 
@@ -16,7 +16,10 @@ git clone https://github.com/juergen-kc/jc.git
 cd jc
 make install    # installs to $GOPATH/bin
 
-# Authenticate
+# First-time setup (interactive wizard)
+jc setup
+
+# Or authenticate manually
 jc auth login
 
 # Your first commands
@@ -115,6 +118,14 @@ jc users delete jdoe --plan
 └───────────────────────────────────────────────────┘
 ```
 
+**Browse resources interactively:**
+
+```bash
+jc tui
+```
+
+Full-screen terminal UI with keyboard navigation, live filtering, sorting, detail views with associations, clipboard copy, export to JSON/CSV, and bookmarked resources on the home screen.
+
 ---
 
 ## Command Reference
@@ -155,6 +166,8 @@ jc users delete jdoe --plan
 | `explain` | *(direct)* | Describe what a command does |
 | `mcp` | serve, tools | MCP server for AI assistants |
 | `schema` | resources, commands | Machine-readable CLI schema |
+| `setup` | *(direct)* | Interactive onboarding wizard |
+| `tui` | *(direct)* | Interactive terminal UI browser |
 
 ### Users
 
@@ -423,6 +436,28 @@ jc bulk users --file new-hires.csv                # Execute (with confirmation)
 ```
 
 The `operation` column can be `create`, `update`, or `delete`. If omitted, defaults to `create`.
+
+### Setup Wizard
+
+```bash
+jc setup                    # Walk through first-time configuration
+```
+
+The wizard guides you through profile selection, authentication (API key or service account), organization ID, output format, color, and list limit. On re-run, existing settings are shown — press Enter to keep current values. Each step saves immediately, so partial completion (Ctrl-C) preserves progress.
+
+### Interactive TUI
+
+```bash
+jc tui                      # Launch the interactive browser
+```
+
+Full-screen terminal UI for browsing all 25 JumpCloud resource types. Features:
+- **Home screen** with resource counts dashboard and bookmarked resources
+- **List views** with live filtering (`/`), sort cycling (`s`), and field toggling (`a`)
+- **Detail views** with associations, group membership, and related resources
+- **Clipboard** — copy resource IDs with `c`
+- **Export** — `e` then `j` (JSON clipboard), `c` (CSV file), or `J` (JSON file)
+- **Keyboard-driven** — `j`/`k` or arrows to navigate, Enter to drill in, Esc to go back, `?` for help
 
 ---
 
@@ -780,6 +815,7 @@ internal/
   resolve/              Name-to-ID resolution with file-based caching
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
+  tui/                  Interactive terminal UI (Bubbletea) — 25 resource views
   mcp/                  MCP server (official Go SDK) — 158 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
