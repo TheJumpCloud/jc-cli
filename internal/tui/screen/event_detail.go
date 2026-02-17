@@ -174,7 +174,9 @@ func (e *EventDetailScreen) triggerExplain() tea.Cmd {
 
 		prompt := fmt.Sprintf(
 			"Explain this JumpCloud security event in plain English. "+
-				"What happened, who did it, and is it concerning?\n\nEvent:\n%s",
+				"What happened, who did it, and is it concerning? "+
+				"Use plain text only, no markdown formatting, no headers, no bullets. "+
+				"Keep the explanation concise (2-4 sentences).\n\nEvent:\n%s",
 			string(e.data),
 		)
 
@@ -215,6 +217,12 @@ func (e *EventDetailScreen) renderContent() string {
 	// Render key-value fields.
 	sb.WriteString(e.renderFields())
 
+	// Use available width for wrapping; fall back to 80 if not yet known.
+	wrapWidth := e.width
+	if wrapWidth <= 0 {
+		wrapWidth = 80
+	}
+
 	// Render AI explanation section.
 	if e.explaining {
 		sb.WriteString("\n")
@@ -227,13 +235,13 @@ func (e *EventDetailScreen) renderContent() string {
 		sb.WriteString("\n")
 		sb.WriteString(style.SectionHeader.Render("AI Explanation"))
 		sb.WriteString("\n")
-		sb.WriteString(style.Error.Render("Error: " + e.explainErr))
+		sb.WriteString(style.Error.Width(wrapWidth).Render("Error: " + e.explainErr))
 		sb.WriteString("\n")
 	} else if e.explanation != "" {
 		sb.WriteString("\n")
 		sb.WriteString(style.SectionHeader.Render("AI Explanation"))
 		sb.WriteString("\n")
-		sb.WriteString(style.FieldValue.Render(e.explanation))
+		sb.WriteString(style.FieldValue.Width(wrapWidth).Render(e.explanation))
 		sb.WriteString("\n")
 	}
 

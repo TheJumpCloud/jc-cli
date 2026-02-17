@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation.
 
 ---
 
@@ -1367,7 +1367,7 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 ### TUI Phase 4: Help Overlay
 - **Date:** 2026-02-16
 - What was implemented:
-  - **Help screen:** `HelpScreen` in `internal/tui/screen/help.go` renders a static keybinding reference with 7 sections: Global, Navigation, Home Screen, List Screen, Detail Screen, Filter Syntax, and Search.
+  - **Help screen:** `HelpScreen` in `internal/tui/screen/help.go` renders a static keybinding reference with 8 sections: Global, Navigation, Home Screen, List Screen, Detail Screen, Event Detail, Filter Syntax, and Search.
   - **Toggle behavior:** Pressing `?` pushes the help screen; pressing `?` or `Esc` while on help dismisses it. Toggle logic in `app.go` detects the help screen via `Title() == "Help"` to avoid popping non-help screens.
   - **Factory injection:** `App.NewHelpScreen func() Screen` field set by `cmd/tui.go` (assembly layer) to avoid circular imports between `tui` and `screen` packages.
   - **Filter/search syntax reference:** Help screen documents `field:op:value` filter expressions (eq, ne, gt, lt, ge, le, contains) and `~term` text search syntax.
@@ -1464,4 +1464,24 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/screen/export.go` — `os.MkdirAll` before temp file creation
   - `internal/tui/screen/help.go` — corrected filter operator names
   - `internal/tui/screen/list.go` — `InvalidateResource()` instead of `Invalidate()`
+
+### Insights Event Detail Screen with AI Explanation
+
+- **Date:** 2026-02-17
+- **Changes:**
+  - **Event detail screen:** Press Enter on an insights result row to open `EventDetailScreen` showing all event fields as sorted key-value pairs in a scrollable viewport. No additional API call needed — event data passed directly from the table row's `json.RawMessage`.
+  - **AI explanation:** Press `x` in the event detail screen to send the event JSON to the configured `ask` provider with a security-event-focused prompt. Shows spinner while loading, explanation or error when done. Gracefully handles unconfigured providers with an error message.
+  - **Export support:** `c` copies full event JSON to clipboard, `e` enters export mode (JSON clipboard or file).
+  - **Help overlay:** New "Event Detail" section with `c`, `e`, `x`, `j/k` bindings.
+- **Files created:**
+  - `internal/tui/screen/event_detail.go` — `EventDetailScreen` with viewport, AI explanation via `ask` package, export support
+  - `internal/tui/screen/event_detail_test.go` — 12 tests: title, fields, header, Esc, copy, export mode, help line, explain success/not-configured/error, stale generation
+- **Files modified:**
+  - `internal/tui/screen/insights_form.go` — Enter key handler in results mode pushes `EventDetailScreen`; updated help text with `enter: detail`
+  - `internal/tui/screen/help.go` — added "Event Detail" section
+  - `internal/tui/screen/help_test.go` — added "Event Detail" to section header assertions
+- **Key decisions:**
+  - Separate `EventDetailScreen` type (not reusing `DetailScreen`) — insights events have no ID, no associations, no fetch. A dedicated type keeps both screens simple.
+  - `newAskClientFunc` var for test injection follows the same pattern as `newV1Client`, `newAskClient` elsewhere.
+  - `ExplainResultMsg` with generation counter prevents stale responses from overwriting newer results.
 ---
