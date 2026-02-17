@@ -471,16 +471,12 @@ func (d *DetailScreen) fetchAssoc() tea.Cmd {
 	gen := d.assocGen
 
 	// Group members use dedicated membership endpoints, not graph associations.
-	if d.entry.GraphSourceType == "user_group" && target == "user" {
+	memberTarget := tui.MembershipTarget(d.entry.GraphSourceType)
+	if memberTarget != "" && target == memberTarget {
+		memberEP := tui.MembershipEndpoint(d.entry.GraphSourceType)
 		return tea.Batch(
 			d.spinner.Tick,
-			d.fetcher.FetchMembership(d.entry.Key, "/usergroups", d.id, "user", gen),
-		)
-	}
-	if d.entry.GraphSourceType == "device_group" && target == "system" {
-		return tea.Batch(
-			d.spinner.Tick,
-			d.fetcher.FetchMembership(d.entry.Key, "/systemgroups", d.id, "system", gen),
+			d.fetcher.FetchMembership(d.entry.Key, memberEP, d.id, memberTarget, gen),
 		)
 	}
 

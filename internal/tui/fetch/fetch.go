@@ -272,8 +272,8 @@ func (f *Fetcher) FetchAssociations(resourceKey, graphEndpoint, id, targetType s
 }
 
 // FetchMembership fetches group members via the dedicated membership endpoint.
-// User groups use /usergroups/{id}/members, device groups use /systemgroups/{id}/membership.
-// The response is a bare array of {id, type, ...} objects (no "to" wrapper).
+// User groups: GET /usergroups/{id}/members → {"to":{"id","type"},"attributes"} (same wrapper as associations).
+// Device groups: GET /systemgroups/{id}/membership → {"id","type","compiledAttributes","paths"} (flat).
 func (f *Fetcher) FetchMembership(resourceKey, memberEndpoint, id, memberType string, gen int64) tea.Cmd {
 	return func() tea.Msg {
 		client, err := f.NewV2Client()
@@ -293,24 +293,32 @@ func (f *Fetcher) FetchMembership(resourceKey, memberEndpoint, id, memberType st
 			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: memberType, Generation: gen, Err: err}
 		}
 
-		// Inject "type" field so the association table can display and drill-down.
-		enriched := make([]json.RawMessage, 0, len(result.Data))
+		// Normalize to flat {id, type} objects.
+		// User group /members uses the "to" wrapper (like associations) — flatten it.
+		// Device group /membership is already flat — just ensure "type" and "id" exist.
+		normalized := make([]json.RawMessage, 0, len(result.Data))
 		for _, item := range result.Data {
+			flat := flattenAssociation(item)
+			// Ensure "type" field exists (device group /membership already has it).
 			var obj map[string]json.RawMessage
-			if err := json.Unmarshal(item, &obj); err != nil {
-				enriched = append(enriched, item)
+			if err := json.Unmarshal(flat, &obj); err != nil {
+				normalized = append(normalized, flat)
 				continue
 			}
-			typeBytes, _ := json.Marshal(memberType)
-			obj["type"] = typeBytes
-			out, _ := json.Marshal(obj)
-			enriched = append(enriched, out)
+			if _, hasType := obj["type"]; !hasType {
+				typeBytes, _ := json.Marshal(memberType)
+				obj["type"] = typeBytes
+				out, _ := json.Marshal(obj)
+				normalized = append(normalized, out)
+			} else {
+				normalized = append(normalized, flat)
+			}
 		}
 
 		return AssociationsResultMsg{
 			ResourceKey: resourceKey,
 			TargetType:  memberType,
-			Data:        enriched,
+			Data:        normalized,
 			Generation:  gen,
 		}
 	}

@@ -202,6 +202,104 @@ func TestFetchV1Search_WithFilters(t *testing.T) {
 	}
 }
 
+// newTestV2Client creates a V2Client that points at the test server.
+func newTestV2Client(serverURL string) (*api.V2Client, error) {
+	c := api.NewV2ClientWithKey("test-key")
+	c.BaseURL = serverURL + "/api/v2"
+	return c, nil
+}
+
+func TestFetchMembership_UserGroup(t *testing.T) {
+	// User group /members returns {"to":{"id":"...","type":"user"},"attributes":null}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/usergroups/ug001/members" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"to":{"id":"u001","type":"user"},"attributes":null},{"to":{"id":"u002","type":"user"},"attributes":null}]`)
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{
+		Cache:       NewCache(),
+		NewV2Client: func() (*api.V2Client, error) { return newTestV2Client(srv.URL) },
+	}
+
+	gen := NextGeneration()
+	cmd := f.FetchMembership("user-groups", "/usergroups", "ug001", "user", gen)
+	msg := cmd()
+
+	result, ok := msg.(AssociationsResultMsg)
+	if !ok {
+		t.Fatalf("expected AssociationsResultMsg, got %T", msg)
+	}
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if len(result.Data) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(result.Data))
+	}
+
+	// Verify "to" wrapper was flattened.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(result.Data[0], &obj); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, hasToo := obj["to"]; hasToo {
+		t.Error("'to' should be flattened to top level")
+	}
+	if string(obj["id"]) != `"u001"` {
+		t.Errorf("id = %s, want '\"u001\"'", string(obj["id"]))
+	}
+	if string(obj["type"]) != `"user"` {
+		t.Errorf("type = %s, want '\"user\"'", string(obj["type"]))
+	}
+}
+
+func TestFetchMembership_DeviceGroup(t *testing.T) {
+	// Device group /membership returns flat {"id":"...","type":"system",...}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/systemgroups/sg001/membership" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"id":"s001","type":"system","compiledAttributes":null}]`)
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{
+		Cache:       NewCache(),
+		NewV2Client: func() (*api.V2Client, error) { return newTestV2Client(srv.URL) },
+	}
+
+	gen := NextGeneration()
+	cmd := f.FetchMembership("device-groups", "/systemgroups", "sg001", "system", gen)
+	msg := cmd()
+
+	result, ok := msg.(AssociationsResultMsg)
+	if !ok {
+		t.Fatalf("expected AssociationsResultMsg, got %T", msg)
+	}
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if len(result.Data) != 1 {
+		t.Fatalf("expected 1 member, got %d", len(result.Data))
+	}
+
+	// Verify flat format is preserved with type and id at top level.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(result.Data[0], &obj); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(obj["id"]) != `"s001"` {
+		t.Errorf("id = %s, want '\"s001\"'", string(obj["id"]))
+	}
+	if string(obj["type"]) != `"system"` {
+		t.Errorf("type = %s, want '\"system\"'", string(obj["type"]))
+	}
+}
+
 func TestFetchV1Search_CachesResults(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

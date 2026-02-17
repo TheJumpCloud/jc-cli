@@ -266,6 +266,43 @@ func TestBuildRegistry_SearchEndpoints(t *testing.T) {
 	}
 }
 
+func TestMembershipTarget(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{"user_group", "user"},
+		{"device_group", "system"},
+		{"user", ""},
+		{"device", ""},
+		{"application", ""},
+	}
+	for _, tt := range tests {
+		got := MembershipTarget(tt.source)
+		if got != tt.want {
+			t.Errorf("MembershipTarget(%q) = %q, want %q", tt.source, got, tt.want)
+		}
+	}
+}
+
+func TestMembershipEndpoint(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{"user_group", "/usergroups"},
+		{"device_group", "/systemgroups"},
+		{"user", ""},
+		{"device", ""},
+	}
+	for _, tt := range tests {
+		got := MembershipEndpoint(tt.source)
+		if got != tt.want {
+			t.Errorf("MembershipEndpoint(%q) = %q, want %q", tt.source, got, tt.want)
+		}
+	}
+}
+
 func TestAdminsEndpointOverride(t *testing.T) {
 	m := RegistryByKey()
 	e, ok := m["admins"]

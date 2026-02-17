@@ -87,12 +87,42 @@ var graphEndpoints = map[string]string{
 }
 
 // ValidAssocTargets maps each graph source type to its allowed target types.
+// Membership targets (user for user_group, system for device_group) are listed
+// first and use dedicated membership endpoints instead of graph associations.
+// Graph targets are validated against the live JumpCloud V2 API (see graph.go).
+// Only targets with TUI registry entries (graphTypeToRegistryKey) are included.
 var ValidAssocTargets = map[string][]string{
 	"user":         {"application", "system", "system_group", "radius_server", "ldap_server"},
 	"device":       {"command", "policy", "user", "user_group"},
-	"user_group":   {"user", "application", "system", "system_group"},
+	"user_group":   {"user", "application", "system", "system_group", "radius_server", "ldap_server"},
 	"device_group": {"system", "command", "policy", "user", "user_group"},
 	"application":  {"user", "user_group"},
+}
+
+// MembershipTarget returns the member type for a group source type, or "" if
+// the source is not a group. Group members use dedicated endpoints (/members,
+// /membership) rather than the graph associations API.
+func MembershipTarget(sourceType string) string {
+	switch sourceType {
+	case "user_group":
+		return "user"
+	case "device_group":
+		return "system"
+	default:
+		return ""
+	}
+}
+
+// MembershipEndpoint returns the V2 API endpoint prefix for listing group members.
+func MembershipEndpoint(sourceType string) string {
+	switch sourceType {
+	case "user_group":
+		return "/usergroups"
+	case "device_group":
+		return "/systemgroups"
+	default:
+		return ""
+	}
 }
 
 // GraphEndpoint returns the V2 graph API endpoint prefix for a source type.
