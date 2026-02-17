@@ -92,7 +92,7 @@ var graphEndpoints = map[string]string{
 // Graph targets are validated against the live JumpCloud V2 API (see graph.go).
 // Only targets with TUI registry entries (graphTypeToRegistryKey) are included.
 var ValidAssocTargets = map[string][]string{
-	"user":         {"application", "system", "system_group", "radius_server", "ldap_server"},
+	"user":         {"user_group", "application", "system", "system_group", "radius_server", "ldap_server"},
 	"device":       {"command", "policy", "user", "user_group"},
 	"user_group":   {"user", "application", "system", "system_group", "radius_server", "ldap_server"},
 	"device_group": {"system", "command", "policy", "user", "user_group"},
