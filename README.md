@@ -455,6 +455,8 @@ Full-screen terminal UI for browsing all 25 JumpCloud resource types. Features:
 - **Home screen** with resource counts dashboard and bookmarked resources
 - **List views** with live filtering (`/`), sort cycling (`s`), and field toggling (`a`)
 - **Detail views** with associations, group membership, and related resources
+- **Directory Insights** — query events by service, time range, and event type; drill into individual events to see all fields
+- **AI event explanation** — press `x` on any event detail to get a plain-English explanation of what happened and whether it's concerning (requires `ask.provider` configured)
 - **Clipboard** — copy resource IDs with `c`
 - **Export** — `e` then `j` (JSON clipboard), `c` (CSV file), or `J` (JSON file)
 - **Keyboard-driven** — `j`/`k` or arrows to navigate, Enter to drill in, Esc to go back, `?` for help
