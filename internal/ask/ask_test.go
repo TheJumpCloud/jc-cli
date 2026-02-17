@@ -342,3 +342,129 @@ func TestTruncateBody(t *testing.T) {
 		t.Errorf("expected 203 chars, got %d", len(result))
 	}
 }
+
+// === Battle Tests: Edge Cases ===
+
+func TestParseResponse_UnicodeBullets(t *testing.T) {
+	// Unicode bullet "•" is NOT handled by stripFormatting (only "- " and "* " prefixes).
+	result := parseResponse("• users list", 10)
+	if len(result.Commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(result.Commands))
+	}
+	// The "•" should remain since stripFormatting doesn't handle it.
+	if result.Commands[0] != "• users list" {
+		t.Errorf("command = %q, want %q", result.Commands[0], "• users list")
+	}
+}
+
+func TestParseResponse_MixedNumberingFormats(t *testing.T) {
+	input := "1. users list\n2) devices list\n- groups user list"
+	result := parseResponse(input, 10)
+	if len(result.Commands) != 3 {
+		t.Fatalf("got %d commands, want 3", len(result.Commands))
+	}
+	if result.Commands[0] != "users list" {
+		t.Errorf("commands[0] = %q, want %q", result.Commands[0], "users list")
+	}
+	if result.Commands[1] != "devices list" {
+		t.Errorf("commands[1] = %q, want %q", result.Commands[1], "devices list")
+	}
+	if result.Commands[2] != "groups user list" {
+		t.Errorf("commands[2] = %q, want %q", result.Commands[2], "groups user list")
+	}
+}
+
+func TestParseResponse_MultipleBlankLines(t *testing.T) {
+	input := "users list\n\n\n\nThis is the explanation."
+	result := parseResponse(input, 10)
+	if len(result.Commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(result.Commands))
+	}
+	if result.Commands[0] != "users list" {
+		t.Errorf("commands[0] = %q, want %q", result.Commands[0], "users list")
+	}
+	// Everything after the first blank line goes to explanation.
+	if result.Explanation == "" {
+		t.Error("expected non-empty explanation")
+	}
+}
+
+func TestParseResponse_VeryLongCommand(t *testing.T) {
+	long := "users list --filter " + strings.Repeat("x", 10000)
+	result := parseResponse(long, 10)
+	if len(result.Commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(result.Commands))
+	}
+	if len(result.Commands[0]) < 10000 {
+		t.Errorf("command length = %d, want >= 10000", len(result.Commands[0]))
+	}
+}
+
+func TestParseResponse_EmptyAfterStripping(t *testing.T) {
+	// Only code fences — stripped to empty lines.
+	input := "```\n```"
+	result := parseResponse(input, 10)
+	if len(result.Commands) != 0 {
+		t.Errorf("got %d commands, want 0", len(result.Commands))
+	}
+}
+
+func TestParseResponse_NoExplanation(t *testing.T) {
+	// Commands with no blank line separator → no explanation.
+	input := "users list\ndevices list"
+	result := parseResponse(input, 10)
+	if len(result.Commands) != 2 {
+		t.Fatalf("got %d commands, want 2", len(result.Commands))
+	}
+	if result.Explanation != "" {
+		t.Errorf("explanation = %q, want empty", result.Explanation)
+	}
+}
+
+func TestParseResponse_ExplanationOnly(t *testing.T) {
+	// Leading blank line is removed by TrimSpace, so "Explanation:" prefix
+	// is needed to route the line into explanation (not commands).
+	input := "\nExplanation: This is just an explanation."
+	result := parseResponse(input, 10)
+	if len(result.Commands) != 0 {
+		t.Errorf("got %d commands, want 0", len(result.Commands))
+	}
+	if result.Explanation == "" {
+		t.Error("expected non-empty explanation")
+	}
+}
+
+func TestParseResponse_JCPrefixVariants(t *testing.T) {
+	// Only lowercase "jc " should be stripped.
+	tests := []struct {
+		input   string
+		wantCmd string
+	}{
+		{"jc users list", "users list"},
+		{"JC users list", "JC users list"},
+	}
+	for _, tt := range tests {
+		result := parseResponse(tt.input, 10)
+		if len(result.Commands) != 1 {
+			t.Errorf("parseResponse(%q): got %d commands, want 1", tt.input, len(result.Commands))
+			continue
+		}
+		if result.Commands[0] != tt.wantCmd {
+			t.Errorf("parseResponse(%q): command = %q, want %q", tt.input, result.Commands[0], tt.wantCmd)
+		}
+	}
+}
+
+func TestStripFormatting_CodeFenceWithLang(t *testing.T) {
+	got := stripFormatting("```bash")
+	if got != "" {
+		t.Errorf("stripFormatting(code fence with lang) = %q, want empty", got)
+	}
+}
+
+func TestStripFormatting_NestedBackticks(t *testing.T) {
+	got := stripFormatting("`users list`")
+	if got != "users list" {
+		t.Errorf("stripFormatting = %q, want %q", got, "users list")
+	}
+}

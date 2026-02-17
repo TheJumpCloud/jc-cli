@@ -625,3 +625,32 @@ func TestRootHelpIncludesBulk(t *testing.T) {
 		t.Errorf("root help should include bulk command, got: %q", helpOut)
 	}
 }
+
+// === Battle Tests: Fuzz ===
+
+func FuzzParseBulkCSV(f *testing.F) {
+	// Valid CSV with header and data row.
+	f.Add([]byte("username,email,operation\nalice,alice@example.com,create\n"))
+	// BOM-prefixed CSV.
+	f.Add([]byte("\xef\xbb\xbfusername,email\nalice,alice@example.com\n"))
+	// Empty file.
+	f.Add([]byte(""))
+	// Header only.
+	f.Add([]byte("username,email,operation\n"))
+	// Just a newline.
+	f.Add([]byte("\n"))
+	// Binary garbage.
+	f.Add([]byte{0x00, 0x01, 0x02, 0xff})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Write fuzzed data to a temp file.
+		tmp := t.TempDir()
+		path := tmp + "/fuzz.csv"
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("write temp file: %v", err)
+		}
+
+		// parseBulkCSV must never panic.
+		_, _, _ = parseBulkCSV(path)
+	})
+}

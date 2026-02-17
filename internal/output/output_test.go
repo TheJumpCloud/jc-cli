@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1968,5 +1969,203 @@ func TestWriteSingle_Query_ExtractsNestedField(t *testing.T) {
 	got := strings.TrimSpace(buf.String())
 	if got != `"alice@acme.com"` {
 		t.Errorf("query result = %q, want %q", got, `"alice@acme.com"`)
+	}
+}
+
+// === Battle Tests: Edge Cases ===
+
+func TestSplitCommaFlag_OnlyCommas(t *testing.T) {
+	got := splitCommaFlag(",,,,")
+	if got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func TestSplitCommaFlag_TrailingLeadingCommas(t *testing.T) {
+	got := splitCommaFlag(",a,b,")
+	want := []string{"a", "b"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSplitCommaFlag_WhitespaceBetweenCommas(t *testing.T) {
+	got := splitCommaFlag("a, , ,b")
+	want := []string{"a", "b"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSplitCommaFlag_EmptyString(t *testing.T) {
+	got := splitCommaFlag("")
+	if got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func TestSplitCommaFlag_SingleValue(t *testing.T) {
+	got := splitCommaFlag("name")
+	if len(got) != 1 || got[0] != "name" {
+		t.Errorf("got %v, want [name]", got)
+	}
+}
+
+func TestWriteList_Query_ScalarResult(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+		Query:  "[0].username",
+	}
+	data := []json.RawMessage{
+		json.RawMessage(`{"username":"alice","email":"a@b.com"}`),
+	}
+	err := WriteList(&buf, data, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	out := strings.TrimSpace(buf.String())
+	if out != `"alice"` {
+		t.Errorf("got %s, want %q", out, `"alice"`)
+	}
+}
+
+func TestWriteList_Query_BooleanResult(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+		Query:  "[0].activated",
+	}
+	data := []json.RawMessage{
+		json.RawMessage(`{"username":"alice","activated":true}`),
+	}
+	err := WriteList(&buf, data, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	out := strings.TrimSpace(buf.String())
+	if out != "true" {
+		t.Errorf("got %s, want true", out)
+	}
+}
+
+func TestWriteList_Query_InvalidSyntax(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+		Query:  "[?.broken",
+	}
+	data := []json.RawMessage{
+		json.RawMessage(`{"username":"alice"}`),
+	}
+	err := WriteList(&buf, data, opts)
+	if err == nil {
+		t.Fatal("expected error for invalid JMESPath query, got nil")
+	}
+}
+
+func TestWriteList_Query_ContainsFilter(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+		Query:  "[?contains(email, 'acme')]",
+	}
+	data := []json.RawMessage{
+		json.RawMessage(`{"username":"alice","email":"alice@acme.com"}`),
+		json.RawMessage(`{"username":"bob","email":"bob@other.com"}`),
+	}
+	err := WriteList(&buf, data, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	out := strings.TrimSpace(buf.String())
+	if !strings.Contains(out, "alice") {
+		t.Errorf("expected output to contain alice, got %s", out)
+	}
+	if strings.Contains(out, "bob") {
+		t.Errorf("expected output to NOT contain bob, got %s", out)
+	}
+}
+
+func TestWriteList_Query_PipeExpression(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+		Query:  "[*].username | [0]",
+	}
+	data := []json.RawMessage{
+		json.RawMessage(`{"username":"alice"}`),
+		json.RawMessage(`{"username":"bob"}`),
+	}
+	err := WriteList(&buf, data, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	out := strings.TrimSpace(buf.String())
+	if out != `"alice"` {
+		t.Errorf("got %s, want %q", out, `"alice"`)
+	}
+}
+
+func TestWriteList_Table_ManyColumns(t *testing.T) {
+	// Build an object with 50 fields.
+	fields := make(map[string]string)
+	for i := 0; i < 50; i++ {
+		fields[fmt.Sprintf("field%02d", i)] = fmt.Sprintf("val%d", i)
+	}
+	data, _ := json.Marshal(fields)
+
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatTable,
+	}
+	err := WriteList(&buf, []json.RawMessage{json.RawMessage(data)}, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Error("expected non-empty table output")
+	}
+}
+
+func TestWriteList_JSON_DeeplyNested(t *testing.T) {
+	nested := `{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":"deep"}}}}}}}}}}`
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+	}
+	err := WriteList(&buf, []json.RawMessage{json.RawMessage(nested)}, opts)
+	if err != nil {
+		t.Fatalf("WriteList error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "deep") {
+		t.Error("deeply nested value not found in output")
+	}
+}
+
+func TestWriteSingle_NullRawMessage_Battle(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Format: FormatJSON,
+	}
+	err := WriteSingle(&buf, json.RawMessage("null"), opts)
+	if err != nil {
+		t.Fatalf("WriteSingle error: %v", err)
+	}
+	out := strings.TrimSpace(buf.String())
+	// null RawMessage passes through sortedJSON which unmarshals null into
+	// nil map, producing "{}". Verify it doesn't panic and produces valid JSON.
+	if !json.Valid([]byte(out)) {
+		t.Errorf("got invalid JSON %q", out)
 	}
 }

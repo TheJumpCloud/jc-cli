@@ -1,6 +1,8 @@
 package filter
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -401,5 +403,194 @@ func TestToV2Query_EmptyValue(t *testing.T) {
 	want := "department:eq:"
 	if got != want {
 		t.Errorf("ToV2Query = %q, want %q", got, want)
+	}
+}
+
+// === Battle Tests: Fuzz ===
+
+func FuzzParse(f *testing.F) {
+	f.Add("os=Mac")
+	f.Add("name:eq:val")
+	f.Add("x>=1")
+	f.Add("")
+	f.Add(">=")
+	f.Add("a:b:c:d")
+	f.Add("field!=value")
+	f.Add("count>10")
+	f.Add("age<30")
+	f.Add("  spaces  =  everywhere  ")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		e, err := Parse(input)
+		if err != nil {
+			return // errors are fine, just no panics
+		}
+		if e.Field == "" {
+			t.Error("successful parse returned empty Field")
+		}
+		validOps := map[string]bool{"eq": true, "ne": true, "gt": true, "gte": true, "lt": true, "lte": true}
+		if !validOps[e.Operator] {
+			t.Errorf("invalid operator %q", e.Operator)
+		}
+	})
+}
+
+// === Battle Tests: Edge Cases ===
+
+func TestParse_OperatorPrecedenceCollision(t *testing.T) {
+	// "field=>value" — orderedOps checks !=, >=, <=, >, <, = in order.
+	// strings.Index("field=>value", ">=") = -1 (the string has "=>", not ">=").
+	// strings.Index("field=>value", ">") = 5. idx=5 > 0 → match with ">".
+	// field = TrimSpace("field=") = "field=". value = TrimSpace("value") = "value". op = "gt".
+	e, err := Parse("field=>value")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	// ">" is matched at position 5; the "=" is part of the field name.
+	if e.Field != "field=" {
+		t.Errorf("field = %q, want %q", e.Field, "field=")
+	}
+	if e.Operator != "gt" {
+		t.Errorf("operator = %q, want %q", e.Operator, "gt")
+	}
+	if e.Value != "value" {
+		t.Errorf("value = %q, want %q", e.Value, "value")
+	}
+}
+
+func TestParse_FieldWithSpecialChars(t *testing.T) {
+	// "field!name=val" — orderedOps checks !=, >=, <=, >, <, = in order.
+	// strings.Index("field!name=val", "!=") = -1 (the "!" at idx 5 is followed by "n", not "=").
+	// >=, <=, >, < all return -1.
+	// strings.Index("field!name=val", "=") = 10. idx=10 > 0 → match with "=".
+	// field = TrimSpace("field!name") = "field!name". value = TrimSpace("val") = "val". op = "eq".
+	e, err := Parse("field!name=val")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "field!name" {
+		t.Errorf("field = %q, want %q", e.Field, "field!name")
+	}
+	if e.Operator != "eq" {
+		t.Errorf("operator = %q, want %q", e.Operator, "eq")
+	}
+	if e.Value != "val" {
+		t.Errorf("value = %q, want %q", e.Value, "val")
+	}
+}
+
+func TestParse_ExtremelyLongInput(t *testing.T) {
+	longField := strings.Repeat("a", 10000)
+	longValue := strings.Repeat("b", 10000)
+	e, err := Parse(longField + "=" + longValue)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(e.Field) != 10000 {
+		t.Errorf("field length = %d, want 10000", len(e.Field))
+	}
+	if len(e.Value) != 10000 {
+		t.Errorf("value length = %d, want 10000", len(e.Value))
+	}
+}
+
+func TestParse_EmptyOperatorColonFormat(t *testing.T) {
+	// "field::value" → SplitN("field::value", ":", 3) = ["field", "", "value"]
+	// len(parts) == 3. op = TrimSpace("") = "". validOps[""] = false.
+	// Falls through to eq path: value = TrimSpace(Join(["", "value"], ":")) = ":value".
+	e, err := Parse("field::value")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "field" || e.Operator != "eq" || e.Value != ":value" {
+		t.Errorf("got {%q, %q, %q}, want {field, eq, :value}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_MultipleColonsAmbiguity(t *testing.T) {
+	// "a:b:c:eq:val" → SplitN limit=3 → ["a", "b", "c:eq:val"]
+	// op = "b" → not in validOps → falls through to eq.
+	// value = TrimSpace(Join(["b", "c:eq:val"], ":")) = "b:c:eq:val".
+	e, err := Parse("a:b:c:eq:val")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "a" || e.Operator != "eq" || e.Value != "b:c:eq:val" {
+		t.Errorf("got {%q, %q, %q}, want {a, eq, b:c:eq:val}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_CaseSensitiveOperators(t *testing.T) {
+	// "x:EQ:1" → SplitN → ["x", "EQ", "1"]. op="EQ" → not in validOps (lowercase only).
+	// Falls to eq: value = "EQ:1".
+	e, err := Parse("x:EQ:1")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Field != "x" || e.Operator != "eq" || e.Value != "EQ:1" {
+		t.Errorf("got {%q, %q, %q}, want {x, eq, EQ:1}", e.Field, e.Operator, e.Value)
+	}
+}
+
+func TestParse_OnlyColon(t *testing.T) {
+	// ":" → SplitN(":", ":", 3) = ["", ""]. field = TrimSpace("") = "".
+	// field == "" → falls through to error.
+	_, err := Parse(":")
+	if err == nil {
+		t.Fatal("expected error for lone colon, got nil")
+	}
+}
+
+func TestParse_WhitespaceOnly(t *testing.T) {
+	_, err := Parse("   ")
+	if err == nil {
+		t.Fatal("expected error for whitespace-only input, got nil")
+	}
+}
+
+func TestParse_TabsInInput(t *testing.T) {
+	e, err := Parse("field\t=\tval")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	// TrimSpace handles tabs.
+	if e.Field != "field" {
+		t.Errorf("field = %q, want %q", e.Field, "field")
+	}
+	if e.Value != "val" {
+		t.Errorf("value = %q, want %q", e.Value, "val")
+	}
+}
+
+func TestParse_FilterError_Type(t *testing.T) {
+	_, err := Parse("nope")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var fe *FilterError
+	if !errors.As(err, &fe) {
+		t.Fatalf("error type = %T, want *FilterError", err)
+	}
+	if fe.Expression != "nope" {
+		t.Errorf("FilterError.Expression = %q, want %q", fe.Expression, "nope")
+	}
+}
+
+func TestParse_OnlyEquals(t *testing.T) {
+	// "=" → Index of "!=" = -1, ">=" = -1, "<=" = -1, ">" = -1, "<" = -1, "=" at idx 0.
+	// idx == 0, not > 0 → skip. Falls to colon path: no colon → error.
+	_, err := Parse("=")
+	if err == nil {
+		t.Fatal("expected error for bare '=', got nil")
+	}
+}
+
+func TestParse_NewlinesInValue(t *testing.T) {
+	e, err := Parse("field=line1\nline2")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if e.Value != "line1\nline2" {
+		t.Errorf("value = %q, want %q", e.Value, "line1\nline2")
 	}
 }

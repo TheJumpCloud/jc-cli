@@ -1184,3 +1184,132 @@ func TestExecute_WhenConditionError(t *testing.T) {
 		t.Errorf("Message = %q", result.Message)
 	}
 }
+
+// === Battle Tests: Fuzz ===
+
+func FuzzParseCommandArgs(f *testing.F) {
+	f.Add("users list --limit 10")
+	f.Add(`"unclosed`)
+	f.Add("'unclosed")
+	f.Add("")
+	f.Add("  ")
+	f.Add(`"hello world" foo 'bar baz'`)
+	f.Add(`""`)
+	f.Add("a    b     c")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		// Just verifying no panics. nil return is valid for empty input.
+		_ = ParseCommandArgs(input)
+	})
+}
+
+// === Battle Tests: Edge Cases ===
+
+func TestParseCommandArgs_UnclosedDoubleQuote(t *testing.T) {
+	result := ParseCommandArgs(`cmd "unclosed`)
+	if len(result) < 2 {
+		t.Fatalf("got %d args, want at least 2", len(result))
+	}
+	if result[0] != "cmd" {
+		t.Errorf("result[0] = %q, want %q", result[0], "cmd")
+	}
+	// The unclosed quote captures everything after it.
+	if result[1] != "unclosed" {
+		t.Errorf("result[1] = %q, want %q", result[1], "unclosed")
+	}
+}
+
+func TestParseCommandArgs_UnclosedSingleQuote(t *testing.T) {
+	result := ParseCommandArgs("cmd 'unclosed")
+	if len(result) < 2 {
+		t.Fatalf("got %d args, want at least 2", len(result))
+	}
+	if result[0] != "cmd" {
+		t.Errorf("result[0] = %q, want %q", result[0], "cmd")
+	}
+	if result[1] != "unclosed" {
+		t.Errorf("result[1] = %q, want %q", result[1], "unclosed")
+	}
+}
+
+func TestParseCommandArgs_NestedQuotes(t *testing.T) {
+	result := ParseCommandArgs(`"it's fine"`)
+	if len(result) != 1 {
+		t.Fatalf("got %d args, want 1", len(result))
+	}
+	if result[0] != "it's fine" {
+		t.Errorf("result[0] = %q, want %q", result[0], "it's fine")
+	}
+}
+
+func TestParseCommandArgs_MixedQuoteTypes(t *testing.T) {
+	result := ParseCommandArgs(`"double" 'single'`)
+	if len(result) != 2 {
+		t.Fatalf("got %d args, want 2", len(result))
+	}
+	if result[0] != "double" {
+		t.Errorf("result[0] = %q, want %q", result[0], "double")
+	}
+	if result[1] != "single" {
+		t.Errorf("result[1] = %q, want %q", result[1], "single")
+	}
+}
+
+func TestParseCommandArgs_WhitespaceOnly(t *testing.T) {
+	// Only space is treated as a delimiter; tabs are literal characters.
+	result := ParseCommandArgs("   \t  ")
+	if len(result) != 1 {
+		t.Fatalf("got %d args, want 1", len(result))
+	}
+	if result[0] != "\t" {
+		t.Errorf("result[0] = %q, want %q", result[0], "\t")
+	}
+}
+
+func TestParseCommandArgs_ConsecutiveSpaces(t *testing.T) {
+	result := ParseCommandArgs("a    b     c")
+	if len(result) != 3 {
+		t.Fatalf("got %d args, want 3", len(result))
+	}
+	if result[0] != "a" || result[1] != "b" || result[2] != "c" {
+		t.Errorf("got %v, want [a b c]", result)
+	}
+}
+
+func TestParseCommandArgs_VeryLongToken(t *testing.T) {
+	long := strings.Repeat("x", 100000)
+	result := ParseCommandArgs(long)
+	if len(result) != 1 {
+		t.Fatalf("got %d args, want 1", len(result))
+	}
+	if len(result[0]) != 100000 {
+		t.Errorf("token length = %d, want 100000", len(result[0]))
+	}
+}
+
+func TestParseCommandArgs_EmptyQuotedString(t *testing.T) {
+	// Empty quotes produce no token because current.Len() == 0.
+	result := ParseCommandArgs(`""`)
+	if len(result) != 0 {
+		t.Errorf("got %d args, want 0 (empty quotes produce no token)", len(result))
+	}
+}
+
+func TestParseCommandArgs_QuoteInMiddle(t *testing.T) {
+	// a"b"c — quotes toggle in-quote state but no space encountered.
+	result := ParseCommandArgs(`a"b"c`)
+	if len(result) != 1 {
+		t.Fatalf("got %d args, want 1", len(result))
+	}
+	if result[0] != "abc" {
+		t.Errorf("result[0] = %q, want %q", result[0], "abc")
+	}
+}
+
+func TestParseCommandArgs_OnlySingleQuotes(t *testing.T) {
+	// Empty single quotes produce no token because current.Len() == 0.
+	result := ParseCommandArgs("''")
+	if len(result) != 0 {
+		t.Errorf("got %d args, want 0 (empty quotes produce no token)", len(result))
+	}
+}

@@ -3,11 +3,13 @@ package resolve
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -437,4 +439,126 @@ func containsSubstring(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// === Battle Tests: Concurrency ===
+
+func TestResolve_ConcurrentCacheReadWrite(t *testing.T) {
+	// Set up a server that returns a user for every list request.
+	// All goroutines resolve the same name to exercise concurrent cache read/write.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[{"_id":"aabbccddee112233aabb0001","username":"testuser"}],"totalCount":1}`))
+	}))
+	defer server.Close()
+
+	cacheDir := t.TempDir()
+	t.Setenv("JC_CONFIG", cacheDir)
+	viper.Reset()
+	viper.Set("cache.directory", cacheDir)
+
+	client := api.NewV1ClientWithKey("test-key")
+	client.BaseURL = server.URL
+
+	resolver := NewResolver(client)
+
+	cfg := ResourceConfig{
+		CacheKey:     "test-concurrent",
+		ListEndpoint: "/systemusers",
+		NameField:    "username",
+		IDField:      "_id",
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// All goroutines resolve the same name to stress cache read/write concurrency.
+			_, err := resolver.Resolve(context.Background(), "testuser", cfg)
+			if err != nil {
+				errs <- fmt.Errorf("resolve goroutine %d: %w", idx, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent resolve error: %v", err)
+	}
+}
+
+func TestResolve_ConcurrentIDPassthrough(t *testing.T) {
+	// IsID should be safe for concurrent use — it's a pure function.
+	var wg sync.WaitGroup
+	errs := make(chan error, 50)
+
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			id := fmt.Sprintf("aabbccddee11223344556%03x", idx)
+			if !IsID(id) {
+				errs <- fmt.Errorf("IsID(%q) = false, want true", id)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+func TestV2Resolve_ConcurrentCacheReadWrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":"aabbccddee112233aabb0002","name":"testgroup"}]`))
+	}))
+	defer server.Close()
+
+	cacheDir := t.TempDir()
+	t.Setenv("JC_CONFIG", cacheDir)
+	viper.Reset()
+	viper.Set("cache.directory", cacheDir)
+
+	client := api.NewV2ClientWithKey("test-key")
+	client.BaseURL = server.URL
+
+	resolver := NewV2Resolver(client)
+
+	cfg := ResourceConfig{
+		CacheKey:     "test-v2-concurrent",
+		ListEndpoint: "/usergroups",
+		NameField:    "name",
+		IDField:      "id",
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// All goroutines resolve the same name to stress cache read/write concurrency.
+			_, err := resolver.Resolve(context.Background(), "testgroup", cfg)
+			if err != nil {
+				errs <- fmt.Errorf("v2 resolve goroutine %d: %w", idx, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent v2 resolve error: %v", err)
+	}
 }

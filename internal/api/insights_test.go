@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -884,4 +885,188 @@ func containsSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// === Battle Tests: Fuzz ===
+
+func FuzzParseTimeRange(f *testing.F) {
+	f.Add("24h")
+	f.Add("7d")
+	f.Add("1m")
+	f.Add("last 30d")
+	f.Add("2026-01-01")
+	f.Add("")
+	f.Add("-24h")
+	f.Add("999999h")
+	f.Add("2026-01-01T00:00:00Z")
+	f.Add("  24h  ")
+
+	// Fix the clock for reproducible results.
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time {
+		return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	}
+	f.Cleanup(func() { InsightsNowFunc = origNow })
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result, err := ParseTimeRange(input)
+		if err != nil {
+			return // errors are fine, just no panics
+		}
+		if result.IsZero() {
+			t.Error("successful parse returned zero time")
+		}
+	})
+}
+
+// === Battle Tests: Edge Cases ===
+
+func TestParseTimeRange_NegativeDuration(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	_, err := ParseTimeRange("-24h")
+	if err == nil {
+		t.Fatal("expected error for negative duration, got nil")
+	}
+}
+
+func TestParseTimeRange_ZeroDuration(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return now }
+	defer func() { InsightsNowFunc = origNow }()
+
+	result, err := ParseTimeRange("0h")
+	if err != nil {
+		t.Fatalf("ParseTimeRange error: %v", err)
+	}
+	// 0h means now - 0 = now, so result == now.
+	if !result.Equal(now) {
+		t.Errorf("result %v != now %v for 0h duration", result, now)
+	}
+}
+
+func TestParseTimeRange_LargeOverflow(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	// Should not panic even with huge numbers.
+	_, err := ParseTimeRange("999999999h")
+	// May succeed or error, but must not panic.
+	_ = err
+}
+
+func TestParseTimeRange_CaseSensitivity(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	_, err := ParseTimeRange("24H")
+	if err == nil {
+		t.Fatal("expected error for uppercase unit, got nil")
+	}
+}
+
+func TestParseTimeRange_FloatingPoint(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	_, err := ParseTimeRange("3.5h")
+	if err == nil {
+		t.Fatal("expected error for floating point duration, got nil")
+	}
+}
+
+func TestParseTimeRange_LastPrefixCase(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	// "Last" with capital L should not match "last " prefix.
+	_, err := ParseTimeRange("Last 24h")
+	if err == nil {
+		t.Fatal("expected error for capitalized 'Last' prefix, got nil")
+	}
+}
+
+func TestParseTimeRange_LeadingWhitespace(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	result, err := ParseTimeRange("  24h  ")
+	if err != nil {
+		t.Fatalf("ParseTimeRange error: %v", err)
+	}
+	if result.IsZero() {
+		t.Error("expected non-zero time for trimmed input")
+	}
+}
+
+func TestParseTimeRange_EmptyInput(t *testing.T) {
+	_, err := ParseTimeRange("")
+	if err == nil {
+		t.Fatal("expected error for empty input, got nil")
+	}
+}
+
+func TestParseTimeRange_OnlyWhitespace(t *testing.T) {
+	_, err := ParseTimeRange("   ")
+	if err == nil {
+		t.Fatal("expected error for whitespace-only input, got nil")
+	}
+}
+
+func TestParseTimeRange_InvalidUnit(t *testing.T) {
+	origNow := InsightsNowFunc
+	InsightsNowFunc = func() time.Time { return time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC) }
+	defer func() { InsightsNowFunc = origNow }()
+
+	_, err := ParseTimeRange("24x")
+	if err == nil {
+		t.Fatal("expected error for invalid unit 'x', got nil")
+	}
+}
+
+// === Battle Tests: Concurrency ===
+
+func TestInsightsClient_ConcurrentQuery(t *testing.T) {
+	// Set up a test server that returns a valid insights response.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"event_type":"login","timestamp":"2026-01-01T00:00:00Z"}]`))
+	}))
+	defer server.Close()
+
+	client := newTestInsightsClient(server.URL)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 5)
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(service string) {
+			defer wg.Done()
+			query := InsightsQuery{
+				Service:   service,
+				StartTime: "2026-01-01T00:00:00Z",
+				EndTime:   "2026-01-02T00:00:00Z",
+			}
+			_, err := client.QueryEvents(context.Background(), query, InsightsQueryOptions{})
+			if err != nil {
+				errs <- err
+			}
+		}(fmt.Sprintf("svc%d", i))
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent query error: %v", err)
+	}
 }

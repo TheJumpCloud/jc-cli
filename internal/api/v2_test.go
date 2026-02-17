@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -860,5 +861,137 @@ func TestV2Client_ListAll_LinkHeaderWithPrevAndNext(t *testing.T) {
 	}
 	if got := requestCount.Load(); got != 3 {
 		t.Errorf("made %d requests, want 3", got)
+	}
+}
+
+// === Battle Tests: Edge Cases ===
+
+func TestParseLinkNext_RelWithoutQuotes(t *testing.T) {
+	// rel=next without quotes should not match (code checks for `rel="next"`).
+	got := parseLinkNext(`<https://example.com/next>; rel=next`)
+	if got != "" {
+		t.Errorf("got %q, want empty (rel without quotes should not match)", got)
+	}
+}
+
+func TestParseLinkNext_CaseSensitiveRel(t *testing.T) {
+	got := parseLinkNext(`<https://example.com/next>; rel="NEXT"`)
+	if got != "" {
+		t.Errorf("got %q, want empty (NEXT is not next)", got)
+	}
+}
+
+func TestParseLinkNext_WhitespaceInsideAngleBrackets(t *testing.T) {
+	got := parseLinkNext(`< https://example.com/next >; rel="next"`)
+	// The URL is extracted as-is between < and >, including spaces.
+	want := " https://example.com/next "
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestParseLinkNext_MultipleRelValues(t *testing.T) {
+	// rel="prev next" does NOT contain the substring rel="next",
+	// so parseLinkNext correctly returns empty.
+	got := parseLinkNext(`<https://example.com/page>; rel="prev next"`)
+	if got != "" {
+		t.Errorf("got %q, want empty (rel=\"prev next\" does not match rel=\"next\")", got)
+	}
+}
+
+func TestParseLinkNext_EmptyURL(t *testing.T) {
+	got := parseLinkNext(`<>; rel="next"`)
+	if got != "" {
+		t.Errorf("got %q, want empty string for empty angle brackets", got)
+	}
+}
+
+func TestParseLinkNext_NoSemicolon(t *testing.T) {
+	got := parseLinkNext(`<https://example.com/next> rel="next"`)
+	if got != "" {
+		t.Errorf("got %q, want empty (no semicolon separator)", got)
+	}
+}
+
+func TestParseLinkNext_URLWithEncodedCommas(t *testing.T) {
+	// URL with %2C (encoded comma) — comma split should not break it
+	// because %2C is not a literal comma.
+	got := parseLinkNext(`<https://example.com/page?a=1%2C2>; rel="next"`)
+	want := "https://example.com/page?a=1%2C2"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestParseLinkNext_DoubleComma(t *testing.T) {
+	// Double comma creates an empty part, which is skipped.
+	got := parseLinkNext(`<https://example.com/prev>; rel="prev",, <https://example.com/next>; rel="next"`)
+	want := "https://example.com/next"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// === Battle Tests: Concurrency ===
+
+func TestV2Client_ConcurrentListAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":"aabbccddee112233aabb0001","name":"test"}]`))
+	}))
+	defer server.Close()
+
+	client := newTestV2Client(server.URL)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 5)
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(endpoint string) {
+			defer wg.Done()
+			_, err := client.ListAll(context.Background(), endpoint, V2ListOptions{})
+			if err != nil {
+				errs <- err
+			}
+		}(fmt.Sprintf("/endpoint%d", i))
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent ListAll error: %v", err)
+	}
+}
+
+func TestV2Client_ConcurrentGet(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"aabbccddee112233aabb0002","name":"item"}`))
+	}))
+	defer server.Close()
+
+	client := newTestV2Client(server.URL)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			_, err := client.Get(context.Background(), fmt.Sprintf("/items/%d", id))
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent Get error: %v", err)
 	}
 }
