@@ -137,6 +137,12 @@ func (c *V2Client) ListAll(ctx context.Context, endpoint string, opts V2ListOpti
 			break
 		}
 
+		// Validate the next URL's host matches our base URL to prevent
+		// credential exfiltration via malicious Link headers.
+		if !isSameOrigin(nextURL, c.BaseURL) {
+			return nil, fmt.Errorf("pagination link host mismatch: refusing to follow %q", nextURL)
+		}
+
 		reqURL = nextURL
 	}
 
@@ -323,6 +329,20 @@ func (c *V2Client) buildV2ListURL(endpoint string, opts V2ListOptions) (string, 
 
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+// isSameOrigin checks that a URL shares the same scheme and host as the base URL.
+// This prevents the authenticated client from following cross-origin pagination links.
+func isSameOrigin(rawURL, baseURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, base.Scheme) && strings.EqualFold(u.Host, base.Host)
 }
 
 // parseLinkNext extracts the URL for rel="next" from an HTTP Link header.

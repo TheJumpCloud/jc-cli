@@ -932,6 +932,83 @@ func TestParseLinkNext_DoubleComma(t *testing.T) {
 	}
 }
 
+// --- isSameOrigin tests ---
+
+func TestIsSameOrigin_SameHost(t *testing.T) {
+	if !isSameOrigin("https://console.jumpcloud.com/api/v2/users?skip=100", "https://console.jumpcloud.com/api/v2") {
+		t.Error("same host should be same origin")
+	}
+}
+
+func TestIsSameOrigin_DifferentHost(t *testing.T) {
+	if isSameOrigin("https://evil.example.com/steal", "https://console.jumpcloud.com/api/v2") {
+		t.Error("different host should not be same origin")
+	}
+}
+
+func TestIsSameOrigin_DifferentScheme(t *testing.T) {
+	if isSameOrigin("http://console.jumpcloud.com/api/v2/users", "https://console.jumpcloud.com/api/v2") {
+		t.Error("http vs https should not be same origin")
+	}
+}
+
+func TestIsSameOrigin_CaseInsensitive(t *testing.T) {
+	if !isSameOrigin("HTTPS://Console.JumpCloud.com/api/v2/users", "https://console.jumpcloud.com/api/v2") {
+		t.Error("host comparison should be case-insensitive")
+	}
+}
+
+func TestIsSameOrigin_InvalidURL(t *testing.T) {
+	if isSameOrigin("://bad", "https://console.jumpcloud.com/api/v2") {
+		t.Error("invalid URL should not be same origin")
+	}
+}
+
+func TestV2Client_ListAll_RejectsCrossOriginLink(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		items := []map[string]any{{"id": "aabbccddee112233aabb0001"}}
+		// Return a Link header pointing to a different host.
+		w.Header().Set("Link", `<https://evil.example.com/steal>; rel="next"`)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v2Response(items))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	_, err := c.ListAll(context.Background(), "/usergroups", V2ListOptions{})
+	if err == nil {
+		t.Fatal("ListAll should fail when Link header points to different host")
+	}
+	if !strings.Contains(err.Error(), "host mismatch") {
+		t.Errorf("error should mention host mismatch, got: %v", err)
+	}
+}
+
+func TestV2Client_ListAll_AcceptsSameOriginLink(t *testing.T) {
+	var requestCount atomic.Int32
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := requestCount.Add(1)
+		items := []map[string]any{{"id": fmt.Sprintf("id-%d", page)}}
+		if page == 1 {
+			nextURL := fmt.Sprintf("<http://%s/usergroups?skip=1>; rel=\"next\"", r.Host)
+			w.Header().Set("Link", nextURL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(v2Response(items))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/usergroups", V2ListOptions{})
+	if err != nil {
+		t.Fatalf("ListAll should succeed for same-origin Link: %v", err)
+	}
+	if len(result.Data) != 2 {
+		t.Errorf("got %d results, want 2", len(result.Data))
+	}
+}
+
 // === Battle Tests: Concurrency ===
 
 func TestV2Client_ConcurrentListAll(t *testing.T) {
