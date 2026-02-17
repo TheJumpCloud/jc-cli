@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12).
 
 ---
 
@@ -1446,4 +1446,22 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/cmd/setup_test.go` — 12 tests: full fresh flow, keep-all-defaults, reconfigure auth, service account, invalid key, new profile, format validation, custom org ID, non-interactive rejection, stale credentials, command registration, summary format
 - Files modified:
   - `internal/cmd/root.go` — registered `newSetupCmd()`, added `"setup"` to `builtinCommands`
+
+### TUI Bug Fixes (Issues #7–#12)
+- **Date:** 2026-02-17
+- What was fixed:
+  - **#7 — Refresh doesn't invalidate cache:** List refresh (`r`) used bare key `Invalidate()` which couldn't match composite cache keys (`v1:<resource>:<endpoint>:<opts>`). Added `InvalidateResource()` method using substring matching on `:<resource>:` segments.
+  - **#8 — Search cache ignores sort:** V1 search cache key format was missing the `sort` parameter, causing stale results when sort changed. Added sort to the cache key string.
+  - **#9 — Dashboard stale errors:** Dashboard kept showing error messages after a successful retry because it never cleared the error map on success. Added `delete(d.errors, msg.ResourceKey)` on successful fetch.
+  - **#10 — Dashboard loads full datasets:** Dashboard fetched complete V1 resource lists just to count them. Added `FetchV1Count()` method that uses `Limit:1` — V1 responses include `totalCount` regardless of limit, so we get an accurate count without loading all records.
+  - **#11 — Export fails when ~/Downloads missing:** `writeFileAtomic()` assumed the output directory existed. Added `os.MkdirAll(dir, 0755)` before creating the temp file.
+  - **#12 — Help screen wrong operators:** Filter help documented `ge`/`le` and `contains` operators, but the filter parser uses `gte`/`lte` and has no `contains`. Corrected the help text.
+- Files modified:
+  - `internal/tui/fetch/cache.go` — new `InvalidateResource()` method
+  - `internal/tui/fetch/cache_test.go` — new `TestCache_InvalidateResource` test
+  - `internal/tui/fetch/fetch.go` — new `FetchV1Count()` method + `CountResultMsg` type; sort in search cache key
+  - `internal/tui/screen/dashboard.go` — `CountResultMsg` handler; clear errors on success
+  - `internal/tui/screen/export.go` — `os.MkdirAll` before temp file creation
+  - `internal/tui/screen/help.go` — corrected filter operator names
+  - `internal/tui/screen/list.go` — `InvalidateResource()` instead of `Invalidate()`
 ---
