@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.3.0** (2026-02-17).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). **Released v1.3.0** (2026-02-17).
 
 ---
 
@@ -1523,16 +1523,41 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - App-level `RefreshListMsg` routing prevents a race condition where the message could arrive before `PopScreenMsg` pops the form/detail screen.
   - Generation-based staleness on `MutationResultMsg` prevents stale async responses from affecting UI state.
 
+### TUI Form & Filter Text Input Fixes
+
+- **Date:** 2026-02-17
+- **What was fixed:**
+  - **Form: `k` key intercepted as navigation on text fields** — `k` was always handled as "navigate up" (`case "up", "k":`), even when focused on a text input field. Fixed to mirror `j` pattern: on text fields, delegate to textinput; on bool fields, navigate.
+  - **Form: app-level `q` quit intercepted text input** — pressing `q` in a form text field quit the app because `GlobalKeyMap.Quit` matched before the form screen saw the key. Added `TextInputScreen` interface with `TextInputActive()` method; app skips `q`/`?` when active.
+  - **Form: bool toggle only worked with `h`/`l`** — users expected arrow keys and space to toggle booleans. Combined `h`, `l`, `left`, `right`, `space` into a single toggle case.
+  - **Form: textinput Width set on range copy** — `View()` set `ff.input.Width` in a `for _, ff := range` loop, mutating a copy. Moved to `updateFieldWidths()` called from `WindowSizeMsg` handler using `f.fields[i].input.Width`.
+  - **Home/List: `q` quit intercepted filter input** — same `q` interception bug affected home screen resource filter and list screen filter bar. Added `TextInputScreen` to both screens.
+  - **Stale comment** in `insights_form.go` — `SetFetcher` doc comment was misplaced above `TextInputActive`.
+- **Files created:** none
+- **Files modified:**
+  - `internal/tui/nav.go` — new `TextInputScreen` interface
+  - `internal/tui/app.go` — `textActive` check before `q`/`?` interception; `ctrl+c` always quits
+  - `internal/tui/app_test.go` — 4 new tests: q suppressed, q quits when inactive, ? suppressed, ctrl+c always quits
+  - `internal/tui/screen/form.go` — `TextInputActive()`, fixed `k` routing, combined bool toggle keys, `updateFieldWidths()`, updated help footer
+  - `internal/tui/screen/form_test.go` — 6 new tests: k types in text, k navigates on bool, arrow/space toggle, TextInputActive, q types in text
+  - `internal/tui/screen/home.go` — `TextInputActive()` returns `h.filtering`
+  - `internal/tui/screen/list.go` — `TextInputActive()` returns `l.filterBar.Focused()`
+  - `internal/tui/screen/insights_form.go` — `TextInputActive()`, fixed stale comment
+  - `internal/tui/screen/help.go` — added "Form (Create / Edit)" section
+  - `internal/tui/screen/help_test.go` — updated section header assertions
+
 ### Release v1.3.0 (2026-02-17)
 
 - **Tag:** `v1.3.0`
-- **Commits since v1.2.0:** 7
+- **Commits since v1.2.0:** 9
   - `47981a7` docs: add quick-start cheat sheet for new users
   - `4a65ec1` docs: link quick-start cheat sheet from README
   - `bc606f5` test: add battle tests for fuzz, edge cases, and concurrency
   - `d38bce2` feat: add TUI CRUD — create, edit, delete from interactive browser
   - `ccdc1f8` docs: update progress.md with TUI CRUD (v1.3.0)
   - `067f3e9` docs: document TUI CRUD operations in README
+  - `8b29fb7` fix: TUI form text input and bool toggle bugs
+  - `db316fc` fix: suppress q/? quit in home and list filter modes
 
 ### Release v1.2.0 (2026-02-17)
 
