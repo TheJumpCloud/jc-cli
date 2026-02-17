@@ -307,6 +307,40 @@ func TestEventDetailScreen_StaleExplainIgnored(t *testing.T) {
 	}
 }
 
+func TestEventDetailScreen_ExplainCommandsField(t *testing.T) {
+	// Simulate the real-world case where parseResponse puts the explanation
+	// text into Commands (first line) rather than Explanation.
+	origClient := newAskClientFunc
+	newAskClientFunc = func() (ask.Client, error) {
+		return &mockAskClient{
+			result: &ask.TranslateResult{
+				Commands:    []string{"A disk usage alert fired on macos.shared."},
+				Explanation: "",
+			},
+		}, nil
+	}
+	t.Cleanup(func() { newAskClientFunc = origClient })
+
+	e := NewEventDetailScreen(testEvent)
+	e.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	msgs := executeBatchCmd(cmd)
+	for _, m := range msgs {
+		if er, ok := m.(ExplainResultMsg); ok {
+			e.Update(er)
+			break
+		}
+	}
+
+	if e.explanation == "" {
+		t.Error("explanation should be set from Commands field")
+	}
+	if !strings.Contains(e.explanation, "disk usage alert") {
+		t.Errorf("explanation = %q, should contain text from Commands", e.explanation)
+	}
+}
+
 // executeBatchCmd executes a tea.Cmd and collects all messages from a tea.BatchMsg.
 func executeBatchCmd(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {

@@ -185,9 +185,21 @@ func (e *EventDetailScreen) triggerExplain() tea.Cmd {
 			return ExplainResultMsg{Generation: gen, Err: err}
 		}
 
+		// Translate() splits LLM output into Commands (first lines) and
+		// Explanation (text after a blank line). Since we're asking for an
+		// explanation rather than CLI commands, the response may land in
+		// either field. Combine both to capture the full text.
+		var parts []string
+		if len(result.Commands) > 0 {
+			parts = append(parts, strings.Join(result.Commands, " "))
+		}
+		if result.Explanation != "" {
+			parts = append(parts, result.Explanation)
+		}
+
 		return ExplainResultMsg{
 			Generation:  gen,
-			Explanation: result.Explanation,
+			Explanation: strings.Join(parts, "\n\n"),
 		}
 	})
 }
