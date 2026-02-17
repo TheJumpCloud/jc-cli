@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.2.0** (2026-02-17).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.2.0** (2026-02-17).
 
 ---
 
@@ -1491,6 +1491,37 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - Separate `EventDetailScreen` type (not reusing `DetailScreen`) — insights events have no ID, no associations, no fetch. A dedicated type keeps both screens simple.
   - `newAskClientFunc` var for test injection follows the same pattern as `newV1Client`, `newAskClient` elsewhere.
   - `ExplainResultMsg` with generation counter prevents stale responses from overwriting newer results.
+
+### TUI CRUD: Create, Edit, Delete (v1.3.0)
+
+- **Summary:** Full CRUD operations from the interactive TUI browser. Users can create new resources (`n` on list screen), edit existing resources (`E` on detail screen), and delete resources (`d` on detail screen) — all without dropping back to the CLI.
+- **Architecture:**
+  - **FormScreen** (`internal/tui/screen/form.go`) — schema-driven form shared between create and edit modes. Fields generated from `schema.FieldDef[]`, skipping ID/array/object fields. Required fields marked with `*`. Bool fields toggle with `h`/`l`. Navigation with `j`/`k`. Submit with `Ctrl+S`.
+  - **Edit mode** pre-populates from current JSON data; only sends changed fields in PUT body (change detection via original value comparison).
+  - **Delete** uses inline confirmation on detail screen (`d` → "Delete {name}? y to confirm, any key to cancel" → `y` → async delete).
+  - **Verb-gating** — all CRUD keys are no-ops when the resource's `Schema.Verbs` doesn't include the relevant verb (e.g., policy-templates are read-only).
+  - **Mutation layer** (`internal/tui/fetch/mutation.go`) — 6 methods: `DeleteV1`, `DeleteV2`, `CreateV1`, `CreateV2`, `UpdateV1`, `UpdateV2`. Each creates client → calls API → invalidates cache → returns `MutationResultMsg`.
+  - **RefreshListMsg** propagated at app level to all screens on the nav stack, ensuring the list screen always re-fetches after create/delete regardless of `tea.Batch` message ordering.
+- **Files created:**
+  - `internal/tui/fetch/mutation.go` — 6 mutation methods with cache invalidation
+  - `internal/tui/fetch/mutation_test.go` — 8 tests covering all mutation methods + error cases
+  - `internal/tui/screen/form.go` — schema-driven FormScreen (create/edit)
+  - `internal/tui/screen/form_test.go` — 13 tests: titles, field filtering, required markers, pre-population, body construction, submit, navigation
+- **Files modified:**
+  - `internal/tui/nav.go` — added `RefreshListMsg` type
+  - `internal/tui/app.go` — `RefreshListMsg` handler forwarding to all screens on stack
+  - `internal/tui/screen/detail.go` — delete confirmation flow, edit push, `MutationResultMsg` handler
+  - `internal/tui/screen/detail_test.go` — 8 new tests: delete confirm/cancel/no-verb/success/error, edit push/no-verb/no-data
+  - `internal/tui/screen/list.go` — create push (`n`), `RefreshListMsg` handler
+  - `internal/tui/screen/list_test.go` — 3 new tests: create push/no-verb, RefreshListMsg
+  - `internal/tui/screen/help.go` — added `n` (Create), `d` (Delete), `E` (Edit) bindings
+  - `internal/tui/screen/help_test.go` — updated binding assertions
+  - `docs/QUICKSTART.md` — added CRUD keybindings
+- **Key decisions:**
+  - Shared FormScreen between create and edit avoids code duplication — same component, different init.
+  - Inline delete confirmation (not a modal push) follows the export pattern already established.
+  - App-level `RefreshListMsg` routing prevents a race condition where the message could arrive before `PopScreenMsg` pops the form/detail screen.
+  - Generation-based staleness on `MutationResultMsg` prevents stale async responses from affecting UI state.
 
 ### Release v1.2.0 (2026-02-17)
 
