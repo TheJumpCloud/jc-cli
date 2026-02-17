@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`).
 
 ---
 
@@ -1422,4 +1422,28 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `displayEntries()` is the linchpin — without it, cursor indices would be off-by-N when bookmark entries are rendered in the view but absent from `h.filtered`. A single computed display list is the source of truth for all cursor operations.
   - `bookmarkedEntries()` iterates `h.entries` (registry order), not the `bookmarks` map, to avoid Go's random map iteration causing UI jitter between renders.
   - Var-based DI (`bookmarkLoader`/`bookmarkSaver`) lets tests inject mock config without viper init, following the same pattern as `newV1Client`, `isTerminalFunc`, etc.
+---
+
+### TUI Fix: User Group Associations
+- **Date:** 2026-02-17
+- What was fixed:
+  - **Missing `user_group` target:** `ValidAssocTargets["user"]` in `registry.go` was missing `user_group`, so the user detail screen didn't show which groups a user belongs to. Added `user_group` as the first target (membership-style targets come first by convention).
+- Files modified:
+  - `internal/tui/registry.go` — added `"user_group"` to `ValidAssocTargets["user"]`
+
+### Interactive Onboarding Wizard (`jc setup`)
+- **Date:** 2026-02-17
+- What was implemented:
+  - **Full interactive wizard** walking new users through first-time CLI configuration in one command.
+  - **9 steps:** Welcome banner, profile selection/creation, auth method (API key or service account), credential validation via `GET /organizations`, org ID (auto-detected from validation), output format, color toggle, list limit, multi-profile guidance, and final summary.
+  - **Re-run aware:** Detects existing settings, validates current credentials against API, offers "Keep? (Y/n)" for each step. Press Enter to keep current values.
+  - **Stale credential detection:** If existing credentials fail validation, prints "FAILED" and drops into re-authentication flow.
+  - **Immediate persistence:** Each step writes to config immediately, so partial wizard completion (Ctrl-C) still saves progress.
+  - **stderr/stdout separation:** Prompts and progress go to stderr; only the final summary goes to stdout (consistent with CLI conventions).
+  - **Non-interactive guard:** `--non-interactive` flag rejects the wizard with a clear error.
+- Files created:
+  - `internal/cmd/setup.go` — `setupWizard` struct with step methods, prompt helpers, keychain storage
+  - `internal/cmd/setup_test.go` — 12 tests: full fresh flow, keep-all-defaults, reconfigure auth, service account, invalid key, new profile, format validation, custom org ID, non-interactive rejection, stale credentials, command registration, summary format
+- Files modified:
+  - `internal/cmd/root.go` — registered `newSetupCmd()`, added `"setup"` to `builtinCommands`
 ---
