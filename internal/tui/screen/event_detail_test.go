@@ -341,6 +341,62 @@ func TestEventDetailScreen_ExplainCommandsField(t *testing.T) {
 	}
 }
 
+func TestSanitizeTerminalText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain text", "hello world", "hello world"},
+		{"preserves newlines", "line1\nline2", "line1\nline2"},
+		{"strips ANSI color", "hello \x1b[31mred\x1b[0m world", "hello red world"},
+		{"strips OSC title", "text\x1b]0;evil title\x07more", "textmore"},
+		{"strips OSC with ST", "text\x1b]0;evil\x1b\\more", "textmore"},
+		{"strips control chars", "hel\x00lo\x01wor\x02ld", "helloworld"},
+		{"preserves tabs", "col1\tcol2", "col1\tcol2"},
+		{"combined attack", "\x1b[31m\x1b]0;pwned\x07\x00safe text\x1b[0m", "safe text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeTerminalText(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeTerminalText(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEventDetailScreen_ExplainSanitized(t *testing.T) {
+	origClient := newAskClientFunc
+	newAskClientFunc = func() (ask.Client, error) {
+		return &mockAskClient{
+			result: &ask.TranslateResult{
+				Explanation: "Safe text \x1b[31minjected color\x1b[0m \x1b]0;evil title\x07end",
+			},
+		}, nil
+	}
+	t.Cleanup(func() { newAskClientFunc = origClient })
+
+	e := NewEventDetailScreen(testEvent)
+	e.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	_, cmd := e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	msgs := executeBatchCmd(cmd)
+	for _, m := range msgs {
+		if er, ok := m.(ExplainResultMsg); ok {
+			e.Update(er)
+			break
+		}
+	}
+
+	if strings.Contains(e.explanation, "\x1b") {
+		t.Error("explanation should not contain ANSI escape sequences")
+	}
+	if !strings.Contains(e.explanation, "Safe text") {
+		t.Error("explanation should preserve safe text content")
+	}
+}
+
 // executeBatchCmd executes a tea.Cmd and collects all messages from a tea.BatchMsg.
 func executeBatchCmd(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {

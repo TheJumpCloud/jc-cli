@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -16,6 +18,24 @@ import (
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 	"github.com/spf13/viper"
 )
+
+// ansiEscapeRe matches ANSI CSI and OSC escape sequences.
+var ansiEscapeRe = regexp.MustCompile(`\x1b(?:\[[0-9;]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\))`)
+
+// sanitizeTerminalText strips ANSI escape sequences and control characters
+// from untrusted text to prevent terminal injection.
+func sanitizeTerminalText(s string) string {
+	s = ansiEscapeRe.ReplaceAllString(s, "")
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1 // drop
+		}
+		return r
+	}, s)
+}
 
 // newAskClientFunc creates an ask.Client from config. Overridable in tests.
 var newAskClientFunc = func() (ask.Client, error) {
@@ -101,7 +121,7 @@ func (e *EventDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			e.explainErr = msg.Err.Error()
 		} else {
-			e.explanation = msg.Explanation
+			e.explanation = sanitizeTerminalText(msg.Explanation)
 		}
 		if e.ready {
 			e.viewport.SetContent(e.renderContent())
