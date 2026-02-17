@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation.
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, and bookmarks. Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.2.0** (2026-02-17).
 
 ---
 
@@ -1480,8 +1480,25 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/screen/insights_form.go` — Enter key handler in results mode pushes `EventDetailScreen`; updated help text with `enter: detail`
   - `internal/tui/screen/help.go` — added "Event Detail" section
   - `internal/tui/screen/help_test.go` — added "Event Detail" to section header assertions
+- **Bug fixes (post-implementation):**
+  - AI explanation text now wraps to terminal width using `style.FieldValue.Width(wrapWidth).Render()`
+  - LLM prompt updated to request plain text (no markdown) for clean TUI rendering
+  - Fixed empty explanation: `ask.Translate()` puts short responses in `Commands` field, not `Explanation` — now combines both
+  - Fixed invisible explanation: viewport auto-scrolls to bottom (`GotoBottom()`) when explanation section appears below the fold
+  - Fixed spinner not animating: spinner tick handler now re-renders viewport content
+  - Added `TestEventDetailScreen_ExplainCommandsField` test (13 tests total)
 - **Key decisions:**
   - Separate `EventDetailScreen` type (not reusing `DetailScreen`) — insights events have no ID, no associations, no fetch. A dedicated type keeps both screens simple.
   - `newAskClientFunc` var for test injection follows the same pattern as `newV1Client`, `newAskClient` elsewhere.
   - `ExplainResultMsg` with generation counter prevents stale responses from overwriting newer results.
+
+### Release v1.2.0 (2026-02-17)
+
+- **Tag:** `v1.2.0` — https://github.com/juergen-kc/jc/releases/tag/v1.2.0
+- **Commits since v1.1.0:** 5
+  - `fa8315f` feat: add insights event detail screen with AI explanation
+  - `f17f751` fix: wrap AI explanation text to terminal width in event detail
+  - `5dd88c8` fix: capture AI explanation from both Commands and Explanation fields
+  - `526af3d` fix: auto-scroll viewport and animate spinner for AI explanation
+  - `6458e26` docs: update README with TUI event detail and AI explanation features
 ---
