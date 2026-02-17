@@ -17,10 +17,11 @@ import (
 
 // formField holds the state for a single editable field.
 type formField struct {
-	def      schema.FieldDef
-	input    textinput.Model
-	boolVal  bool
-	original string // for edit change detection
+	def         schema.FieldDef
+	input       textinput.Model
+	boolVal     bool
+	boolTouched bool   // tracks whether user explicitly toggled the bool
+	original    string // for edit change detection
 }
 
 // FormScreen provides a create/edit form for a resource.
@@ -245,6 +246,7 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h", "l", "left", "right", " ":
 			if len(f.fields) > 0 && f.fields[f.focusIdx].def.Type == "bool" {
 				f.fields[f.focusIdx].boolVal = !f.fields[f.focusIdx].boolVal
+				f.fields[f.focusIdx].boolTouched = true
 				return f, nil
 			}
 			// Delegate to text input for non-bool fields.
@@ -327,11 +329,10 @@ func (f *FormScreen) submit() tea.Cmd {
 			if f.mode == "edit" && currentVal == ff.original {
 				continue
 			}
-			if f.mode == "create" {
-				body[ff.def.Name] = ff.boolVal
-			} else {
-				body[ff.def.Name] = ff.boolVal
+			if f.mode == "create" && !ff.boolTouched {
+				continue // don't send untouched optional bools on create
 			}
+			body[ff.def.Name] = ff.boolVal
 
 		case "int":
 			val := strings.TrimSpace(ff.input.Value())
@@ -362,6 +363,14 @@ func (f *FormScreen) submit() tea.Cmd {
 			}
 			body[ff.def.Name] = val
 		}
+	}
+
+	// In edit mode, skip the API call if nothing changed.
+	if f.mode == "edit" && len(body) == 0 {
+		return tea.Batch(
+			func() tea.Msg { return tui.FlashMsg{Text: "No changes to save"} },
+			func() tea.Msg { return tui.PopScreenMsg{} },
+		)
 	}
 
 	f.submitting = true

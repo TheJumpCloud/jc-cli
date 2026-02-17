@@ -192,6 +192,51 @@ func TestFormScreen_EditOnlyChanged(t *testing.T) {
 	// but we verify no validation error and submitting state was set.
 }
 
+func TestFormScreen_EditNoChangeSkipsAPI(t *testing.T) {
+	data := json.RawMessage(`{"id":"abc123","name":"Original","description":"Old desc"}`)
+	f := NewFormScreen(testIPListEntry(), "edit", data)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Don't change anything. Submit.
+	_, cmd := f.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if f.submitting {
+		t.Error("should not be submitting when nothing changed")
+	}
+	if cmd == nil {
+		t.Fatal("expected a batch command with flash + pop")
+	}
+
+	// Execute the batch and check for FlashMsg and PopScreenMsg.
+	batchMsg := cmd()
+	msgs, ok := batchMsg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected tea.BatchMsg, got %T", batchMsg)
+	}
+
+	var hasFlash, hasPop bool
+	for _, subCmd := range msgs {
+		if subCmd == nil {
+			continue
+		}
+		subMsg := subCmd()
+		switch m := subMsg.(type) {
+		case tui.FlashMsg:
+			hasFlash = true
+			if !strings.Contains(m.Text, "No changes") {
+				t.Errorf("flash text = %q, want to contain 'No changes'", m.Text)
+			}
+		case tui.PopScreenMsg:
+			hasPop = true
+		}
+	}
+	if !hasFlash {
+		t.Error("expected FlashMsg in batch")
+	}
+	if !hasPop {
+		t.Error("expected PopScreenMsg in batch")
+	}
+}
+
 func TestFormScreen_SubmitSuccess(t *testing.T) {
 	f := NewFormScreen(testIPListEntry(), "create", nil)
 	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -414,6 +459,65 @@ func TestFormScreen_BoolToggleArrowKeys(t *testing.T) {
 	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
 	if f.fields[boolIdx].boolVal == initial {
 		t.Error("boolVal should toggle on space")
+	}
+}
+
+func TestFormScreen_CreateOmitsUntouchedBools(t *testing.T) {
+	f := NewFormScreen(testUserEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Fill required username field.
+	for i := range f.fields {
+		if f.fields[i].def.Name == "username" {
+			f.fields[i].input.SetValue("testuser")
+		}
+		if f.fields[i].def.Name == "email" {
+			f.fields[i].input.SetValue("test@example.com")
+		}
+	}
+
+	// Don't touch any bool fields. Verify boolTouched is false.
+	for _, ff := range f.fields {
+		if ff.def.Type == "bool" && ff.boolTouched {
+			t.Errorf("bool field %q should not be touched before toggle", ff.def.Name)
+		}
+	}
+
+	// Submit.
+	f.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if f.err != "" {
+		t.Fatalf("unexpected error: %s", f.err)
+	}
+	if !f.submitting {
+		t.Error("expected submitting to be true")
+	}
+}
+
+func TestFormScreen_CreateIncludesTouchedBools(t *testing.T) {
+	f := NewFormScreen(testUserEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Find a bool field and toggle it.
+	boolIdx := -1
+	for i, ff := range f.fields {
+		if ff.def.Type == "bool" {
+			boolIdx = i
+			break
+		}
+	}
+	if boolIdx < 0 {
+		t.Fatal("expected at least one bool field")
+	}
+
+	// Navigate to bool field.
+	for f.focusIdx < boolIdx {
+		f.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+
+	// Toggle it.
+	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	if !f.fields[boolIdx].boolTouched {
+		t.Error("boolTouched should be true after toggle")
 	}
 }
 
