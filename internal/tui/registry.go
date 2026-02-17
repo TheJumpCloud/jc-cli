@@ -90,8 +90,8 @@ var graphEndpoints = map[string]string{
 var ValidAssocTargets = map[string][]string{
 	"user":         {"application", "system", "system_group", "radius_server", "ldap_server"},
 	"device":       {"command", "policy", "user", "user_group"},
-	"user_group":   {"application", "system", "system_group"},
-	"device_group": {"command", "policy", "user", "user_group"},
+	"user_group":   {"user", "application", "system", "system_group"},
+	"device_group": {"system", "command", "policy", "user", "user_group"},
 	"application":  {"user", "user_group"},
 }
 
