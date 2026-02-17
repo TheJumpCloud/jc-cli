@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.2.0** (2026-02-17).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. **Released v1.3.0** (2026-02-17).
 
 ---
 
@@ -1522,6 +1522,17 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - Inline delete confirmation (not a modal push) follows the export pattern already established.
   - App-level `RefreshListMsg` routing prevents a race condition where the message could arrive before `PopScreenMsg` pops the form/detail screen.
   - Generation-based staleness on `MutationResultMsg` prevents stale async responses from affecting UI state.
+
+### Release v1.3.0 (2026-02-17)
+
+- **Tag:** `v1.3.0`
+- **Commits since v1.2.0:** 7
+  - `47981a7` docs: add quick-start cheat sheet for new users
+  - `4a65ec1` docs: link quick-start cheat sheet from README
+  - `bc606f5` test: add battle tests for fuzz, edge cases, and concurrency
+  - `d38bce2` feat: add TUI CRUD — create, edit, delete from interactive browser
+  - `ccdc1f8` docs: update progress.md with TUI CRUD (v1.3.0)
+  - `067f3e9` docs: document TUI CRUD operations in README
 
 ### Release v1.2.0 (2026-02-17)
 

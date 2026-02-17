@@ -73,6 +73,15 @@ var helpSections = []helpSection{
 		},
 	},
 	{
+		Title: "Form (Create / Edit)",
+		Bindings: []helpBinding{
+			{"j / k", "Navigate fields"},
+			{"h / l / ← / → / space", "Toggle boolean"},
+			{"ctrl+s", "Save"},
+			{"esc", "Cancel"},
+		},
+	},
+	{
 		Title: "Event Detail",
 		Bindings: []helpBinding{
 			{"c", "Copy event JSON"},

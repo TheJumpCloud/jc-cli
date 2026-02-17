@@ -141,6 +141,12 @@ func extractStringValue(raw json.RawMessage) string {
 	return strings.Trim(string(raw), `"`)
 }
 
+// TextInputActive reports whether the form has active text input,
+// so the app skips single-key shortcuts (q, ?) that conflict with typing.
+func (f *FormScreen) TextInputActive() bool {
+	return !f.submitting
+}
+
 // SetFetcher allows injecting a custom fetcher (for tests).
 func (f *FormScreen) SetFetcher(ft *fetch.Fetcher) {
 	f.fetcher = ft
@@ -162,6 +168,7 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		f.width = msg.Width
 		f.height = msg.Height
+		f.updateFieldWidths()
 		return f, nil
 
 	case fetch.MutationResultMsg:
@@ -203,7 +210,17 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return f, func() tea.Msg { return tui.PopScreenMsg{} }
 
-		case "up", "k":
+		case "up":
+			f.moveFocus(-1)
+			return f, nil
+
+		case "k":
+			// 'k' navigates unless active field is a text input (non-bool).
+			if len(f.fields) > 0 && f.fields[f.focusIdx].def.Type != "bool" {
+				var cmd tea.Cmd
+				f.fields[f.focusIdx].input, cmd = f.fields[f.focusIdx].input.Update(msg)
+				return f, cmd
+			}
 			f.moveFocus(-1)
 			return f, nil
 
@@ -214,7 +231,6 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j":
 			// 'j' navigates unless active field is a text input (non-bool).
 			if len(f.fields) > 0 && f.fields[f.focusIdx].def.Type != "bool" {
-				// Delegate to text input.
 				var cmd tea.Cmd
 				f.fields[f.focusIdx].input, cmd = f.fields[f.focusIdx].input.Update(msg)
 				return f, cmd
@@ -226,22 +242,12 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			f.moveFocus(1)
 			return f, nil
 
-		case "h":
+		case "h", "l", "left", "right", " ":
 			if len(f.fields) > 0 && f.fields[f.focusIdx].def.Type == "bool" {
 				f.fields[f.focusIdx].boolVal = !f.fields[f.focusIdx].boolVal
 				return f, nil
 			}
-			// Delegate to text input.
-			var cmd tea.Cmd
-			f.fields[f.focusIdx].input, cmd = f.fields[f.focusIdx].input.Update(msg)
-			return f, cmd
-
-		case "l":
-			if len(f.fields) > 0 && f.fields[f.focusIdx].def.Type == "bool" {
-				f.fields[f.focusIdx].boolVal = !f.fields[f.focusIdx].boolVal
-				return f, nil
-			}
-			// Delegate to text input.
+			// Delegate to text input for non-bool fields.
 			var cmd tea.Cmd
 			f.fields[f.focusIdx].input, cmd = f.fields[f.focusIdx].input.Update(msg)
 			return f, cmd
@@ -256,6 +262,20 @@ func (f *FormScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return f, nil
+}
+
+// updateFieldWidths recalculates textinput widths based on terminal width.
+func (f *FormScreen) updateFieldWidths() {
+	for i, ff := range f.fields {
+		if ff.def.Type == "bool" {
+			continue
+		}
+		w := f.width/2 - len(ff.def.Name) - 6
+		if w < 20 {
+			w = 20
+		}
+		f.fields[i].input.Width = w
+	}
 }
 
 // moveFocus moves the field focus by delta and updates input focus state.
@@ -410,17 +430,13 @@ func (f *FormScreen) View() string {
 			if focused {
 				indicator = "> "
 			}
-			ff.input.Width = f.width/2 - len(label) - 6
-			if ff.input.Width < 20 {
-				ff.input.Width = 20
-			}
 			sb.WriteString(indicator + style.FieldKey.Render(label) + "  " + f.fields[i].input.View())
 		}
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(style.Help.Render("ctrl+s: save  esc: cancel  j/k: navigate  h/l: toggle bool"))
+	sb.WriteString(style.Help.Render("ctrl+s: save  esc: cancel  j/k: navigate  h/l/←/→/space: toggle bool"))
 	sb.WriteString("\n")
 
 	return sb.String()

@@ -319,15 +319,128 @@ func TestFormScreen_NavigateFields(t *testing.T) {
 		t.Errorf("focusIdx after down = %d, want 1", f.focusIdx)
 	}
 
-	// Press 'k' to move back up.
-	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	// Press up to move back.
+	f.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if f.focusIdx != 0 {
-		t.Errorf("focusIdx after k = %d, want 0", f.focusIdx)
+		t.Errorf("focusIdx after up = %d, want 0", f.focusIdx)
 	}
 
 	// Press up wraps to last.
 	f.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if f.focusIdx != len(f.fields)-1 {
 		t.Errorf("focusIdx after wrap up = %d, want %d", f.focusIdx, len(f.fields)-1)
+	}
+}
+
+func TestFormScreen_KTypesInTextField(t *testing.T) {
+	f := NewFormScreen(testIPListEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Focus is on the first text field (name). Pressing 'k' should type 'k',
+	// not navigate up.
+	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if f.focusIdx != 0 {
+		t.Errorf("focusIdx changed to %d after 'k' on text field, want 0", f.focusIdx)
+	}
+	if f.fields[0].input.Value() != "k" {
+		t.Errorf("text field value = %q after 'k', want 'k'", f.fields[0].input.Value())
+	}
+}
+
+func TestFormScreen_KNavigatesOnBoolField(t *testing.T) {
+	f := NewFormScreen(testUserEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Find first bool field.
+	boolIdx := -1
+	for i, ff := range f.fields {
+		if ff.def.Type == "bool" {
+			boolIdx = i
+			break
+		}
+	}
+	if boolIdx < 0 {
+		t.Fatal("expected at least one bool field")
+	}
+
+	// Navigate to the bool field.
+	for f.focusIdx < boolIdx {
+		f.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+
+	// 'k' on a bool field should navigate up.
+	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if f.focusIdx != boolIdx-1 {
+		t.Errorf("focusIdx = %d after 'k' on bool field, want %d", f.focusIdx, boolIdx-1)
+	}
+}
+
+func TestFormScreen_BoolToggleArrowKeys(t *testing.T) {
+	f := NewFormScreen(testUserEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Find a bool field index.
+	boolIdx := -1
+	for i, ff := range f.fields {
+		if ff.def.Type == "bool" {
+			boolIdx = i
+			break
+		}
+	}
+	if boolIdx < 0 {
+		t.Fatal("expected at least one bool field")
+	}
+
+	// Navigate to the bool field.
+	for f.focusIdx < boolIdx {
+		f.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+
+	initial := f.fields[boolIdx].boolVal
+
+	// Left arrow toggles.
+	f.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if f.fields[boolIdx].boolVal == initial {
+		t.Error("boolVal should toggle on left arrow")
+	}
+
+	// Right arrow toggles back.
+	f.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if f.fields[boolIdx].boolVal != initial {
+		t.Error("boolVal should toggle on right arrow")
+	}
+
+	// Space toggles.
+	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	if f.fields[boolIdx].boolVal == initial {
+		t.Error("boolVal should toggle on space")
+	}
+}
+
+func TestFormScreen_TextInputActive(t *testing.T) {
+	f := NewFormScreen(testIPListEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	if !f.TextInputActive() {
+		t.Error("TextInputActive should return true when form is active")
+	}
+
+	// Set submitting — TextInputActive should return false.
+	f.submitting = true
+	if f.TextInputActive() {
+		t.Error("TextInputActive should return false when submitting")
+	}
+}
+
+func TestFormScreen_QTypesInTextField(t *testing.T) {
+	// This tests that 'q' reaches the text input (the app-level fix ensures
+	// 'q' is not intercepted when TextInputActive() is true).
+	f := NewFormScreen(testIPListEntry(), "create", nil)
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Type 'q' into the first text field.
+	f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if f.fields[0].input.Value() != "q" {
+		t.Errorf("text field value = %q after 'q', want 'q'", f.fields[0].input.Value())
 	}
 }

@@ -62,6 +62,11 @@ func NewInsightsFormScreen(entry tui.ResourceEntry) *InsightsFormScreen {
 var insightsDefaultFields = []string{"timestamp", "event_type", "initiated_by", "client_ip", "success"}
 
 // SetFetcher allows injecting a custom fetcher (for tests).
+// TextInputActive reports whether the insights form has active text input.
+func (f *InsightsFormScreen) TextInputActive() bool {
+	return f.focusedField == 2 // eventType text input
+}
+
 func (f *InsightsFormScreen) SetFetcher(ft *fetch.Fetcher) {
 	f.fetcher = ft
 }

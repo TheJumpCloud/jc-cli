@@ -59,6 +59,13 @@ func (n *NavStack) Depth() int {
 	return len(n.screens)
 }
 
+// TextInputScreen is an optional interface for screens with text input.
+// When TextInputActive returns true, the app skips single-key shortcuts
+// (q to quit, ? for help) so they can be typed into form fields.
+type TextInputScreen interface {
+	TextInputActive() bool
+}
+
 // Navigation messages for the app to handle.
 
 // PushScreenMsg tells the app to push a new screen.

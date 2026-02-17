@@ -51,14 +51,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		// Global quit.
-		if key.Matches(msg, GlobalKeyMap.Quit) {
+		// Check if the active screen has text input that needs raw key events.
+		textActive := false
+		if tis, ok := a.nav.Current().(TextInputScreen); ok {
+			textActive = tis.TextInputActive()
+		}
+
+		// Global quit — skip single-key 'q' when text input is active.
+		if key.Matches(msg, GlobalKeyMap.Quit) && !textActive {
+			a.quitting = true
+			return a, tea.Quit
+		}
+		// Always allow ctrl+c to quit, even during text input.
+		if msg.String() == "ctrl+c" {
 			a.quitting = true
 			return a, tea.Quit
 		}
 
-		// Help toggle (handled at app level).
-		if key.Matches(msg, GlobalKeyMap.Help) {
+		// Help toggle (handled at app level) — skip when text input is active.
+		if key.Matches(msg, GlobalKeyMap.Help) && !textActive {
 			if a.nav.Current() != nil && a.nav.Current().Title() == "Help" {
 				// Already showing help — pop it (toggle behavior).
 				return a, func() tea.Msg { return PopScreenMsg{} }
