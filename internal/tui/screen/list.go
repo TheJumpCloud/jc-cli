@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
+	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/component"
 	"github.com/klaassen-consulting/jc/internal/tui/fetch"
@@ -34,6 +35,7 @@ type ListScreen struct {
 	totalCount int
 	width      int
 	height     int
+	exporting  bool
 }
 
 // NewListScreen creates a list screen for the given resource.
@@ -182,6 +184,11 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, cmd
 		}
 
+		// Export mode: intercept format keys or cancel.
+		if l.exporting {
+			return l, l.handleExportKey(msg)
+		}
+
 		switch {
 		case key.Matches(msg, tui.GlobalKeyMap.Back):
 			// If filters active, clear them first.
@@ -224,6 +231,11 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, tui.ListKeyMap.Copy):
 			return l, l.copySelectedID()
+
+		case key.Matches(msg, tui.ListKeyMap.Export):
+			if len(l.table.Rows) > 0 {
+				l.exporting = true
+			}
 		}
 	}
 
@@ -311,6 +323,31 @@ func (l *ListScreen) copySelectedID() tea.Cmd {
 	return func() tea.Msg { return tui.FlashMsg{Text: "Copied: " + id} }
 }
 
+func (l *ListScreen) handleExportKey(msg tea.KeyMsg) tea.Cmd {
+	l.exporting = false
+	switch msg.String() {
+	case "j":
+		flash, err := exportListToClipboard(l.table.Rows, l.table.Columns)
+		if err != nil {
+			return func() tea.Msg { return tui.FlashMsg{Text: "Export error: " + err.Error()} }
+		}
+		return func() tea.Msg { return tui.FlashMsg{Text: flash} }
+	case "c":
+		flash, err := exportListToFile(l.table.Rows, l.table.Columns, output.FormatCSV, l.entry.Key, "csv")
+		if err != nil {
+			return func() tea.Msg { return tui.FlashMsg{Text: "Export error: " + err.Error()} }
+		}
+		return func() tea.Msg { return tui.FlashMsg{Text: flash} }
+	case "J":
+		flash, err := exportListToFile(l.table.Rows, l.table.Columns, output.FormatJSON, l.entry.Key, "json")
+		if err != nil {
+			return func() tea.Msg { return tui.FlashMsg{Text: "Export error: " + err.Error()} }
+		}
+		return func() tea.Msg { return tui.FlashMsg{Text: flash} }
+	}
+	return nil
+}
+
 func (l *ListScreen) toggleAllFields() {
 	l.allFields = !l.allFields
 	if l.allFields {
@@ -364,6 +401,11 @@ func (l *ListScreen) View() string {
 
 	sb.WriteString(l.table.View())
 	sb.WriteString("\n")
+
+	if l.exporting {
+		sb.WriteString(style.Help.Render("Export: [j]son clipboard  [c]sv file  [J]son file  [esc] cancel"))
+		sb.WriteString("\n")
+	}
 
 	return sb.String()
 }

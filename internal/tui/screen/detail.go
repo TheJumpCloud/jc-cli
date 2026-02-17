@@ -33,6 +33,8 @@ type DetailScreen struct {
 	height     int
 	ready      bool
 
+	exporting bool
+
 	// Associations tab state.
 	activeTab      int // 0=fields, 1=associations
 	assocTargets   []string
@@ -173,6 +175,11 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, nil
 
 	case tea.KeyMsg:
+		// Export mode: intercept format keys or cancel.
+		if d.exporting {
+			return d, d.handleExportKey(msg)
+		}
+
 		switch {
 		case key.Matches(msg, tui.GlobalKeyMap.Back):
 			return d, func() tea.Msg { return tui.PopScreenMsg{} }
@@ -200,6 +207,11 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return d, d.fetchAssoc()
 			}
 			return d, d.fetchDetail()
+
+		case key.Matches(msg, tui.DetailKeyMap.Export):
+			if d.data != nil {
+				d.exporting = true
+			}
 
 		default:
 			if d.activeTab == 1 {
@@ -306,6 +318,25 @@ func formatDetailValue(v json.RawMessage) string {
 	}
 
 	return string(v)
+}
+
+func (d *DetailScreen) handleExportKey(msg tea.KeyMsg) tea.Cmd {
+	d.exporting = false
+	switch msg.String() {
+	case "j":
+		flash, err := exportSingleToClipboard(d.data)
+		if err != nil {
+			return func() tea.Msg { return tui.FlashMsg{Text: "Export error: " + err.Error()} }
+		}
+		return func() tea.Msg { return tui.FlashMsg{Text: flash} }
+	case "J":
+		flash, err := exportSingleToFile(d.data, d.entry.Key, "json")
+		if err != nil {
+			return func() tea.Msg { return tui.FlashMsg{Text: "Export error: " + err.Error()} }
+		}
+		return func() tea.Msg { return tui.FlashMsg{Text: flash} }
+	}
+	return nil
 }
 
 func (d *DetailScreen) handleAssocKeys(msg tea.KeyMsg) tea.Cmd {
@@ -540,6 +571,11 @@ func (d *DetailScreen) View() string {
 		}
 	} else {
 		sb.WriteString(d.renderAssociations())
+	}
+
+	if d.exporting {
+		sb.WriteString(style.Help.Render("Export: [j]son clipboard  [J]son file  [esc] cancel"))
+		sb.WriteString("\n")
 	}
 
 	return sb.String()

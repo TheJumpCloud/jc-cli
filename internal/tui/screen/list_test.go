@@ -307,6 +307,123 @@ func TestListScreen_NoSearchEndpointForPolicies(t *testing.T) {
 	}
 }
 
+func TestListScreen_ExportModeToggle(t *testing.T) {
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "users",
+		Data:        data,
+		TotalCount:  1,
+		Generation:  gen,
+	})
+
+	// Press 'e' to enter export mode.
+	ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if !ls.exporting {
+		t.Error("expected exporting to be true after 'e'")
+	}
+
+	// Press 'esc' to cancel.
+	ls.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if ls.exporting {
+		t.Error("expected exporting to be false after 'esc'")
+	}
+}
+
+func TestListScreen_ExportJSON(t *testing.T) {
+	var clipped string
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { clipped = s; return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	gen := ls.generation
+	data := []json.RawMessage{
+		json.RawMessage(`{"_id":"abc123def456abc123def456","username":"alice"}`),
+		json.RawMessage(`{"_id":"eee555fff666aaa777bbb888","username":"bob"}`),
+	}
+	ls.Update(fetch.ListResultMsg{
+		ResourceKey: "users",
+		Data:        data,
+		TotalCount:  2,
+		Generation:  gen,
+	})
+
+	// Press 'e' then 'j' to export JSON to clipboard.
+	ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	_, cmd := ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if cmd == nil {
+		t.Fatal("expected command from 'j' export")
+	}
+
+	msg := cmd()
+	flash, ok := msg.(tui.FlashMsg)
+	if !ok {
+		t.Fatalf("expected FlashMsg, got %T", msg)
+	}
+	if flash.Text != "Copied 2 items as JSON" {
+		t.Errorf("flash = %q, want 'Copied 2 items as JSON'", flash.Text)
+	}
+	if clipped == "" {
+		t.Error("clipboard should not be empty")
+	}
+	if !ls.exporting == true {
+		// exporting should be false after export.
+	}
+	if ls.exporting {
+		t.Error("exporting should be false after export completes")
+	}
+}
+
+func TestListScreen_ExportNoRowsIsNoop(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:          "users",
+		DisplayName:  "Users",
+		Category:     tui.CategoryIdentity,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/systemusers",
+		Schema:       schema.Resources["users"],
+	}
+
+	ls := NewListScreen(entry)
+	ls.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Press 'e' with no rows — should not enter export mode.
+	ls.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if ls.exporting {
+		t.Error("should not enter export mode with no rows")
+	}
+}
+
 func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",

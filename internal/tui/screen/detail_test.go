@@ -431,6 +431,72 @@ func TestDetailScreen_AssocNamesPersistAcrossTargets(t *testing.T) {
 	}
 }
 
+func TestDetailScreen_ExportModeToggle(t *testing.T) {
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "John Doe")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"john"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Press 'e' to enter export mode.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if !d.exporting {
+		t.Error("expected exporting to be true after 'e'")
+	}
+
+	// Press 'esc' to cancel.
+	d.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if d.exporting {
+		t.Error("expected exporting to be false after 'esc'")
+	}
+}
+
+func TestDetailScreen_ExportJSONToClipboard(t *testing.T) {
+	var clipped string
+	origClip := clipboardWriteFunc
+	clipboardWriteFunc = func(s string) error { clipped = s; return nil }
+	defer func() { clipboardWriteFunc = origClip }()
+
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "John Doe")
+	d.data = json.RawMessage(`{"_id":"abc123def456abc123def456","username":"john"}`)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Press 'e' then 'j' to export JSON to clipboard.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if cmd == nil {
+		t.Fatal("expected command from 'j' export")
+	}
+
+	msg := cmd()
+	flash, ok := msg.(tui.FlashMsg)
+	if !ok {
+		t.Fatalf("expected FlashMsg, got %T", msg)
+	}
+	if !strings.Contains(flash.Text, "JSON") {
+		t.Errorf("flash = %q, want to contain 'JSON'", flash.Text)
+	}
+	if clipped == "" {
+		t.Error("clipboard should not be empty")
+	}
+	if d.exporting {
+		t.Error("exporting should be false after export completes")
+	}
+}
+
+func TestDetailScreen_ExportNoDataIsNoop(t *testing.T) {
+	d := NewDetailScreen(testUserEntry(), "abc123def456abc123def456", "John Doe")
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Press 'e' with no data — should not enter export mode.
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if d.exporting {
+		t.Error("should not enter export mode with no data")
+	}
+}
+
 func TestDetailScreen_CopyIDProducesFlash(t *testing.T) {
 	var copied string
 	origClip := clipboardWriteFunc

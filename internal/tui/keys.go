@@ -64,6 +64,7 @@ type ListKeys struct {
 	Refresh   key.Binding
 	AllFields key.Binding
 	Copy      key.Binding
+	Export    key.Binding
 }
 
 var ListKeyMap = ListKeys{
@@ -91,6 +92,10 @@ var ListKeyMap = ListKeys{
 		key.WithKeys("c"),
 		key.WithHelp("c", "copy id"),
 	),
+	Export: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "export"),
+	),
 }
 
 // DetailKeys are for the detail screen.
@@ -99,6 +104,7 @@ type DetailKeys struct {
 	AllFields key.Binding
 	Refresh   key.Binding
 	Copy      key.Binding
+	Export    key.Binding
 }
 
 var DetailKeyMap = DetailKeys{
@@ -117,5 +123,9 @@ var DetailKeyMap = DetailKeys{
 	Copy: key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "copy id"),
+	),
+	Export: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "export"),
 	),
 }
