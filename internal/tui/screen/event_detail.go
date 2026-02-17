@@ -105,6 +105,7 @@ func (e *EventDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if e.ready {
 			e.viewport.SetContent(e.renderContent())
+			e.viewport.GotoBottom()
 		}
 		return e, nil
 
@@ -112,6 +113,11 @@ func (e *EventDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if e.explaining {
 			var cmd tea.Cmd
 			e.spinner, cmd = e.spinner.Update(msg)
+			// Re-render viewport to animate the spinner.
+			if e.ready {
+				e.viewport.SetContent(e.renderContent())
+				e.viewport.GotoBottom()
+			}
 			return e, cmd
 		}
 		return e, nil
@@ -164,6 +170,7 @@ func (e *EventDetailScreen) triggerExplain() tea.Cmd {
 
 	if e.ready {
 		e.viewport.SetContent(e.renderContent())
+		e.viewport.GotoBottom()
 	}
 
 	return tea.Batch(e.spinner.Tick, func() tea.Msg {
