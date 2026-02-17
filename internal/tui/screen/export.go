@@ -144,6 +144,9 @@ func exportFilePath(resourceKey, ext string) string {
 // writeFileAtomic writes data to path using a temp file + rename for safety.
 func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
 	tmp, err := os.CreateTemp(dir, ".jc-export-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp: %w", err)

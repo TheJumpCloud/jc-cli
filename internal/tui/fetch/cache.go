@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 )
@@ -56,6 +57,20 @@ func (c *Cache) Invalidate(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.entries, key)
+}
+
+// InvalidateResource removes all cache entries whose key contains the given
+// resource key as a component. Cache keys use colon-delimited segments like
+// "v1:<resource>:<endpoint>:<opts>", so this matches on ":<resource>:".
+func (c *Cache) InvalidateResource(resourceKey string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	needle := ":" + resourceKey + ":"
+	for k := range c.entries {
+		if strings.Contains(k, needle) {
+			delete(c.entries, k)
+		}
+	}
 }
 
 // Clear removes all entries from the cache.

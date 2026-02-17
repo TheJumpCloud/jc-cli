@@ -75,7 +75,7 @@ func (d *DashboardScreen) Init() tea.Cmd {
 
 		switch res.ClientType {
 		case tui.ClientV1:
-			cmds = append(cmds, d.fetcher.FetchV1List(res.Key, res.Endpoint, api.ListOptions{}, gen))
+			cmds = append(cmds, d.fetcher.FetchV1Count(res.Key, res.Endpoint, gen))
 		case tui.ClientV2:
 			cmds = append(cmds, d.fetcher.FetchV2List(res.Key, res.Endpoint, api.V2ListOptions{}, gen))
 		}
@@ -90,6 +90,20 @@ func (d *DashboardScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.height = msg.Height
 		return d, nil
 
+	case fetch.CountResultMsg:
+		gen, ok := d.generations[msg.ResourceKey]
+		if !ok || msg.Generation != gen {
+			return d, nil
+		}
+		d.loading[msg.ResourceKey] = false
+		if msg.Err != nil {
+			d.errors[msg.ResourceKey] = msg.Err.Error()
+			return d, nil
+		}
+		delete(d.errors, msg.ResourceKey)
+		d.counts[msg.ResourceKey] = msg.Count
+		return d, nil
+
 	case fetch.ListResultMsg:
 		gen, ok := d.generations[msg.ResourceKey]
 		if !ok || msg.Generation != gen {
@@ -100,6 +114,7 @@ func (d *DashboardScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.errors[msg.ResourceKey] = msg.Err.Error()
 			return d, nil
 		}
+		delete(d.errors, msg.ResourceKey)
 		d.counts[msg.ResourceKey] = msg.TotalCount
 		return d, nil
 

@@ -223,7 +223,7 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return l, l.fetchData()
 
 		case key.Matches(msg, tui.ListKeyMap.Refresh):
-			l.fetcher.Cache.Invalidate(l.entry.Key)
+			l.fetcher.Cache.InvalidateResource(l.entry.Key)
 			return l, l.fetchData()
 
 		case key.Matches(msg, tui.ListKeyMap.AllFields):

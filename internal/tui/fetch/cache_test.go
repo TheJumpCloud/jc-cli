@@ -83,6 +83,26 @@ func TestCacheEntry_IsExpired(t *testing.T) {
 	}
 }
 
+func TestCache_InvalidateResource(t *testing.T) {
+	c := NewCache()
+	c.Set("v1:users:/systemusers:{}", []json.RawMessage{json.RawMessage(`{}`)}, 10*time.Second)
+	c.Set("v1search:users:/search/systemusers:term:[]", []json.RawMessage{json.RawMessage(`{}`)}, 10*time.Second)
+	c.Set("v2:policies:/policies:{}", []json.RawMessage{json.RawMessage(`{}`)}, 10*time.Second)
+
+	c.InvalidateResource("users")
+
+	if _, ok := c.Get("v1:users:/systemusers:{}"); ok {
+		t.Error("expected miss for v1 users entry after InvalidateResource")
+	}
+	if _, ok := c.Get("v1search:users:/search/systemusers:term:[]"); ok {
+		t.Error("expected miss for v1search users entry after InvalidateResource")
+	}
+	// Policies should be untouched.
+	if _, ok := c.Get("v2:policies:/policies:{}"); !ok {
+		t.Error("expected hit for policies entry (should not be invalidated)")
+	}
+}
+
 func TestNextGeneration_Monotonic(t *testing.T) {
 	g1 := NextGeneration()
 	g2 := NextGeneration()

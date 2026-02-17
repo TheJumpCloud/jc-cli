@@ -75,8 +75,7 @@ var helpSections = []helpSection{
 			{"field:op:value", "Filter expression"},
 			{"eq, ne", "Equal, not equal"},
 			{"gt, lt", "Greater than, less than"},
-			{"ge, le", "Greater or equal, less or equal"},
-			{"contains", "Substring match"},
+			{"gte, lte", "Greater or equal, less or equal"},
 		},
 	},
 	{

@@ -72,6 +72,40 @@ func NewFetcher() *Fetcher {
 	}
 }
 
+// CountResultMsg is sent when a count-only fetch completes.
+type CountResultMsg struct {
+	ResourceKey string
+	Count       int
+	Generation  int64
+	Err         error
+}
+
+// FetchV1Count fetches only the total count for a V1 resource using a minimal
+// request (limit=1). V1 responses include totalCount in the body regardless
+// of the limit, so we get an accurate count without loading all records.
+func (f *Fetcher) FetchV1Count(resourceKey, endpoint string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewV1Client()
+		if err != nil {
+			return CountResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		result, err := client.ListAll(ctx, endpoint, api.ListOptions{Limit: 1, PageSize: 1})
+		if err != nil {
+			return CountResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		return CountResultMsg{
+			ResourceKey: resourceKey,
+			Count:       result.TotalCount,
+			Generation:  gen,
+		}
+	}
+}
+
 // FetchV1List fetches a V1 list as a tea.Cmd.
 func (f *Fetcher) FetchV1List(resourceKey, endpoint string, opts api.ListOptions, gen int64) tea.Cmd {
 	return func() tea.Msg {
@@ -114,7 +148,7 @@ func (f *Fetcher) FetchV1List(resourceKey, endpoint string, opts api.ListOptions
 // multi-field search. Only users and devices have these endpoints.
 func (f *Fetcher) FetchV1Search(resourceKey, searchEndpoint, term string, fields []string, sort string, filters []filter.Expression, gen int64) tea.Cmd {
 	return func() tea.Msg {
-		cacheKey := fmt.Sprintf("v1search:%s:%s:%s:%v", resourceKey, searchEndpoint, term, filters)
+		cacheKey := fmt.Sprintf("v1search:%s:%s:%s:%s:%v", resourceKey, searchEndpoint, term, sort, filters)
 
 		if data, ok := f.Cache.Get(cacheKey); ok {
 			return ListResultMsg{
