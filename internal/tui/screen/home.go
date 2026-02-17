@@ -53,6 +53,11 @@ func NewHomeScreen(entries []tui.ResourceEntry) *HomeScreen {
 
 func (h *HomeScreen) Title() string { return "Home" }
 
+// TextInputActive reports whether the home screen has active text input.
+func (h *HomeScreen) TextInputActive() bool {
+	return h.filtering
+}
+
 func (h *HomeScreen) Init() tea.Cmd { return nil }
 
 // displayEntries returns the combined list for cursor indexing:

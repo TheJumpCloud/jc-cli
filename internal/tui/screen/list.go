@@ -65,6 +65,11 @@ func (l *ListScreen) SetFetcher(f *fetch.Fetcher) {
 
 func (l *ListScreen) Title() string { return l.entry.DisplayName }
 
+// TextInputActive reports whether the list screen has active text input.
+func (l *ListScreen) TextInputActive() bool {
+	return l.filterBar.Focused()
+}
+
 func (l *ListScreen) Init() tea.Cmd {
 	return tea.Batch(l.spinner.Tick, l.fetchData())
 }

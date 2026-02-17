@@ -134,3 +134,70 @@ func TestApp_ClearFlashMessage(t *testing.T) {
 		t.Errorf("flash = %q, want empty after ClearFlashMsg", app.statusBar.Flash)
 	}
 }
+
+// mockTextInputScreen implements both Screen and TextInputScreen.
+type mockTextInputScreen struct {
+	mockScreen
+	active bool
+}
+
+func (m *mockTextInputScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+func (m *mockTextInputScreen) TextInputActive() bool                   { return m.active }
+
+func TestApp_QSuppressedWhenTextActive(t *testing.T) {
+	screen := &mockTextInputScreen{mockScreen: mockScreen{title: "Form"}, active: true}
+	app := NewApp(screen)
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if app.quitting {
+		t.Error("app should not quit when TextInputActive is true")
+	}
+	if cmd != nil {
+		t.Error("q should be delegated to screen, not produce quit command")
+	}
+}
+
+func TestApp_QQuitsWhenTextInactive(t *testing.T) {
+	screen := &mockTextInputScreen{mockScreen: mockScreen{title: "Form"}, active: false}
+	app := NewApp(screen)
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if !app.quitting {
+		t.Error("app should quit when TextInputActive is false")
+	}
+	if cmd == nil {
+		t.Fatal("quit should return a command")
+	}
+}
+
+func TestApp_HelpSuppressedWhenTextActive(t *testing.T) {
+	screen := &mockTextInputScreen{mockScreen: mockScreen{title: "Form"}, active: true}
+	app := NewApp(screen)
+	app.NewHelpScreen = func() Screen { return &mockScreen{title: "Help"} }
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	// Should not push help screen.
+	if app.nav.Current().Title() != "Form" {
+		t.Errorf("active screen = %q, want 'Form' (help should not push)", app.nav.Current().Title())
+	}
+	if cmd != nil {
+		t.Error("? should be delegated to screen, not produce help command")
+	}
+}
+
+func TestApp_CtrlCQuitsEvenWhenTextActive(t *testing.T) {
+	screen := &mockTextInputScreen{mockScreen: mockScreen{title: "Form"}, active: true}
+	app := NewApp(screen)
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !app.quitting {
+		t.Error("ctrl+c should always quit, even when text input is active")
+	}
+	if cmd == nil {
+		t.Fatal("ctrl+c should return quit command")
+	}
+}
