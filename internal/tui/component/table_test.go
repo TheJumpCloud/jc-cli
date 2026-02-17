@@ -240,6 +240,9 @@ func TestJsonValueToString(t *testing.T) {
 		{json.RawMessage(`42`), "42"},
 		{json.RawMessage(`null`), ""},
 		{json.RawMessage(`{"key":"val"}`), `{"key":"val"}`},
+		{json.RawMessage(`"line1\nline2\nline3"`), "line1 line2 line3"},
+		{json.RawMessage(`"tabs\there\ttoo"`), "tabs here too"},
+		{json.RawMessage(`"#!/bin/bash\n\necho hello\n"`), "#!/bin/bash echo hello"},
 	}
 	for _, tt := range tests {
 		got := jsonValueToString(tt.input)

@@ -213,7 +213,19 @@ func extractFields(data json.RawMessage) map[string]string {
 	return fields
 }
 
-// jsonValueToString converts a JSON value to a display string.
+// flattenWhitespace replaces newlines and tabs with spaces and collapses runs.
+func flattenWhitespace(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	// Collapse multiple spaces.
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
+// jsonValueToString converts a JSON value to a single-line display string.
 func jsonValueToString(v json.RawMessage) string {
 	if len(v) == 0 {
 		return ""
@@ -222,7 +234,7 @@ func jsonValueToString(v json.RawMessage) string {
 	// Try string first (most common).
 	var s string
 	if err := json.Unmarshal(v, &s); err == nil {
-		return s
+		return flattenWhitespace(s)
 	}
 
 	// Try bool.
