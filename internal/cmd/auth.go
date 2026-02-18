@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"syscall"
@@ -244,15 +246,22 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), " OK\n")
 
-	// Validate the token by calling GET /api/organizations.
-	fmt.Fprintf(cmd.ErrOrStderr(), "Validating credentials...")
+	// Fetch org info (best-effort — service accounts may lack /organizations access).
+	fmt.Fprintf(cmd.ErrOrStderr(), "Fetching organization info...")
 	client := newOAuthClient(tc)
 	org, err := client.ValidateAPIKey()
 	if err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr())
-		return fmt.Errorf("token validation failed: %w", err)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+			fmt.Fprintf(cmd.ErrOrStderr(), " skipped (insufficient permissions)\n")
+			org = &api.Organization{}
+		} else {
+			fmt.Fprintln(cmd.ErrOrStderr())
+			return fmt.Errorf("token validation failed: %w", err)
+		}
+	} else {
+		fmt.Fprintf(cmd.ErrOrStderr(), " OK\n")
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), " OK\n")
 
 	// Store the client secret in the keychain.
 	keychainAvailable := keychain.IsAvailable()
@@ -308,7 +317,11 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 	if orgName == "" {
 		orgName = org.ID
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s via service account (profile: %s)\n", orgName, profile)
+	if orgName != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s via service account (profile: %s)\n", orgName, profile)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Logged in via service account (profile: %s)\n", profile)
+	}
 	return nil
 }
 

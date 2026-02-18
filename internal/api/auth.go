@@ -44,13 +44,25 @@ func (c *Client) ValidateAPIKey() (*Organization, error) {
 		return nil, fmt.Errorf("API key is valid but returned no organizations")
 
 	case http.StatusUnauthorized:
-		return nil, fmt.Errorf("invalid API key (HTTP 401). Check your key or run: jc auth login")
+		return nil, &APIError{
+			StatusCode: http.StatusUnauthorized,
+			Endpoint:   "/organizations",
+			Message:    "invalid API key. Check your key or run: jc auth login",
+		}
 
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("API key lacks permission (HTTP 403). Verify the key has the correct scope")
+		return nil, &APIError{
+			StatusCode: http.StatusForbidden,
+			Endpoint:   "/organizations",
+			Message:    "credential lacks permission to access this endpoint",
+		}
 
 	default:
-		return nil, fmt.Errorf("JumpCloud API returned HTTP %d: %s", resp.StatusCode, truncateBody(body, 200))
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Endpoint:   "/organizations",
+			Message:    truncateBody(body, 200),
+		}
 	}
 }
 

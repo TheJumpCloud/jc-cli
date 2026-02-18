@@ -1420,6 +1420,85 @@ profiles:
 	}
 }
 
+func TestAuthLogin_ServiceAccount_OrgFetch403(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	// OAuth server that issues tokens successfully.
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "test-bearer-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	defer oauthServer.Close()
+	overrideOAuthURL(t, oauthServer.URL)
+
+	// JC server that returns 403 for /organizations.
+	jcServer := startMockJCServer(t, "", "", http.StatusForbidden)
+	defer jcServer.Close()
+	overrideOAuthClient(t, jcServer.URL)
+
+	input := &mockInput{
+		line:   "test-client-id",
+		apiKey: "test-client-secret",
+	}
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	err := runAuthLoginServiceAccount(cmd, "", input)
+	if err != nil {
+		t.Fatalf("runAuthLoginServiceAccount() should succeed despite 403, got error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Logged in") {
+		t.Errorf("expected 'Logged in' in output, got %q", got)
+	}
+	if !strings.Contains(got, "service account") {
+		t.Errorf("expected 'service account' in output, got %q", got)
+	}
+	if !strings.Contains(got, "profile: default") {
+		t.Errorf("expected 'profile: default' in output, got %q", got)
+	}
+
+	// Verify warning was shown on stderr.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "skipped") {
+		t.Errorf("expected 'skipped' warning on stderr, got %q", stderrStr)
+	}
+
+	// Verify credentials were saved despite 403.
+	cfgData, _ := os.ReadFile(cfgPath)
+	cfgStr := string(cfgData)
+	if !strings.Contains(cfgStr, "service_account") {
+		t.Errorf("config should contain auth_method: service_account, got:\n%s", cfgStr)
+	}
+	if !strings.Contains(cfgStr, "test-client-id") {
+		t.Errorf("config should contain client_id, got:\n%s", cfgStr)
+	}
+
+	// Verify client secret in keychain.
+	stored, err := keyring.Get("jc", "default:client_secret")
+	if err != nil {
+		t.Fatalf("expected client secret in keychain: %v", err)
+	}
+	if stored != "test-client-secret" {
+		t.Errorf("keychain value = %q, want %q", stored, "test-client-secret")
+	}
+}
+
 func TestAuthLogin_ServiceAccountFlagInHelp(t *testing.T) {
 	rootCmd := NewRootCmd()
 	buf := new(bytes.Buffer)
