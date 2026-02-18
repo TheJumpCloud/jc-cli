@@ -93,10 +93,32 @@ var graphEndpoints = map[string]string{
 // Only targets with TUI registry entries (graphTypeToRegistryKey) are included.
 var ValidAssocTargets = map[string][]string{
 	"user":         {"user_group", "application", "system", "system_group", "radius_server", "ldap_server"},
-	"device":       {"command", "policy", "user", "user_group"},
+	"device":       {"command", "policy", "system_group", "user", "user_group"},
 	"user_group":   {"user", "application", "system", "system_group", "radius_server", "ldap_server"},
 	"device_group": {"system", "command", "policy", "user", "user_group"},
 	"application":  {"user", "user_group"},
+}
+
+// assocTargetLabels maps V2 graph target type identifiers to human-readable labels.
+var assocTargetLabels = map[string]string{
+	"user":          "Users",
+	"system":        "Devices",
+	"user_group":    "User Groups",
+	"system_group":  "Device Groups",
+	"application":   "Applications",
+	"command":       "Commands",
+	"policy":        "Policies",
+	"radius_server": "RADIUS Servers",
+	"ldap_server":   "LDAP Servers",
+}
+
+// AssocTargetLabel returns the human-readable label for a V2 graph target type.
+// Falls back to the raw type string if no label is defined.
+func AssocTargetLabel(target string) string {
+	if label, ok := assocTargetLabels[target]; ok {
+		return label
+	}
+	return target
 }
 
 // MembershipTarget returns the member type for a group source type, or "" if

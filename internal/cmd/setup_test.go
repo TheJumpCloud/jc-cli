@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
-
 )
 
 // wizardInput implements InputReader with separate queues for ReadLine and ReadAPIKey.
@@ -601,5 +601,90 @@ profiles:
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q, got:\n%s", want, got)
 		}
+	}
+}
+
+func TestSetup_ServiceAccount_OrgFetch403(t *testing.T) {
+	keyring.MockInit()
+	cfgPath := setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	// OAuth server that issues tokens successfully.
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "test-bearer-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	defer oauthServer.Close()
+	overrideOAuthURL(t, oauthServer.URL)
+
+	// JC server that returns 403 for /organizations.
+	jcServer := startMockJCServer(t, "", "", http.StatusForbidden)
+	defer jcServer.Close()
+	overrideOAuthClient(t, jcServer.URL)
+
+	// Steps: profile(keep), auth-method(2), client-id, org(keep), output(keep), color(keep), limit(keep)
+	input := &wizardInput{
+		lines:  []string{"", "2", "test-sa-client-id", "", "", "", ""},
+		masked: []string{"test-sa-secret"},
+	}
+	overrideSetupInput(t, input)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	wiz := &setupWizard{
+		cmd:   cmd,
+		input: input,
+		w:     stderr,
+		out:   stdout,
+	}
+
+	err := wiz.run()
+	if err != nil {
+		t.Fatalf("setup wizard should succeed despite 403, got error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Auth Method:   service_account") {
+		t.Errorf("expected service_account auth method in summary, got %q", got)
+	}
+	if !strings.Contains(got, "Client ID:     test-sa-client-id") {
+		t.Errorf("expected client ID in summary, got %q", got)
+	}
+
+	// Verify warning was shown on stderr.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "skipped") {
+		t.Errorf("expected 'skipped' warning on stderr, got %q", stderrStr)
+	}
+
+	// Verify credentials were saved despite 403.
+	cfgData, _ := os.ReadFile(cfgPath)
+	cfgStr := string(cfgData)
+	if !strings.Contains(cfgStr, "service_account") {
+		t.Errorf("config should contain auth_method: service_account, got:\n%s", cfgStr)
+	}
+	if !strings.Contains(cfgStr, "test-sa-client-id") {
+		t.Errorf("config should contain client_id, got:\n%s", cfgStr)
+	}
+
+	// Verify client secret in keychain.
+	stored, err := keyring.Get("jc", "default:client_secret")
+	if err != nil {
+		t.Fatalf("expected client secret in keychain: %v", err)
+	}
+	if stored != "test-sa-secret" {
+		t.Errorf("keychain client secret = %q, want %q", stored, "test-sa-secret")
 	}
 }

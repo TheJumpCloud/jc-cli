@@ -649,7 +649,7 @@ func (d *DetailScreen) renderAssociations() string {
 
 	// Target type selector.
 	for i, target := range d.assocTargets {
-		label := target
+		label := tui.AssocTargetLabel(target)
 		if i == d.assocTargetIdx {
 			label = style.FilterChip.Render(label)
 		} else {

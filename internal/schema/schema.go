@@ -15,6 +15,7 @@ type FieldDef struct {
 	Type        string `json:"type"` // string, bool, int, datetime, array, object
 	Description string `json:"description"`
 	Required    bool   `json:"required,omitempty"`
+	ReadOnly    bool   `json:"read_only,omitempty"`
 }
 
 // ResourceSchema describes a JumpCloud resource type.
@@ -79,10 +80,10 @@ var Resources = map[string]ResourceSchema{
 			{Name: "account_locked", Type: "bool", Description: "Whether the account is locked"},
 			{Name: "totp_enabled", Type: "bool", Description: "Whether TOTP MFA is enabled"},
 			{Name: "enable_user_portal_multifactor", Type: "bool", Description: "User portal MFA enabled"},
-			{Name: "password_date", Type: "datetime", Description: "Last password change timestamp"},
-			{Name: "created", Type: "datetime", Description: "Account creation timestamp"},
-			{Name: "lastLogin", Type: "datetime", Description: "Last login timestamp"},
-			{Name: "state", Type: "string", Description: "Account state (e.g. ACTIVATED, STAGED)"},
+			{Name: "password_date", Type: "datetime", Description: "Last password change timestamp", ReadOnly: true},
+			{Name: "created", Type: "datetime", Description: "Account creation timestamp", ReadOnly: true},
+			{Name: "lastLogin", Type: "datetime", Description: "Last login timestamp", ReadOnly: true},
+			{Name: "state", Type: "string", Description: "Account state (e.g. ACTIVATED, STAGED)", ReadOnly: true},
 			{Name: "description", Type: "string", Description: "User description"},
 			{Name: "company", Type: "string", Description: "Company name"},
 			{Name: "location", Type: "string", Description: "Location"},

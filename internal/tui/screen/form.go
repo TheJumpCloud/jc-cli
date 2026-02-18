@@ -69,6 +69,10 @@ func NewFormScreen(entry tui.ResourceEntry, mode string, data json.RawMessage) *
 		if fd.Name == entry.Schema.IDField {
 			continue
 		}
+		// Skip server-generated read-only fields.
+		if fd.ReadOnly {
+			continue
+		}
 		// Skip complex types that can't be edited as simple text.
 		if fd.Type == "array" || fd.Type == "object" {
 			continue
@@ -106,6 +110,27 @@ func NewFormScreen(entry tui.ResourceEntry, mode string, data json.RawMessage) *
 		}
 
 		fields = append(fields, ff)
+	}
+
+	// Add password + confirmation fields for user create.
+	if entry.Key == "users" && mode == "create" {
+		pwInput := textinput.New()
+		pwInput.Placeholder = "Set user password"
+		pwInput.CharLimit = 256
+		pwInput.EchoMode = textinput.EchoPassword
+		fields = append(fields, formField{
+			def:   schema.FieldDef{Name: "password", Type: "string", Description: "Set user password"},
+			input: pwInput,
+		})
+
+		confirmInput := textinput.New()
+		confirmInput.Placeholder = "Confirm password"
+		confirmInput.CharLimit = 256
+		confirmInput.EchoMode = textinput.EchoPassword
+		fields = append(fields, formField{
+			def:   schema.FieldDef{Name: "password_confirm", Type: "string", Description: "Confirm password"},
+			input: confirmInput,
+		})
 	}
 
 	// Focus the first field.
@@ -320,9 +345,30 @@ func (f *FormScreen) submit() tea.Cmd {
 		}
 	}
 
+	// Validate password confirmation for user create.
+	if f.entry.Key == "users" && f.mode == "create" {
+		var pw, confirm string
+		for _, ff := range f.fields {
+			if ff.def.Name == "password" {
+				pw = ff.input.Value()
+			}
+			if ff.def.Name == "password_confirm" {
+				confirm = ff.input.Value()
+			}
+		}
+		if pw != confirm {
+			f.err = "Passwords do not match"
+			return nil
+		}
+	}
+
 	// Build body with only relevant fields.
 	body := make(map[string]any)
 	for _, ff := range f.fields {
+		// Skip the confirmation field — it's not an API field.
+		if ff.def.Name == "password_confirm" {
+			continue
+		}
 		switch ff.def.Type {
 		case "bool":
 			currentVal := strconv.FormatBool(ff.boolVal)

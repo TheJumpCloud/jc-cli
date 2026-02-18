@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -278,15 +280,22 @@ func (wiz *setupWizard) authServiceAccount(profile string) (*api.Organization, e
 	}
 	fmt.Fprintf(wiz.w, " OK\n")
 
-	// Validate.
-	fmt.Fprintf(wiz.w, "Validating credentials...")
+	// Fetch org info (best-effort — service accounts may lack /organizations access).
+	fmt.Fprintf(wiz.w, "Fetching organization info...")
 	client := newOAuthClient(tc)
 	org, err := client.ValidateAPIKey()
 	if err != nil {
-		fmt.Fprintln(wiz.w)
-		return nil, fmt.Errorf("token validation failed: %w", err)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+			fmt.Fprintf(wiz.w, " skipped (insufficient permissions)\n")
+			org = &api.Organization{}
+		} else {
+			fmt.Fprintln(wiz.w)
+			return nil, fmt.Errorf("token validation failed: %w", err)
+		}
+	} else {
+		fmt.Fprintf(wiz.w, " OK\n")
 	}
-	fmt.Fprintf(wiz.w, " OK\n")
 
 	// Store client secret in keychain.
 	if err := wiz.storeClientSecretInKeychain(profile, clientSecret); err != nil {
