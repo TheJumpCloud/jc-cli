@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). **Released v1.3.0** (2026-02-17).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). **Released v1.3.0** (2026-02-18).
 
 ---
 
@@ -69,7 +69,7 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - Transport chain order matters: auth wraps logging so logging sees injected headers and can redact API keys
 - `api.NewClient()` reads key from `config.APIKey()`, `api.NewClientWithKey(key)` for explicit key
 - `api.RedactKey(key)` shows only last 4 chars — use this everywhere API keys are logged
-- `api.ValidateAPIKey()` calls `GET /api/organizations` to verify credentials
+- `api.ValidateAPIKey()` calls `GET /api/organizations` to verify credentials; returns `*APIError` for HTTP errors (enables `errors.As` status code checks); service account login treats 403 as non-fatal (best-effort org fetch)
 - JumpCloud organizations endpoint returns `{"results": [...]}` wrapper; fallback to direct object parse
 - Keychain package in `internal/keychain/` wraps `zalando/go-keyring` with service name "jc"
 - `keychain.Resolve(value)` transparently resolves `keychain://jc/<profile>` URIs or returns plaintext as-is
@@ -1546,18 +1546,39 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/screen/help.go` — added "Form (Create / Edit)" section
   - `internal/tui/screen/help_test.go` — updated section header assertions
 
-### Release v1.3.0 (2026-02-17)
+### Post-Release Fixes (Issues #18–#20)
+- **Date:** 2026-02-18
+- What was fixed:
+  - **#18 — Setup wizard missing 403 tolerance:** Commit `545e127` fixed `auth.go` to tolerate 403 on `/organizations` during service account login, but `setup.go:authServiceAccount()` was not updated. The 403 caused an early return before `auth_method: service_account` was saved to config. Applied the same 403-tolerant pattern: on 403, log "skipped (insufficient permissions)" and continue with empty `Organization{}`.
+  - **#19 — TUI association labels + missing device_group target:** Detail screen showed raw API type strings (`system`, `system_group`) as association target labels. Added `assocTargetLabels` map + `AssocTargetLabel()` function for human-readable labels ("Devices", "Device Groups", etc.). Also added missing `system_group` to device's `ValidAssocTargets`, making device → device_group associations visible.
+  - **#20 — TUI user create form field exclusions + password:** Create form showed server-generated fields (`password_date`, `created`, `lastLogin`, `state`). Added `ReadOnly` bool to `FieldDef` struct and marked those 4 fields. Form now skips `ReadOnly` fields. For user create mode, appends masked password + confirmation fields with mismatch validation.
+- Files modified:
+  - `internal/cmd/setup.go` — added `errors`/`net/http` imports; 403-tolerant error handling in `authServiceAccount()`
+  - `internal/cmd/setup_test.go` — new `TestSetup_ServiceAccount_OrgFetch403` test
+  - `internal/schema/schema.go` — `ReadOnly` field on `FieldDef`; 4 user fields marked read-only
+  - `internal/tui/registry.go` — `assocTargetLabels` map, `AssocTargetLabel()` func, `system_group` in device targets
+  - `internal/tui/screen/detail.go` — uses `tui.AssocTargetLabel()` for display labels
+  - `internal/tui/screen/form.go` — skips `ReadOnly` fields; password + confirmation for user create; mismatch validation
 
-- **Tag:** `v1.3.0`
-- **Commits since v1.2.0:** 9
-  - `47981a7` docs: add quick-start cheat sheet for new users
-  - `4a65ec1` docs: link quick-start cheat sheet from README
-  - `bc606f5` test: add battle tests for fuzz, edge cases, and concurrency
-  - `d38bce2` feat: add TUI CRUD — create, edit, delete from interactive browser
-  - `ccdc1f8` docs: update progress.md with TUI CRUD (v1.3.0)
-  - `067f3e9` docs: document TUI CRUD operations in README
-  - `8b29fb7` fix: TUI form text input and bool toggle bugs
+### Release v1.3.0 (2026-02-18)
+
+- **Tag:** `v1.3.0` — https://github.com/juergen-kc/jc/releases/tag/v1.3.0
+- **Binaries:** darwin-arm64, darwin-amd64, linux-amd64, linux-arm64, windows-amd64 + SHA256 checksums
+- **Commits since v1.2.0:** 14
+  - `545e127` fix: tolerate 403 on /organizations during service account login (#17)
+  - `ddb536d` fix: flatten multi-line strings in TUI table cells
+  - `df6877c` fix: omit untouched bool fields on create, skip no-op edits (#15, #16)
+  - `64b9f2e` fix: sanitize AI explanation text for terminal rendering (#14)
+  - `afe3346` fix: validate V2 pagination Link header host origin (#13)
+  - `18fdde4` docs: update progress.md with TUI form/filter input fixes
   - `db316fc` fix: suppress q/? quit in home and list filter modes
+  - `8b29fb7` fix: TUI form text input and bool toggle bugs
+  - `067f3e9` docs: document TUI CRUD operations in README
+  - `ccdc1f8` docs: update progress.md with TUI CRUD (v1.3.0)
+  - `d38bce2` feat: add TUI CRUD — create, edit, delete from interactive browser
+  - `bc606f5` test: add battle tests for fuzz, edge cases, and concurrency
+  - `4a65ec1` docs: link quick-start cheat sheet from README
+  - `47981a7` docs: add quick-start cheat sheet for new users
 
 ### Release v1.2.0 (2026-02-17)
 
