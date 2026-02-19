@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). **Released v1.3.0** (2026-02-18).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). TUI associations for commands/policies/policy-groups/software (#22, #23, #24), TUI table performance fix (#21). **Released v1.3.1** (2026-02-18).
 
 ---
 
@@ -1546,6 +1546,19 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/screen/help.go` — added "Form (Create / Edit)" section
   - `internal/tui/screen/help_test.go` — updated section header assertions
 
+### TUI Associations & Table Performance (Issues #21–#24)
+- **Date:** 2026-02-19
+- What was done:
+  - **#21 — Commands list slow with ~100 items:** Table `computeColumnWidths()` was called on every render, parsing all rows as JSON each time. Added column width caching keyed by row count, column count, and table width — cache is returned when inputs match, skipping recomputation during cursor navigation. Also replaced O(n²) `flattenWhitespace()` loop (`for strings.Contains(s, "  ")`) with `strings.Fields()` + `strings.Join()`.
+  - **#22 — Commands detail missing associations:** Added `commands` to `graphSourceTypes` (→ `"command"`), `graphEndpoints` (→ `/commands`), and `ValidAssocTargets` (→ `system`, `system_group`). Commands detail now shows Associations tab with "Devices" and "Device Groups".
+  - **#23 — Policies/policy-groups detail missing associations:** Added `policies` (→ `"policy"`) and `policy-groups` (→ `"policy_group"`) to all graph maps. Policies show associations with Devices, Device Groups, Policy Groups. Policy Groups show associations with Devices, Device Groups, Policies.
+  - **#24 — Software detail missing associations:** Added `software` (→ `"software_app"`) to all graph maps. Software Apps show associations with Devices and Device Groups. Note: App Templates are V1 read-only and do not support V2 graph associations.
+- Files modified:
+  - `internal/tui/registry.go` — new entries in `graphSourceTypes`, `graphEndpoints`, `ValidAssocTargets`, `assocTargetLabels`, `graphTypeToRegistryKey`
+  - `internal/tui/component/table.go` — column width cache fields + logic; `flattenWhitespace()` rewrite
+  - `internal/tui/screen/detail_test.go` — `testPolicyEntry()` now has `GraphSourceType`; tests updated for policies having associations; non-assoc tests use `org` entry
+  - `internal/tui/registry_test.go` — added `policy_group`, `software_app` to `TestRegistryKeyForGraphType`
+
 ### Post-Release Fixes (Issues #18–#20)
 - **Date:** 2026-02-18
 - What was fixed:
@@ -1559,6 +1572,14 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/registry.go` — `assocTargetLabels` map, `AssocTargetLabel()` func, `system_group` in device targets
   - `internal/tui/screen/detail.go` — uses `tui.AssocTargetLabel()` for display labels
   - `internal/tui/screen/form.go` — skips `ReadOnly` fields; password + confirmation for user create; mismatch validation
+
+### Release v1.3.1 (2026-02-18)
+
+- **Tag:** `v1.3.1` — https://github.com/juergen-kc/jc/releases/tag/v1.3.1
+- **Binaries:** darwin-arm64, darwin-amd64, linux-amd64, linux-arm64, windows-amd64 + SHA256 checksums
+- **Commits since v1.3.0:** 2
+  - `2cc67c4` fix: setup.go 403 tolerance, TUI association labels, form field exclusions (#18, #19, #20)
+  - `9b11f17` docs: update progress.md with post-release fixes (#18, #19, #20)
 
 ### Release v1.3.0 (2026-02-18)
 
