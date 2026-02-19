@@ -221,6 +221,8 @@ func TestRegistryKeyForGraphType(t *testing.T) {
 		{"policy", "policies"},
 		{"radius_server", "radius"},
 		{"ldap_server", "ldap"},
+		{"policy_group", "policy-groups"},
+		{"software_app", "software"},
 	}
 	for _, tt := range tests {
 		got := RegistryKeyForGraphType(tt.graphType)

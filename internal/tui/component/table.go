@@ -20,6 +20,12 @@ type Table struct {
 	Height    int // Available height for rows (excluding header)
 	SortField string
 	SortDesc  bool
+
+	// Column width cache — avoids recomputing on every render.
+	cachedWidths  []int
+	cacheRowCount int
+	cacheColCount int
+	cacheWidth    int
 }
 
 // MoveCursor moves the selection cursor by delta, clamping to bounds.
@@ -143,6 +149,14 @@ func (t *Table) computeColumnWidths() []int {
 		return nil
 	}
 
+	// Return cached widths when inputs haven't changed.
+	if t.cachedWidths != nil &&
+		t.cacheRowCount == len(t.Rows) &&
+		t.cacheColCount == n &&
+		t.cacheWidth == t.Width {
+		return t.cachedWidths
+	}
+
 	// Reserve 2 chars gap between columns.
 	available := t.Width - (n-1)*2
 	if available < n {
@@ -196,6 +210,12 @@ func (t *Table) computeColumnWidths() []int {
 		}
 	}
 
+	// Update cache.
+	t.cachedWidths = widths
+	t.cacheRowCount = len(t.Rows)
+	t.cacheColCount = n
+	t.cacheWidth = t.Width
+
 	return widths
 }
 
@@ -215,14 +235,7 @@ func extractFields(data json.RawMessage) map[string]string {
 
 // flattenWhitespace replaces newlines and tabs with spaces and collapses runs.
 func flattenWhitespace(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\t", " ")
-	// Collapse multiple spaces.
-	for strings.Contains(s, "  ") {
-		s = strings.ReplaceAll(s, "  ", " ")
-	}
-	return strings.TrimSpace(s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // jsonValueToString converts a JSON value to a single-line display string.

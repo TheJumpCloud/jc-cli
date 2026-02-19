@@ -57,11 +57,15 @@ type ResourceEntry struct {
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
 var graphSourceTypes = map[string]string{
-	"users":         "user",
-	"devices":       "device",
-	"user-groups":   "user_group",
-	"device-groups": "device_group",
-	"apps":          "application",
+	"users":          "user",
+	"devices":        "device",
+	"user-groups":    "user_group",
+	"device-groups":  "device_group",
+	"apps":           "application",
+	"commands":       "command",
+	"policies":       "policy",
+	"policy-groups":  "policy_group",
+	"software":       "software_app",
 }
 
 // searchEndpoints maps resource keys to their POST search endpoint.
@@ -84,6 +88,10 @@ var graphEndpoints = map[string]string{
 	"user_group":   "/usergroups",
 	"device_group": "/systemgroups",
 	"application":  "/applications",
+	"command":      "/commands",
+	"policy":       "/policies",
+	"policy_group": "/policygroups",
+	"software_app": "/softwareapps",
 }
 
 // ValidAssocTargets maps each graph source type to its allowed target types.
@@ -97,6 +105,10 @@ var ValidAssocTargets = map[string][]string{
 	"user_group":   {"user", "application", "system", "system_group", "radius_server", "ldap_server"},
 	"device_group": {"system", "command", "policy", "user", "user_group"},
 	"application":  {"user", "user_group"},
+	"command":      {"system", "system_group"},
+	"policy":       {"system", "system_group", "policy_group"},
+	"policy_group": {"system", "system_group", "policy"},
+	"software_app": {"system", "system_group"},
 }
 
 // assocTargetLabels maps V2 graph target type identifiers to human-readable labels.
@@ -110,6 +122,8 @@ var assocTargetLabels = map[string]string{
 	"policy":        "Policies",
 	"radius_server": "RADIUS Servers",
 	"ldap_server":   "LDAP Servers",
+	"policy_group":  "Policy Groups",
+	"software_app":  "Software Apps",
 }
 
 // AssocTargetLabel returns the human-readable label for a V2 graph target type.
@@ -164,6 +178,8 @@ var graphTypeToRegistryKey = map[string]string{
 	"policy":        "policies",
 	"radius_server": "radius",
 	"ldap_server":   "ldap",
+	"policy_group":  "policy-groups",
+	"software_app":  "software",
 }
 
 // RegistryKeyForGraphType returns the TUI registry key for a V2 graph

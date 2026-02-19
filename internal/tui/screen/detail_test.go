@@ -26,13 +26,13 @@ func testUserEntry() tui.ResourceEntry {
 
 func testPolicyEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
-		Key:          "policies",
-		DisplayName:  "Policies",
-		Category:     tui.CategoryManagement,
-		ClientType:   tui.ClientV2,
-		ListEndpoint: "/policies",
-		// No GraphSourceType — policies don't have associations.
-		Schema: schema.Resources["policies"],
+		Key:             "policies",
+		DisplayName:     "Policies",
+		Category:        tui.CategoryManagement,
+		ClientType:      tui.ClientV2,
+		ListEndpoint:    "/policies",
+		GraphSourceType: "policy",
+		Schema:          schema.Resources["policies"],
 	}
 }
 
@@ -57,10 +57,10 @@ func TestDetailScreen_HasAssocTargets(t *testing.T) {
 	}
 }
 
-func TestDetailScreen_NoAssocForPolicies(t *testing.T) {
+func TestDetailScreen_HasAssocForPolicies(t *testing.T) {
 	d := NewDetailScreen(testPolicyEntry(), "abc123", "My Policy")
-	if len(d.assocTargets) != 0 {
-		t.Errorf("policy entry should have no association targets, got %d", len(d.assocTargets))
+	if len(d.assocTargets) != 3 {
+		t.Errorf("policy entry should have 3 association targets, got %d", len(d.assocTargets))
 	}
 }
 
@@ -87,8 +87,16 @@ func TestDetailScreen_TabToggles(t *testing.T) {
 }
 
 func TestDetailScreen_TabIgnoredWithoutAssoc(t *testing.T) {
-	d := NewDetailScreen(testPolicyEntry(), "abc123", "My Policy")
-	d.data = json.RawMessage(`{"id":"abc123","name":"My Policy"}`)
+	entry := tui.ResourceEntry{
+		Key:          "org",
+		DisplayName:  "Organization",
+		Category:     tui.CategoryManagement,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/organizations",
+		Schema:       schema.Resources["org"],
+	}
+	d := NewDetailScreen(entry, "abc123", "My Org")
+	d.data = json.RawMessage(`{"_id":"abc123","displayName":"My Org"}`)
 	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 
 	d.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -169,13 +177,21 @@ func TestDetailScreen_ViewShowsTabHeader(t *testing.T) {
 }
 
 func TestDetailScreen_ViewNoTabsForNonGraphResource(t *testing.T) {
-	d := NewDetailScreen(testPolicyEntry(), "abc123", "My Policy")
-	d.data = json.RawMessage(`{"id":"abc123","name":"My Policy"}`)
+	entry := tui.ResourceEntry{
+		Key:          "org",
+		DisplayName:  "Organization",
+		Category:     tui.CategoryManagement,
+		ClientType:   tui.ClientV1,
+		ListEndpoint: "/organizations",
+		Schema:       schema.Resources["org"],
+	}
+	d := NewDetailScreen(entry, "abc123", "My Org")
+	d.data = json.RawMessage(`{"_id":"abc123","displayName":"My Org"}`)
 	d.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 
 	view := d.View()
 	if strings.Contains(view, "Associations") {
-		t.Error("policies should not show Associations tab")
+		t.Error("org should not show Associations tab")
 	}
 }
 
