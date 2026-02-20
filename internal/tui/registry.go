@@ -28,6 +28,24 @@ var CategoryOrder = []Category{
 	CategorySettings,
 }
 
+// categoryColumns maps each category to its grid column (0-indexed).
+var categoryColumns = map[Category]int{
+	CategoryUserMgmt:   0,
+	CategorySecurity:   0,
+	CategoryDeviceMgmt: 1,
+	CategorySettings:   1,
+	CategoryAccess:     2,
+	CategoryInsights:   2,
+}
+
+// CategoryColumn returns the grid column (0-2) for a category.
+func CategoryColumn(c Category) int {
+	if col, ok := categoryColumns[c]; ok {
+		return col
+	}
+	return 0
+}
+
 // ClientType indicates which API client a resource uses.
 type ClientType int
 

@@ -403,6 +403,35 @@ func TestBuildRegistry_GsuiteOffice365NotTopLevel(t *testing.T) {
 	}
 }
 
+func TestColumnAssignment(t *testing.T) {
+	for _, cat := range CategoryOrder {
+		col := CategoryColumn(cat)
+		if col < 0 || col > 2 {
+			t.Errorf("category %q has column %d, want 0-2", cat, col)
+		}
+	}
+
+	// Verify specific assignments from design:
+	if CategoryColumn(CategoryUserMgmt) != 0 {
+		t.Error("User Management should be in column 0")
+	}
+	if CategoryColumn(CategorySecurity) != 0 {
+		t.Error("Security should be in column 0")
+	}
+	if CategoryColumn(CategoryDeviceMgmt) != 1 {
+		t.Error("Device Management should be in column 1")
+	}
+	if CategoryColumn(CategorySettings) != 1 {
+		t.Error("Settings should be in column 1")
+	}
+	if CategoryColumn(CategoryAccess) != 2 {
+		t.Error("Access should be in column 2")
+	}
+	if CategoryColumn(CategoryInsights) != 2 {
+		t.Error("Insights should be in column 2")
+	}
+}
+
 func TestBuildRegistry_NewCategories(t *testing.T) {
 	entries := BuildRegistry()
 	cats := make(map[Category]bool)
