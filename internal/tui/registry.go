@@ -19,6 +19,9 @@ const (
 )
 
 // CategoryOrder defines the display order of categories.
+// This order controls both: (1) single-column filter mode rendering, and
+// (2) within-column stacking order in grid mode (categories in the same
+// column appear top-to-bottom in this order).
 var CategoryOrder = []Category{
 	CategoryUserMgmt,
 	CategoryDeviceMgmt,
@@ -243,9 +246,9 @@ var resourceCategory = map[string]Category{
 	"custom-emails": CategorySettings,
 	"user-states":   CategorySettings,
 	"bulk":          CategorySettings,
-	"duo":           CategorySettings,
-	"gsuite":        CategorySettings,
-	"office365":     CategorySettings,
+	"duo": CategorySettings,
+	// Note: gsuite and office365 are excluded — they are folded into the
+	// "cloud-directories" sub-menu entry by BuildRegistry().
 }
 
 // displayNames maps schema resource names to human-readable display names.

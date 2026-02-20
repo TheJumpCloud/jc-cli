@@ -94,13 +94,7 @@ func (h *HomeScreen) updateColumns() {
 func (h *HomeScreen) buildColumns() [3][]columnItem {
 	var cols [3][]columnItem
 
-	// Group entries by category, preserving CategoryOrder within each column.
-	type catGroup struct {
-		category tui.Category
-		entries  []tui.ResourceEntry
-	}
-
-	// Collect entries by category.
+	// Collect entries by category, preserving CategoryOrder within each column.
 	catEntries := make(map[tui.Category][]tui.ResourceEntry)
 	for i := range h.filtered {
 		e := &h.filtered[i]
