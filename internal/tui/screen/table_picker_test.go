@@ -12,7 +12,7 @@ func testSystemInsightsEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
 		Key:          "system-insights",
 		DisplayName:  "System Insights",
-		Category:     tui.CategoryDevices,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/systeminsights",
 	}

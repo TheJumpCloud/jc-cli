@@ -154,8 +154,8 @@ func TestBuildRegistry_GroupsSplit(t *testing.T) {
 	if ug.ListEndpoint != "/usergroups" {
 		t.Errorf("user-groups endpoint = %q, want '/usergroups'", ug.ListEndpoint)
 	}
-	if ug.Category != CategoryIdentity {
-		t.Errorf("user-groups category = %q, want CategoryIdentity", ug.Category)
+	if ug.Category != CategoryUserMgmt {
+		t.Errorf("user-groups category = %q, want CategoryUserMgmt", ug.Category)
 	}
 
 	dg, ok := m["device-groups"]
@@ -168,8 +168,8 @@ func TestBuildRegistry_GroupsSplit(t *testing.T) {
 	if dg.ListEndpoint != "/systemgroups" {
 		t.Errorf("device-groups endpoint = %q, want '/systemgroups'", dg.ListEndpoint)
 	}
-	if dg.Category != CategoryDevices {
-		t.Errorf("device-groups category = %q, want CategoryDevices", dg.Category)
+	if dg.Category != CategoryDeviceMgmt {
+		t.Errorf("device-groups category = %q, want CategoryDeviceMgmt", dg.Category)
 	}
 
 	// Original "groups" key should not exist.
@@ -341,5 +341,26 @@ func TestAdminsEndpointOverride(t *testing.T) {
 	}
 	if e.ClientType != ClientV1 {
 		t.Errorf("admins client type = %d, want ClientV1", e.ClientType)
+	}
+}
+
+func TestBuildRegistry_NewCategories(t *testing.T) {
+	entries := BuildRegistry()
+	cats := make(map[Category]bool)
+	for _, e := range entries {
+		cats[e.Category] = true
+	}
+	want := []Category{
+		CategoryUserMgmt,
+		CategoryDeviceMgmt,
+		CategoryAccess,
+		CategorySecurity,
+		CategoryInsights,
+		CategorySettings,
+	}
+	for _, c := range want {
+		if !cats[c] {
+			t.Errorf("missing category %q", c)
+		}
 	}
 }

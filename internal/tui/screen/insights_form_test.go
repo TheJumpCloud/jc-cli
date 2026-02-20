@@ -16,7 +16,7 @@ func testInsightsEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
 		Key:         "insights",
 		DisplayName: "Directory Insights",
-		Category:    tui.CategoryAudit,
+		Category:    tui.CategoryInsights,
 		ClientType:  tui.ClientInsights,
 	}
 }

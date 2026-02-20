@@ -16,7 +16,7 @@ func testUserEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
 		Key:             "users",
 		DisplayName:     "Users",
-		Category:        tui.CategoryIdentity,
+		Category:        tui.CategoryUserMgmt,
 		ClientType:      tui.ClientV1,
 		ListEndpoint:    "/systemusers",
 		GraphSourceType: "user",
@@ -28,7 +28,7 @@ func testPolicyEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
 		Key:             "policies",
 		DisplayName:     "Policies",
-		Category:        tui.CategoryManagement,
+		Category:        tui.CategoryDeviceMgmt,
 		ClientType:      tui.ClientV2,
 		ListEndpoint:    "/policies",
 		GraphSourceType: "policy",
@@ -90,7 +90,7 @@ func TestDetailScreen_TabIgnoredWithoutAssoc(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "org",
 		DisplayName:  "Organization",
-		Category:     tui.CategoryManagement,
+		Category:     tui.CategorySettings,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/organizations",
 		Schema:       schema.Resources["org"],
@@ -180,7 +180,7 @@ func TestDetailScreen_ViewNoTabsForNonGraphResource(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "org",
 		DisplayName:  "Organization",
-		Category:     tui.CategoryManagement,
+		Category:     tui.CategorySettings,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/organizations",
 		Schema:       schema.Resources["org"],
@@ -220,7 +220,7 @@ func testUserGroupEntry() tui.ResourceEntry {
 	return tui.ResourceEntry{
 		Key:             "user-groups",
 		DisplayName:     "User Groups",
-		Category:        tui.CategoryIdentity,
+		Category:        tui.CategoryUserMgmt,
 		ClientType:      tui.ClientV2,
 		ListEndpoint:    "/usergroups",
 		GraphSourceType: "user_group",
@@ -600,7 +600,7 @@ func TestDetailScreen_DeleteNoVerb(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "policy-templates",
 		DisplayName:  "Policy Templates",
-		Category:     tui.CategoryApplications,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/policytemplates",
 		Schema:       schema.Resources["policy-templates"],
@@ -691,7 +691,7 @@ func TestDetailScreen_EditNoVerb(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "policy-templates",
 		DisplayName:  "Policy Templates",
-		Category:     tui.CategoryApplications,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/policytemplates",
 		Schema:       schema.Resources["policy-templates"],

@@ -35,21 +35,21 @@ func testEntries() []tui.ResourceEntry {
 		{
 			Key:         "users",
 			DisplayName: "Users",
-			Category:    tui.CategoryIdentity,
+			Category:    tui.CategoryUserMgmt,
 			ClientType:  tui.ClientV1,
 			Schema:      schema.Resources["users"],
 		},
 		{
 			Key:         "devices",
 			DisplayName: "Devices",
-			Category:    tui.CategoryDevices,
+			Category:    tui.CategoryDeviceMgmt,
 			ClientType:  tui.ClientV1,
 			Schema:      schema.Resources["devices"],
 		},
 		{
 			Key:         "policies",
 			DisplayName: "Policies",
-			Category:    tui.CategoryManagement,
+			Category:    tui.CategoryDeviceMgmt,
 			ClientType:  tui.ClientV2,
 			Schema:      schema.Resources["policies"],
 		},
@@ -84,8 +84,8 @@ func TestHomeScreen_ViewShowsCategories(t *testing.T) {
 	h.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 
 	view := h.View()
-	if !strings.Contains(view, "Identity") {
-		t.Error("view should contain 'Identity' category")
+	if !strings.Contains(view, "User Management") {
+		t.Error("view should contain 'User Management' category")
 	}
 }
 

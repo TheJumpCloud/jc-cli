@@ -15,7 +15,7 @@ func TestListScreen_DeriveColumnsFromData(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "system-insights",
 		DisplayName:  "System Insights: os_version",
-		Category:     tui.CategoryDevices,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/systeminsights/os_version",
 		Schema:       schema.ResourceSchema{DefaultFields: nil},
@@ -58,7 +58,7 @@ func TestListScreen_PivotNavigation(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:            "system-insights",
 		DisplayName:    "System Insights: os_version",
-		Category:       tui.CategoryDevices,
+		Category:       tui.CategoryDeviceMgmt,
 		ClientType:     tui.ClientV2,
 		ListEndpoint:   "/systeminsights/os_version",
 		PivotField:     "system_id",
@@ -111,7 +111,7 @@ func TestListScreen_PivotWithEmptyFieldSkips(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:            "system-insights",
 		DisplayName:    "System Insights: os_version",
-		Category:       tui.CategoryDevices,
+		Category:       tui.CategoryDeviceMgmt,
 		ClientType:     tui.ClientV2,
 		ListEndpoint:   "/systeminsights/os_version",
 		PivotField:     "system_id",
@@ -151,7 +151,7 @@ func TestListScreen_CopyIDProducesFlash(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -198,7 +198,7 @@ func TestListScreen_CopyNoRowsIsNoop(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -222,7 +222,7 @@ func TestListScreen_CopyPivotField(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:            "system-insights",
 		DisplayName:    "System Insights: os_version",
-		Category:       tui.CategoryDevices,
+		Category:       tui.CategoryDeviceMgmt,
 		ClientType:     tui.ClientV2,
 		ListEndpoint:   "/systeminsights/os_version",
 		PivotField:     "system_id",
@@ -266,7 +266,7 @@ func TestListScreen_SearchUsesPostEndpoint(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:            "users",
 		DisplayName:    "Users",
-		Category:       tui.CategoryIdentity,
+		Category:       tui.CategoryUserMgmt,
 		ClientType:     tui.ClientV1,
 		ListEndpoint:   "/systemusers",
 		SearchEndpoint: "/search/systemusers",
@@ -290,7 +290,7 @@ func TestListScreen_NoSearchEndpointForPolicies(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "policies",
 		DisplayName:  "Policies",
-		Category:     tui.CategoryManagement,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/policies",
 		Schema:       schema.Resources["policies"],
@@ -315,7 +315,7 @@ func TestListScreen_ExportModeToggle(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -357,7 +357,7 @@ func TestListScreen_ExportJSON(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -408,7 +408,7 @@ func TestListScreen_ExportNoRowsIsNoop(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -462,7 +462,7 @@ func TestListScreen_CreateNoVerb(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "policy-templates",
 		DisplayName:  "Policy Templates",
-		Category:     tui.CategoryApplications,
+		Category:     tui.CategoryDeviceMgmt,
 		ClientType:   tui.ClientV2,
 		ListEndpoint: "/policytemplates",
 		Schema:       schema.Resources["policy-templates"],
@@ -481,7 +481,7 @@ func TestListScreen_RefreshListMsg(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],
@@ -504,7 +504,7 @@ func TestListScreen_KeepsDefaultFieldsWhenPresent(t *testing.T) {
 	entry := tui.ResourceEntry{
 		Key:          "users",
 		DisplayName:  "Users",
-		Category:     tui.CategoryIdentity,
+		Category:     tui.CategoryUserMgmt,
 		ClientType:   tui.ClientV1,
 		ListEndpoint: "/systemusers",
 		Schema:       schema.Resources["users"],

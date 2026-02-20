@@ -10,24 +10,22 @@ import (
 type Category string
 
 const (
-	CategoryIdentity     Category = "Identity"
-	CategoryDevices      Category = "Devices"
-	CategoryManagement   Category = "Management"
-	CategoryApplications Category = "Applications"
-	CategorySecurity     Category = "Security"
-	CategoryIntegrations Category = "Integrations"
-	CategoryAudit        Category = "Audit"
+	CategoryUserMgmt   Category = "User Management"
+	CategoryDeviceMgmt Category = "Device Management"
+	CategoryAccess     Category = "Access"
+	CategorySecurity   Category = "Security"
+	CategoryInsights   Category = "Insights"
+	CategorySettings   Category = "Settings"
 )
 
 // CategoryOrder defines the display order of categories.
 var CategoryOrder = []Category{
-	CategoryIdentity,
-	CategoryDevices,
+	CategoryUserMgmt,
+	CategoryDeviceMgmt,
+	CategoryAccess,
 	CategorySecurity,
-	CategoryManagement,
-	CategoryApplications,
-	CategoryIntegrations,
-	CategoryAudit,
+	CategoryInsights,
+	CategorySettings,
 }
 
 // ClientType indicates which API client a resource uses.
@@ -192,39 +190,44 @@ func RegistryKeyForGraphType(graphType string) string {
 
 // resourceCategory maps schema resource names to their UI category.
 var resourceCategory = map[string]Category{
-	"users":       CategoryIdentity,
-	"admins":      CategoryIdentity,
-	"user-states": CategoryIdentity,
+	// User Management
+	"users":       CategoryUserMgmt,
+	"user-groups": CategoryUserMgmt,
+	"ad":          CategoryUserMgmt,
 
-	"devices":         CategoryDevices,
-	"device-groups":   CategoryDevices,
-	"system-insights": CategoryDevices,
+	// Device Management
+	"devices":          CategoryDeviceMgmt,
+	"device-groups":    CategoryDeviceMgmt,
+	"commands":         CategoryDeviceMgmt,
+	"policies":         CategoryDeviceMgmt,
+	"policy-groups":    CategoryDeviceMgmt,
+	"software":         CategoryDeviceMgmt,
+	"apple-mdm":        CategoryDeviceMgmt,
+	"system-insights":  CategoryDeviceMgmt,
+	"policy-templates": CategoryDeviceMgmt,
 
-	"commands":       CategoryManagement,
-	"policies":       CategoryManagement,
-	"policy-groups":  CategoryManagement,
-	"org":            CategoryManagement,
-	"custom-emails":  CategoryManagement,
-	"bulk":           CategoryManagement,
+	// Access
+	"apps":          CategoryAccess,
+	"app-templates": CategoryAccess,
+	"ldap":          CategoryAccess,
+	"radius":        CategoryAccess,
 
-	"apps":              CategoryApplications,
-	"app-templates":     CategoryApplications,
-	"policy-templates":  CategoryApplications,
-
+	// Security
 	"auth-policies": CategorySecurity,
 	"iplists":       CategorySecurity,
-	"radius":        CategorySecurity,
 
-	"user-groups": CategoryIdentity,
-	"gsuite":    CategoryIntegrations,
-	"office365": CategoryIntegrations,
-	"ldap":      CategoryIntegrations,
-	"ad":        CategoryIntegrations,
-	"apple-mdm": CategoryIntegrations,
-	"duo":       CategoryIntegrations,
-	"software":  CategoryIntegrations,
+	// Insights
+	"insights": CategoryInsights,
 
-	"insights": CategoryAudit,
+	// Settings
+	"admins":        CategorySettings,
+	"org":           CategorySettings,
+	"custom-emails": CategorySettings,
+	"user-states":   CategorySettings,
+	"bulk":          CategorySettings,
+	"duo":           CategorySettings,
+	"gsuite":        CategorySettings,
+	"office365":     CategorySettings,
 }
 
 // displayNames maps schema resource names to human-readable display names.
@@ -251,7 +254,7 @@ var displayNames = map[string]string{
 	"policy-groups":    "Policy Groups",
 	"user-states":      "User States",
 	"gsuite":           "Google Workspace",
-	"office365":        "Office 365",
+	"office365":        "M365",
 	"duo":              "Duo Security",
 	"custom-emails":    "Custom Emails",
 	"app-templates":    "App Templates",
@@ -357,7 +360,7 @@ func BuildRegistry() []ResourceEntry {
 
 		cat := resourceCategory[name]
 		if cat == "" {
-			cat = CategoryManagement
+			cat = CategorySettings
 		}
 
 		dn := displayNames[name]
