@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). TUI associations for commands/policies/policy-groups/software (#22, #23, #24), TUI table performance fix (#21). **Released v1.3.1** (2026-02-18).
+Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). TUI associations for commands/policies/policy-groups/software (#22, #23, #24), TUI table performance fix (#21). **Released v1.3.2** (2026-02-19). TUI home screen restructured to three-column grid matching JumpCloud Admin Console (KLA-151): 6 new categories, 10 placeholder items, Cloud Directories sub-menu, responsive layout, left/right column navigation.
 
 ---
 
@@ -119,6 +119,38 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
 - `RegistryKeyForGraphType()`: reverse map from V2 graph types (`system`, `user_group`) to registry keys (`devices`, `user-groups`) — enables association row drill-down
 - `BuildRegistry()` splits "groups" into "user-groups" and "device-groups" with correct V2 endpoints
 - Fetch layer uses generation-based staleness detection — stale responses silently discarded
+- TUI home screen uses three-column grid layout with `gridCursor{col, row}` for navigation; responsive breakpoints: 1 col (<90), 2 col (90-119), 3 col (120+)
+- `CategoryColumn()` maps categories to grid columns; `CategoryOrder` controls both filter-mode rendering and within-column stacking
+- `placeholderEntries` slice defines "Coming soon" items; `cloudDirResources` map identifies sub-menu children
+- `SubMenuScreen` for grouped navigation (Cloud Directories → Google Workspace + M365)
+- Bookmark section above grid with seamless cursor transition (`inBookmarks` bool state)
+---
+
+### TUI Home Screen Restructure (KLA-151)
+- **Date:** 2026-02-20
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commits:** `7a344a5`..`54b05f8` (7 commits)
+- What was implemented:
+  - Restructured TUI home screen from single-column grouped list to responsive three-column grid matching JumpCloud Admin Console navigation hierarchy.
+  - **6 new categories** replacing 7 old ones: User Management, Device Management, Access, Security, Insights, Settings (was Identity, Devices, Management, Applications, Security, Integrations, Audit).
+  - **10 placeholder "Coming soon" entries** grayed out with DimRow style: HR Directories, Identity Providers, Asset Management, Patch Management, Access Requests, AI & SaaS Management, Vault, MFA Configurations, Device Trust, Password Policies.
+  - **Cloud Directories sub-menu** folding Google Workspace and M365 into a grouped entry with dedicated SubMenuScreen.
+  - **Column assignment**: Col 0 (User Management + Security), Col 1 (Device Management + Settings), Col 2 (Access + Insights).
+  - **Grid cursor model** (`gridCursor{col, row}`) replacing flat `cursor int` for multi-column navigation. Left/Right arrows move between columns, Up/Down within.
+  - **Responsive layout**: 1 column (<90 chars), 2 columns (90-119), 3 columns (120+) with column folding logic.
+  - **Bookmark integration**: Flat section above grid with seamless cursor transition (up from grid → bookmarks, down from bookmarks → grid).
+  - **Filter mode** preserved: `/` collapses to single-column flat list (existing behavior).
+  - Office 365 renamed to M365 in display names.
+  - 20+ new test functions covering grid navigation, placeholder behavior, sub-menu push, responsive columns, column clamping, bookmark/grid interplay.
+- Files changed:
+  - New: `submenu.go`, `submenu_test.go` (2 new files)
+  - Modified: `registry.go`, `registry_test.go`, `home.go`, `home_test.go`, `list_test.go`, `detail_test.go`, `table_picker_test.go`, `insights_form_test.go` (8 modified files)
+  - Total: 10 files, +1,311 / -205 lines
+- **Learnings:**
+  - Category renames propagate to many test files — the implementer found 6 test files needing updates (not just the 2 in the plan). Fresh-context subagents with grep access find references plan authors miss.
+  - Dual-cursor system (gridCur for grid + cursor for filter) avoids breaking filter mode while adding grid navigation.
+  - `lipgloss.JoinHorizontal(lipgloss.Top, ...)` with `Width()` constraint creates clean multi-column layouts.
+  - `CategoryOrder` serves dual purpose (filter rendering + grid stacking) — needs a comment to prevent silent breakage.
 ---
 
 ## 2026-02-13 - US-001
@@ -1545,6 +1577,14 @@ Beyond the PRD: 25 schema resources, 158 MCP tools, auth policy simulator, 6 sec
   - `internal/tui/screen/insights_form.go` — `TextInputActive()`, fixed stale comment
   - `internal/tui/screen/help.go` — added "Form (Create / Edit)" section
   - `internal/tui/screen/help_test.go` — updated section header assertions
+
+### Release v1.3.2 (2026-02-19)
+
+- **Tag:** `v1.3.2` — https://github.com/juergen-kc/jc/releases/tag/v1.3.2
+- **Binaries:** darwin-arm64, darwin-amd64, linux-amd64, linux-arm64, windows-amd64 + SHA256 checksums
+- **Commits since v1.3.1:** 2
+  - `f9a2ed7` feat: add TUI associations for commands/policies/policy-groups/software, fix table perf (#21, #22, #23, #24)
+  - `2c91038` docs: update progress.md with TUI fixes (#21, #22, #23, #24)
 
 ### TUI Associations & Table Performance (Issues #21–#24)
 - **Date:** 2026-02-19
