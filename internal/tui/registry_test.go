@@ -305,6 +305,31 @@ func TestMembershipEndpoint(t *testing.T) {
 	}
 }
 
+func TestResourceEntry_PlaceholderField(t *testing.T) {
+	e := ResourceEntry{
+		Key:         "test",
+		DisplayName: "Test",
+		Placeholder: true,
+	}
+	if !e.Placeholder {
+		t.Error("Placeholder field should be true")
+	}
+}
+
+func TestResourceEntry_SubMenuField(t *testing.T) {
+	e := ResourceEntry{
+		Key:         "cloud-dirs",
+		DisplayName: "Cloud Directories",
+		SubMenu: []ResourceEntry{
+			{Key: "gsuite", DisplayName: "Google Workspace"},
+			{Key: "office365", DisplayName: "M365"},
+		},
+	}
+	if len(e.SubMenu) != 2 {
+		t.Errorf("SubMenu length = %d, want 2", len(e.SubMenu))
+	}
+}
+
 func TestAdminsEndpointOverride(t *testing.T) {
 	m := RegistryByKey()
 	e, ok := m["admins"]

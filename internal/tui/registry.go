@@ -53,6 +53,8 @@ type ResourceEntry struct {
 	SearchEndpoint  string                // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
 	SearchFields    []string              // Fields to search across (e.g. ["username","email","firstname","lastname"])
 	Schema          schema.ResourceSchema // Full schema metadata
+	Placeholder     bool                  // True for "Coming soon" items
+	SubMenu         []ResourceEntry       // Non-nil for sub-menu groupings (e.g. Cloud Directories)
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
