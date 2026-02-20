@@ -567,6 +567,16 @@ func (d *DetailScreen) fetchAssoc() tea.Cmd {
 		)
 	}
 
+	// Non-group resources use /memberof to discover parent groups (e.g. user→user_group).
+	// The V2 graph associations API does not support these target types.
+	memberOfTarget := tui.MemberOfTarget(d.entry.GraphSourceType)
+	if memberOfTarget != "" && target == memberOfTarget {
+		return tea.Batch(
+			d.spinner.Tick,
+			d.fetcher.FetchMemberOf(d.entry.Key, graphEP, d.id, target, gen),
+		)
+	}
+
 	return tea.Batch(
 		d.spinner.Tick,
 		d.fetcher.FetchAssociations(d.entry.Key, graphEP, d.id, target, gen),

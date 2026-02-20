@@ -310,6 +310,25 @@ func TestMembershipEndpoint(t *testing.T) {
 	}
 }
 
+func TestMemberOfTarget(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{"user", "user_group"},
+		{"device", "system_group"},
+		{"user_group", ""},
+		{"device_group", ""},
+		{"application", ""},
+	}
+	for _, tt := range tests {
+		got := MemberOfTarget(tt.source)
+		if got != tt.want {
+			t.Errorf("MemberOfTarget(%q) = %q, want %q", tt.source, got, tt.want)
+		}
+	}
+}
+
 func TestResourceEntry_PlaceholderField(t *testing.T) {
 	e := ResourceEntry{
 		Key:         "test",

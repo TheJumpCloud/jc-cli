@@ -156,6 +156,21 @@ func AssocTargetLabel(target string) string {
 	return target
 }
 
+// MemberOfTarget returns the group target type for a non-group source type, or ""
+// if the source is a group or has no memberof endpoint. Non-group resources use
+// /memberof to discover which groups they belong to, because the V2 graph
+// associations API does not support user→user_group or device→system_group.
+func MemberOfTarget(sourceType string) string {
+	switch sourceType {
+	case "user":
+		return "user_group"
+	case "device":
+		return "system_group"
+	default:
+		return ""
+	}
+}
+
 // MembershipTarget returns the member type for a group source type, or "" if
 // the source is not a group. Group members use dedicated endpoints (/members,
 // /membership) rather than the graph associations API.

@@ -358,6 +358,46 @@ func (f *Fetcher) FetchMembership(resourceKey, memberEndpoint, id, memberType st
 	}
 }
 
+// FetchMemberOf fetches the groups a user or device belongs to via the /memberof endpoint.
+// Unlike graph associations, /memberof returns which groups contain this resource.
+// The targetType filter ensures we only return the expected group type (e.g. "user_group").
+func (f *Fetcher) FetchMemberOf(resourceKey, graphEndpoint, id, targetType string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewV2Client()
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: targetType, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		endpoint := fmt.Sprintf("%s/%s/memberof", graphEndpoint, id)
+		result, err := client.ListAll(ctx, endpoint, api.V2ListOptions{})
+		if err != nil {
+			return AssociationsResultMsg{ResourceKey: resourceKey, TargetType: targetType, Generation: gen, Err: err}
+		}
+
+		// Filter to the requested target type (memberof can return multiple group types).
+		filtered := make([]json.RawMessage, 0, len(result.Data))
+		for _, item := range result.Data {
+			flat := flattenAssociation(item)
+			var obj struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(flat, &obj); err == nil && obj.Type == targetType {
+				filtered = append(filtered, flat)
+			}
+		}
+
+		return AssociationsResultMsg{
+			ResourceKey: resourceKey,
+			TargetType:  targetType,
+			Data:        filtered,
+			Generation:  gen,
+		}
+	}
+}
+
 // flattenAssociation extracts "to.type" and "to.id" to top level.
 func flattenAssociation(data json.RawMessage) json.RawMessage {
 	var obj map[string]json.RawMessage

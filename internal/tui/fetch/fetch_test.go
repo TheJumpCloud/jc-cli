@@ -300,6 +300,72 @@ func TestFetchMembership_DeviceGroup(t *testing.T) {
 	}
 }
 
+func TestFetchMemberOf_User(t *testing.T) {
+	// /users/{id}/memberof returns flat {id, type} objects for all parent groups.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/users/u001/memberof" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"id":"ug001","type":"user_group"},{"id":"ug002","type":"user_group"}]`)
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{
+		Cache:       NewCache(),
+		NewV2Client: func() (*api.V2Client, error) { return newTestV2Client(srv.URL) },
+	}
+
+	gen := NextGeneration()
+	cmd := f.FetchMemberOf("users", "/users", "u001", "user_group", gen)
+	msg := cmd()
+
+	result, ok := msg.(AssociationsResultMsg)
+	if !ok {
+		t.Fatalf("expected AssociationsResultMsg, got %T", msg)
+	}
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if len(result.Data) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(result.Data))
+	}
+	if result.TargetType != "user_group" {
+		t.Errorf("TargetType = %q, want %q", result.TargetType, "user_group")
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(result.Data[0], &obj); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(obj["id"]) != `"ug001"` {
+		t.Errorf("id = %s, want '\"ug001\"'", string(obj["id"]))
+	}
+}
+
+func TestFetchMemberOf_FiltersTargetType(t *testing.T) {
+	// memberof can return mixed types; verify we filter to the requested type.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"id":"ug001","type":"user_group"},{"id":"other","type":"some_other_type"}]`)
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{
+		Cache:       NewCache(),
+		NewV2Client: func() (*api.V2Client, error) { return newTestV2Client(srv.URL) },
+	}
+
+	gen := NextGeneration()
+	cmd := f.FetchMemberOf("users", "/users", "u001", "user_group", gen)
+	msg := cmd()
+
+	result := msg.(AssociationsResultMsg)
+	if len(result.Data) != 1 {
+		t.Fatalf("expected 1 filtered result, got %d", len(result.Data))
+	}
+}
+
 func TestFetchV1Search_CachesResults(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
