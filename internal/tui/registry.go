@@ -320,9 +320,32 @@ var SystemInsightsTables = []string{
 	"windows_security_center", "windows_security_products",
 }
 
+// placeholderEntries defines "Coming soon" items shown grayed out in the menu.
+var placeholderEntries = []ResourceEntry{
+	{Key: "hr-directories", DisplayName: "HR Directories", Category: CategoryUserMgmt, Placeholder: true},
+	{Key: "identity-providers", DisplayName: "Identity Providers", Category: CategoryUserMgmt, Placeholder: true},
+	{Key: "asset-management", DisplayName: "Asset Management", Category: CategoryDeviceMgmt, Placeholder: true},
+	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
+	{Key: "access-requests", DisplayName: "Access Requests", Category: CategoryAccess, Placeholder: true},
+	{Key: "ai-saas-management", DisplayName: "AI & SaaS Management", Category: CategoryAccess, Placeholder: true},
+	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
+	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
+	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
+	{Key: "password-policies", DisplayName: "Password Policies", Category: CategorySecurity, Placeholder: true},
+}
+
+// cloudDirResources lists schema resource names that are folded into the
+// "Cloud Directories" sub-menu instead of appearing as top-level entries.
+var cloudDirResources = map[string]bool{
+	"gsuite":    true,
+	"office365": true,
+}
+
 // BuildRegistry creates ResourceEntry items for all schema resources.
 func BuildRegistry() []ResourceEntry {
 	entries := make([]ResourceEntry, 0, len(schema.Resources))
+	var cloudDirChildren []ResourceEntry
+
 	for name, s := range schema.Resources {
 		// Skip resources that can't be browsed generically.
 		if skipInTUI[name] {
@@ -389,8 +412,31 @@ func BuildRegistry() []ResourceEntry {
 			entry.PivotTargetKey = "devices"
 		}
 
+		// Cloud directory resources are folded into a sub-menu.
+		if cloudDirResources[name] {
+			cloudDirChildren = append(cloudDirChildren, entry)
+			continue
+		}
+
 		entries = append(entries, entry)
 	}
+
+	// Cloud Directories sub-menu groups gsuite and office365.
+	if len(cloudDirChildren) > 0 {
+		// Sort children deterministically: Google Workspace before M365.
+		sort.Slice(cloudDirChildren, func(i, j int) bool {
+			return cloudDirChildren[i].Key < cloudDirChildren[j].Key
+		})
+		entries = append(entries, ResourceEntry{
+			Key:         "cloud-directories",
+			DisplayName: "Cloud Directories",
+			Category:    CategoryUserMgmt,
+			SubMenu:     cloudDirChildren,
+		})
+	}
+
+	// Add placeholder entries.
+	entries = append(entries, placeholderEntries...)
 
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Category != entries[j].Category {

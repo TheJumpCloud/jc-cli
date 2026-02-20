@@ -11,6 +11,10 @@ func TestBuildRegistry_AllListableResourcesMapped(t *testing.T) {
 	entryKeys := make(map[string]bool)
 	for _, e := range entries {
 		entryKeys[e.Key] = true
+		// Also index sub-menu children.
+		for _, child := range e.SubMenu {
+			entryKeys[child.Key] = true
+		}
 	}
 
 	for name := range schema.Resources {
@@ -49,8 +53,9 @@ func TestBuildRegistry_SkipsNonListable(t *testing.T) {
 
 func TestBuildRegistry_Count(t *testing.T) {
 	entries := BuildRegistry()
-	// "groups" is one schema key but produces two entries (user-groups + device-groups).
-	want := len(schema.Resources) - len(skipInTUI) + 1
+	// "groups" splits into 2 entries (+1), gsuite/office365 fold into cloud-directories (-2+1),
+	// plus 10 placeholder entries.
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -94,7 +99,7 @@ func TestBuildRegistry_SortedByCategoryThenName(t *testing.T) {
 
 func TestRegistryByKey(t *testing.T) {
 	m := RegistryByKey()
-	want := len(schema.Resources) - len(skipInTUI) + 1
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -341,6 +346,60 @@ func TestAdminsEndpointOverride(t *testing.T) {
 	}
 	if e.ClientType != ClientV1 {
 		t.Errorf("admins client type = %d, want ClientV1", e.ClientType)
+	}
+}
+
+func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
+	entries := BuildRegistry()
+	placeholders := make(map[string]bool)
+	for _, e := range entries {
+		if e.Placeholder {
+			placeholders[e.Key] = true
+		}
+	}
+
+	want := []string{
+		"hr-directories", "identity-providers",
+		"asset-management", "patch-management",
+		"access-requests", "ai-saas-management", "vault",
+		"mfa-configurations", "device-trust", "password-policies",
+	}
+	for _, k := range want {
+		if !placeholders[k] {
+			t.Errorf("missing placeholder %q", k)
+		}
+	}
+}
+
+func TestBuildRegistry_CloudDirectoriesSubMenu(t *testing.T) {
+	entries := BuildRegistry()
+	var found bool
+	for _, e := range entries {
+		if e.Key == "cloud-directories" {
+			found = true
+			if len(e.SubMenu) != 2 {
+				t.Errorf("cloud-directories SubMenu length = %d, want 2", len(e.SubMenu))
+			}
+			if e.SubMenu[0].Key != "gsuite" {
+				t.Errorf("SubMenu[0].Key = %q, want 'gsuite'", e.SubMenu[0].Key)
+			}
+			if e.SubMenu[1].Key != "office365" {
+				t.Errorf("SubMenu[1].Key = %q, want 'office365'", e.SubMenu[1].Key)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("missing 'cloud-directories' entry")
+	}
+}
+
+func TestBuildRegistry_GsuiteOffice365NotTopLevel(t *testing.T) {
+	entries := BuildRegistry()
+	for _, e := range entries {
+		if e.Key == "gsuite" || e.Key == "office365" {
+			t.Errorf("resource %q should not be a top-level entry (it's inside Cloud Directories sub-menu)", e.Key)
+		}
 	}
 }
 
