@@ -8,14 +8,51 @@ Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six out
 
 ---
 
-## Quick Start
+## Installation
+
+### Pre-built binaries
+
+Download the latest release from [GitHub Releases](https://github.com/juergen-kc/jc/releases):
 
 ```bash
-# Install from source
+# macOS (Apple Silicon)
+curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-arm64.tar.gz | tar xz
+sudo mv jc-darwin-arm64/jc /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-amd64.tar.gz | tar xz
+sudo mv jc-darwin-amd64/jc /usr/local/bin/
+
+# Linux (x86_64)
+curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-linux-amd64.tar.gz | tar xz
+sudo mv jc-linux-amd64/jc /usr/local/bin/
+
+# Linux (ARM64)
+curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-linux-arm64.tar.gz | tar xz
+sudo mv jc-linux-arm64/jc /usr/local/bin/
+```
+
+### Build from source
+
+Requires Go 1.25+.
+
+```bash
 git clone https://github.com/juergen-kc/jc.git
 cd jc
 make install    # installs to $GOPATH/bin
+```
 
+### Verify installation
+
+```bash
+jc --version
+```
+
+---
+
+## Quick Start
+
+```bash
 # First-time setup (interactive wizard)
 jc setup
 
@@ -453,19 +490,37 @@ The wizard guides you through profile selection, authentication (API key or serv
 jc tui                      # Launch the interactive browser
 ```
 
-Full-screen terminal UI for browsing all 25 JumpCloud resource types. Features:
-- **Home screen** with resource counts dashboard and bookmarked resources
-- **List views** with live filtering (`/`), sort cycling (`s`), and field toggling (`a`)
-- **Detail views** with associations, group membership, and related resources
-- **Directory Insights** — query events by service, time range, and event type; drill into individual events to see all fields
-- **AI event explanation** — press `x` on any event detail to get a plain-English explanation of what happened and whether it's concerning (requires `ask.provider` configured)
-- **Create** — press `n` from any list screen to open a schema-driven form; required fields marked with `*`
-- **Edit** — press `E` from a detail screen to edit the resource in a pre-filled form
-- **Delete** — press `d` from a detail screen; inline confirmation prompt before deletion
-- **Form navigation** — `j`/`k` to move between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel
-- **Clipboard** — copy resource IDs with `c`
-- **Export** — `e` then `j` (JSON clipboard), `c` (CSV file), or `J` (JSON file)
-- **Keyboard-driven** — `j`/`k` or arrows to navigate, Enter to drill in, Esc to go back, `?` for help
+Full-screen terminal UI for browsing all 25 JumpCloud resource types.
+
+**Home screen** — Three-column grid layout mirroring the JumpCloud Admin Console:
+
+```
+ User Management       Device Management      Access
+   > Users       (13)    > Devices      (10)    > SSO Apps      (3)
+   > User Groups  (5)    > Device Groups (5)    > LDAP Servers   (2)
+   > Active Dir   (2)    > Commands      (8)    > RADIUS Servers (1)
+   > Cloud Dirs   (>)    > Policies      (5)
+                         > Policy Grps   (3)  Insights
+ Security                > Software      (5)    > Dir Insights
+   > Auth Policies (5)   > Apple MDM     (1)    > Sys Insights
+   > IP Lists      (3)
+                       Settings
+                         > Admins        (3)
+                         > Organization
+                         > Custom Emails
+```
+
+The grid is responsive — three columns at 120+ chars, two at 90-119, single-column below 90. Unimplemented items (HR Directories, Patch Management, etc.) appear grayed out. Cloud Directories is a sub-menu grouping Google Workspace and M365.
+
+**Navigation & features:**
+- **Home grid** — arrow keys to navigate rows and columns, Enter to open, `/` to filter, `b` to bookmark, `d` for dashboard
+- **List views** — live filtering (`/`), sort cycling (`s`), field toggling (`a`), search (`/` in search mode)
+- **Detail views** — associations tab with group membership, graph traversal, and related resources
+- **Directory Insights** — query by service, time range, and event type; drill into events; `x` for AI explanation
+- **CRUD** — `n` to create (schema-driven form), `E` to edit, `d` to delete (with confirmation)
+- **Form navigation** — `j`/`k` between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel; sensitive fields are masked
+- **Clipboard & export** — `c` to copy ID, `e` then `j`/`c`/`J` for JSON clipboard / CSV file / JSON file
+- **Keyboard-driven** — `j`/`k` or arrows, Enter to drill in, Esc to go back, `?` for context-sensitive help
 
 ---
 
@@ -782,9 +837,9 @@ Plan mode makes no changes. It returns exit code 10 to distinguish from success 
 
 ---
 
-## Building from Source
+## Development
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ```bash
 git clone https://github.com/juergen-kc/jc.git
@@ -837,4 +892,4 @@ internal/
 
 ## License
 
-*Coming soon.*
+This project is proprietary software. All rights reserved.
