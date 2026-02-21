@@ -32,7 +32,7 @@ parameters:
 
 steps:
   - name: create-user
-    command: 'users create --username {{ .username }} --email {{ .email }} --firstname {{ .firstname }} --lastname {{ .lastname }}{{ if .department }} --department {{ .department }}{{ end }} --ids'
+    command: 'users create --username {{ .username }} --email {{ .email }} --firstname {{ .firstname }} --lastname {{ .lastname }}{{ if .department }} --department "{{ .department }}"{{ end }} --ids'
     capture: user_id
 
   - name: add-to-group

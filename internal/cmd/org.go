@@ -31,7 +31,7 @@ func newOrgCmd() *cobra.Command {
 }
 
 func newOrgListCmd() *cobra.Command {
-	var limit int
+	var limitFlag int
 
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -42,11 +42,11 @@ func newOrgListCmd() *cobra.Command {
 Default fields: _id, displayName, created.
 Most JumpCloud accounts have a single organization.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runOrgList(cmd, limit)
+			return runOrgList(cmd, limitFlag)
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of items to return (0 = all)")
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 
 	return cmd
 }

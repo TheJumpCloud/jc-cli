@@ -474,6 +474,28 @@ func TestMCP_UsersCreateTool(t *testing.T) {
 	}
 }
 
+func TestMCP_UsersCreateTool_WithDepartment(t *testing.T) {
+	setupToolTest(t)
+
+	ts := startV1Server(t, nil, nil, nil)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "users_create", map[string]any{
+		"username":   "newuser",
+		"email":      "newuser@test.com",
+		"department": "Engineering",
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", getResultText(t, result))
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "Engineering") {
+		t.Errorf("expected Engineering in result, got: %s", text)
+	}
+}
+
 func TestMCP_UsersDeleteTool_PlanFirst(t *testing.T) {
 	setupToolTest(t)
 

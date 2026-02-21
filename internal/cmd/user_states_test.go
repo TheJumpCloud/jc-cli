@@ -84,6 +84,36 @@ func TestUserStatesList(t *testing.T) {
 	}
 }
 
+func TestUserStatesList_Limit(t *testing.T) {
+	setupUserStatesTest(t)
+	states := []map[string]any{
+		{"id": "aabb0011223344556677aa01", "userId": "aabb0011223344556677cc01", "state": "suspended", "startDate": "2026-03-01"},
+		{"id": "aabb0011223344556677aa02", "userId": "aabb0011223344556677cc02", "state": "activated", "startDate": "2026-04-01"},
+		{"id": "aabb0011223344556677aa03", "userId": "aabb0011223344556677cc03", "state": "suspended", "startDate": "2026-05-01"},
+	}
+	server := startUserStatesServer(t, states, nil)
+	defer server.Close()
+	overrideV2Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"user-states", "list", "--limit", "2"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d states, want 2 (limit)", len(result))
+	}
+}
+
 func TestUserStatesGet(t *testing.T) {
 	setupUserStatesTest(t)
 	states := []map[string]any{

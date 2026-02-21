@@ -105,6 +105,36 @@ func TestOrgList_JSON(t *testing.T) {
 	}
 }
 
+func TestOrgList_Limit(t *testing.T) {
+	setupUsersTest(t)
+	orgs := []map[string]any{
+		{"_id": "aabbccddee112233aabb8001", "displayName": "Org 1", "created": "2023-01-01"},
+		{"_id": "aabbccddee112233aabb8002", "displayName": "Org 2", "created": "2023-02-01"},
+		{"_id": "aabbccddee112233aabb8003", "displayName": "Org 3", "created": "2023-03-01"},
+	}
+	ts := startOrgServer(t, orgs)
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"org", "list", "--limit", "2"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d orgs, want 2 (limit)", len(result))
+	}
+}
+
 func TestOrgGet(t *testing.T) {
 	setupUsersTest(t)
 	orgs := sampleOrgs()

@@ -31,7 +31,7 @@ func newUserStatesCmd() *cobra.Command {
 }
 
 func newUserStatesListCmd() *cobra.Command {
-	var limit int
+	var limitFlag int
 
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -41,11 +41,11 @@ func newUserStatesListCmd() *cobra.Command {
 
 Default fields: id, userId, state, startDate, endDate.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUserStatesList(cmd, limit)
+			return runUserStatesList(cmd, limitFlag)
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of items to return (0 = all)")
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 
 	return cmd
 }

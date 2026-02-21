@@ -92,6 +92,36 @@ func TestAppleMDMList(t *testing.T) {
 	}
 }
 
+func TestAppleMDMList_Limit(t *testing.T) {
+	setupAppleMDMTest(t)
+	configs := []map[string]any{
+		{"id": "aabb0011223344556677aa01", "name": "MDM Config 1", "orgName": "Org1"},
+		{"id": "aabb0011223344556677aa02", "name": "MDM Config 2", "orgName": "Org2"},
+		{"id": "aabb0011223344556677aa03", "name": "MDM Config 3", "orgName": "Org3"},
+	}
+	server := startAppleMDMServer(t, configs)
+	defer server.Close()
+	overrideV2Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"apple-mdm", "list", "--limit", "2"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d configs, want 2 (limit)", len(result))
+	}
+}
+
 func TestAppleMDMGet(t *testing.T) {
 	setupAppleMDMTest(t)
 	configs := []map[string]any{

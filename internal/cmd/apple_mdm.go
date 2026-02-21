@@ -41,7 +41,7 @@ func newAppleMDMCmd() *cobra.Command {
 }
 
 func newAppleMDMListCmd() *cobra.Command {
-	var limit int
+	var limitFlag int
 
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -51,11 +51,11 @@ func newAppleMDMListCmd() *cobra.Command {
 
 Default fields: id, name, orgName, defaultIosUserEnrollmentDeviceGroupID.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppleMDMList(cmd, limit)
+			return runAppleMDMList(cmd, limitFlag)
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of items to return (0 = all)")
+	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 
 	return cmd
 }

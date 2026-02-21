@@ -35,10 +35,11 @@ type getInput struct {
 }
 
 type userCreateInput struct {
-	Username  string `json:"username" jsonschema:"Username"`
-	Email     string `json:"email" jsonschema:"Email address"`
-	Firstname string `json:"firstname,omitempty" jsonschema:"First name"`
-	Lastname  string `json:"lastname,omitempty" jsonschema:"Last name"`
+	Username   string `json:"username" jsonschema:"Username"`
+	Email      string `json:"email" jsonschema:"Email address"`
+	Firstname  string `json:"firstname,omitempty" jsonschema:"First name"`
+	Lastname   string `json:"lastname,omitempty" jsonschema:"Last name"`
+	Department string `json:"department,omitempty" jsonschema:"Department"`
 }
 
 type userUpdateInput struct {
@@ -597,6 +598,9 @@ func (s *Server) registerUserTools() {
 			}
 			if args.Lastname != "" {
 				body["lastname"] = args.Lastname
+			}
+			if args.Department != "" {
+				body["department"] = args.Department
 			}
 			client, err := newV1ClientFunc()
 			if err != nil {
