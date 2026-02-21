@@ -83,7 +83,7 @@ run_contains() {
   shift 2
   local output
   if output=$("$@" 2>&1); then
-    if echo "$output" | grep -q "$needle"; then
+    if echo "$output" | grep -qF "$needle"; then
       pass "$label"
     else
       fail "$label" "output missing '$needle'"
@@ -113,18 +113,30 @@ cleanup() {
   local cleaned=0
 
   if [ -n "$TEST_USER_ID" ]; then
-    jc users delete "$TEST_USER_ID" --force > /dev/null 2>&1 && cleaned=$((cleaned + 1)) || true
-    echo -e "  ${DIM}deleted test user${RESET}"
+    if jc users delete "$TEST_USER_ID" --force > /dev/null 2>&1; then
+      cleaned=$((cleaned + 1))
+      echo -e "  ${DIM}deleted test user${RESET}"
+    else
+      echo -e "  ${DIM}test user already gone${RESET}"
+    fi
   fi
 
   if [ -n "$TEST_GROUP_ID" ]; then
-    jc groups user delete "$TEST_GROUP_ID" --force > /dev/null 2>&1 && cleaned=$((cleaned + 1)) || true
-    echo -e "  ${DIM}deleted test group${RESET}"
+    if jc groups user delete "$TEST_GROUP_ID" --force > /dev/null 2>&1; then
+      cleaned=$((cleaned + 1))
+      echo -e "  ${DIM}deleted test group${RESET}"
+    else
+      echo -e "  ${DIM}test group already gone${RESET}"
+    fi
   fi
 
   if [ -n "$RECIPE_GROUP_ID" ]; then
-    jc groups user delete "$RECIPE_GROUP_ID" --force > /dev/null 2>&1 && cleaned=$((cleaned + 1)) || true
-    echo -e "  ${DIM}deleted recipe group${RESET}"
+    if jc groups user delete "$RECIPE_GROUP_ID" --force > /dev/null 2>&1; then
+      cleaned=$((cleaned + 1))
+      echo -e "  ${DIM}deleted recipe group${RESET}"
+    else
+      echo -e "  ${DIM}recipe group already gone${RESET}"
+    fi
   fi
 
   echo -e "  ${DIM}cleaned up $cleaned resources${RESET}"
@@ -275,13 +287,13 @@ else
 
   # Onboard — execute
   set +e
-  RECIPE_OUTPUT=$(jc recipe run onboard-user \
+  jc recipe run onboard-user \
     --param "username=$RECIPE_USERNAME" \
     --param "email=$RECIPE_EMAIL" \
     --param "firstname=Test" \
     --param "lastname=Recipe" \
     --param "group=$RECIPE_GROUP_NAME" \
-    --force 2>&1)
+    --force > /dev/null 2>&1
   recipe_exit=$?
   set -e
   if [ "$recipe_exit" -eq 0 ]; then
@@ -299,10 +311,10 @@ else
 
   # Offboard with delete
   set +e
-  OFFBOARD_OUTPUT=$(jc recipe run offboard-user \
+  jc recipe run offboard-user \
     --param "user=$RECIPE_USERNAME" \
     --param "delete_user=true" \
-    --force 2>&1)
+    --force > /dev/null 2>&1
   offboard_exit=$?
   set -e
   if [ "$offboard_exit" -eq 0 ]; then
