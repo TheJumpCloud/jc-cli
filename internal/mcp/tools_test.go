@@ -330,8 +330,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		// Software
 		"software_list", "software_get", "software_create", "software_update", "software_delete",
 		"software_statuses", "software_associations", "software_reclaim_license",
-		// Assets
-		"assets_list", "assets_get", "assets_create", "assets_update", "assets_delete",
+		// Assets (devices, accessories, locations)
+		"assets_devices_list", "assets_devices_get", "assets_devices_create", "assets_devices_update", "assets_devices_delete",
+		"assets_accessories_list", "assets_accessories_get", "assets_accessories_create", "assets_accessories_update", "assets_accessories_delete",
+		"assets_locations_list", "assets_locations_get", "assets_locations_create", "assets_locations_update", "assets_locations_delete",
 		// G Suite
 		"gsuite_list", "gsuite_get", "gsuite_translation_rules", "gsuite_import_users",
 		// Office 365
@@ -377,8 +379,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 163 {
-		t.Errorf("expected 163 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 173 {
+		t.Errorf("expected 173 tools, got %d", len(result.Tools))
 	}
 }
 

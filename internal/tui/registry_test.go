@@ -31,6 +31,19 @@ func TestBuildRegistry_AllListableResourcesMapped(t *testing.T) {
 			}
 			continue
 		}
+		// "assets" is split into sub-menu children.
+		if name == "assets" {
+			if !entryKeys["device-assets"] {
+				t.Error("schema resource 'assets' not mapped as 'device-assets' in TUI registry")
+			}
+			if !entryKeys["accessory-assets"] {
+				t.Error("schema resource 'assets' not mapped as 'accessory-assets' in TUI registry")
+			}
+			if !entryKeys["location-assets"] {
+				t.Error("schema resource 'assets' not mapped as 'location-assets' in TUI registry")
+			}
+			continue
+		}
 		if !entryKeys[name] {
 			t.Errorf("schema resource %q not mapped in TUI registry", name)
 		}

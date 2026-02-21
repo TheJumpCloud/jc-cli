@@ -156,7 +156,11 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.err = msg.Err.Error()
 			return l, nil
 		}
-		l.table.Rows = msg.Data
+		data := msg.Data
+		if l.entry.FlattenFunc != nil {
+			data = l.entry.FlattenFunc(data)
+		}
+		l.table.Rows = data
 		l.totalCount = msg.TotalCount
 		l.table.Cursor = 0
 		l.table.Offset = 0

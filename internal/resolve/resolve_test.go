@@ -562,3 +562,72 @@ func TestV2Resolve_ConcurrentCacheReadWrite(t *testing.T) {
 		t.Errorf("concurrent v2 resolve error: %v", err)
 	}
 }
+
+func TestV2Resolve_ExtractNameFunc(t *testing.T) {
+	// Test resolving assets with nested field structure.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[
+			{"id":"aabbccddee112233aabb6001","fields":{"Name":{"editable":true,"value":"JDOE-MBP"}}},
+			{"id":"aabbccddee112233aabb6002","fields":{"Name":{"editable":true,"value":"SERVER-01"}}}
+		]`))
+	}))
+	defer server.Close()
+
+	resetViper(t)
+	viper.Set("cache.enabled", false)
+
+	client := api.NewV2ClientWithKey("test-key")
+	client.BaseURL = server.URL
+
+	resolver := NewV2Resolver(client)
+	id, err := resolver.Resolve(context.Background(), "JDOE-MBP", DeviceAssetConfig)
+	if err != nil {
+		t.Fatalf("Resolve error: %v", err)
+	}
+	if id != "aabbccddee112233aabb6001" {
+		t.Errorf("id = %q, want 'aabbccddee112233aabb6001'", id)
+	}
+}
+
+func TestV2Resolve_ExtractNameFunc_CaseInsensitive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":"aabbccddee112233aabb6001","fields":{"Name":{"editable":true,"value":"JDOE-MBP"}}}]`))
+	}))
+	defer server.Close()
+
+	resetViper(t)
+	viper.Set("cache.enabled", false)
+
+	client := api.NewV2ClientWithKey("test-key")
+	client.BaseURL = server.URL
+
+	resolver := NewV2Resolver(client)
+	id, err := resolver.Resolve(context.Background(), "jdoe-mbp", DeviceAssetConfig)
+	if err != nil {
+		t.Fatalf("Resolve error: %v", err)
+	}
+	if id != "aabbccddee112233aabb6001" {
+		t.Errorf("id = %q, want 'aabbccddee112233aabb6001'", id)
+	}
+}
+
+func TestExtractAssetName(t *testing.T) {
+	raw := json.RawMessage(`{"id":"abc","fields":{"Name":{"editable":true,"value":"TestAsset"}}}`)
+	name, err := ExtractAssetName(raw)
+	if err != nil {
+		t.Fatalf("ExtractAssetName error: %v", err)
+	}
+	if name != "TestAsset" {
+		t.Errorf("name = %q, want 'TestAsset'", name)
+	}
+}
+
+func TestExtractAssetName_MissingNameField(t *testing.T) {
+	raw := json.RawMessage(`{"id":"abc","fields":{"Status":{"editable":true,"value":"Active"}}}`)
+	_, err := ExtractAssetName(raw)
+	if err == nil {
+		t.Fatal("expected error for missing Name field")
+	}
+}

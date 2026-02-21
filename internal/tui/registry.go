@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"sort"
 
 	"github.com/klaassen-consulting/jc/internal/schema"
@@ -60,20 +61,21 @@ const (
 
 // ResourceEntry is a TUI-enriched view of a schema resource.
 type ResourceEntry struct {
-	Key             string                // Schema key (e.g. "users")
-	DisplayName     string                // Human-readable name (e.g. "Users")
-	Category        Category              // UI grouping
-	ClientType      ClientType            // Which API client to use
-	ListEndpoint    string                // API endpoint for listing
-	GetEndpoint     string                // API endpoint template for single get (with %s for ID)
-	GraphSourceType string                // V2 graph source type (e.g. "user"), empty if no associations
-	PivotField      string                // Row field whose value becomes the ID for pivot navigation
-	PivotTargetKey  string                // Registry key of the target resource to pivot to
-	SearchEndpoint  string                // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
-	SearchFields    []string              // Fields to search across (e.g. ["username","email","firstname","lastname"])
-	Schema          schema.ResourceSchema // Full schema metadata
-	Placeholder     bool                  // True for "Coming soon" items
-	SubMenu         []ResourceEntry       // Non-nil for sub-menu groupings (e.g. Cloud Directories)
+	Key             string                                         // Schema key (e.g. "users")
+	DisplayName     string                                         // Human-readable name (e.g. "Users")
+	Category        Category                                       // UI grouping
+	ClientType      ClientType                                     // Which API client to use
+	ListEndpoint    string                                         // API endpoint for listing
+	GetEndpoint     string                                         // API endpoint template for single get (with %s for ID)
+	GraphSourceType string                                         // V2 graph source type (e.g. "user"), empty if no associations
+	PivotField      string                                         // Row field whose value becomes the ID for pivot navigation
+	PivotTargetKey  string                                         // Registry key of the target resource to pivot to
+	SearchEndpoint  string                                         // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
+	SearchFields    []string                                       // Fields to search across (e.g. ["username","email","firstname","lastname"])
+	Schema          schema.ResourceSchema                          // Full schema metadata
+	Placeholder     bool                                           // True for "Coming soon" items
+	SubMenu         []ResourceEntry                                // Non-nil for sub-menu groupings (e.g. Cloud Directories)
+	FlattenFunc     func([]json.RawMessage) []json.RawMessage      // Optional post-fetch flattening (e.g. assets)
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -314,7 +316,7 @@ var listEndpoints = map[string]string{
 	"auth-policies":    "/authn/policies",
 	"iplists":          "/iplists",
 	"software":         "/softwareapps",
-	"assets":           "/assets",
+	// "assets" handled by special sub-menu case in BuildRegistry()
 	"ldap":             "/ldapservers",
 	"ad":               "/activedirectories",
 	"policy-templates": "/policytemplates",
@@ -379,6 +381,12 @@ var cloudDirResources = map[string]bool{
 	"office365": true,
 }
 
+// assetResources is true for the "assets" schema entry which is split into
+// device-assets, accessory-assets, and location-assets sub-menu children.
+var assetResources = map[string]bool{
+	"assets": true,
+}
+
 // BuildRegistry creates ResourceEntry items for all schema resources.
 func BuildRegistry() []ResourceEntry {
 	entries := make([]ResourceEntry, 0, len(schema.Resources))
@@ -403,6 +411,24 @@ func BuildRegistry() []ResourceEntry {
 					Schema:          s,
 				})
 			}
+			continue
+		}
+
+		// Split "assets" into three sub-menu children.
+		if name == "assets" {
+			entries = append(entries, ResourceEntry{
+				Key:         "assets",
+				DisplayName: "Assets",
+				Category:    CategoryDeviceMgmt,
+				SubMenu: []ResourceEntry{
+					{Key: "device-assets", DisplayName: "Device Assets", Category: CategoryDeviceMgmt,
+						ClientType: ClientV2, ListEndpoint: "/assets/devices", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+					{Key: "accessory-assets", DisplayName: "Accessory Assets", Category: CategoryDeviceMgmt,
+						ClientType: ClientV2, ListEndpoint: "/assets/accessories", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+					{Key: "location-assets", DisplayName: "Location Assets", Category: CategoryDeviceMgmt,
+						ClientType: ClientV2, ListEndpoint: "/assets/locations", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+				},
+			})
 			continue
 		}
 
@@ -503,4 +529,68 @@ func RegistryByKey() map[string]ResourceEntry {
 		m[e.Key] = e
 	}
 	return m
+}
+
+// tuiFlattenAssetFields flattens the nested asset field structure for TUI display.
+func tuiFlattenAssetFields(data []json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(data))
+	for _, raw := range data {
+		var obj struct {
+			ID     string `json:"id"`
+			Fields map[string]struct {
+				Value json.RawMessage `json:"value"`
+			} `json:"fields"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			result = append(result, raw)
+			continue
+		}
+		if obj.Fields == nil {
+			result = append(result, raw)
+			continue
+		}
+		flat := map[string]any{"id": obj.ID}
+		for label, field := range obj.Fields {
+			flat[label] = tuiFlattenAssetValue(field.Value)
+		}
+		b, err := json.Marshal(flat)
+		if err != nil {
+			result = append(result, raw)
+			continue
+		}
+		result = append(result, b)
+	}
+	return result
+}
+
+func tuiFlattenAssetValue(raw json.RawMessage) any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var ref struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &ref); err == nil && ref.Name != "" && ref.Type == "select" {
+		return ref.Name
+	}
+	var refs []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &refs); err == nil && len(refs) > 0 && refs[0].Name != "" {
+		names := make([]string, len(refs))
+		for i, r := range refs {
+			names[i] = r.Name
+		}
+		return names
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err == nil {
+		return v
+	}
+	return string(raw)
 }

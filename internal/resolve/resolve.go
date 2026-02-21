@@ -59,6 +59,9 @@ type ResourceConfig struct {
 	NameField string
 	// IDField is the JSON field that contains the resource ID (typically "_id").
 	IDField string
+	// ExtractNameFunc optionally overrides the default top-level field lookup
+	// for resources with non-standard field nesting (e.g., assets).
+	ExtractNameFunc func(json.RawMessage) (string, error)
 }
 
 // UserConfig is the resolution config for JumpCloud users.
@@ -205,12 +208,53 @@ var Office365Config = ResourceConfig{
 	IDField:      "id",
 }
 
-// AssetConfig is the resolution config for JumpCloud assets (V2 API).
-var AssetConfig = ResourceConfig{
-	CacheKey:     "assets",
-	ListEndpoint: "/assets",
-	NameField:    "name",
-	IDField:      "id",
+// DeviceAssetConfig is the resolution config for JumpCloud device assets (V2 API).
+var DeviceAssetConfig = ResourceConfig{
+	CacheKey:        "device-assets",
+	ListEndpoint:    "/assets/devices",
+	NameField:       "Name",
+	IDField:         "id",
+	ExtractNameFunc: ExtractAssetName,
+}
+
+// AccessoryAssetConfig is the resolution config for JumpCloud accessory assets (V2 API).
+var AccessoryAssetConfig = ResourceConfig{
+	CacheKey:        "accessory-assets",
+	ListEndpoint:    "/assets/accessories",
+	NameField:       "Name",
+	IDField:         "id",
+	ExtractNameFunc: ExtractAssetName,
+}
+
+// LocationAssetConfig is the resolution config for JumpCloud location assets (V2 API).
+var LocationAssetConfig = ResourceConfig{
+	CacheKey:        "location-assets",
+	ListEndpoint:    "/assets/locations",
+	NameField:       "Name",
+	IDField:         "id",
+	ExtractNameFunc: ExtractAssetName,
+}
+
+// ExtractAssetName extracts the Name field from a JumpCloud asset's nested
+// fields structure: {"id": "...", "fields": {"Name": {"value": "MyAsset"}}}.
+func ExtractAssetName(raw json.RawMessage) (string, error) {
+	var obj struct {
+		Fields map[string]struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", err
+	}
+	nameField, ok := obj.Fields["Name"]
+	if !ok {
+		return "", fmt.Errorf("no Name field in asset")
+	}
+	var name string
+	if err := json.Unmarshal(nameField.Value, &name); err != nil {
+		return "", fmt.Errorf("parsing asset Name value: %w", err)
+	}
+	return name, nil
 }
 
 // DuoAccountConfig is the resolution config for JumpCloud Duo accounts (V2 API).
@@ -321,14 +365,22 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 			continue
 		}
 
-		// Extract the name field.
-		nameRaw, ok := obj[cfg.NameField]
-		if !ok {
-			continue
-		}
+		// Extract the name field — use ExtractNameFunc if provided.
 		var nameVal string
-		if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
-			continue
+		if cfg.ExtractNameFunc != nil {
+			n, err := cfg.ExtractNameFunc(raw)
+			if err != nil {
+				continue
+			}
+			nameVal = n
+		} else {
+			nameRaw, ok := obj[cfg.NameField]
+			if !ok {
+				continue
+			}
+			if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
+				continue
+			}
 		}
 
 		if strings.ToLower(nameVal) != lowerName {
@@ -446,13 +498,22 @@ func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg Resou
 			continue
 		}
 
-		nameRaw, ok := obj[cfg.NameField]
-		if !ok {
-			continue
-		}
+		// Extract the name field — use ExtractNameFunc if provided.
 		var nameVal string
-		if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
-			continue
+		if cfg.ExtractNameFunc != nil {
+			n, err := cfg.ExtractNameFunc(raw)
+			if err != nil {
+				continue
+			}
+			nameVal = n
+		} else {
+			nameRaw, ok := obj[cfg.NameField]
+			if !ok {
+				continue
+			}
+			if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
+				continue
+			}
 		}
 
 		if strings.ToLower(nameVal) != lowerName {
