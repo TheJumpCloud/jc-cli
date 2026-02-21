@@ -314,3 +314,50 @@ else
   # Verify user gone
   run_fails "recipe user deleted" jc users get "$RECIPE_USERNAME"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 4: Read-Only Probes
+# ═══════════════════════════════════════════════════════════════════════
+
+phase 4 "Read-Only Probes"
+
+# Core resources — spread across all 6 output formats
+run_ok "users list (json)"              jc users list --limit 3
+run_ok "devices list (table)"           jc devices list --limit 3 -t
+run_ok "groups user list (csv)"         jc groups user list --limit 3 --output csv
+run_ok "groups device list (yaml)"      jc groups device list --limit 3 --output yaml
+run_ok "commands list (json)"           jc commands list --limit 3
+run_ok "policies list (table)"          jc policies list --limit 3 -t
+run_ok "policy-groups list (ndjson)"    jc policy-groups list --limit 3 --output ndjson
+run_ok "policy-templates list (human)"  jc policy-templates list --limit 3 --output human
+run_ok "apps list (table)"             jc apps list --limit 3 -t
+run_ok "app-templates list (json)"     jc app-templates list --limit 3
+run_ok "admins list (csv)"             jc admins list --limit 3 --output csv
+run_ok "auth-policies list (yaml)"     jc auth-policies list --limit 3 --output yaml
+run_ok "iplists list (ndjson)"         jc iplists list --limit 3 --output ndjson
+run_ok "software list (ndjson)"        jc software list --limit 3 --output ndjson
+run_ok "ldap list (human)"             jc ldap list --output human
+run_ok "ad list (json)"                jc ad list --limit 3
+run_ok "radius list (yaml)"            jc radius list --output yaml
+run_ok "apple-mdm list (table)"        jc apple-mdm list --limit 3 -t
+run_ok "gsuite list (json)"            jc gsuite list --limit 3
+run_ok "office365 list (json)"         jc office365 list --limit 3
+run_ok "duo list (csv)"                jc duo list --limit 3 --output csv
+run_ok "custom-emails templates (table)" jc custom-emails templates -t
+run_ok "user-states list (json)"       jc user-states list --limit 3
+run_ok "org list (yaml)"               jc org list --output yaml
+
+# Insights
+run_ok "insights query (json)"         jc insights query --service all --last 1h --limit 5
+run_ok "insights count"                jc insights count --service all --last 1h
+
+# System Insights
+run_ok "system-insights tables"        jc system-insights tables
+run_ok "system-insights os_version"    jc system-insights os_version --limit 3 -t
+
+# Flag combinations
+run_ok "fields selection"              jc users list --limit 2 --fields username,email -t
+run_ok "fields exclusion"              jc users list --limit 2 --exclude password -t
+run_ok "all fields"                    jc users list --limit 2 --all -t
+run_ok "ids mode"                      jc users list --limit 2 --ids
+run_ok "jmespath query"                jc devices list --limit 2 --query "[].hostname"
