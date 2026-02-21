@@ -254,10 +254,11 @@ func runUsersGet(cmd *cobra.Command, identifier string) error {
 
 func newUsersCreateCmd() *cobra.Command {
 	var (
-		username  string
-		email     string
-		firstname string
-		lastname  string
+		username   string
+		email      string
+		firstname  string
+		lastname   string
+		department string
 	)
 
 	cmd := &cobra.Command{
@@ -268,7 +269,7 @@ func newUsersCreateCmd() *cobra.Command {
 Required fields: --username and --email.
 The newly created user object is returned.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersCreate(cmd, username, email, firstname, lastname)
+			return runUsersCreate(cmd, username, email, firstname, lastname, department)
 		},
 	}
 
@@ -276,13 +277,14 @@ The newly created user object is returned.`,
 	cmd.Flags().StringVar(&email, "email", "", "Email address (required)")
 	cmd.Flags().StringVar(&firstname, "firstname", "", "First name")
 	cmd.Flags().StringVar(&lastname, "lastname", "", "Last name")
+	cmd.Flags().StringVar(&department, "department", "", "Department")
 	_ = cmd.MarkFlagRequired("username")
 	_ = cmd.MarkFlagRequired("email")
 
 	return cmd
 }
 
-func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname string) error {
+func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname, department string) error {
 	if viper.GetBool("plan") {
 		effects := []string{"username: " + username, "email: " + email}
 		if firstname != "" {
@@ -290,6 +292,9 @@ func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname str
 		}
 		if lastname != "" {
 			effects = append(effects, "lastname: "+lastname)
+		}
+		if department != "" {
+			effects = append(effects, "department: "+department)
 		}
 		p := &plan.Plan{
 			Action:     "create",
@@ -315,6 +320,9 @@ func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname str
 	}
 	if lastname != "" {
 		body["lastname"] = lastname
+	}
+	if department != "" {
+		body["department"] = department
 	}
 
 	result, err := client.Create(cmd.Context(), "/systemusers", body)

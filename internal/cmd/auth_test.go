@@ -475,6 +475,70 @@ profiles:
 	}
 }
 
+func TestAuthStatus_Quiet_Authenticated(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+	viper.Set("defaults.output", "table")
+
+	ts := startMockJCServer(t, "org-quiet", "Quiet Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	viper.Set("api_key", "quiet-test-key-1234")
+	viper.Set("quiet", true)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthStatus(cmd, nil)
+	if err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Errorf("expected no output in quiet mode, got %q", stdout.String())
+	}
+}
+
+func TestAuthStatus_Quiet_NotAuthenticated(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+	viper.Set("defaults.output", "table")
+	viper.Set("quiet", true)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	err := runAuthStatus(cmd, nil)
+	if err == nil {
+		t.Fatal("expected ExitError for unauthenticated quiet status")
+	}
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != ExitCodeAuthFailed {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, ExitCodeAuthFailed)
+	}
+
+	if stdout.Len() != 0 {
+		t.Errorf("expected no output in quiet mode, got %q", stdout.String())
+	}
+}
+
 func TestAuthStatus_JSONOutput_Authenticated(t *testing.T) {
 	keyring.MockInit()
 	setupTestConfig(t, `active_profile: testprofile

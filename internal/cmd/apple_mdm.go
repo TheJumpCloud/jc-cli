@@ -41,7 +41,9 @@ func newAppleMDMCmd() *cobra.Command {
 }
 
 func newAppleMDMListCmd() *cobra.Command {
-	return &cobra.Command{
+	var limit int
+
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List all Apple MDM configurations",
@@ -49,18 +51,22 @@ func newAppleMDMListCmd() *cobra.Command {
 
 Default fields: id, name, orgName, defaultIosUserEnrollmentDeviceGroupID.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppleMDMList(cmd)
+			return runAppleMDMList(cmd, limit)
 		},
 	}
+
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of items to return (0 = all)")
+
+	return cmd
 }
 
-func runAppleMDMList(cmd *cobra.Command) error {
+func runAppleMDMList(cmd *cobra.Command, limit int) error {
 	client, err := newV2Client()
 	if err != nil {
 		return err
 	}
 
-	result, err := client.ListAll(cmd.Context(), "/applemdms", api.V2ListOptions{})
+	result, err := client.ListAll(cmd.Context(), "/applemdms", api.V2ListOptions{Limit: limit})
 	if err != nil {
 		return err
 	}

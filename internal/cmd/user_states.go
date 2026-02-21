@@ -31,7 +31,9 @@ func newUserStatesCmd() *cobra.Command {
 }
 
 func newUserStatesListCmd() *cobra.Command {
-	return &cobra.Command{
+	var limit int
+
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List scheduled user state changes",
@@ -39,18 +41,22 @@ func newUserStatesListCmd() *cobra.Command {
 
 Default fields: id, userId, state, startDate, endDate.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUserStatesList(cmd)
+			return runUserStatesList(cmd, limit)
 		},
 	}
+
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of items to return (0 = all)")
+
+	return cmd
 }
 
-func runUserStatesList(cmd *cobra.Command) error {
+func runUserStatesList(cmd *cobra.Command, limit int) error {
 	client, err := newV2Client()
 	if err != nil {
 		return err
 	}
 
-	result, err := client.ListAll(cmd.Context(), "/bulk/userstates", api.V2ListOptions{})
+	result, err := client.ListAll(cmd.Context(), "/bulk/userstates", api.V2ListOptions{Limit: limit})
 	if err != nil {
 		return err
 	}

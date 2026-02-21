@@ -379,6 +379,13 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if viper.GetBool("quiet") {
+		if !status.Authenticated {
+			return &ExitError{Code: ExitCodeAuthFailed}
+		}
+		return nil
+	}
+
 	if outputFmt == "json" {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")

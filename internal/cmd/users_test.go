@@ -906,6 +906,31 @@ func TestUsersCreate_RequiredFieldsOnly(t *testing.T) {
 	}
 }
 
+func TestUsersCreate_WithDepartment(t *testing.T) {
+	setupUsersTest(t)
+	ts := startUsersServer(t, sampleUsers())
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"users", "create", "--username", "jdoe", "--email", "jdoe@acme.com", "--department", "Engineering"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, out.String())
+	}
+	if result["department"] != "Engineering" {
+		t.Errorf("department = %v, want Engineering", result["department"])
+	}
+}
+
 func TestUsersCreate_MissingUsername(t *testing.T) {
 	setupUsersTest(t)
 
