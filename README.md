@@ -845,10 +845,12 @@ Requires Go 1.25+.
 git clone https://github.com/juergen-kc/jc.git
 cd jc
 
-make build      # Build binary → ./jc
-make test       # Run all tests
-make lint       # Run go vet
-make install    # Install to $GOPATH/bin
+make build                    # Build binary → ./jc
+make test                     # Run all tests (unit)
+make lint                     # Run go vet
+make install                  # Install to $GOPATH/bin
+make integration-test          # Full integration test (requires auth)
+make integration-test-readonly # Read-only probes only (no create/delete)
 ```
 
 ### Shell Completion
