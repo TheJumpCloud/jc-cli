@@ -24,8 +24,8 @@ clean:
 	rm -f $(BIN)
 	go clean -cache
 
-integration-test:
-	@./scripts/integration-test.sh
+integration-test: build
+	@JC=./$(BIN) ./scripts/integration-test.sh
 
-integration-test-readonly:
-	@./scripts/integration-test.sh --skip-mutable
+integration-test-readonly: build
+	@JC=./$(BIN) ./scripts/integration-test.sh --skip-mutable

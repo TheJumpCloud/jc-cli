@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 #
 # jc CLI integration test — exercises the full CLI surface against a live
-# JumpCloud organization. Requires authenticated jc on PATH.
+# JumpCloud organization. Requires authenticated jc on PATH (or set JC=./jc).
 #
 # Usage:
 #   ./scripts/integration-test.sh                # Run all phases
 #   ./scripts/integration-test.sh --skip-mutable  # Skip create/delete phases
+#   JC=./jc ./scripts/integration-test.sh         # Use local binary
 #
 set -euo pipefail
+
+# ── Binary ────────────────────────────────────────────────────────────
+JC="${JC:-jc}"
 
 # ── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -113,7 +117,7 @@ cleanup() {
   local cleaned=0
 
   if [ -n "$TEST_USER_ID" ]; then
-    if jc users delete "$TEST_USER_ID" --force > /dev/null 2>&1; then
+    if $JC users delete "$TEST_USER_ID" --force > /dev/null 2>&1; then
       cleaned=$((cleaned + 1))
       echo -e "  ${DIM}deleted test user${RESET}"
     else
@@ -122,7 +126,7 @@ cleanup() {
   fi
 
   if [ -n "$TEST_GROUP_ID" ]; then
-    if jc groups user delete "$TEST_GROUP_ID" --force > /dev/null 2>&1; then
+    if $JC groups user delete "$TEST_GROUP_ID" --force > /dev/null 2>&1; then
       cleaned=$((cleaned + 1))
       echo -e "  ${DIM}deleted test group${RESET}"
     else
@@ -131,7 +135,7 @@ cleanup() {
   fi
 
   if [ -n "$RECIPE_GROUP_ID" ]; then
-    if jc groups user delete "$RECIPE_GROUP_ID" --force > /dev/null 2>&1; then
+    if $JC groups user delete "$RECIPE_GROUP_ID" --force > /dev/null 2>&1; then
       cleaned=$((cleaned + 1))
       echo -e "  ${DIM}deleted recipe group${RESET}"
     else
@@ -146,7 +150,7 @@ trap cleanup INT TERM EXIT
 
 # ── Banner ──────────────────────────────────────────────────────────────
 
-VERSION=$(jc --version 2>/dev/null || echo "unknown")
+VERSION=$($JC --version 2>/dev/null || echo "unknown")
 echo -e "${BOLD}jc integration test — $VERSION${RESET}"
 echo -e "${BOLD}$(printf '═%.0s' {1..50})${RESET}"
 
@@ -164,7 +168,7 @@ else
 fi
 
 # Auth
-if jc auth status --quiet 2>/dev/null; then
+if $JC auth status --quiet > /dev/null 2>&1; then
   pass "auth status"
 else
   fail "auth status" "not authenticated — run 'jc auth login' first"
@@ -173,15 +177,15 @@ else
 fi
 
 # MCP tools count
-MCP_COUNT=$(jc mcp tools 2>/dev/null | wc -l | tr -d ' ')
+MCP_COUNT=$($JC mcp tools 2>/dev/null | wc -l | tr -d ' ')
 if [ "$MCP_COUNT" -eq 158 ]; then
   pass "mcp tools count ($MCP_COUNT)"
 else
   fail "mcp tools count" "expected 158, got $MCP_COUNT"
 fi
 
-# Org list
-run_ok "org list" jc org list --limit 1
+# Org list (no --limit; org returns a single object)
+run_ok "org list" $JC org list
 
 # ═══════════════════════════════════════════════════════════════════════
 # Phase 2: Mutable Lifecycle
@@ -198,7 +202,7 @@ else
   TEST_GROUP_NAME="jctest-group-$TS"
 
   # Create user
-  TEST_USER_ID=$(jc users create \
+  TEST_USER_ID=$($JC users create \
     --username "$TEST_USERNAME" \
     --email "$TEST_EMAIL" \
     --firstname "Test" \
@@ -211,20 +215,20 @@ else
   fi
 
   # Get user
-  run_contains "users get" "$TEST_USERNAME" jc users get "$TEST_USER_ID"
+  run_contains "users get" "$TEST_USERNAME" $JC users get "$TEST_USER_ID"
 
   # Search user
-  run_contains "users search" "$TEST_USERNAME" jc users search "$TEST_USERNAME"
+  run_contains "users search" "$TEST_USERNAME" $JC users search "$TEST_USERNAME"
 
   # Update user
-  run_ok "users update (department)" jc users update "$TEST_USER_ID" --department "Integration Test"
+  run_ok "users update (department)" $JC users update "$TEST_USER_ID" --department "Integration Test"
 
   # Lock / unlock
-  run_ok "users lock" jc users lock "$TEST_USER_ID"
-  run_ok "users unlock" jc users unlock "$TEST_USER_ID"
+  run_ok "users lock" $JC users lock "$TEST_USER_ID"
+  run_ok "users unlock" $JC users unlock "$TEST_USER_ID"
 
   # Create group
-  TEST_GROUP_ID=$(jc groups user create --name "$TEST_GROUP_NAME" --ids 2>/dev/null || true)
+  TEST_GROUP_ID=$($JC groups user create --name "$TEST_GROUP_NAME" --ids 2>/dev/null || true)
   if [ -n "$TEST_GROUP_ID" ]; then
     pass "groups user create ($TEST_GROUP_NAME)"
   else
@@ -232,14 +236,14 @@ else
   fi
 
   # Add member
-  run_ok "groups add-member" jc groups add-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
+  run_ok "groups add-member" $JC groups add-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
 
-  # Graph traverse: user → user_group
-  run_contains "graph traverse (user→user_group)" "$TEST_GROUP_ID" \
-    jc graph traverse --from "user:$TEST_USER_ID" --to user_group
+  # Graph traverse: user → system_group (user_group not valid for graph API)
+  run_ok "graph traverse (user→system_group)" \
+    $JC graph traverse --from "user:$TEST_USER_ID" --to system_group
 
   # Remove member
-  run_ok "groups remove-member" jc groups remove-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
+  run_ok "groups remove-member" $JC groups remove-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -253,15 +257,15 @@ else
   phase 3 "Recipe Engine"
 
   # Recipe list and show
-  run_contains "recipe list" "onboard-user" jc recipe list -t
-  run_contains "recipe show" "onboard-user" jc recipe show onboard-user
+  run_contains "recipe list" "onboard-user" $JC recipe list -t
+  run_contains "recipe show" "onboard-user" $JC recipe show onboard-user
 
   RECIPE_USERNAME="jctest-recipe-$TS"
   RECIPE_EMAIL="jctest-recipe-${TS}@test.jumpcloud.invalid"
   RECIPE_GROUP_NAME="jctest-recipe-group-$TS"
 
   # Create group for recipe to use
-  RECIPE_GROUP_ID=$(jc groups user create --name "$RECIPE_GROUP_NAME" --ids 2>/dev/null || true)
+  RECIPE_GROUP_ID=$($JC groups user create --name "$RECIPE_GROUP_NAME" --ids 2>/dev/null || true)
   if [ -n "$RECIPE_GROUP_ID" ]; then
     pass "recipe group create ($RECIPE_GROUP_NAME)"
   else
@@ -270,7 +274,7 @@ else
 
   # Onboard — plan mode (should exit 10)
   set +e
-  jc recipe run onboard-user \
+  $JC recipe run onboard-user \
     --param "username=$RECIPE_USERNAME" \
     --param "email=$RECIPE_EMAIL" \
     --param "firstname=Test" \
@@ -287,7 +291,7 @@ else
 
   # Onboard — execute
   set +e
-  jc recipe run onboard-user \
+  $JC recipe run onboard-user \
     --param "username=$RECIPE_USERNAME" \
     --param "email=$RECIPE_EMAIL" \
     --param "firstname=Test" \
@@ -303,7 +307,7 @@ else
   fi
 
   # Verify user exists
-  if jc users get "$RECIPE_USERNAME" > /dev/null 2>&1; then
+  if $JC users get "$RECIPE_USERNAME" > /dev/null 2>&1; then
     pass "recipe user exists"
   else
     fail "recipe user exists" "user not found after onboard"
@@ -311,7 +315,7 @@ else
 
   # Offboard with delete
   set +e
-  jc recipe run offboard-user \
+  $JC recipe run offboard-user \
     --param "user=$RECIPE_USERNAME" \
     --param "delete_user=true" \
     --force > /dev/null 2>&1
@@ -324,7 +328,7 @@ else
   fi
 
   # Verify user gone
-  run_fails "recipe user deleted" jc users get "$RECIPE_USERNAME"
+  run_fails "recipe user deleted" $JC users get "$RECIPE_USERNAME"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -334,45 +338,50 @@ fi
 phase 4 "Read-Only Probes"
 
 # Core resources — spread across all 6 output formats
-run_ok "users list (json)"              jc users list --limit 3
-run_ok "devices list (table)"           jc devices list --limit 3 -t
-run_ok "groups user list (csv)"         jc groups user list --limit 3 --output csv
-run_ok "groups device list (yaml)"      jc groups device list --limit 3 --output yaml
-run_ok "commands list (json)"           jc commands list --limit 3
-run_ok "policies list (table)"          jc policies list --limit 3 -t
-run_ok "policy-groups list (ndjson)"    jc policy-groups list --limit 3 --output ndjson
-run_ok "policy-templates list (human)"  jc policy-templates list --limit 3 --output human
-run_ok "apps list (table)"             jc apps list --limit 3 -t
-run_ok "app-templates list (json)"     jc app-templates list --limit 3
-run_ok "admins list (csv)"             jc admins list --limit 3 --output csv
-run_ok "auth-policies list (yaml)"     jc auth-policies list --limit 3 --output yaml
-run_ok "iplists list (ndjson)"         jc iplists list --limit 3 --output ndjson
-run_ok "software list (ndjson)"        jc software list --limit 3 --output ndjson
-run_ok "ldap list (human)"             jc ldap list --output human
-run_ok "ad list (json)"                jc ad list --limit 3
-run_ok "radius list (yaml)"            jc radius list --output yaml
-run_ok "apple-mdm list (table)"        jc apple-mdm list --limit 3 -t
-run_ok "gsuite list (json)"            jc gsuite list --limit 3
-run_ok "office365 list (json)"         jc office365 list --limit 3
-run_ok "duo list (csv)"                jc duo list --limit 3 --output csv
-run_ok "custom-emails templates (table)" jc custom-emails templates -t
-run_ok "user-states list (json)"       jc user-states list --limit 3
-run_ok "org list (yaml)"               jc org list --output yaml
+run_ok "users list (json)"              $JC users list --limit 3
+run_ok "devices list (table)"           $JC devices list --limit 3 -t
+run_ok "groups user list (csv)"         $JC groups user list --limit 3 --output csv
+run_ok "groups device list (yaml)"      $JC groups device list --limit 3 --output yaml
+run_ok "commands list (json)"           $JC commands list --limit 3
+run_ok "policies list (table)"          $JC policies list --limit 3 -t
+run_ok "policy-groups list (ndjson)"    $JC policy-groups list --limit 3 --output ndjson
+run_ok "policy-templates list (human)"  $JC policy-templates list --limit 3 --output human
+run_ok "apps list (table)"             $JC apps list --limit 3 -t
+run_ok "app-templates list (json)"     $JC app-templates list --limit 3
+run_ok "admins list (csv)"             $JC admins list --limit 3 --output csv
+run_ok "auth-policies list (yaml)"     $JC auth-policies list --limit 3 --output yaml
+run_ok "iplists list (ndjson)"         $JC iplists list --limit 3 --output ndjson
+run_ok "software list (ndjson)"        $JC software list --limit 3 --output ndjson
+run_ok "ldap list (human)"             $JC ldap list --output human
+run_ok "ad list (json)"                $JC ad list --limit 3
+run_ok "radius list (yaml)"            $JC radius list --output yaml
+run_ok "apple-mdm list (table)"        $JC apple-mdm list -t
+# gsuite may 404 if not provisioned in the org
+if $JC gsuite list > /dev/null 2>&1; then
+  pass "gsuite list (json)"
+else
+  skip "gsuite list (not provisioned)"
+fi
+run_ok "office365 list (json)"         $JC office365 list --limit 3
+run_ok "duo list (csv)"                $JC duo list --limit 3 --output csv
+run_ok "custom-emails templates (table)" $JC custom-emails templates -t
+run_ok "user-states list (json)"       $JC user-states list
+run_ok "org list (yaml)"               $JC org list --output yaml
 
 # Insights
-run_ok "insights query (json)"         jc insights query --service all --last 1h --limit 5
-run_ok "insights count"                jc insights count --service all --last 1h
+run_ok "insights query (json)"         $JC insights query --service all --last 1h --limit 5
+run_ok "insights count"                $JC insights count --service all --last 1h
 
 # System Insights
-run_ok "system-insights tables"        jc system-insights tables
-run_ok "system-insights os_version"    jc system-insights os_version --limit 3 -t
+run_ok "system-insights tables"        $JC system-insights tables
+run_ok "system-insights os_version"    $JC system-insights os_version -t
 
 # Flag combinations
-run_ok "fields selection"              jc users list --limit 2 --fields username,email -t
-run_ok "fields exclusion"              jc users list --limit 2 --exclude password -t
-run_ok "all fields"                    jc users list --limit 2 --all -t
-run_ok "ids mode"                      jc users list --limit 2 --ids
-run_ok "jmespath query"                jc devices list --limit 2 --query "[].hostname"
+run_ok "fields selection"              $JC users list --limit 2 --fields username,email -t
+run_ok "fields exclusion"              $JC users list --limit 2 --exclude password -t
+run_ok "all fields"                    $JC users list --limit 2 --all -t
+run_ok "ids mode"                      $JC users list --limit 2 --ids
+run_ok "jmespath query"                $JC devices list --limit 2 --query "[].hostname"
 
 # ═══════════════════════════════════════════════════════════════════════
 # Phase 5: Utilities
@@ -380,11 +389,11 @@ run_ok "jmespath query"                jc devices list --limit 2 --query "[].hos
 
 phase 5 "Utilities"
 
-run_contains "explain" "DELETE" jc explain users delete testuser
-run_ok "config view"           jc config view
-run_contains "schema resources" "users" jc schema resources
-run_ok "schema commands"       jc schema commands
-run_ok "completion bash"       jc completion bash
+run_contains "explain" "delete users" $JC explain users delete testuser
+run_ok "config view"           $JC config view
+run_contains "schema resources" "users" $JC schema resources
+run_ok "schema commands"       $JC schema commands
+run_ok "completion bash"       $JC completion bash
 
 # ═══════════════════════════════════════════════════════════════════════
 # Summary

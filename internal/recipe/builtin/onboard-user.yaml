@@ -21,10 +21,6 @@ parameters:
     description: User's last name
     required: true
     type: string
-  - name: department
-    description: Department to assign
-    required: false
-    type: string
   - name: group
     description: User group name or ID to add the user to
     required: false
@@ -32,7 +28,7 @@ parameters:
 
 steps:
   - name: create-user
-    command: 'users create --username {{ .username }} --email {{ .email }} --firstname {{ .firstname }} --lastname {{ .lastname }} --department "{{ .department }}" --ids'
+    command: 'users create --username {{ .username }} --email {{ .email }} --firstname {{ .firstname }} --lastname {{ .lastname }} --ids'
     capture: user_id
 
   - name: add-to-group
