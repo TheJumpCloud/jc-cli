@@ -170,3 +170,62 @@ fi
 
 # Org list
 run_ok "org list" jc org list --limit 1
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 2: Mutable Lifecycle
+# ═══════════════════════════════════════════════════════════════════════
+
+if $SKIP_MUTABLE; then
+  phase 2 "Mutable Lifecycle (SKIPPED)"
+  skip "mutable lifecycle (--skip-mutable)"
+else
+  phase 2 "Mutable Lifecycle"
+
+  TEST_USERNAME="jctest-$TS"
+  TEST_EMAIL="jctest-${TS}@test.jumpcloud.invalid"
+  TEST_GROUP_NAME="jctest-group-$TS"
+
+  # Create user
+  TEST_USER_ID=$(jc users create \
+    --username "$TEST_USERNAME" \
+    --email "$TEST_EMAIL" \
+    --firstname "Test" \
+    --lastname "User" \
+    --ids 2>/dev/null || true)
+  if [ -n "$TEST_USER_ID" ]; then
+    pass "users create ($TEST_USERNAME)"
+  else
+    fail "users create" "no ID returned"
+  fi
+
+  # Get user
+  run_contains "users get" "$TEST_USERNAME" jc users get "$TEST_USER_ID"
+
+  # Search user
+  run_contains "users search" "$TEST_USERNAME" jc users search "$TEST_USERNAME"
+
+  # Update user
+  run_ok "users update (department)" jc users update "$TEST_USER_ID" --department "Integration Test"
+
+  # Lock / unlock
+  run_ok "users lock" jc users lock "$TEST_USER_ID"
+  run_ok "users unlock" jc users unlock "$TEST_USER_ID"
+
+  # Create group
+  TEST_GROUP_ID=$(jc groups user create --name "$TEST_GROUP_NAME" --ids 2>/dev/null || true)
+  if [ -n "$TEST_GROUP_ID" ]; then
+    pass "groups user create ($TEST_GROUP_NAME)"
+  else
+    fail "groups user create" "no ID returned"
+  fi
+
+  # Add member
+  run_ok "groups add-member" jc groups add-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
+
+  # Graph traverse: user → user_group
+  run_contains "graph traverse (user→user_group)" "$TEST_GROUP_ID" \
+    jc graph traverse --from "user:$TEST_USER_ID" --to user_group
+
+  # Remove member
+  run_ok "groups remove-member" jc groups remove-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
+fi
