@@ -229,3 +229,88 @@ else
   # Remove member
   run_ok "groups remove-member" jc groups remove-member "$TEST_GROUP_ID" --user "$TEST_USER_ID"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 3: Recipe Engine
+# ═══════════════════════════════════════════════════════════════════════
+
+if $SKIP_MUTABLE; then
+  phase 3 "Recipe Engine (SKIPPED)"
+  skip "recipe engine (--skip-mutable)"
+else
+  phase 3 "Recipe Engine"
+
+  # Recipe list and show
+  run_contains "recipe list" "onboard-user" jc recipe list -t
+  run_contains "recipe show" "onboard-user" jc recipe show onboard-user
+
+  RECIPE_USERNAME="jctest-recipe-$TS"
+  RECIPE_EMAIL="jctest-recipe-${TS}@test.jumpcloud.invalid"
+  RECIPE_GROUP_NAME="jctest-recipe-group-$TS"
+
+  # Create group for recipe to use
+  RECIPE_GROUP_ID=$(jc groups user create --name "$RECIPE_GROUP_NAME" --ids 2>/dev/null || true)
+  if [ -n "$RECIPE_GROUP_ID" ]; then
+    pass "recipe group create ($RECIPE_GROUP_NAME)"
+  else
+    fail "recipe group create" "no ID returned"
+  fi
+
+  # Onboard — plan mode (should exit 10)
+  set +e
+  jc recipe run onboard-user \
+    --param "username=$RECIPE_USERNAME" \
+    --param "email=$RECIPE_EMAIL" \
+    --param "firstname=Test" \
+    --param "lastname=Recipe" \
+    --param "group=$RECIPE_GROUP_NAME" \
+    --plan > /dev/null 2>&1
+  plan_exit=$?
+  set -e
+  if [ "$plan_exit" -eq 10 ]; then
+    pass "onboard-user (plan mode, exit 10)"
+  else
+    fail "onboard-user (plan)" "expected exit 10, got $plan_exit"
+  fi
+
+  # Onboard — execute
+  set +e
+  RECIPE_OUTPUT=$(jc recipe run onboard-user \
+    --param "username=$RECIPE_USERNAME" \
+    --param "email=$RECIPE_EMAIL" \
+    --param "firstname=Test" \
+    --param "lastname=Recipe" \
+    --param "group=$RECIPE_GROUP_NAME" \
+    --force 2>&1)
+  recipe_exit=$?
+  set -e
+  if [ "$recipe_exit" -eq 0 ]; then
+    pass "onboard-user (execute)"
+  else
+    fail "onboard-user (execute)" "exit code $recipe_exit"
+  fi
+
+  # Verify user exists
+  if jc users get "$RECIPE_USERNAME" > /dev/null 2>&1; then
+    pass "recipe user exists"
+  else
+    fail "recipe user exists" "user not found after onboard"
+  fi
+
+  # Offboard with delete
+  set +e
+  OFFBOARD_OUTPUT=$(jc recipe run offboard-user \
+    --param "user=$RECIPE_USERNAME" \
+    --param "delete_user=true" \
+    --force 2>&1)
+  offboard_exit=$?
+  set -e
+  if [ "$offboard_exit" -eq 0 ]; then
+    pass "offboard-user (execute)"
+  else
+    fail "offboard-user (execute)" "exit code $offboard_exit"
+  fi
+
+  # Verify user gone
+  run_fails "recipe user deleted" jc users get "$RECIPE_USERNAME"
+fi
