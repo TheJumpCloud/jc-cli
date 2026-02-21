@@ -215,7 +215,7 @@ jc users list -t                                  # List all users
 jc users list --filter "department:eq:Engineering" # Filter by department
 jc users get jdoe                                  # Get by username or ID
 jc users search "john"                             # Full-text search
-jc users create --username jnew --email jnew@acme.com --firstname Jane --lastname New
+jc users create --username jnew --email jnew@acme.com --firstname Jane --lastname New --department Engineering
 jc users update jdoe --department Marketing        # Update fields
 jc users delete jdoe                               # Delete (with confirmation)
 jc users lock jdoe                                 # Lock account
