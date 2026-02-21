@@ -352,6 +352,8 @@ run_ok "admins list (csv)"             $JC admins list --limit 3 --output csv
 run_ok "auth-policies list (yaml)"     $JC auth-policies list --limit 3 --output yaml
 run_ok "iplists list (ndjson)"         $JC iplists list --limit 3 --output ndjson
 run_ok "software list (ndjson)"        $JC software list --limit 3 --output ndjson
+run_ok "assets list (json)"            $JC assets list --limit 2
+run_ok "assets list (table)"           $JC assets list --limit 2 --output table
 run_ok "ldap list (human)"             $JC ldap list --output human
 run_ok "ad list (json)"                $JC ad list --limit 3
 run_ok "radius list (yaml)"            $JC radius list --output yaml

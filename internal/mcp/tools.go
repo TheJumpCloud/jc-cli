@@ -147,6 +147,26 @@ type softwareUpdateInput struct {
 	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type assetCreateInput struct {
+	Name         string `json:"name" jsonschema:"Asset name"`
+	SerialNumber string `json:"serialNumber,omitempty" jsonschema:"Hardware serial number"`
+	AssetTag     string `json:"assetTag,omitempty" jsonschema:"Organization asset tag"`
+	Status       string `json:"status,omitempty" jsonschema:"Asset status"`
+	Type         string `json:"type,omitempty" jsonschema:"Asset type"`
+	SystemID     string `json:"systemId,omitempty" jsonschema:"Linked JumpCloud system ID"`
+}
+
+type assetUpdateInput struct {
+	Identifier   string `json:"identifier" jsonschema:"Asset name or ID to update"`
+	Name         string `json:"name,omitempty" jsonschema:"New asset name"`
+	SerialNumber string `json:"serialNumber,omitempty" jsonschema:"New serial number"`
+	AssetTag     string `json:"assetTag,omitempty" jsonschema:"New asset tag"`
+	Status       string `json:"status,omitempty" jsonschema:"New status"`
+	Type         string `json:"type,omitempty" jsonschema:"New asset type"`
+	SystemID     string `json:"systemId,omitempty" jsonschema:"New system ID"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type ldapCreateInput struct {
 	Name                         string `json:"name" jsonschema:"LDAP server name"`
 	UserLockoutAction            string `json:"user_lockout_action,omitempty" jsonschema:"Action on user lockout"`
@@ -488,6 +508,9 @@ func (s *Server) registerTools() {
 
 	// --- Software tools ---
 	s.registerSoftwareTools()
+
+	// --- Assets tools ---
+	s.registerAssetsTools()
 
 	// --- LDAP tools ---
 	s.registerLDAPTools()
@@ -2524,6 +2547,149 @@ func (s *Server) registerSoftwareTools() {
 				return errorResult(fmt.Sprintf("reclaiming license: %v", err)), nil, nil
 			}
 			return textResult(fmt.Sprintf("License reclaimed from device %q for software app %q.", args.DeviceID, args.Identifier)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerAssetsTools() {
+	addTypedTool(s, "assets_list", "List all JumpCloud assets. Returns objects with id, name, serialNumber, assetTag, status, type, systemId.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/assets", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing assets: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "assets_get", "Get a single JumpCloud asset by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AssetConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/assets/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting asset: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "assets_create", "Create a new JumpCloud asset.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args assetCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+			}
+			if args.SerialNumber != "" {
+				body["serialNumber"] = args.SerialNumber
+			}
+			if args.AssetTag != "" {
+				body["assetTag"] = args.AssetTag
+			}
+			if args.Status != "" {
+				body["status"] = args.Status
+			}
+			if args.Type != "" {
+				body["type"] = args.Type
+			}
+			if args.SystemID != "" {
+				body["systemId"] = args.SystemID
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/assets", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating asset: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "assets_update", "Update a JumpCloud asset. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args assetUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AssetConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Name != "" {
+				body["name"] = args.Name
+			}
+			if args.SerialNumber != "" {
+				body["serialNumber"] = args.SerialNumber
+			}
+			if args.AssetTag != "" {
+				body["assetTag"] = args.AssetTag
+			}
+			if args.Status != "" {
+				body["status"] = args.Status
+			}
+			if args.Type != "" {
+				body["type"] = args.Type
+			}
+			if args.SystemID != "" {
+				body["systemId"] = args.SystemID
+			}
+			if !args.Execute {
+				return planResult("update", "asset", args.Identifier, id, body)
+			}
+			data, err := client.Update(ctx, "/assets/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating asset: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "assets_delete", "Delete a JumpCloud asset. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AssetConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "asset", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/assets/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting asset: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Asset %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
 }

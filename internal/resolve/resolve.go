@@ -205,6 +205,14 @@ var Office365Config = ResourceConfig{
 	IDField:      "id",
 }
 
+// AssetConfig is the resolution config for JumpCloud assets (V2 API).
+var AssetConfig = ResourceConfig{
+	CacheKey:     "assets",
+	ListEndpoint: "/assets",
+	NameField:    "name",
+	IDField:      "id",
+}
+
 // DuoAccountConfig is the resolution config for JumpCloud Duo accounts (V2 API).
 var DuoAccountConfig = ResourceConfig{
 	CacheKey:     "duo",
