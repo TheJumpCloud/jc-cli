@@ -361,3 +361,46 @@ run_ok "fields exclusion"              jc users list --limit 2 --exclude passwor
 run_ok "all fields"                    jc users list --limit 2 --all -t
 run_ok "ids mode"                      jc users list --limit 2 --ids
 run_ok "jmespath query"                jc devices list --limit 2 --query "[].hostname"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 5: Utilities
+# ═══════════════════════════════════════════════════════════════════════
+
+phase 5 "Utilities"
+
+run_contains "explain" "DELETE" jc explain users delete testuser
+run_ok "config view"           jc config view
+run_contains "schema resources" "users" jc schema resources
+run_ok "schema commands"       jc schema commands
+run_ok "completion bash"       jc completion bash
+
+# ═══════════════════════════════════════════════════════════════════════
+# Summary
+# ═══════════════════════════════════════════════════════════════════════
+
+echo ""
+echo -e "${BOLD}$(printf '═%.0s' {1..50})${RESET}"
+TOTAL=$((PASS + FAIL + SKIP))
+echo -e "${BOLD}Results: ${GREEN}$PASS passed${RESET}, ${RED}$FAIL failed${RESET}, ${YELLOW}$SKIP skipped${RESET} ${DIM}($TOTAL total)${RESET}"
+
+if [ ${#ERRORS[@]} -gt 0 ]; then
+  echo ""
+  echo -e "${RED}Failures:${RESET}"
+  for err in "${ERRORS[@]}"; do
+    echo -e "  ${RED}•${RESET} $err"
+  done
+fi
+
+echo ""
+if [ "$FAIL" -eq 0 ]; then
+  echo -e "${GREEN}${BOLD}All tests passed!${RESET}"
+  # Disable trap exit code override — cleanup runs but we exit 0
+  trap - EXIT
+  cleanup
+  exit 0
+else
+  echo -e "${RED}${BOLD}$FAIL test(s) failed.${RESET}"
+  trap - EXIT
+  cleanup
+  exit 1
+fi
