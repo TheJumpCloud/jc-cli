@@ -178,10 +178,10 @@ fi
 
 # MCP tools count
 MCP_COUNT=$($JC mcp tools 2>/dev/null | wc -l | tr -d ' ')
-if [ "$MCP_COUNT" -eq 158 ]; then
+if [ "$MCP_COUNT" -eq 163 ]; then
   pass "mcp tools count ($MCP_COUNT)"
 else
-  fail "mcp tools count" "expected 158, got $MCP_COUNT"
+  fail "mcp tools count" "expected 163, got $MCP_COUNT"
 fi
 
 # Org list (no --limit; org returns a single object)

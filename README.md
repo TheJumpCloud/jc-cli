@@ -72,8 +72,8 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 25 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, RADIUS, LDAP, Active Directory, Apple MDM, software apps, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
-- **AI-native** — built-in [MCP server](#mcp-server) with 158 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 26 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, RADIUS, LDAP, Active Directory, Apple MDM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
+- **AI-native** — built-in [MCP server](#mcp-server) with 163 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -196,6 +196,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `office365` | list, get, translation-rules, import-users | Manage Office 365 directory integrations |
 | `duo` | list, get, create, delete, apps, app-get, app-create, app-delete | Manage Duo MFA accounts and applications |
 | `custom-emails` | templates, get, create, update, delete | Manage custom email templates |
+| `assets` | list, get, create, update, delete | Manage hardware assets |
 | `app-templates` | list, get | Browse application templates |
 | `bulk` | users | Bulk operations from CSV files |
 | `recipe` | list, show, run, create, import, export, validate | Multi-step workflow engine |
@@ -376,6 +377,13 @@ jc ad get "corp.example.com"                      # Get by domain or ID
 jc ad create --domain "new.example.com"
 jc ad delete "corp.example.com"
 
+# Asset Management
+jc assets list -t                                 # List hardware assets
+jc assets get "MacBook Pro #42"                   # Get by name or ID
+jc assets create --name "MacBook Pro #43" --serial-number "C02X..." --status "In Stock"
+jc assets update "MacBook Pro #43" --status "Assigned" --system-id abc123...
+jc assets delete "MacBook Pro #43"                # Delete (with confirmation)
+
 # RADIUS Servers
 jc radius list -t                                 # List RADIUS servers
 jc radius get "WiFi Auth"                         # Get by name or ID
@@ -490,7 +498,7 @@ The wizard guides you through profile selection, authentication (API key or serv
 jc tui                      # Launch the interactive browser
 ```
 
-Full-screen terminal UI for browsing all 25 JumpCloud resource types.
+Full-screen terminal UI for browsing all 26 JumpCloud resource types.
 
 **Home screen** — Three-column grid layout mirroring the JumpCloud Admin Console:
 
@@ -503,7 +511,7 @@ Full-screen terminal UI for browsing all 25 JumpCloud resource types.
                          > Policy Grps   (3)  Insights
  Security                > Software      (5)    > Dir Insights
    > Auth Policies (5)   > Apple MDM     (1)    > Sys Insights
-   > IP Lists      (3)
+   > IP Lists      (3)   > Assets        (4)
                        Settings
                          > Admins        (3)
                          > Organization
@@ -543,7 +551,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**158 tools available** covering all 25 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), custom emails, app templates, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
+**163 tools available** covering all 26 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -873,18 +881,18 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 25 resource types + utilities
+  cmd/                  CLI commands (Cobra) — 26 resource types + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
   resolve/              Name-to-ID resolution with file-based caching
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
-  tui/                  Interactive terminal UI (Bubbletea) — 25 resource views
-  mcp/                  MCP server (official Go SDK) — 158 tools
+  tui/                  Interactive terminal UI (Bubbletea) — 26 resource views
+  mcp/                  MCP server (official Go SDK) — 163 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
-  schema/               Machine-readable CLI schema (25 resource schemas)
+  schema/               Machine-readable CLI schema (26 resource schemas)
   simulator/            Auth policy simulator (three-valued logic)
   plan/                 Plan mode rendering
   version/              Build-time version injection
