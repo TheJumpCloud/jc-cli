@@ -7,7 +7,7 @@ All 60 user stories (US-001 through US-060) across 5 priority tiers are fully im
 - **Priority 3 — Insights, Recipes, MCP:** 13/13 (insights client/query/count/distinct/saved, recipes engine/builtins/commands, MCP server/tools/resources/safety)
 - **Priority 4 — Conversational & Polish:** 11/11 (schema, structured errors, explain, ask, aliases, stdin, pipe detection, SSE, tool filtering, short forms, JMESPath)
 
-Beyond the PRD: 26 schema resources, 163 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). TUI associations for commands/policies/policy-groups/software (#22, #23, #24), TUI table performance fix (#21). **Released v1.3.2** (2026-02-19). TUI home screen restructured to three-column grid matching JumpCloud Admin Console (KLA-151): 6 new categories, 10 placeholder items, Cloud Directories sub-menu, responsive layout, left/right column navigation. TUI `/memberof` fix for user→group and device→group associations (KLA-152). Integration test suite with 5-phase coverage. **Released v1.4.2** (2026-02-21): `--department` on `users create` + MCP `users_create` tool, `--limit` on `org list`/`apple-mdm list`/`user-states list`, `auth status --quiet` suppresses output, recipe template quoting fix (KLA-153). **Released v1.5.0** (2026-02-21): Asset Management — full CRUD for hardware assets (CLI, MCP, TUI), 5 new MCP tools, TUI placeholder promoted to active resource (KLA-154).
+Beyond the PRD: 26 schema resources, 173 MCP tools, auth policy simulator, 6 security hardening fixes, interactive TUI browser with dashboard, clipboard, POST search, help overlay, export, bookmarks, and CRUD (create/edit/delete). Interactive onboarding wizard (`jc setup`). 6 TUI bug fixes (#7–#12). Insights event detail screen with AI explanation. TUI form/filter text input fixes (q/k interception, bool toggle, range copy width). Service account login 403 fix. Setup wizard 403 tolerance (#18), TUI association labels (#19), TUI form field exclusions + password (#20). TUI associations for commands/policies/policy-groups/software (#22, #23, #24), TUI table performance fix (#21). **Released v1.3.2** (2026-02-19). TUI home screen restructured to three-column grid matching JumpCloud Admin Console (KLA-151): 6 new categories, 10 placeholder items, Cloud Directories sub-menu, responsive layout, left/right column navigation. TUI `/memberof` fix for user→group and device→group associations (KLA-152). Integration test suite with 5-phase coverage. **Released v1.4.2** (2026-02-21): `--department` on `users create` + MCP `users_create` tool, `--limit` on `org list`/`apple-mdm list`/`user-states list`, `auth status --quiet` suppresses output, recipe template quoting fix (KLA-153). **Released v1.5.0** (2026-02-21): Asset Management — full CRUD for hardware assets (CLI, MCP, TUI), 5 new MCP tools, TUI placeholder promoted to active resource (KLA-154). Asset Management rewrite for real API (KLA-155): three sub-resource endpoints (`/assets/devices`, `/assets/accessories`, `/assets/locations`), dynamic nested field flattening, `ExtractNameFunc` on resolver, `--field "Label=Value"` flags, 15 MCP tools (163→173), TUI sub-menu with FlattenFunc hook.
 
 ---
 
@@ -124,6 +124,46 @@ Beyond the PRD: 26 schema resources, 163 MCP tools, auth policy simulator, 6 sec
 - `placeholderEntries` slice defines "Coming soon" items; `cloudDirResources` map identifies sub-menu children
 - `SubMenuScreen` for grouped navigation (Cloud Directories → Google Workspace + M365)
 - Bookmark section above grid with seamless cursor transition (`inBookmarks` bool state)
+- `FlattenFunc func([]json.RawMessage) []json.RawMessage` on `ResourceEntry`: post-fetch transformation hook for resources with non-standard data shapes (used by assets)
+- `BuildRegistry()` converts "assets" to sub-menu parent with 3 children (device-assets, accessory-assets, location-assets) — same pattern as Cloud Directories
+- `ExtractNameFunc` on `resolve.ResourceConfig`: optional callback for name resolution from nested field structures; used by 3 asset sub-resource configs
+- Asset sub-resource pattern: `DeviceAssetConfig`, `AccessoryAssetConfig`, `LocationAssetConfig` with shared `ExtractAssetName()` function
+- `flattenAssetFields()` / `flattenAssetValue()`: convert nested `{id, fields: {"Label": {value}}}` to flat `{id, "Label": value}` — duplicated in cmd, MCP, and TUI packages for isolation
+- `buildAssetBody()`: parses `--field "Label=Value"` repeatable flags into `{"fields": {"Label": "Value"}}` API body
+- 173 MCP tools total (was 163); `registerAssetSubTools()` helper registers 5 tools per sub-resource
+---
+
+### Asset Management Rewrite for Real API (KLA-155)
+- **Date:** 2026-02-21
+- **Status:** COMPLETE (all tests pass, build clean, pushed)
+- **Commit:** `af7d53a`
+- What was implemented:
+  - Rewrote the entire assets stack to match the real JumpCloud Asset Management API, which uses three sub-resource endpoints with dynamic nested field structure `{id, fields: {"Label": {editable, value}}}` instead of the flat fields initially assumed.
+  - **Resolver:** Added `ExtractNameFunc func(json.RawMessage) (string, error)` to `ResourceConfig` for resources with non-standard field nesting. Replaced single `AssetConfig` with `DeviceAssetConfig`, `AccessoryAssetConfig`, `LocationAssetConfig`. Both V1 `resolveViaAPI()` and V2 `resolveViaV2API()` check for `ExtractNameFunc` before falling back to default top-level field lookup.
+  - **CLI:** Sub-resource command tree: `jc assets devices|accessories|locations list|get|create|update|delete`. `flattenAssetFields()` converts nested `{id, fields: {...}}` to flat `{id, Name, Status, ...}` for display. `flattenAssetValue()` handles polymorphic values: scalar strings, select references `{id, name, type}` → name, arrays of references → `["name1","name2"]`. `buildAssetBody()` parses `--field "Label=Value"` repeatable flags into API body. Default fields: devices=`[id, Name, Serial Number, Status, Model, Type]`, accessories=`[id, Name, Status]`, locations=`[id, Name]`.
+  - **MCP:** Replaced 5 flat tools with 15 sub-resource tools via `registerAssetSubTools()` helper (163→173 total). Tool names: `assets_devices_list|get|create|update|delete`, `assets_accessories_*`, `assets_locations_*`. Plan-first safety on destructive tools.
+  - **TUI:** Added `FlattenFunc func([]json.RawMessage) []json.RawMessage` to `ResourceEntry`. Converted assets from regular entry to sub-menu parent with 3 children (device-assets, accessory-assets, location-assets). `ListScreen` applies `FlattenFunc` after fetch.
+  - **Schema:** Updated field names to match real API labels (`Name`, `Serial Number`, `Status`, `Model`, `Type`). `FilterSupport`/`SortSupport` set to false.
+  - **Tests:** Full rewrites for `assets_test.go` (17 tests) and `resolve_test.go` (+4 tests) with nested-field mock servers. Updated tool count in `tools_test.go` (173) and `integration-test.sh`.
+- Files changed:
+  - `internal/resolve/resolve.go` — `ExtractNameFunc` field, 3 asset configs, `ExtractAssetName()`
+  - `internal/cmd/assets.go` — complete rewrite: sub-resource tree, flatten, build body
+  - `internal/cmd/assets_test.go` — complete rewrite: nested-field mock server, 17 tests
+  - `internal/mcp/tools.go` — 5→15 asset tools via `registerAssetSubTools()`
+  - `internal/mcp/tools_test.go` — 163→173 count, 15 new tool names
+  - `internal/schema/schema.go` — field labels, manifest sub-resources
+  - `internal/tui/registry.go` — `FlattenFunc`, sub-menu parent, flatten helpers
+  - `internal/tui/registry_test.go` — assets special case like groups
+  - `internal/tui/screen/list.go` — `FlattenFunc` call after fetch
+  - `internal/resolve/resolve_test.go` — 4 new ExtractNameFunc tests
+  - `scripts/integration-test.sh` — 163→173, sub-resource test
+  - Total: 11 files, +1,047 / -500 lines
+- **Learnings:**
+  - `ExtractNameFunc` callback pattern keeps the resolver generic while supporting arbitrary field nesting — extensible to any future resource with non-standard shapes.
+  - Flatten logic must be duplicated across cmd, MCP, and TUI packages to avoid cross-package imports — acceptable tradeoff for package isolation.
+  - `json.RawMessage` pipeline means the output engine needed zero changes despite the fundamentally different data shape.
+  - TUI `FlattenFunc` hook is a clean post-fetch transformation point — could be useful for other resources with complex structures.
+
 ---
 
 ### TUI Home Screen Restructure (KLA-151)
