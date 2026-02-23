@@ -313,6 +313,7 @@ var Resources = map[string]ResourceSchema{
 			{Name: "Tag", Type: "string", Description: "Organization asset tag"},
 			{Name: "Owner", Type: "string", Description: "Assigned owner (user reference)"},
 		},
+		SortFields:    []string{"Name", "Status", "Model", "Type"},
 		FilterSupport: false,
 		SortSupport:   false,
 		IDField:       "id",

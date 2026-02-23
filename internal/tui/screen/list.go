@@ -1,7 +1,9 @@
 package screen
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/atotto/clipboard"
@@ -160,6 +162,10 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if l.entry.FlattenFunc != nil {
 			data = l.entry.FlattenFunc(data)
 		}
+		// Client-side sort for resources without server-side sort support.
+		if !l.entry.Schema.SortSupport && l.table.SortField != "" {
+			data = sortLocally(data, l.table.SortField, l.table.SortDesc)
+		}
 		l.table.Rows = data
 		l.totalCount = msg.TotalCount
 		l.table.Cursor = 0
@@ -229,10 +235,18 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, tui.ListKeyMap.Sort):
 			l.cycleSort()
+			if !l.entry.Schema.SortSupport {
+				l.table.Rows = sortLocally(l.table.Rows, l.table.SortField, l.table.SortDesc)
+				return l, nil
+			}
 			return l, l.fetchData()
 
 		case key.Matches(msg, tui.ListKeyMap.SortDir):
 			l.table.SortDesc = !l.table.SortDesc
+			if !l.entry.Schema.SortSupport {
+				l.table.Rows = sortLocally(l.table.Rows, l.table.SortField, l.table.SortDesc)
+				return l, nil
+			}
 			return l, l.fetchData()
 
 		case key.Matches(msg, tui.ListKeyMap.Refresh):
@@ -319,6 +333,43 @@ func (l *ListScreen) cycleSort() {
 	next := (idx + 1) % len(sortFields)
 	l.table.SortField = sortFields[next]
 	l.table.SortDesc = false
+}
+
+// sortLocally sorts rows by a field value using string comparison.
+func sortLocally(rows []json.RawMessage, field string, desc bool) []json.RawMessage {
+	if len(rows) == 0 || field == "" {
+		return rows
+	}
+	sorted := make([]json.RawMessage, len(rows))
+	copy(sorted, rows)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		vi := extractStringField(sorted[i], field)
+		vj := extractStringField(sorted[j], field)
+		if desc {
+			return vi > vj
+		}
+		return vi < vj
+	})
+	return sorted
+}
+
+// extractStringField extracts a top-level field value as a lowercase string for sorting.
+func extractStringField(raw json.RawMessage, field string) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	v, ok := obj[field]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(v, &s); err != nil {
+		// Non-string value — use raw representation.
+		return strings.ToLower(strings.Trim(string(v), `"`))
+	}
+	return strings.ToLower(s)
 }
 
 func (l *ListScreen) copySelectedID() tea.Cmd {
