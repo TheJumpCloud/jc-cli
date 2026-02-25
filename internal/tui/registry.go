@@ -77,6 +77,7 @@ type ResourceEntry struct {
 	SubMenu         []ResourceEntry                                // Non-nil for sub-menu groupings (e.g. Cloud Directories)
 	FlattenFunc     func([]json.RawMessage) []json.RawMessage      // Optional post-fetch flattening (e.g. assets)
 	ResponseKey     string                                         // V2 wrapped response key (e.g. "identityProviders")
+	MutateBodyFunc  func(body map[string]any) map[string]any       // Optional body transform before create/update (e.g. wrap in {"fields": ...})
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -427,11 +428,11 @@ func BuildRegistry() []ResourceEntry {
 				Category:    CategoryDeviceMgmt,
 				SubMenu: []ResourceEntry{
 					{Key: "device-assets", DisplayName: "Device Assets", Category: CategoryDeviceMgmt,
-						ClientType: ClientV2, ListEndpoint: "/assets/devices", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+						ClientType: ClientV2, ListEndpoint: "/assets/devices", Schema: s, FlattenFunc: tuiFlattenAssetFields, MutateBodyFunc: wrapAssetFields},
 					{Key: "accessory-assets", DisplayName: "Accessory Assets", Category: CategoryDeviceMgmt,
-						ClientType: ClientV2, ListEndpoint: "/assets/accessories", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+						ClientType: ClientV2, ListEndpoint: "/assets/accessories", Schema: s, FlattenFunc: tuiFlattenAssetFields, MutateBodyFunc: wrapAssetFields},
 					{Key: "location-assets", DisplayName: "Location Assets", Category: CategoryDeviceMgmt,
-						ClientType: ClientV2, ListEndpoint: "/assets/locations", Schema: s, FlattenFunc: tuiFlattenAssetFields},
+						ClientType: ClientV2, ListEndpoint: "/assets/locations", Schema: s, FlattenFunc: tuiFlattenAssetFields, MutateBodyFunc: wrapAssetFields},
 				},
 			})
 			continue
@@ -478,6 +479,7 @@ func BuildRegistry() []ResourceEntry {
 		if name == "identity-providers" {
 			entry.ResponseKey = "identityProviders"
 			entry.FlattenFunc = flattenIdentityProvidersTUI
+			entry.MutateBodyFunc = nestIdentityProviderOIDC
 		}
 
 		// System Insights rows have no ID of their own but contain a system_id
@@ -604,6 +606,27 @@ func tuiFlattenAssetValue(raw json.RawMessage) any {
 		return v
 	}
 	return string(raw)
+}
+
+// wrapAssetFields wraps a flat body map in {"fields": ...} for the assets API.
+func wrapAssetFields(body map[string]any) map[string]any {
+	return map[string]any{"fields": body}
+}
+
+// nestIdentityProviderOIDC moves OIDC-specific fields under an "oidc" sub-object.
+func nestIdentityProviderOIDC(body map[string]any) map[string]any {
+	oidcFields := map[string]bool{"clientId": true, "clientSecret": true, "url": true}
+	oidc := make(map[string]any)
+	for k, v := range body {
+		if oidcFields[k] {
+			oidc[k] = v
+			delete(body, k)
+		}
+	}
+	if len(oidc) > 0 {
+		body["oidc"] = oidc
+	}
+	return body
 }
 
 // flattenIdentityProvidersTUI promotes oidc sub-fields to top level.

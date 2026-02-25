@@ -108,7 +108,9 @@ func runIdentityProvidersList(cmd *cobra.Command, limit int) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
+	if !opts.Quiet && !opts.IDsOnly {
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
+	}
 	return nil
 }
 

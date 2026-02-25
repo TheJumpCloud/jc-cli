@@ -339,6 +339,7 @@ var sensitiveParamKeys = map[string]bool{
 	"api_key":       true,
 	"public_key":    true,
 	"client_secret": true,
+	"clientSecret":  true,
 	"token":         true,
 }
 

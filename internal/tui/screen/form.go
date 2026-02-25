@@ -419,6 +419,11 @@ func (f *FormScreen) submit() tea.Cmd {
 		)
 	}
 
+	// Apply resource-specific body transformation (e.g. wrap in {"fields": ...}).
+	if f.entry.MutateBodyFunc != nil {
+		body = f.entry.MutateBodyFunc(body)
+	}
+
 	f.submitting = true
 	f.err = ""
 	f.generation = fetch.NextGeneration()
