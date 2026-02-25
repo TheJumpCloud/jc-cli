@@ -1042,6 +1042,25 @@ func TestV2Client_ConcurrentListAll(t *testing.T) {
 	}
 }
 
+func TestV2Client_ListAll_ResponseKey(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"identityProviders":[{"id":"abc","name":"Test IdP"}],"totalCount":1}`))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/identity-providers", V2ListOptions{
+		ResponseKey: "identityProviders",
+	})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Data))
+	}
+}
+
 func TestV2Client_ConcurrentGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

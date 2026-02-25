@@ -52,6 +52,8 @@ type V2ListOptions struct {
 	Filter []string
 	// Search is a full-text search term.
 	Search string
+	// ResponseKey extracts the array from a wrapped object key (e.g. "identityProviders").
+	ResponseKey string
 }
 
 // V2ListResult holds the results from a V2 list operation.
@@ -114,13 +116,27 @@ func (c *V2Client) ListAll(ctx context.Context, endpoint string, opts V2ListOpti
 		// return a wrapped object like {"results": [...]}.
 		var pageItems []json.RawMessage
 		if err := json.Unmarshal(body, &pageItems); err != nil {
-			var wrapped struct {
-				Results []json.RawMessage `json:"results"`
+			// Try explicit ResponseKey first, then fall back to "results".
+			var parsed bool
+			if opts.ResponseKey != "" {
+				var obj map[string]json.RawMessage
+				if err2 := json.Unmarshal(body, &obj); err2 == nil {
+					if arr, ok := obj[opts.ResponseKey]; ok {
+						if err3 := json.Unmarshal(arr, &pageItems); err3 == nil {
+							parsed = true
+						}
+					}
+				}
 			}
-			if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
-				return nil, fmt.Errorf("parsing response: %w", err)
+			if !parsed {
+				var wrapped struct {
+					Results []json.RawMessage `json:"results"`
+				}
+				if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
+					return nil, fmt.Errorf("parsing response: %w", err)
+				}
+				pageItems = wrapped.Results
 			}
-			pageItems = wrapped.Results
 		}
 
 		allResults = append(allResults, pageItems...)

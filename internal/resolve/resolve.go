@@ -62,6 +62,10 @@ type ResourceConfig struct {
 	// ExtractNameFunc optionally overrides the default top-level field lookup
 	// for resources with non-standard field nesting (e.g., assets).
 	ExtractNameFunc func(json.RawMessage) (string, error)
+	// ResponseKey is the V2 wrapped response key (e.g. "identityProviders").
+	// When set, the V2 list response is expected to be a JSON object with this
+	// key containing the array of items, rather than a bare JSON array.
+	ResponseKey string
 }
 
 // UserConfig is the resolution config for JumpCloud users.
@@ -118,6 +122,15 @@ var IPListConfig = ResourceConfig{
 	ListEndpoint: "/iplists",
 	NameField:    "name",
 	IDField:      "id",
+}
+
+// IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
+var IdentityProviderConfig = ResourceConfig{
+	CacheKey:     "identity-providers",
+	ListEndpoint: "/identity-providers",
+	NameField:    "name",
+	IDField:      "id",
+	ResponseKey:  "identityProviders",
 }
 
 // SoftwareAppConfig is the resolution config for JumpCloud software apps (V2 API).
@@ -484,7 +497,9 @@ func (r *V2Resolver) Resolve(ctx context.Context, identifier string, cfg Resourc
 
 // resolveViaV2API searches the V2 API for a resource matching the given name.
 func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg ResourceConfig) (string, error) {
-	result, err := r.Client.ListAll(ctx, cfg.ListEndpoint, api.V2ListOptions{})
+	result, err := r.Client.ListAll(ctx, cfg.ListEndpoint, api.V2ListOptions{
+		ResponseKey: cfg.ResponseKey,
+	})
 	if err != nil {
 		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
 	}
