@@ -317,6 +317,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"auth_policies_enable", "auth_policies_disable", "auth_policies_simulate", "auth_policies_blast_radius",
 		// IP Lists
 		"iplists_list", "iplists_get", "iplists_create", "iplists_update", "iplists_delete",
+		// Identity Providers
+		"identity_providers_list", "identity_providers_get", "identity_providers_create", "identity_providers_update", "identity_providers_delete",
 		// Insights
 		"insights_query", "insights_count", "insights_distinct",
 		// Apps
@@ -379,8 +381,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 173 {
-		t.Errorf("expected 173 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 178 {
+		t.Errorf("expected 178 tools, got %d", len(result.Tools))
 	}
 }
 

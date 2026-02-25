@@ -135,6 +135,24 @@ type ipListUpdateInput struct {
 	Execute     bool     `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
+type identityProviderCreateInput struct {
+	Name         string `json:"name" jsonschema:"Identity provider name"`
+	Type         string `json:"type" jsonschema:"Provider type (OIDC, GOOGLE, OKTA, AZURE)"`
+	ClientID     string `json:"clientId" jsonschema:"OIDC client ID"`
+	ClientSecret string `json:"clientSecret" jsonschema:"OIDC client secret"`
+	URL          string `json:"url" jsonschema:"OIDC issuer URL"`
+}
+
+type identityProviderUpdateInput struct {
+	Identifier   string `json:"identifier" jsonschema:"Identity provider name or ID to update"`
+	Name         string `json:"name,omitempty" jsonschema:"New provider name"`
+	Type         string `json:"type,omitempty" jsonschema:"New provider type (OIDC, GOOGLE, OKTA, AZURE)"`
+	ClientID     string `json:"clientId,omitempty" jsonschema:"New OIDC client ID"`
+	ClientSecret string `json:"clientSecret,omitempty" jsonschema:"New OIDC client secret"`
+	URL          string `json:"url,omitempty" jsonschema:"New OIDC issuer URL"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to execute the update"`
+}
+
 type softwareCreateInput struct {
 	Name     string `json:"name" jsonschema:"Display name for the software app"`
 	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
@@ -495,6 +513,9 @@ func (s *Server) registerTools() {
 
 	// --- IP Lists tools ---
 	s.registerIPListTools()
+
+	// --- Identity Provider tools ---
+	s.registerIdentityProviderTools()
 
 	// --- Software tools ---
 	s.registerSoftwareTools()
@@ -2350,6 +2371,149 @@ func (s *Server) registerIPListTools() {
 	)
 }
 
+func (s *Server) registerIdentityProviderTools() {
+	addTypedTool(s, "identity_providers_list", "List all JumpCloud identity providers. Returns objects with id, name, type, clientId, url.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "identityProviders"
+			result, err := client.ListAll(ctx, "/identity-providers", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing identity providers: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "identity_providers_get", "Get a single JumpCloud identity provider by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IdentityProviderConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/identity-providers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting identity provider: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "identity_providers_create", "Create a new JumpCloud identity provider. Types: OIDC, GOOGLE, OKTA, AZURE.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args identityProviderCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{
+				"name": args.Name,
+				"type": args.Type,
+				"oidc": map[string]any{
+					"clientId":     args.ClientID,
+					"clientSecret": args.ClientSecret,
+					"url":          args.URL,
+				},
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/identity-providers", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating identity provider: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "identity_providers_update", "Update a JumpCloud identity provider. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args identityProviderUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IdentityProviderConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			// Fetch current to merge (PUT requires full object).
+			current, err := client.Get(ctx, "/identity-providers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting identity provider: %v", err)), nil, nil
+			}
+			var obj map[string]any
+			json.Unmarshal(current, &obj)
+			if args.Name != "" {
+				obj["name"] = args.Name
+			}
+			if args.Type != "" {
+				obj["type"] = args.Type
+			}
+			oidc, _ := obj["oidc"].(map[string]any)
+			if oidc == nil {
+				oidc = map[string]any{}
+			}
+			if args.ClientID != "" {
+				oidc["clientId"] = args.ClientID
+			}
+			if args.ClientSecret != "" {
+				oidc["clientSecret"] = args.ClientSecret
+			}
+			if args.URL != "" {
+				oidc["url"] = args.URL
+			}
+			obj["oidc"] = oidc
+			if !args.Execute {
+				return planResult("update", "identity provider", args.Identifier, id, obj)
+			}
+			data, err := client.Update(ctx, "/identity-providers/"+id, obj)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating identity provider: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "identity_providers_delete", "Delete a JumpCloud identity provider. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.IdentityProviderConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "identity provider", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/identity-providers/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting identity provider: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Identity provider %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
 func (s *Server) registerSoftwareTools() {
 	addTypedTool(s, "software_list", "List all JumpCloud software apps. Returns objects with id, displayName, settings, createdAt, updatedAt.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
@@ -3923,6 +4087,13 @@ func describeCommand(parts []string) string {
 			"create": "Create a new IP list with IP entries.",
 			"update": "Update an existing IP list.",
 			"delete": "Delete an IP list. IRREVERSIBLE.",
+		},
+		"identity-providers": {
+			"list":   "List all JumpCloud identity providers for SSO federation.",
+			"get":    "Get an identity provider by name or ID.",
+			"create": "Create a new identity provider (OIDC, GOOGLE, OKTA, AZURE).",
+			"update": "Update an existing identity provider.",
+			"delete": "Delete an identity provider. IRREVERSIBLE.",
 		},
 		"software": {
 			"list":   "List all JumpCloud software apps.",
