@@ -178,10 +178,10 @@ fi
 
 # MCP tools count
 MCP_COUNT=$($JC mcp tools 2>/dev/null | wc -l | tr -d ' ')
-if [ "$MCP_COUNT" -eq 173 ]; then
+if [ "$MCP_COUNT" -eq 178 ]; then
   pass "mcp tools count ($MCP_COUNT)"
 else
-  fail "mcp tools count" "expected 173, got $MCP_COUNT"
+  fail "mcp tools count" "expected 178, got $MCP_COUNT"
 fi
 
 # Org list (no --limit; org returns a single object)
@@ -358,6 +358,11 @@ if $JC assets devices list --limit 2 > /dev/null 2>&1; then
   run_ok "assets devices list (table)" $JC assets devices list --limit 2 --output table
 else
   skip "assets devices list (not provisioned)"
+fi
+if $JC identity-providers list > /dev/null 2>&1; then
+  pass "identity-providers list (json)"
+else
+  pass "identity-providers list (empty is OK)"
 fi
 run_ok "ldap list (human)"             $JC ldap list --output human
 run_ok "ad list (json)"                $JC ad list --limit 3

@@ -72,8 +72,8 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 26 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, RADIUS, LDAP, Active Directory, Apple MDM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
-- **AI-native** — built-in [MCP server](#mcp-server) with 163 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 27 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, identity providers, RADIUS, LDAP, Active Directory, Apple MDM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
+- **AI-native** — built-in [MCP server](#mcp-server) with 178 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -180,6 +180,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `admins` | list, get, create, update, delete | Manage administrator accounts |
 | `auth-policies` | list, get, create, update, delete, enable, disable, simulate, blast-radius | Conditional access policies |
 | `iplists` | list, get, create, update, delete | Manage IP lists for auth policies |
+| `identity-providers` | list, get, create, update, delete | Manage identity providers for SSO/OIDC |
 | `insights` | query, count, distinct, save, saved, run | Query Directory Insights events |
 | `graph` | traverse, bind, unbind | Traverse and manage resource associations |
 | `org` | list, get, settings, update | View and update organization settings |
@@ -317,6 +318,15 @@ jc iplists list -t                                # List IP lists
 jc iplists create --name "Office IPs" --ips "10.0.0.0/8,192.168.1.0/24"
 jc iplists update "Office IPs" --ips "10.0.0.0/8"
 jc iplists delete "Office IPs"
+```
+
+### Identity Providers
+
+```bash
+jc identity-providers list -t                     # List identity providers
+jc idp list                                       # Short alias
+jc identity-providers get "Corporate OIDC"        # Get by name
+jc identity-providers create --name "Corp IdP" --type OIDC --client-id abc --client-secret xyz --url https://accounts.google.com
 ```
 
 ### Insights (Directory Insights)
@@ -551,7 +561,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**163 tools available** covering all 26 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
+**178 tools available** covering all 27 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -881,18 +891,18 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 26 resource types + utilities
+  cmd/                  CLI commands (Cobra) — 27 resource types + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
   resolve/              Name-to-ID resolution with file-based caching
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
-  tui/                  Interactive terminal UI (Bubbletea) — 26 resource views
-  mcp/                  MCP server (official Go SDK) — 163 tools
+  tui/                  Interactive terminal UI (Bubbletea) — 27 resource views
+  mcp/                  MCP server (official Go SDK) — 178 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
-  schema/               Machine-readable CLI schema (26 resource schemas)
+  schema/               Machine-readable CLI schema (27 resource schemas)
   simulator/            Auth policy simulator (three-valued logic)
   plan/                 Plan mode rendering
   version/              Build-time version injection
