@@ -393,7 +393,7 @@ func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
 	want := []string{
 		"hr-directories",
 		"patch-management",
-		"access-requests", "ai-saas-management", "vault",
+		"access-requests", "vault",
 		"mfa-configurations", "device-trust", "password-policies",
 	}
 	for _, k := range want {

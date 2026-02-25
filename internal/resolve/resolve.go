@@ -270,6 +270,14 @@ func ExtractAssetName(raw json.RawMessage) (string, error) {
 	return name, nil
 }
 
+// SaaSManagementConfig is the resolution config for JumpCloud SaaS Management applications (V2 API).
+var SaaSManagementConfig = ResourceConfig{
+	CacheKey:     "saas-management",
+	ListEndpoint: "/saas-management/applications",
+	NameField:    "catalog_app_id",
+	IDField:      "id",
+}
+
 // DuoAccountConfig is the resolution config for JumpCloud Duo accounts (V2 API).
 var DuoAccountConfig = ResourceConfig{
 	CacheKey:     "duo",

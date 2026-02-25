@@ -361,6 +361,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
 		// User States
 		"user_states_list", "user_states_get", "user_states_create", "user_states_delete",
+		// SaaS Management
+		"saas_management_list", "saas_management_get", "saas_management_create", "saas_management_update", "saas_management_delete",
+		"saas_management_accounts", "saas_management_account_get", "saas_management_account_delete",
+		"saas_management_usage", "saas_management_licenses", "saas_management_catalog_get",
 		// Custom Emails
 		"custom_emails_templates", "custom_emails_get", "custom_emails_create", "custom_emails_update", "custom_emails_delete",
 		// App Templates
@@ -381,8 +385,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 178 {
-		t.Errorf("expected 178 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 189 {
+		t.Errorf("expected 189 tools, got %d", len(result.Tools))
 	}
 }
 

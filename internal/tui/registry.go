@@ -256,6 +256,7 @@ var resourceCategory = map[string]Category{
 	"auth-policies": CategorySecurity,
 	"iplists":             CategorySecurity,
 	"identity-providers": CategoryAccess,
+	"saas-management":    CategoryAccess,
 
 	// Insights
 	"insights": CategoryInsights,
@@ -301,6 +302,7 @@ var displayNames = map[string]string{
 	"custom-emails":    "Custom Emails",
 	"app-templates":        "App Templates",
 	"identity-providers":   "Identity Providers",
+	"saas-management":     "SaaS Management",
 }
 
 // listEndpoints maps schema resource names to their list API endpoint.
@@ -333,6 +335,7 @@ var listEndpoints = map[string]string{
 	"system-insights":    "/systeminsights",
 	"insights":           "/events",
 	"identity-providers": "/identity-providers",
+	"saas-management":   "/saas-management/applications",
 }
 
 // clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
@@ -370,7 +373,6 @@ var placeholderEntries = []ResourceEntry{
 	{Key: "hr-directories", DisplayName: "HR Directories", Category: CategoryUserMgmt, Placeholder: true},
 	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
 	{Key: "access-requests", DisplayName: "Access Requests", Category: CategoryAccess, Placeholder: true},
-	{Key: "ai-saas-management", DisplayName: "AI & SaaS Management", Category: CategoryAccess, Placeholder: true},
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
 	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
 	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},

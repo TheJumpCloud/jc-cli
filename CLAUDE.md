@@ -61,7 +61,7 @@ Every resource (users, devices, groups, commands, policies, apps) follows the sa
 Import hierarchy (strict — NO cycles allowed): `style` (leaf) ← `component` ← `screen` ← `tui` ← `cmd/tui.go` (assembly).
 
 - `Screen` interface (`tea.Model` + `Title()`) with `NavStack` push/pop navigation and breadcrumbs.
-- `ResourceEntry` registry maps resource names to schema-driven `ListScreen`/`DetailScreen` — all 27 resources use the same generic views.
+- `ResourceEntry` registry maps resource names to schema-driven `ListScreen`/`DetailScreen` — all 28 resources use the same generic views.
 - `fetch/` subpackage: async data loading with generation-based cache staleness (each navigation bumps generation; stale results are discarded).
 
 ## Testing Patterns

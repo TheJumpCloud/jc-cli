@@ -153,6 +153,39 @@ type identityProviderUpdateInput struct {
 	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to execute the update"`
 }
 
+type saasCreateInput struct {
+	CatalogAppID    string `json:"catalog_app_id" jsonschema:"Catalog application ID"`
+	Status          string `json:"status,omitempty" jsonschema:"Application status (APPROVED, UNAPPROVED, IGNORED)"`
+	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"Access restriction (DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING)"`
+}
+
+type saasUpdateInput struct {
+	Identifier      string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the SaaS application to update"`
+	Status          string `json:"status,omitempty" jsonschema:"New status (APPROVED, UNAPPROVED, IGNORED)"`
+	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"New access restriction"`
+	Execute         bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type saasAccountInput struct {
+	Identifier string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the parent SaaS application"`
+	AccountID  string `json:"account_id" jsonschema:"Account ID"`
+}
+
+type saasAccountDeleteInput struct {
+	Identifier string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the parent SaaS application"`
+	AccountID  string `json:"account_id" jsonschema:"Account ID to delete"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type saasUsageInput struct {
+	Identifier string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the SaaS application"`
+	DayCount   int    `json:"day_count,omitempty" jsonschema:"Number of days of usage data (default 30)"`
+}
+
+type saasCatalogInput struct {
+	CatalogAppID string `json:"catalog_app_id" jsonschema:"Catalog application ID (e.g. jumpcloud, slack)"`
+}
+
 type softwareCreateInput struct {
 	Name     string `json:"name" jsonschema:"Display name for the software app"`
 	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
@@ -567,6 +600,9 @@ func (s *Server) registerTools() {
 
 	// --- Duo tools ---
 	s.registerDuoTools()
+
+	// --- SaaS Management tools ---
+	s.registerSaaSManagementTools()
 
 	// --- Custom Emails tools ---
 	s.registerCustomEmailTools()
@@ -5131,6 +5167,253 @@ func textResult(text string) *mcp.CallToolResult {
 			&mcp.TextContent{Text: text},
 		},
 	}
+}
+
+func (s *Server) registerSaaSManagementTools() {
+	addTypedTool(s, "saas_management_list", "List all JumpCloud SaaS Management applications. Returns objects with id, catalog_app_id, status, discovered_at.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			exprs, err := filter.ParseAll(args.Filter)
+			if err != nil {
+				return errorResult(fmt.Sprintf("parsing filters: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/saas-management/applications", api.V2ListOptions{
+				Limit:  args.Limit,
+				Sort:   args.Sort,
+				Filter: filter.ToV2Queries(exprs),
+			})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing SaaS applications: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "saas_management_get", "Get a single JumpCloud SaaS Management application by catalog app ID or hex ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/saas-management/applications/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting SaaS application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_create", "Create a new JumpCloud SaaS Management application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{"catalog_app_id": args.CatalogAppID}
+			if args.Status != "" {
+				body["status"] = args.Status
+			}
+			if args.AccessRestriction != "" {
+				body["access_restriction"] = args.AccessRestriction
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/saas-management/applications", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating SaaS application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_update", "Update a JumpCloud SaaS Management application. Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{}
+			if args.Status != "" {
+				body["status"] = args.Status
+			}
+			if args.AccessRestriction != "" {
+				body["access_restriction"] = args.AccessRestriction
+			}
+			if len(body) == 0 {
+				return errorResult("no fields to update"), nil, nil
+			}
+			if !args.Execute {
+				effects := make([]string, 0, len(body))
+				for k, v := range body {
+					effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+				}
+				return planResult("update", "SaaS application", args.Identifier, id, effects)
+			}
+			data, err := client.Update(ctx, "/saas-management/applications/"+id, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating SaaS application: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_delete", "Delete a JumpCloud SaaS Management application. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "SaaS application", args.Identifier, id, nil)
+			}
+			_, err = client.Delete(ctx, "/saas-management/applications/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting SaaS application: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("SaaS application %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_accounts", "List accounts for a JumpCloud SaaS Management application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			result, err := client.ListAll(ctx, fmt.Sprintf("/saas-management/applications/%s/accounts", id), api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing SaaS accounts: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "saas_management_account_get", "Get a specific account for a JumpCloud SaaS Management application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasAccountInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			appID, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, fmt.Sprintf("/saas-management/applications/%s/accounts/%s", appID, args.AccountID))
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting SaaS account: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_account_delete", "Delete an account from a JumpCloud SaaS Management application. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasAccountDeleteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			appID, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "SaaS account", args.AccountID, args.AccountID, nil)
+			}
+			_, err = client.Delete(ctx, fmt.Sprintf("/saas-management/applications/%s/accounts/%s", appID, args.AccountID))
+			if err != nil {
+				return errorResult(fmt.Sprintf("deleting SaaS account: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("SaaS account %q deleted successfully.", args.AccountID)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saas_management_usage", "Get usage data for a JumpCloud SaaS Management application.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasUsageInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			appID, err := r.Resolve(ctx, args.Identifier, resolve.SaaSManagementConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			dayCount := args.DayCount
+			if dayCount <= 0 {
+				dayCount = 30
+			}
+			result, err := client.ListAll(ctx, fmt.Sprintf("/saas-management/applications/%s/usage?day_count=%d", appID, dayCount), api.V2ListOptions{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting SaaS usage: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "saas_management_licenses", "List all JumpCloud SaaS Management application licenses.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/saas-management/application-licenses", api.V2ListOptions{
+				Limit: args.Limit,
+			})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing SaaS licenses: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "saas_management_catalog_get", "Get a SaaS application catalog entry by catalog app ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args saasCatalogInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/saas-management/application-catalog/"+args.CatalogAppID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting SaaS catalog entry: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
 }
 
 func (s *Server) registerCustomEmailTools() {
