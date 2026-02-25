@@ -76,6 +76,7 @@ type ResourceEntry struct {
 	Placeholder     bool                                           // True for "Coming soon" items
 	SubMenu         []ResourceEntry                                // Non-nil for sub-menu groupings (e.g. Cloud Directories)
 	FlattenFunc     func([]json.RawMessage) []json.RawMessage      // Optional post-fetch flattening (e.g. assets)
+	ResponseKey     string                                         // V2 wrapped response key (e.g. "identityProviders")
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -253,7 +254,8 @@ var resourceCategory = map[string]Category{
 
 	// Security
 	"auth-policies": CategorySecurity,
-	"iplists":       CategorySecurity,
+	"iplists":             CategorySecurity,
+	"identity-providers": CategoryAccess,
 
 	// Insights
 	"insights": CategoryInsights,
@@ -297,7 +299,8 @@ var displayNames = map[string]string{
 	"office365":        "M365",
 	"duo":              "Duo Security",
 	"custom-emails":    "Custom Emails",
-	"app-templates":    "App Templates",
+	"app-templates":        "App Templates",
+	"identity-providers":   "Identity Providers",
 }
 
 // listEndpoints maps schema resource names to their list API endpoint.
@@ -327,8 +330,9 @@ var listEndpoints = map[string]string{
 	"office365":        "/office365s",
 	"duo":              "/duo/accounts",
 	"custom-emails":    "/customemail/templates",
-	"system-insights": "/systeminsights",
-	"insights":        "/events",
+	"system-insights":    "/systeminsights",
+	"insights":           "/events",
+	"identity-providers": "/identity-providers",
 }
 
 // clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
@@ -364,7 +368,6 @@ var SystemInsightsTables = []string{
 // placeholderEntries defines "Coming soon" items shown grayed out in the menu.
 var placeholderEntries = []ResourceEntry{
 	{Key: "hr-directories", DisplayName: "HR Directories", Category: CategoryUserMgmt, Placeholder: true},
-	{Key: "identity-providers", DisplayName: "Identity Providers", Category: CategoryUserMgmt, Placeholder: true},
 	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
 	{Key: "access-requests", DisplayName: "Access Requests", Category: CategoryAccess, Placeholder: true},
 	{Key: "ai-saas-management", DisplayName: "AI & SaaS Management", Category: CategoryAccess, Placeholder: true},
@@ -467,6 +470,12 @@ func BuildRegistry() []ResourceEntry {
 			SearchEndpoint:  searchEndpoints[name],
 			SearchFields:    searchFields[name],
 			Schema:          s,
+		}
+
+		// Identity Providers: wrapped V2 response + OIDC field flattening.
+		if name == "identity-providers" {
+			entry.ResponseKey = "identityProviders"
+			entry.FlattenFunc = flattenIdentityProvidersTUI
 		}
 
 		// System Insights rows have no ID of their own but contain a system_id
@@ -593,4 +602,31 @@ func tuiFlattenAssetValue(raw json.RawMessage) any {
 		return v
 	}
 	return string(raw)
+}
+
+// flattenIdentityProvidersTUI promotes oidc sub-fields to top level.
+func flattenIdentityProvidersTUI(data []json.RawMessage) []json.RawMessage {
+	out := make([]json.RawMessage, len(data))
+	for i, raw := range data {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			out[i] = raw
+			continue
+		}
+		if oidcRaw, ok := obj["oidc"]; ok {
+			var oidc map[string]json.RawMessage
+			if err := json.Unmarshal(oidcRaw, &oidc); err == nil {
+				if v, ok := oidc["clientId"]; ok {
+					obj["clientId"] = v
+				}
+				if v, ok := oidc["url"]; ok {
+					obj["url"] = v
+				}
+			}
+			delete(obj, "oidc")
+		}
+		result, _ := json.Marshal(obj)
+		out[i] = result
+	}
+	return out
 }

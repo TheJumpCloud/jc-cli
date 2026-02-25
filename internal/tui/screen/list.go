@@ -112,7 +112,8 @@ func (l *ListScreen) fetchData() tea.Cmd {
 
 	case tui.ClientV2:
 		opts := api.V2ListOptions{
-			Sort: l.sortString(),
+			Sort:        l.sortString(),
+			ResponseKey: l.entry.ResponseKey,
 		}
 		if len(filters) > 0 {
 			opts.Filter = filter.ToV2Queries(filters)
