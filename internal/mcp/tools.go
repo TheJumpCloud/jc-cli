@@ -186,6 +186,27 @@ type saasCatalogInput struct {
 	CatalogAppID string `json:"catalog_app_id" jsonschema:"Catalog application ID (e.g. jumpcloud, slack)"`
 }
 
+type accessRequestCreateInput struct {
+	User         string `json:"user" jsonschema:"User name or ID"`
+	Device       string `json:"device" jsonschema:"Device name or ID"`
+	Expiry       string `json:"expiry" jsonschema:"Expiry time in RFC 3339 format"`
+	Sudo         bool   `json:"sudo,omitempty" jsonschema:"Enable sudo access"`
+	SudoNoPasswd bool   `json:"sudo_nopasswd,omitempty" jsonschema:"Enable passwordless sudo"`
+	Remarks      string `json:"remarks,omitempty" jsonschema:"Optional remarks"`
+}
+
+type accessRequestUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Access request ID"`
+	Expiry     string `json:"expiry,omitempty" jsonschema:"New expiry time in RFC 3339 format"`
+	Remarks    string `json:"remarks,omitempty" jsonschema:"New remarks"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
+type accessRequestRevokeInput struct {
+	Identifier string `json:"identifier" jsonschema:"Access request ID to revoke"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+}
+
 type softwareCreateInput struct {
 	Name     string `json:"name" jsonschema:"Display name for the software app"`
 	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
@@ -603,6 +624,9 @@ func (s *Server) registerTools() {
 
 	// --- SaaS Management tools ---
 	s.registerSaaSManagementTools()
+
+	// --- Access Requests tools ---
+	s.registerAccessRequestsTools()
 
 	// --- Custom Emails tools ---
 	s.registerCustomEmailTools()
@@ -5412,6 +5436,146 @@ func (s *Server) registerSaaSManagementTools() {
 				return errorResult(fmt.Sprintf("getting SaaS catalog entry: %v", err)), nil, nil
 			}
 			return textResult(string(data)), nil, nil
+		},
+	)
+}
+
+func (s *Server) registerAccessRequestsTools() {
+	addTypedTool(s, "access_requests_list", "List all JumpCloud access requests for temporary elevated device privileges. Returns objects with accessId, requestorId, resourceId, accessState, expiry.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			exprs, err := filter.ParseAll(args.Filter)
+			if err != nil {
+				return errorResult(fmt.Sprintf("parsing filters: %v", err)), nil, nil
+			}
+			result, err := client.ListAll(ctx, "/accessrequests", api.V2ListOptions{
+				Limit:  args.Limit,
+				Sort:   args.Sort,
+				Filter: filter.ToV2Queries(exprs),
+			})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing access requests: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "access_requests_get", "Get a single JumpCloud access request by its access ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/accessrequests/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting access request: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "access_requests_create", "Create a JumpCloud access request for temporary elevated device privileges.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args accessRequestCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			v1client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V1 API client: %v", err)), nil, nil
+			}
+			userR := resolve.NewResolver(v1client)
+			userID, err := userR.Resolve(ctx, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(fmt.Sprintf("resolving user: %v", err)), nil, nil
+			}
+			deviceR := resolve.NewResolver(v1client)
+			deviceID, err := deviceR.Resolve(ctx, args.Device, resolve.DeviceConfig)
+			if err != nil {
+				return errorResult(fmt.Sprintf("resolving device: %v", err)), nil, nil
+			}
+			body := map[string]any{
+				"requestorId":  userID,
+				"resourceId":   deviceID,
+				"resourceType": "device",
+				"expiry":       args.Expiry,
+			}
+			if args.Remarks != "" {
+				body["remarks"] = args.Remarks
+			}
+			if args.Sudo || args.SudoNoPasswd {
+				body["additionalAttributes"] = map[string]any{
+					"sudo": map[string]any{
+						"enabled":         args.Sudo || args.SudoNoPasswd,
+						"withoutPassword": args.SudoNoPasswd,
+					},
+				}
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V2 API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/accessrequests", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating access request: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "access_requests_update", "Update a JumpCloud access request (e.g. extend expiry). Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args accessRequestUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			body := map[string]any{}
+			if args.Expiry != "" {
+				body["expiry"] = args.Expiry
+			}
+			if args.Remarks != "" {
+				body["remarks"] = args.Remarks
+			}
+			if len(body) == 0 {
+				return errorResult("no fields to update"), nil, nil
+			}
+			if !args.Execute {
+				effects := make([]string, 0, len(body))
+				for k, v := range body {
+					effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+				}
+				return planResult("update", "access request", args.Identifier, args.Identifier, effects)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Update(ctx, "/accessrequests/"+args.Identifier, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating access request: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "access_requests_revoke", "Revoke a JumpCloud access request, removing temporary elevated privileges. Set execute=true to revoke; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args accessRequestRevokeInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("revoke", "access request", args.Identifier, args.Identifier, []string{"Remove temporary elevated privileges"})
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			_, err = client.Create(ctx, "/accessrequests/"+args.Identifier+"/revoke", map[string]any{})
+			if err != nil {
+				return errorResult(fmt.Sprintf("revoking access request: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Access request %q revoked successfully.", args.Identifier)), nil, nil
 		},
 	)
 }

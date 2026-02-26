@@ -296,6 +296,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 
 	expectedTools := []string{
 		"jc_ping",
+		// Access Requests
+		"access_requests_list", "access_requests_get", "access_requests_create", "access_requests_update", "access_requests_revoke",
 		// Users
 		"users_list", "users_get", "users_create", "users_update", "users_delete",
 		"users_lock", "users_unlock", "users_reset_mfa", "users_reset_password",
@@ -385,8 +387,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 189 {
-		t.Errorf("expected 189 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 194 {
+		t.Errorf("expected 194 tools, got %d", len(result.Tools))
 	}
 }
 
