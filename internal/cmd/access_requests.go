@@ -25,6 +25,7 @@ func newAccessRequestsCmd() *cobra.Command {
 	cmd.AddCommand(newAccessRequestsListCmd())
 	cmd.AddCommand(newAccessRequestsGetCmd())
 	cmd.AddCommand(newAccessRequestsCreateCmd())
+	cmd.AddCommand(newAccessRequestsUpdateCmd())
 
 	return cmd
 }
@@ -223,6 +224,77 @@ func runAccessRequestsCreate(cmd *cobra.Command, user, device, expiry string, su
 	}
 
 	result, err := v2client.Create(cmd.Context(), "/accessrequests", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+func newAccessRequestsUpdateCmd() *cobra.Command {
+	var (
+		expiryFlag  string
+		remarksFlag string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <access-id>",
+		Short: "Update an access request",
+		Long: `Update a JumpCloud access request by its access ID.
+
+At least one field flag must be specified.
+
+Examples:
+  jc access-requests update aabbccddee112233aabb0001 --expiry 2026-05-01T00:00:00Z
+  jc access-requests update aabbccddee112233aabb0001 --remarks "Extended by admin"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAccessRequestsUpdate(cmd, args[0], expiryFlag, remarksFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&expiryFlag, "expiry", "", "New expiry timestamp in RFC 3339 format")
+	cmd.Flags().StringVar(&remarksFlag, "remarks", "", "Updated remarks")
+
+	return cmd
+}
+
+func runAccessRequestsUpdate(cmd *cobra.Command, id, expiry, remarks string) error {
+	body := map[string]any{}
+
+	if cmd.Flags().Changed("expiry") {
+		body["expiry"] = expiry
+	}
+	if cmd.Flags().Changed("remarks") {
+		body["remarks"] = remarks
+	}
+
+	if len(body) == 0 {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --expiry, --remarks)")
+	}
+
+	if viper.GetBool("plan") {
+		var effects []string
+		for k, v := range body {
+			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		}
+		p := &plan.Plan{
+			Action:     "update",
+			Resource:   "access request",
+			Target:     id,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	result, err := client.Update(cmd.Context(), "/accessrequests/"+id, body)
 	if err != nil {
 		return err
 	}

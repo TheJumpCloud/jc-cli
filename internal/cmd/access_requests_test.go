@@ -335,3 +335,95 @@ func TestAccessRequestsCreate_Plan(t *testing.T) {
 		t.Errorf("plan should mention 'access request', got:\n%s", stderr)
 	}
 }
+
+// --- Update Tests ---
+
+func TestAccessRequestsUpdate(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"access-requests", "update", "aabbccddee112233aabb0001",
+		"--expiry", "2026-05-01T00:00:00Z",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["expiry"] != "2026-05-01T00:00:00Z" {
+		t.Errorf("expiry = %v, want '2026-05-01T00:00:00Z'", result["expiry"])
+	}
+}
+
+func TestAccessRequestsUpdate_NoFields(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"access-requests", "update", "aabbccddee112233aabb0001",
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when no fields specified, got nil")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("error = %q, want to contain 'no fields to update'", err.Error())
+	}
+}
+
+func TestAccessRequestsUpdate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{
+		"access-requests", "update", "aabbccddee112233aabb0001",
+		"--expiry", "2026-05-01T00:00:00Z",
+		"--plan",
+	})
+
+	err := cmd.Execute()
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "update") {
+		t.Errorf("plan should mention 'update', got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "access request") {
+		t.Errorf("plan should mention 'access request', got:\n%s", stderr)
+	}
+}
