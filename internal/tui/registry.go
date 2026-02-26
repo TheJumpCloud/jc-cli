@@ -248,10 +248,11 @@ var resourceCategory = map[string]Category{
 	"policy-templates": CategoryDeviceMgmt,
 
 	// Access
-	"apps":          CategoryAccess,
-	"app-templates": CategoryAccess,
-	"ldap":          CategoryAccess,
-	"radius":        CategoryAccess,
+	"access-requests": CategoryAccess,
+	"apps":            CategoryAccess,
+	"app-templates":   CategoryAccess,
+	"ldap":            CategoryAccess,
+	"radius":          CategoryAccess,
 
 	// Security
 	"auth-policies": CategorySecurity,
@@ -304,6 +305,7 @@ var displayNames = map[string]string{
 	"app-templates":        "App Templates",
 	"identity-providers":   "Identity Providers",
 	"saas-management":     "SaaS Management",
+	"access-requests":     "Access Requests",
 }
 
 // listEndpoints maps schema resource names to their list API endpoint.
@@ -337,6 +339,7 @@ var listEndpoints = map[string]string{
 	"insights":           "/events",
 	"identity-providers": "/identity-providers",
 	"saas-management":   "/saas-management/applications",
+	"access-requests":   "/accessrequests",
 }
 
 // clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
@@ -373,7 +376,6 @@ var SystemInsightsTables = []string{
 var placeholderEntries = []ResourceEntry{
 	{Key: "hr-directories", DisplayName: "HR Directories", Category: CategoryUserMgmt, Placeholder: true},
 	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
-	{Key: "access-requests", DisplayName: "Access Requests", Category: CategoryAccess, Placeholder: true},
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
 	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
 	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
