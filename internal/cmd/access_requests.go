@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -26,6 +27,7 @@ func newAccessRequestsCmd() *cobra.Command {
 	cmd.AddCommand(newAccessRequestsGetCmd())
 	cmd.AddCommand(newAccessRequestsCreateCmd())
 	cmd.AddCommand(newAccessRequestsUpdateCmd())
+	cmd.AddCommand(newAccessRequestsRevokeCmd())
 
 	return cmd
 }
@@ -303,3 +305,61 @@ func runAccessRequestsUpdate(cmd *cobra.Command, id, expiry, remarks string) err
 	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
 
+func newAccessRequestsRevokeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "revoke <access-id>",
+		Short: "Revoke an access request",
+		Long: `Revoke a JumpCloud access request by its access ID.
+
+This removes temporary elevated privileges from the user.
+Requires confirmation unless --force is set.
+
+Examples:
+  jc access-requests revoke aabbccddee112233aabb0001
+  jc access-requests revoke aabbccddee112233aabb0001 --force`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAccessRequestsRevoke(cmd, args[0])
+		},
+	}
+	return cmd
+}
+
+func runAccessRequestsRevoke(cmd *cobra.Command, id string) error {
+	if viper.GetBool("plan") {
+		p := &plan.Plan{
+			Action:   "revoke",
+			Resource: "access request",
+			Target:   id,
+			Effects:  []string{"Remove temporary elevated privileges"},
+		}
+		return renderPlan(cmd, p)
+	}
+
+	if !viper.GetBool("force") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Revoke access request %q? [y/N] ", id)
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	_, err = client.Create(cmd.Context(), "/accessrequests/"+id+"/revoke", map[string]any{})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Access request %q revoked successfully.\n", id)
+	return nil
+}

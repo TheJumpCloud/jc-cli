@@ -427,3 +427,99 @@ func TestAccessRequestsUpdate_Plan(t *testing.T) {
 		t.Errorf("plan should mention 'access request', got:\n%s", stderr)
 	}
 }
+
+// --- Revoke Tests ---
+
+func TestAccessRequestsRevoke(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"access-requests", "revoke", "aabbccddee112233aabb0001",
+		"--force",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "revoked") {
+		t.Errorf("output should contain 'revoked', got: %s", out)
+	}
+}
+
+func TestAccessRequestsRevoke_Cancelled(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+	overrideConfirmReader(t, "n\n")
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(&buf)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{
+		"access-requests", "revoke", "aabbccddee112233aabb0001",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "Cancelled") {
+		t.Errorf("stderr should contain 'Cancelled', got: %s", stderr)
+	}
+
+	// stdout should be empty (no revocation happened).
+	if buf.Len() != 0 {
+		t.Errorf("stdout should be empty after cancel, got: %s", buf.String())
+	}
+}
+
+func TestAccessRequestsRevoke_Plan(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{
+		"access-requests", "revoke", "aabbccddee112233aabb0001",
+		"--plan",
+	})
+
+	err := cmd.Execute()
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "revoke") {
+		t.Errorf("plan should mention 'revoke', got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "access request") {
+		t.Errorf("plan should mention 'access request', got:\n%s", stderr)
+	}
+}
