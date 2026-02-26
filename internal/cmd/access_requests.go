@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
 var accessRequestDefaultFields = []string{"accessId", "requestorId", "resourceId", "accessState", "expiry"}
@@ -22,6 +24,7 @@ func newAccessRequestsCmd() *cobra.Command {
 
 	cmd.AddCommand(newAccessRequestsListCmd())
 	cmd.AddCommand(newAccessRequestsGetCmd())
+	cmd.AddCommand(newAccessRequestsCreateCmd())
 
 	return cmd
 }
@@ -117,3 +120,114 @@ func runAccessRequestsGet(cmd *cobra.Command, id string) error {
 	opts := output.CurrentOptions()
 	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
+
+func newAccessRequestsCreateCmd() *cobra.Command {
+	var (
+		userFlag        string
+		deviceFlag      string
+		expiryFlag      string
+		sudoFlag        bool
+		sudoNoPasswdFlag bool
+		remarksFlag     string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an access request",
+		Long: `Create a JumpCloud access request for temporary elevated device privileges.
+
+Required flags: --user, --device, --expiry.
+The --user and --device flags accept names or 24-character hex IDs.
+
+Examples:
+  jc access-requests create --user alice --device JDOE-MBP --expiry 2026-04-01T00:00:00Z
+  jc access-requests create --user aabbccddee112233aabb1001 --device aabbccddee112233aabb2001 --expiry 2026-04-01T00:00:00Z --sudo`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAccessRequestsCreate(cmd, userFlag, deviceFlag, expiryFlag, sudoFlag, sudoNoPasswdFlag, remarksFlag)
+		},
+	}
+
+	cmd.Flags().StringVar(&userFlag, "user", "", "User name or ID (required)")
+	cmd.Flags().StringVar(&deviceFlag, "device", "", "Device hostname or ID (required)")
+	cmd.Flags().StringVar(&expiryFlag, "expiry", "", "Expiry timestamp in RFC 3339 format (required)")
+	cmd.Flags().BoolVar(&sudoFlag, "sudo", false, "Request sudo access")
+	cmd.Flags().BoolVar(&sudoNoPasswdFlag, "sudo-nopasswd", false, "Request passwordless sudo access")
+	cmd.Flags().StringVar(&remarksFlag, "remarks", "", "Optional remarks for the request")
+	_ = cmd.MarkFlagRequired("user")
+	_ = cmd.MarkFlagRequired("device")
+	_ = cmd.MarkFlagRequired("expiry")
+
+	return cmd
+}
+
+func runAccessRequestsCreate(cmd *cobra.Command, user, device, expiry string, sudo, sudoNoPasswd bool, remarks string) error {
+	if viper.GetBool("plan") {
+		effects := []string{
+			"user: " + user,
+			"device: " + device,
+			"expiry: " + expiry,
+		}
+		if sudo || sudoNoPasswd {
+			effects = append(effects, "sudo: enabled")
+		}
+		if remarks != "" {
+			effects = append(effects, "remarks: "+remarks)
+		}
+		p := &plan.Plan{
+			Action:     "create",
+			Resource:   "access request",
+			Target:     user + " → " + device,
+			Effects:    effects,
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	// Resolve user name/ID.
+	v1client, err := newV1Client()
+	if err != nil {
+		return err
+	}
+
+	userID, err := resolveUser(cmd.Context(), v1client, user)
+	if err != nil {
+		return err
+	}
+
+	deviceID, err := resolveDevice(cmd.Context(), v1client, device)
+	if err != nil {
+		return err
+	}
+
+	body := map[string]any{
+		"requestorId":  userID,
+		"resourceId":   deviceID,
+		"resourceType": "device",
+		"expiry":       expiry,
+	}
+	if remarks != "" {
+		body["remarks"] = remarks
+	}
+	if sudo || sudoNoPasswd {
+		body["additionalAttributes"] = map[string]any{
+			"sudo": map[string]any{
+				"enabled":         sudo || sudoNoPasswd,
+				"withoutPassword": sudoNoPasswd,
+			},
+		}
+	}
+
+	v2client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+
+	result, err := v2client.Create(cmd.Context(), "/accessrequests", body)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+

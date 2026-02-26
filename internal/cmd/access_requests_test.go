@@ -3,10 +3,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
 // startAccessRequestsServer creates a mock JumpCloud V2 server that handles access request endpoints:
@@ -243,5 +246,92 @@ func TestAccessRequestsGet_NotFound(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error for nonexistent ID, got nil")
+	}
+}
+
+// --- Create Tests ---
+
+func TestAccessRequestsCreate(t *testing.T) {
+	setupUsersTest(t)
+	users := []map[string]any{
+		{"_id": "aabbccddee112233aabb1001", "username": "alice"},
+	}
+	devices := []map[string]any{
+		{"_id": "aabbccddee112233aabb2001", "hostname": "JDOE-MBP"},
+	}
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, users, devices)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"access-requests", "create",
+		"--user", "aabbccddee112233aabb1001",
+		"--device", "aabbccddee112233aabb2001",
+		"--expiry", "2026-04-01T00:00:00Z",
+		"--sudo",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["accessId"] == nil || result["accessId"] == "" {
+		t.Error("expected accessId in response")
+	}
+	if result["requestorId"] != "aabbccddee112233aabb1001" {
+		t.Errorf("requestorId = %v, want aabbccddee112233aabb1001", result["requestorId"])
+	}
+	if result["resourceId"] != "aabbccddee112233aabb2001" {
+		t.Errorf("resourceId = %v, want aabbccddee112233aabb2001", result["resourceId"])
+	}
+}
+
+func TestAccessRequestsCreate_Plan(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errBuf := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{
+		"access-requests", "create",
+		"--user", "aabbccddee112233aabb1001",
+		"--device", "aabbccddee112233aabb2001",
+		"--expiry", "2026-04-01T00:00:00Z",
+		"--plan",
+	})
+
+	err := cmd.Execute()
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != plan.ExitCodePlan {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
+	}
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "create") {
+		t.Errorf("plan should mention 'create', got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "access request") {
+		t.Errorf("plan should mention 'access request', got:\n%s", stderr)
 	}
 }
