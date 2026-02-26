@@ -124,6 +124,7 @@ interface.`,
 	rootCmd.AddCommand(newAssetsCmd())
 	rootCmd.AddCommand(newIdentityProvidersCmd())
 	rootCmd.AddCommand(newSaaSManagementCmd())
+	rootCmd.AddCommand(newAccessRequestsCmd())
 	rootCmd.AddCommand(newTUICmd())
 	rootCmd.AddCommand(newSetupCmd())
 
@@ -317,7 +318,7 @@ var builtinCommands = map[string]bool{
 	"software": true, "ldap": true, "ad": true, "org": true,
 	"system-insights": true, "radius": true, "policy-templates": true,
 	"policy-groups": true, "apple-mdm": true, "user-states": true,
-	"assets": true, "identity-providers": true, "saas-management": true,
+	"assets": true, "identity-providers": true, "saas-management": true, "access-requests": true, "ar": true,
 	"gsuite": true, "office365": true, "duo": true, "custom-emails": true, "app-templates": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,
 	"tui": true, "setup": true,
