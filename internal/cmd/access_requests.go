@@ -21,6 +21,7 @@ func newAccessRequestsCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newAccessRequestsListCmd())
+	cmd.AddCommand(newAccessRequestsGetCmd())
 
 	return cmd
 }
@@ -87,4 +88,32 @@ func runAccessRequestsList(cmd *cobra.Command, limit int, sort string, filters [
 	}
 
 	return nil
+}
+
+func newAccessRequestsGetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get <access-id>",
+		Short: "Get an access request by ID",
+		Long: `Get a single JumpCloud access request by its access ID.
+
+Accepts the 24-character hex access ID returned when creating a request.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAccessRequestsGet(cmd, args[0])
+		},
+	}
+	return cmd
+}
+
+func runAccessRequestsGet(cmd *cobra.Command, id string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	result, err := client.Get(cmd.Context(), "/accessrequests/"+id)
+	if err != nil {
+		return err
+	}
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }

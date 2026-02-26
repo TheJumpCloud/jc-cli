@@ -195,3 +195,53 @@ func TestAccessRequestsList_Alias(t *testing.T) {
 		t.Errorf("got %d access requests, want 2", len(result))
 	}
 }
+
+// --- Get Tests ---
+
+func TestAccessRequestsGet_ByID(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"access-requests", "get", "aabbccddee112233aabb0001"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["accessState"] != "granted" {
+		t.Errorf("accessState = %v, want 'granted'", result["accessState"])
+	}
+	if result["accessId"] != "aabbccddee112233aabb0001" {
+		t.Errorf("accessId = %v, want 'aabbccddee112233aabb0001'", result["accessId"])
+	}
+}
+
+func TestAccessRequestsGet_NotFound(t *testing.T) {
+	setupUsersTest(t)
+	reqs := sampleAccessRequests()
+	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"access-requests", "get", "000000000000000000000000"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent ID, got nil")
+	}
+}
