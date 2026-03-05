@@ -22,14 +22,14 @@ func IsID(s string) bool {
 	return idPattern.MatchString(s)
 }
 
-// cacheEntry holds a cached name→ID mapping with a timestamp.
-type cacheEntry struct {
+// CacheEntry holds a cached name→ID mapping with a timestamp.
+type CacheEntry struct {
 	ID        string    `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 // cacheFile represents the on-disk cache for a single resource type.
-type cacheFile map[string]cacheEntry
+type cacheFile map[string]CacheEntry
 
 // Resolver resolves human-friendly names (usernames, hostnames) to JumpCloud IDs.
 // It checks if the input is already an ID, then consults a file-based cache,
@@ -360,7 +360,7 @@ func (r *Resolver) storeCache(name, id, cacheKey string) {
 		cf = make(cacheFile)
 	}
 
-	cf[strings.ToLower(name)] = cacheEntry{
+	cf[strings.ToLower(name)] = CacheEntry{
 		ID:        id,
 		Timestamp: r.nowFn(),
 	}
@@ -608,7 +608,7 @@ func (r *V2Resolver) storeCache(name, id, cacheKey string) {
 		cf = make(cacheFile)
 	}
 
-	cf[strings.ToLower(name)] = cacheEntry{
+	cf[strings.ToLower(name)] = CacheEntry{
 		ID:        id,
 		Timestamp: r.nowFn(),
 	}
@@ -657,6 +657,21 @@ func cacheDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cache", "jc")
+}
+
+// ReadCacheEntries returns the cached name→ID entries for the given cache key.
+// Returns nil if the cache file is missing or unreadable.
+func ReadCacheEntries(cacheKey string) map[string]CacheEntry {
+	path := filepath.Join(cacheDir(), cacheKey+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var entries map[string]CacheEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil
+	}
+	return entries
 }
 
 // readCacheFile reads and parses a cache file for the given resource type.
