@@ -92,7 +92,8 @@ func newAppleMDMGetCmd() *cobra.Command {
 		Long: `Get a single JumpCloud Apple MDM configuration by name or ID.
 
 Accepts a configuration name or a 24-character hex ID.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppleMDMGet(cmd, args[0])
 		},
@@ -194,7 +195,8 @@ func newAppleMDMUpdateCmd() *cobra.Command {
 
 Accepts a configuration name or 24-character hex ID.
 Specify only the fields you want to change.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppleMDMUpdate(cmd, args[0], name, orgName)
 		},
@@ -263,7 +265,8 @@ func newAppleMDMDeleteCmd() *cobra.Command {
 
 Accepts a configuration name or 24-character hex ID.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppleMDMDelete(cmd, args[0])
 		},
@@ -331,7 +334,8 @@ func newAppleMDMEnrollmentProfilesCmd() *cobra.Command {
 		Use:   "enrollment-profiles <name-or-id>",
 		Short: "List enrollment profiles for an Apple MDM configuration",
 		Long:  "List all enrollment profiles associated with a JumpCloud Apple MDM configuration.",
-		Args:  cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppleMDMEnrollmentProfiles(cmd, args[0])
 		},
@@ -372,7 +376,8 @@ func newAppleMDMDevicesCmd() *cobra.Command {
 		Use:   "devices <name-or-id>",
 		Short: "List managed devices for an Apple MDM configuration",
 		Long:  "List all devices managed by a JumpCloud Apple MDM configuration.",
-		Args:  cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppleMDMDevices(cmd, args[0])
 		},

@@ -114,7 +114,8 @@ func newGsuiteGetCmd() *cobra.Command {
 
 Accepts a G Suite instance name (e.g., "Acme Corp") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.GsuiteConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGsuiteGet(cmd, args[0])
 		},
@@ -153,7 +154,8 @@ Accepts a G Suite instance name or 24-character hex ID.
 Returns the translation rules configured for the G Suite directory.
 
 Default fields: id, builtIn.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.GsuiteConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGsuiteTranslationRules(cmd, args[0])
 		},
@@ -202,7 +204,8 @@ Accepts a G Suite instance name or 24-character hex ID.
 Returns users from the G Suite directory that can be imported into JumpCloud.
 
 Default fields: email, firstname, lastname, status.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.GsuiteConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGsuiteImportUsers(cmd, args[0])
 		},

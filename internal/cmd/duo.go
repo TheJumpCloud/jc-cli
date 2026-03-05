@@ -102,7 +102,8 @@ func newDuoGetCmd() *cobra.Command {
 
 Accepts a Duo account name or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoGet(cmd, args[0])
 		},
@@ -192,7 +193,8 @@ func newDuoDeleteCmd() *cobra.Command {
 Accepts a Duo account name or 24-character hex ID.
 Shows the Duo account name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoDelete(cmd, args[0])
 		},
@@ -269,7 +271,8 @@ func newDuoAppsCmd() *cobra.Command {
 
 Default fields: id, name, apiHost.
 Use --output table for a readable ASCII table.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoApps(cmd, args[0], limitFlag)
 		},
@@ -321,7 +324,8 @@ func newDuoAppGetCmd() *cobra.Command {
 		Long: `Get a specific Duo application for a JumpCloud Duo account.
 
 Requires --app-id to specify which application to retrieve.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoAppGet(cmd, args[0], appID)
 		},
@@ -366,7 +370,8 @@ func newDuoAppCreateCmd() *cobra.Command {
 
 Required fields: --name, --api-host.
 The newly created Duo application object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoAppCreate(cmd, args[0], name, apiHost)
 		},
@@ -431,7 +436,8 @@ func newDuoAppDeleteCmd() *cobra.Command {
 Requires --app-id to specify which application to delete.
 Shows the application name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDuoAppDelete(cmd, args[0], appID)
 		},

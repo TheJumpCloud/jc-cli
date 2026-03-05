@@ -114,7 +114,8 @@ func newOffice365GetCmd() *cobra.Command {
 
 Accepts an Office 365 integration name (e.g., "Contoso") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.Office365Config),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runOffice365Get(cmd, args[0])
 		},
@@ -151,7 +152,8 @@ func newOffice365TranslationRulesCmd() *cobra.Command {
 
 Accepts an Office 365 integration name or 24-character hex ID.
 Default fields: id, builtIn.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.Office365Config),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runOffice365TranslationRules(cmd, args[0])
 		},
@@ -198,7 +200,8 @@ func newOffice365ImportUsersCmd() *cobra.Command {
 
 Accepts an Office 365 integration name or 24-character hex ID.
 Default fields: email, firstname, lastname, status.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.Office365Config),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runOffice365ImportUsers(cmd, args[0])
 		},
