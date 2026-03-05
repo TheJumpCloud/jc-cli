@@ -111,7 +111,8 @@ func newRADIUSGetCmd() *cobra.Command {
 
 Accepts a server name (e.g., "Office RADIUS") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.RADIUSServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRADIUSGet(cmd, args[0])
 		},
@@ -220,7 +221,8 @@ func newRADIUSUpdateCmd() *cobra.Command {
 
 Accepts a server name or 24-character hex ID.
 Specify only the fields you want to change. The updated RADIUS server object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.RADIUSServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRADIUSUpdate(cmd, args[0], name, sharedSecret, authPort, accountingPort)
 		},
@@ -298,7 +300,8 @@ func newRADIUSDeleteCmd() *cobra.Command {
 Accepts a server name or 24-character hex ID.
 Shows the server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.RADIUSServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRADIUSDelete(cmd, args[0])
 		},

@@ -113,7 +113,8 @@ func newADGetCmd() *cobra.Command {
 
 Accepts a domain name (e.g., "corp.example.com") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.ActiveDirectoryConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runADGet(cmd, args[0])
 		},
@@ -217,7 +218,8 @@ func newADUpdateCmd() *cobra.Command {
 
 Accepts an Active Directory domain or 24-character hex ID.
 Specify only the fields you want to change. The updated Active Directory object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.ActiveDirectoryConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runADUpdate(cmd, args[0], useCase, groupsEnabled)
 		},
@@ -287,7 +289,8 @@ func newADDeleteCmd() *cobra.Command {
 Accepts an Active Directory domain or 24-character hex ID.
 Shows the AD domain before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.ActiveDirectoryConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runADDelete(cmd, args[0])
 		},

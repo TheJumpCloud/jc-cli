@@ -118,7 +118,8 @@ func newLDAPGetCmd() *cobra.Command {
 
 Accepts an LDAP server name (e.g., "jumpcloud") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPGet(cmd, args[0])
 		},
@@ -231,7 +232,8 @@ func newLDAPUpdateCmd() *cobra.Command {
 
 Accepts an LDAP server name or 24-character hex ID.
 Specify only the fields you want to change. The updated LDAP server object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPUpdate(cmd, args[0], name, userLockoutAction, userPasswordExpirationAction)
 		},
@@ -305,7 +307,8 @@ func newLDAPDeleteCmd() *cobra.Command {
 Accepts an LDAP server name or 24-character hex ID.
 Shows the LDAP server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPDelete(cmd, args[0])
 		},
@@ -386,7 +389,8 @@ func newLDAPSambaDomainsCmd() *cobra.Command {
 
 Accepts an LDAP server name or 24-character hex ID.
 Default fields: id, name, sid.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPSambaDomainsList(cmd, args[0])
 		},
@@ -434,7 +438,8 @@ func newLDAPSambaDomainGetCmd() *cobra.Command {
 		Long: `Get a single Samba domain from a JumpCloud LDAP server.
 
 Requires --domain-id to identify the specific Samba domain.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPSambaDomainGet(cmd, args[0], domainID)
 		},
@@ -479,7 +484,8 @@ func newLDAPSambaDomainCreateCmd() *cobra.Command {
 		Long: `Create a new Samba domain on a JumpCloud LDAP server.
 
 Required flags: --name, --sid.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPSambaDomainCreate(cmd, args[0], name, sid)
 		},
@@ -543,7 +549,8 @@ func newLDAPSambaDomainUpdateCmd() *cobra.Command {
 		Long: `Update an existing Samba domain on a JumpCloud LDAP server.
 
 Requires --domain-id. Specify only the fields you want to change.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPSambaDomainUpdate(cmd, args[0], domainID, name, sid)
 		},
@@ -615,7 +622,8 @@ func newLDAPSambaDomainDeleteCmd() *cobra.Command {
 		Long: `Delete a Samba domain from a JumpCloud LDAP server.
 
 Requires --domain-id. Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLDAPSambaDomainDelete(cmd, args[0], domainID)
 		},
