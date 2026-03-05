@@ -119,7 +119,8 @@ func newIdentityProvidersGetCmd() *cobra.Command {
 		Use:   "get [name-or-id]",
 		Short: "Get an identity provider",
 		Long:  "Get a JumpCloud identity provider by name or ID.",
-		Args:  cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIdentityProvidersGet(cmd, args[0])
 		},
@@ -221,7 +222,8 @@ func newIdentityProvidersUpdateCmd() *cobra.Command {
 		Use:   "update [name-or-id]",
 		Short: "Update an identity provider",
 		Long:  "Update an existing JumpCloud identity provider.",
-		Args:  cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIdentityProvidersUpdate(cmd, args[0], name, idpType, clientID, clientSecret, url)
 		},
@@ -305,7 +307,8 @@ func newIdentityProvidersDeleteCmd() *cobra.Command {
 		Use:   "delete [name-or-id]",
 		Short: "Delete an identity provider",
 		Long:  "Delete a JumpCloud identity provider. This action is irreversible.",
-		Args:  cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIdentityProvidersDelete(cmd, args[0])
 		},

@@ -111,7 +111,8 @@ func newPolicyGroupsGetCmd() *cobra.Command {
 
 Accepts a group name (e.g., "Security Policies") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPolicyGroupsGet(cmd, args[0])
 		},
@@ -213,7 +214,8 @@ func newPolicyGroupsUpdateCmd() *cobra.Command {
 
 Accepts a group name or 24-character hex ID.
 Specify only the fields you want to change. The updated policy group object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPolicyGroupsUpdate(cmd, args[0], name, description)
 		},
@@ -283,7 +285,8 @@ func newPolicyGroupsDeleteCmd() *cobra.Command {
 Accepts a group name or 24-character hex ID.
 Shows the group name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPolicyGroupsDelete(cmd, args[0])
 		},

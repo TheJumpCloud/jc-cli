@@ -122,7 +122,8 @@ func newSaaSGetCmd() *cobra.Command {
 
 Accepts a catalog app ID (e.g., "jumpcloud") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSGet(cmd, args[0])
 		},
@@ -231,7 +232,8 @@ func newSaaSUpdateCmd() *cobra.Command {
 
 Accepts a catalog app ID or 24-character hex ID.
 Specify only the fields you want to change.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSUpdate(cmd, args[0], status, accessRestriction)
 		},
@@ -301,7 +303,8 @@ func newSaaSDeleteCmd() *cobra.Command {
 Accepts a catalog app ID or 24-character hex ID.
 Shows the application catalog ID before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSDelete(cmd, args[0])
 		},
@@ -382,7 +385,8 @@ func newSaaSAccountsCmd() *cobra.Command {
 
 Default fields: id, email, user_id.
 Use --output table for a readable ASCII table.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSAccounts(cmd, args[0], limitFlag)
 		},
@@ -434,7 +438,8 @@ func newSaaSAccountGetCmd() *cobra.Command {
 		Long: `Get a specific account for a JumpCloud SaaS Management application.
 
 Requires --account-id to specify which account to retrieve.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSAccountGet(cmd, args[0], accountID)
 		},
@@ -476,7 +481,8 @@ func newSaaSAccountDeleteCmd() *cobra.Command {
 
 Requires --account-id to specify which account to delete.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSAccountDelete(cmd, args[0], accountID)
 		},
@@ -541,7 +547,8 @@ func newSaaSUsageCmd() *cobra.Command {
 		Long: `Get usage data for a JumpCloud SaaS Management application.
 
 Returns usage records for the specified number of days (default 30).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSaaSUsage(cmd, args[0], dayCount)
 		},
