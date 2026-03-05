@@ -223,7 +223,8 @@ func newUsersGetCmd() *cobra.Command {
 
 Accepts a username (e.g., "jdoe") or a 24-character hex user ID.
 Usernames are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersGet(cmd, args[0])
 		},
@@ -350,7 +351,8 @@ func newUsersUpdateCmd() *cobra.Command {
 
 Accepts a username or 24-character hex user ID.
 Specify only the fields you want to change. The updated user object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersUpdate(cmd, args[0], email, firstname, lastname, department, jobTitle)
 		},
@@ -441,7 +443,8 @@ Stdin mode:
 
   jc users list --filter 'suspended=true' --ids | jc users delete --force
   cat users.txt | jc users delete --stdin --force`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			useStdin, _ := cmd.Flags().GetBool("stdin")
 			if useStdin || (len(args) == 0 && isStdinPiped()) {
@@ -553,8 +556,9 @@ func newUsersLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lock <username-or-id>",
 		Short: "Lock a user account",
-		Long:  "Lock a JumpCloud user account by setting account_locked=true. Accepts a username or ID.",
-		Args:  cobra.ExactArgs(1),
+		Long:              "Lock a JumpCloud user account by setting account_locked=true. Accepts a username or ID.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersLockUnlock(cmd, args[0], true)
 		},
@@ -566,8 +570,9 @@ func newUsersUnlockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unlock <username-or-id>",
 		Short: "Unlock a user account",
-		Long:  "Unlock a JumpCloud user account by setting account_locked=false. Accepts a username or ID.",
-		Args:  cobra.ExactArgs(1),
+		Long:              "Unlock a JumpCloud user account by setting account_locked=false. Accepts a username or ID.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersLockUnlock(cmd, args[0], false)
 		},
@@ -639,7 +644,8 @@ func newUsersResetMFACmd() *cobra.Command {
 
 Accepts a username or 24-character hex user ID.
 The user will need to re-enroll in MFA on their next login.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersResetMFA(cmd, args[0])
 		},
@@ -684,8 +690,9 @@ func newUsersResetPasswordCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reset-password <username-or-id>",
 		Short: "Trigger a password reset for a user",
-		Long:  "Trigger a password reset email for a JumpCloud user. Accepts a username or ID. The user's password will expire and they will be prompted to set a new one.",
-		Args:  cobra.ExactArgs(1),
+		Long:              "Trigger a password reset email for a JumpCloud user. Accepts a username or ID. The user's password will expire and they will be prompted to set a new one.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersResetPassword(cmd, args[0])
 		},
@@ -738,7 +745,8 @@ func newUsersSSHKeysCmd() *cobra.Command {
 
 Accepts a username or 24-character hex user ID.
 Default fields: _id, name, public_key.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersSSHKeys(cmd, args[0])
 		},
@@ -788,7 +796,8 @@ func newUsersSSHKeyAddCmd() *cobra.Command {
 
 Accepts a username or 24-character hex user ID.
 Required flags: --name, --public-key.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersSSHKeyAdd(cmd, args[0], nameFlag, publicKeyFlag)
 		},
@@ -850,7 +859,8 @@ func newUsersSSHKeyDeleteCmd() *cobra.Command {
 Accepts a username or 24-character hex user ID.
 Required flag: --key-id.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUsersSSHKeyDelete(cmd, args[0], keyIDFlag)
 		},
