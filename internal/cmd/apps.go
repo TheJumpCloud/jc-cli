@@ -117,7 +117,8 @@ App names are resolved to IDs automatically with caching (use --no-cache to bypa
 
 The output includes associated user groups and device groups fetched via
 the V2 graph associations API.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.ApplicationConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppsGet(cmd, args[0])
 		},
@@ -262,7 +263,8 @@ func newAppsUpdateCmd() *cobra.Command {
 
 Accepts an app name or 24-character hex application ID.
 Specify only the fields you want to change. The updated app object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.ApplicationConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppsUpdate(cmd, args[0], name, config)
 		},
@@ -340,7 +342,8 @@ func newAppsDeleteCmd() *cobra.Command {
 Accepts an app name or 24-character hex application ID.
 Shows the app name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.ApplicationConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAppsDelete(cmd, args[0])
 		},

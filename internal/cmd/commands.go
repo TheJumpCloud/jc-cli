@@ -119,7 +119,8 @@ func newCommandsGetCmd() *cobra.Command {
 
 Accepts a command name (e.g., "Update Agents") or a 24-character hex command ID.
 Command names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsGet(cmd, args[0])
 		},
@@ -214,7 +215,8 @@ func newCommandsUpdateCmd() *cobra.Command {
 
 Accepts a command name or 24-character hex command ID.
 Specify only the fields you want to change. The updated command object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsUpdate(cmd, args[0], name, commandBody, commandType)
 		},
@@ -273,7 +275,8 @@ func newCommandsDeleteCmd() *cobra.Command {
 Accepts a command name or 24-character hex command ID.
 Shows the command name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsDelete(cmd, args[0])
 		},
@@ -349,7 +352,8 @@ Examples:
   jc commands run "Update Agents" --on JDOE-MBP
   jc commands run "Update Agents" --on "macOS Fleet"
   jc commands run aaa111aaa111aaa111aaa111 --on bbb222bbb222bbb222bbb222 --force`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsRun(cmd, args[0], onFlag)
 		},
@@ -464,7 +468,8 @@ Results show the device, exit code, stdout, stderr, and timestamp for each execu
 
 Default fields: system, exitCode, requestTime, responseTime, stdout, stderr.
 Use --output table for quick scanning of results.`,
-		Args: cobra.ExactArgs(1),
+		Args:               cobra.ExactArgs(1),
+		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsResults(cmd, args[0], limitFlag, sortFlag)
 		},
