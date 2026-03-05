@@ -113,7 +113,8 @@ func newIPListsGetCmd() *cobra.Command {
 
 Accepts an IP list name (e.g., "Office IPs") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IPListConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIPListsGet(cmd, args[0])
 		},
@@ -225,7 +226,8 @@ func newIPListsUpdateCmd() *cobra.Command {
 
 Accepts an IP list name or 24-character hex ID.
 Specify only the fields you want to change. The updated IP list object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IPListConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIPListsUpdate(cmd, args[0], name, description, ips)
 		},
@@ -299,7 +301,8 @@ func newIPListsDeleteCmd() *cobra.Command {
 Accepts an IP list name or 24-character hex ID.
 Shows the IP list name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.IPListConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIPListsDelete(cmd, args[0])
 		},

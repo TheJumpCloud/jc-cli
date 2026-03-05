@@ -116,7 +116,8 @@ func newSoftwareGetCmd() *cobra.Command {
 
 Accepts a software app displayName (e.g., "Firefox") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareGet(cmd, args[0])
 		},
@@ -224,7 +225,8 @@ func newSoftwareUpdateCmd() *cobra.Command {
 
 Accepts a software app displayName or 24-character hex ID.
 Specify only the fields you want to change. The updated software app object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareUpdate(cmd, args[0], name, settings)
 		},
@@ -297,7 +299,8 @@ func newSoftwareDeleteCmd() *cobra.Command {
 Accepts a software app displayName or 24-character hex ID.
 Shows the software app name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareDelete(cmd, args[0])
 		},
@@ -377,7 +380,8 @@ Accepts a software app displayName or 24-character hex ID.
 Returns per-device deployment status information.
 
 Default fields: systemId, status, lastUpdate.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareStatuses(cmd, args[0])
 		},
@@ -424,7 +428,8 @@ func newSoftwareAssociationsCmd() *cobra.Command {
 
 Accepts a software app displayName or 24-character hex ID.
 Returns the list of systems associated with the software app.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareAssociations(cmd, args[0])
 		},
@@ -473,7 +478,8 @@ func newSoftwareReclaimLicenseCmd() *cobra.Command {
 Accepts a software app displayName or 24-character hex ID.
 Requires --device with the target device hostname or ID.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSoftwareReclaimLicense(cmd, args[0], deviceFlag)
 		},

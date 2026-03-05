@@ -119,7 +119,8 @@ func newAuthPoliciesGetCmd() *cobra.Command {
 
 Accepts a policy name (e.g., "MFA Required") or a 24-character hex ID.
 Names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesGet(cmd, args[0])
 		},
@@ -266,7 +267,8 @@ Specify only the fields you want to change. The updated policy object is returne
 
 Use --disabled or --enabled to toggle the policy state.
 Use --conditions to replace the conditions tree (raw JSON).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesUpdate(cmd, args[0], name, conditions, disabled, enabled)
 		},
@@ -352,7 +354,8 @@ func newAuthPoliciesDeleteCmd() *cobra.Command {
 Accepts a policy name or 24-character hex ID.
 Shows the policy name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesDelete(cmd, args[0])
 		},
@@ -424,7 +427,8 @@ func newAuthPoliciesEnableCmd() *cobra.Command {
 		Long: `Enable a JumpCloud authentication policy (sets disabled: false).
 
 Convenience command equivalent to: jc auth-policies update <id> --enabled`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesToggle(cmd, args[0], false)
 		},
@@ -440,7 +444,8 @@ func newAuthPoliciesDisableCmd() *cobra.Command {
 		Long: `Disable a JumpCloud authentication policy (sets disabled: true).
 
 Convenience command equivalent to: jc auth-policies update <id> --disabled`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesToggle(cmd, args[0], true)
 		},
@@ -509,7 +514,8 @@ Examples:
   jc auth-policies simulate "MFA Required" --user jdoe
   jc auth-policies simulate "MFA Required" --user jdoe --ip 10.0.0.1
   jc auth-policies simulate "Block External" --user admin@corp.com --ip 203.0.113.5 --location US`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesSimulate(cmd, args[0], userFlag, ipFlag, deviceFlag, locationFlag)
 		},
@@ -747,7 +753,8 @@ before enabling or modifying a policy.
 Examples:
   jc auth-policies blast-radius "MFA Required"
   jc auth-policies blast-radius "Block External" --limit 50`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthPoliciesBlastRadius(cmd, args[0], limitFlag)
 		},
