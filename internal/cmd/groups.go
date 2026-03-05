@@ -145,7 +145,8 @@ func newGroupsUserGetCmd() *cobra.Command {
 
 Accepts a group name (e.g., "Engineering") or a 24-character hex group ID.
 Group names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGroupsUserGet(cmd, args[0])
 		},
@@ -249,7 +250,8 @@ func newGroupsUserUpdateCmd() *cobra.Command {
 
 Accepts a group name or 24-character hex group ID.
 Specify only the fields you want to change. The updated group object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGroupsUserUpdate(cmd, args[0], name, description)
 		},
@@ -324,7 +326,8 @@ Stdin mode:
   Use --stdin to read group names/IDs from stdin (one per line).
   When stdin is piped, --stdin is implied automatically.
   In stdin mode, --force is implied (no confirmation prompts).`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			useStdin, _ := cmd.Flags().GetBool("stdin")
 			if useStdin || (len(args) == 0 && isStdinPiped()) {
@@ -522,7 +525,8 @@ func newGroupsDeviceGetCmd() *cobra.Command {
 
 Accepts a group name (e.g., "macOS Fleet") or a 24-character hex group ID.
 Group names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DeviceGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGroupsDeviceGet(cmd, args[0])
 		},
@@ -626,7 +630,8 @@ func newGroupsDeviceUpdateCmd() *cobra.Command {
 
 Accepts a group name or 24-character hex group ID.
 Specify only the fields you want to change. The updated group object is returned.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DeviceGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGroupsDeviceUpdate(cmd, args[0], name, description)
 		},
@@ -701,7 +706,8 @@ Stdin mode:
   Use --stdin to read group names/IDs from stdin (one per line).
   When stdin is piped, --stdin is implied automatically.
   In stdin mode, --force is implied (no confirmation prompts).`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.DeviceGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			useStdin, _ := cmd.Flags().GetBool("stdin")
 			if useStdin || (len(args) == 0 && isStdinPiped()) {
@@ -827,7 +833,8 @@ Exactly one of --user or --device must be specified.
 Examples:
   jc groups add-member Engineering --user jdoe
   jc groups add-member "macOS Fleet" --device JDOE-MBP`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGroupsAddMember(cmd, args[0], userFlag, deviceFlag)
 		},
@@ -970,7 +977,8 @@ Examples:
   jc groups remove-member Engineering --user jdoe
   jc groups remove-member "macOS Fleet" --device JDOE-MBP
   jc groups remove-member --all --user jdoe`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if allFlag {
 				if deviceFlag != "" {
