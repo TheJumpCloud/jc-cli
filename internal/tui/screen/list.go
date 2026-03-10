@@ -2,7 +2,9 @@ package screen
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -156,6 +158,14 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		l.loading = false
 		if msg.Err != nil {
+			// Treat 404 as empty list — some resources (GSuite, Office 365, Duo)
+			// return 404 when the org has no instance configured.
+			var apiErr *api.APIError
+			if errors.As(msg.Err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+				l.table.Rows = nil
+				l.totalCount = 0
+				return l, nil
+			}
 			l.err = msg.Err.Error()
 			return l, nil
 		}
