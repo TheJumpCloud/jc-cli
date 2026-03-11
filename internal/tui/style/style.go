@@ -114,4 +114,12 @@ var (
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(ColorBorder).
 			MarginTop(1)
+
+	WidgetBox = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ColorBorder).
+			Padding(1, 2)
+
+	SectionDivider = lipgloss.NewStyle().
+			Foreground(ColorBorder)
 )

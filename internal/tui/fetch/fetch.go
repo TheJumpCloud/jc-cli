@@ -263,6 +263,38 @@ func (f *Fetcher) FetchInsightsList(resourceKey string, query api.InsightsQuery,
 	}
 }
 
+// InsightsCountResultMsg is sent when an Insights count fetch completes.
+type InsightsCountResultMsg struct {
+	ResourceKey string
+	Count       int
+	Generation  int64
+	Err         error
+}
+
+// FetchInsightsCount fetches the event count for an Insights query.
+func (f *Fetcher) FetchInsightsCount(resourceKey string, query api.InsightsQuery, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewInsights()
+		if err != nil {
+			return InsightsCountResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		count, err := client.CountEvents(ctx, query)
+		if err != nil {
+			return InsightsCountResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+		}
+
+		return InsightsCountResultMsg{
+			ResourceKey: resourceKey,
+			Count:       count,
+			Generation:  gen,
+		}
+	}
+}
+
 // AssociationsResultMsg is sent when an associations fetch completes.
 type AssociationsResultMsg struct {
 	ResourceKey string
