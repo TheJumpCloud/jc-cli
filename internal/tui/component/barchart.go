@@ -17,9 +17,10 @@ type BarItem struct {
 
 // BarChart renders a horizontal bar chart with labels and counts.
 type BarChart struct {
-	Title string
-	Items []BarItem
-	Width int
+	Title   string
+	Items   []BarItem
+	Width   int
+	Focused bool
 }
 
 // View renders the bar chart.
@@ -36,10 +37,18 @@ func (b BarChart) View() string {
 	var sb strings.Builder
 
 	// Title
+	titleColor := style.ColorSecondary
+	if b.Focused {
+		titleColor = style.ColorHighlight
+	}
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(style.ColorSecondary)
-	sb.WriteString(titleStyle.Render(b.Title))
+		Foreground(titleColor)
+	focusMarker := ""
+	if b.Focused {
+		focusMarker = "▸ "
+	}
+	sb.WriteString(titleStyle.Render(focusMarker + b.Title))
 	sb.WriteString("\n")
 
 	// Find max value for scaling and max label width for alignment.

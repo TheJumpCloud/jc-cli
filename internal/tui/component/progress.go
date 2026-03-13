@@ -15,6 +15,7 @@ type ProgressRing struct {
 	Total   int
 	Color   lipgloss.Color
 	Width   int
+	Focused bool
 }
 
 // View renders the progress indicator.
@@ -32,10 +33,18 @@ func (p ProgressRing) View() string {
 	var sb strings.Builder
 
 	// Title
+	titleColor := style.ColorSecondary
+	if p.Focused {
+		titleColor = style.ColorHighlight
+	}
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(style.ColorSecondary)
-	sb.WriteString(titleStyle.Render(p.Title))
+		Foreground(titleColor)
+	focusMarker := ""
+	if p.Focused {
+		focusMarker = "▸ "
+	}
+	sb.WriteString(titleStyle.Render(focusMarker + p.Title))
 	sb.WriteString("\n")
 
 	// Percentage line

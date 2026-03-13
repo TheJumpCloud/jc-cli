@@ -7,10 +7,11 @@ import (
 
 // StatCard renders a bordered card with a label and a value.
 type StatCard struct {
-	Label string
-	Value string
-	Color lipgloss.Color
-	Width int
+	Label    string
+	Value    string
+	Color    lipgloss.Color
+	Width    int
+	Selected bool
 }
 
 // View renders the stat card as a bordered box.
@@ -34,8 +35,13 @@ func (s StatCard) View() string {
 
 	content := labelStyle.Render(s.Label) + "\n" + valueStyle.Render(s.Value)
 
+	borderStyle := lipgloss.RoundedBorder()
+	if s.Selected {
+		borderStyle = lipgloss.DoubleBorder()
+	}
+
 	box := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
+		BorderStyle(borderStyle).
 		BorderForeground(color).
 		Padding(0, 1).
 		Width(w - 2). // account for border
