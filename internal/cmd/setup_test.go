@@ -604,6 +604,113 @@ profiles:
 	}
 }
 
+func TestSetup_KeychainUnavailable_FailsWithoutFlag(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	ts := startMockJCServer(t, "org-setup-kc", "Setup KC Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	// Simulate keychain unavailable.
+	orig := keychainIsAvailable
+	t.Cleanup(func() { keychainIsAvailable = orig })
+	keychainIsAvailable = func() bool { return false }
+
+	// Steps: profile(keep), auth-method(1)
+	input := &wizardInput{
+		lines:  []string{"", "1"},
+		masked: []string{"test-setup-key-1234"},
+	}
+	overrideSetupInput(t, input)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	wiz := &setupWizard{
+		cmd:            cmd,
+		input:          input,
+		w:              stderr,
+		out:            stdout,
+		allowPlaintext: false,
+	}
+
+	err := wiz.run()
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable and allowPlaintext is false")
+	}
+	if !strings.Contains(err.Error(), "keychain unavailable") {
+		t.Errorf("expected keychain unavailable error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-plaintext") {
+		t.Errorf("expected --allow-plaintext suggestion, got: %v", err)
+	}
+}
+
+func TestSetup_KeychainUnavailable_SucceedsWithFlag(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	ts := startMockJCServer(t, "org-setup-kc", "Setup KC Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	// Simulate keychain unavailable.
+	orig := keychainIsAvailable
+	t.Cleanup(func() { keychainIsAvailable = orig })
+	keychainIsAvailable = func() bool { return false }
+
+	// Steps: profile(keep), auth-method(1), org(keep), output(keep), color(keep), limit(keep)
+	input := &wizardInput{
+		lines:  []string{"", "1", "", "", "", ""},
+		masked: []string{"test-setup-key-1234"},
+	}
+	overrideSetupInput(t, input)
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	wiz := &setupWizard{
+		cmd:            cmd,
+		input:          input,
+		w:              stderr,
+		out:            stdout,
+		allowPlaintext: true,
+	}
+
+	err := wiz.run()
+	if err != nil {
+		t.Fatalf("expected success with allowPlaintext, got: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Setup complete!") {
+		t.Errorf("expected 'Setup complete!' in output, got %q", got)
+	}
+
+	// Verify plaintext warning was shown.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "plaintext") {
+		t.Errorf("expected plaintext warning on stderr, got %q", stderrStr)
+	}
+}
+
 func TestSetup_ServiceAccount_OrgFetch403(t *testing.T) {
 	keyring.MockInit()
 	cfgPath := setupTestConfig(t, `active_profile: default

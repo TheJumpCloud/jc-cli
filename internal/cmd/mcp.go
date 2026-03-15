@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -40,6 +41,7 @@ func newMcpServeCmd() *cobra.Command {
 		rateLimit  int
 		readOnly   bool
 		transport  string
+		addr       string
 		port       int
 		corsOrigin string
 		tlsCert    string
@@ -82,7 +84,7 @@ Tool Allow/Block Lists:
 SSE Examples:
   jc mcp serve --transport sse
   jc mcp serve --transport sse --port 9090
-  jc mcp serve --transport sse --tls-cert cert.pem --tls-key key.pem
+  jc mcp serve --transport sse --addr 0.0.0.0:8080 --tls-cert cert.pem --tls-key key.pem
   jc mcp serve --transport sse --cors-origin "https://app.example.com"
 
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
@@ -97,13 +99,14 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("port") {
 				port = config.MCPSSEPort()
 			}
-			return runMcpServe(rateLimit, readOnly, transport, port, corsOrigin, tlsCert, tlsKey)
+			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey)
 		},
 	}
 
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 60, "Maximum tool calls per minute")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "Disable all mutation tools")
 	cmd.Flags().StringVar(&transport, "transport", "stdio", "Transport type: stdio or sse")
+	cmd.Flags().StringVar(&addr, "addr", "", "Listen address for SSE transport (default 127.0.0.1:<port>)")
 	cmd.Flags().IntVar(&port, "port", 8080, "Port for SSE transport (default 8080)")
 	cmd.Flags().StringVar(&corsOrigin, "cors-origin", "", "Allowed CORS origin for SSE transport")
 	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file for SSE transport")
@@ -150,10 +153,21 @@ func runMcpTools(cmd *cobra.Command, readOnly bool) error {
 	return nil
 }
 
-func runMcpServe(rateLimit int, readOnly bool, transport string, port int, corsOrigin, tlsCert, tlsKey string) error {
+// resolveSSEAddr returns the listen address for the SSE server.
+// If addr is empty, it defaults to loopback (127.0.0.1:<port>).
+// If addr is explicitly set, it is returned as-is.
+func resolveSSEAddr(addr string, port int) string {
+	if addr == "" {
+		return fmt.Sprintf("127.0.0.1:%d", port)
+	}
+	return addr
+}
+
+func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string) error {
 	server := mcp.NewServer(mcp.Options{
 		RateLimit:    rateLimit,
 		ReadOnly:     readOnly,
+		AuditEnabled: config.MCPAuditLog(),
 		AllowedTools: config.MCPAllowedTools(),
 		BlockedTools: config.MCPBlockedTools(),
 	})
@@ -182,15 +196,23 @@ func runMcpServe(rateLimit int, readOnly bool, transport string, port int, corsO
 			return fmt.Errorf("SSE transport requires authentication. Run 'jc auth login' or set JC_API_KEY")
 		}
 
-		addr := fmt.Sprintf(":%d", port)
+		listenAddr := resolveSSEAddr(addr, port)
+
+		// Warn if binding to a non-loopback address without TLS.
+		if host, _, err := net.SplitHostPort(listenAddr); err == nil {
+			if host != "127.0.0.1" && host != "::1" && host != "localhost" && tlsCert == "" {
+				fmt.Fprintln(os.Stderr, "jc: WARNING: listening on non-loopback address without TLS. Credentials will be sent in plaintext.")
+			}
+		}
+
 		scheme := "http"
 		if tlsCert != "" {
 			scheme = "https"
 		}
-		fmt.Fprintf(os.Stderr, "jc: starting MCP server on SSE transport at %s://localhost%s\n", scheme, addr)
+		fmt.Fprintf(os.Stderr, "jc: starting MCP server on SSE transport at %s://%s\n", scheme, listenAddr)
 
 		return server.RunSSE(ctx, mcp.SSEConfig{
-			Addr:       addr,
+			Addr:       listenAddr,
 			CORSOrigin: corsOrigin,
 			TLSCert:    tlsCert,
 			TLSKey:     tlsKey,

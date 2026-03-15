@@ -21,6 +21,8 @@ import (
 var setupInputReader InputReader
 
 func newSetupCmd() *cobra.Command {
+	var allowPlaintext bool
+
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive onboarding wizard",
@@ -44,23 +46,28 @@ On re-run, existing settings are shown and can be kept by pressing Enter.`,
 			}
 
 			wiz := &setupWizard{
-				cmd:   cmd,
-				input: input,
-				w:     cmd.ErrOrStderr(),
-				out:   cmd.OutOrStdout(),
+				cmd:            cmd,
+				input:          input,
+				w:              cmd.ErrOrStderr(),
+				out:            cmd.OutOrStdout(),
+				allowPlaintext: allowPlaintext,
 			}
 			return wiz.run()
 		},
 	}
+
+	cmd.Flags().BoolVar(&allowPlaintext, "allow-plaintext", false, "Allow storing credentials as plaintext in config when keychain is unavailable")
+
 	return cmd
 }
 
 // setupWizard orchestrates the interactive setup flow.
 type setupWizard struct {
-	cmd   *cobra.Command
-	input InputReader
-	w     io.Writer // stderr — prompts and progress
-	out   io.Writer // stdout — final summary
+	cmd            *cobra.Command
+	input          InputReader
+	w              io.Writer // stderr — prompts and progress
+	out            io.Writer // stdout — final summary
+	allowPlaintext bool
 }
 
 func (wiz *setupWizard) run() error {
@@ -317,8 +324,11 @@ func (wiz *setupWizard) authServiceAccount(profile string) (*api.Organization, e
 }
 
 func (wiz *setupWizard) storeAPIKeyInKeychain(profile, apiKey string) error {
-	if keychain.IsAvailable() {
+	if keychainIsAvailable() {
 		if err := keychain.Set(profile, apiKey); err != nil {
+			if !wiz.allowPlaintext {
+				return fmt.Errorf("could not store key in keychain: %w. Use --allow-plaintext to store credentials in config file", err)
+			}
 			fmt.Fprintf(wiz.w, "Warning: could not store key in keychain: %v\n", err)
 			if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
 				return fmt.Errorf("failed to save API key to config: %w", err)
@@ -331,6 +341,9 @@ func (wiz *setupWizard) storeAPIKeyInKeychain(profile, apiKey string) error {
 			}
 		}
 	} else {
+		if !wiz.allowPlaintext {
+			return fmt.Errorf("OS keychain unavailable. Use --allow-plaintext to store credentials in config file, or fix your keychain setup")
+		}
 		fmt.Fprintf(wiz.w, "Warning: OS keychain unavailable. Storing API key as plaintext in config\n")
 		if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
 			return fmt.Errorf("failed to save API key to config: %w", err)
@@ -340,8 +353,11 @@ func (wiz *setupWizard) storeAPIKeyInKeychain(profile, apiKey string) error {
 }
 
 func (wiz *setupWizard) storeClientSecretInKeychain(profile, secret string) error {
-	if keychain.IsAvailable() {
+	if keychainIsAvailable() {
 		if err := keychain.SetClientSecret(profile, secret); err != nil {
+			if !wiz.allowPlaintext {
+				return fmt.Errorf("could not store client secret in keychain: %w. Use --allow-plaintext to store credentials in config file", err)
+			}
 			fmt.Fprintf(wiz.w, "Warning: could not store client secret in keychain: %v\n", err)
 			if err := config.SetProfileField(profile, "client_secret", secret); err != nil {
 				return fmt.Errorf("failed to save client secret to config: %w", err)
@@ -354,6 +370,9 @@ func (wiz *setupWizard) storeClientSecretInKeychain(profile, secret string) erro
 			}
 		}
 	} else {
+		if !wiz.allowPlaintext {
+			return fmt.Errorf("OS keychain unavailable. Use --allow-plaintext to store credentials in config file, or fix your keychain setup")
+		}
 		fmt.Fprintf(wiz.w, "Warning: OS keychain unavailable. Storing client secret as plaintext in config\n")
 		if err := config.SetProfileField(profile, "client_secret", secret); err != nil {
 			return fmt.Errorf("failed to save client secret to config: %w", err)

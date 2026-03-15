@@ -118,6 +118,14 @@ func TestMcpServeCmd_FlagDefaults(t *testing.T) {
 		t.Errorf("expected transport default 'stdio', got %s", tp.DefValue)
 	}
 
+	addrFlag := mcpCmd.Flags().Lookup("addr")
+	if addrFlag == nil {
+		t.Fatal("expected addr flag")
+	}
+	if addrFlag.DefValue != "" {
+		t.Errorf("expected addr default empty, got %s", addrFlag.DefValue)
+	}
+
 	port := mcpCmd.Flags().Lookup("port")
 	if port == nil {
 		t.Fatal("expected port flag")
@@ -272,6 +280,30 @@ func TestMcpToolsCmd_ListsTools(t *testing.T) {
 	errOutput := stderr.String()
 	if !strings.Contains(errOutput, "tools") {
 		t.Error("expected stderr to contain tool count footer")
+	}
+}
+
+func TestResolveSSEAddr_DefaultLoopback(t *testing.T) {
+	got := resolveSSEAddr("", 8080)
+	if got != "127.0.0.1:8080" {
+		t.Errorf("expected 127.0.0.1:8080, got %s", got)
+	}
+
+	got = resolveSSEAddr("", 9090)
+	if got != "127.0.0.1:9090" {
+		t.Errorf("expected 127.0.0.1:9090, got %s", got)
+	}
+}
+
+func TestResolveSSEAddr_ExplicitAddr(t *testing.T) {
+	got := resolveSSEAddr("0.0.0.0:3000", 8080)
+	if got != "0.0.0.0:3000" {
+		t.Errorf("expected 0.0.0.0:3000, got %s", got)
+	}
+
+	got = resolveSSEAddr("192.168.1.5:4000", 8080)
+	if got != "192.168.1.5:4000" {
+		t.Errorf("expected 192.168.1.5:4000, got %s", got)
 	}
 }
 

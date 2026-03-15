@@ -68,6 +68,16 @@ func (s *stdinReader) ReadLine() (string, error) {
 // defaultInput is the production input reader.
 var defaultInput InputReader = &stdinReader{}
 
+// keychainIsAvailable checks if the OS keychain is usable. Overridable in tests.
+var keychainIsAvailable = keychain.IsAvailable
+
+// getAllowPlaintext returns true if the --allow-plaintext flag is set on this
+// command or any of its parent commands (it's a persistent flag on auth).
+func getAllowPlaintext(cmd *cobra.Command) bool {
+	f := cmd.Flag("allow-plaintext")
+	return f != nil && f.Value.String() == "true"
+}
+
 // newAPIClient creates an API client with the given key. Overridable in tests.
 var newAPIClient = func(key string) *api.Client {
 	return api.NewClientWithKey(key)
@@ -79,6 +89,8 @@ func newAuthCmd() *cobra.Command {
 		Short: "Manage authentication credentials",
 		Long:  "Login, logout, and check authentication status for JumpCloud.",
 	}
+
+	cmd.PersistentFlags().Bool("allow-plaintext", false, "Allow storing credentials as plaintext in config when keychain is unavailable")
 
 	cmd.AddCommand(newAuthLoginCmd())
 	cmd.AddCommand(newAuthStatusCmd())
@@ -161,9 +173,12 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 	}
 
 	// Store the API key in the keychain.
-	keychainAvailable := keychain.IsAvailable()
-	if keychainAvailable {
+	allowPlaintext := getAllowPlaintext(cmd)
+	if keychainIsAvailable() {
 		if err := keychain.Set(profile, apiKey); err != nil {
+			if !allowPlaintext {
+				return fmt.Errorf("could not store key in keychain: %w. Use --allow-plaintext to store credentials in config file", err)
+			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not store key in keychain: %v\n", err)
 			// Fall back to plaintext in config.
 			if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
@@ -178,6 +193,9 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 			}
 		}
 	} else {
+		if !allowPlaintext {
+			return fmt.Errorf("OS keychain unavailable. Use --allow-plaintext to store credentials in config file, or fix your keychain setup")
+		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: OS keychain unavailable. Storing API key as plaintext in config\n")
 		if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
 			return fmt.Errorf("failed to save API key to config: %w", err)
@@ -264,9 +282,12 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 	}
 
 	// Store the client secret in the keychain.
-	keychainAvailable := keychain.IsAvailable()
-	if keychainAvailable {
+	allowPlaintext := getAllowPlaintext(cmd)
+	if keychainIsAvailable() {
 		if err := keychain.SetClientSecret(profile, clientSecret); err != nil {
+			if !allowPlaintext {
+				return fmt.Errorf("could not store client secret in keychain: %w. Use --allow-plaintext to store credentials in config file", err)
+			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not store client secret in keychain: %v\n", err)
 			// Fall back to plaintext in config.
 			if err := config.SetProfileField(profile, "client_secret", clientSecret); err != nil {
@@ -281,6 +302,9 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 			}
 		}
 	} else {
+		if !allowPlaintext {
+			return fmt.Errorf("OS keychain unavailable. Use --allow-plaintext to store credentials in config file, or fix your keychain setup")
+		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: OS keychain unavailable. Storing client secret as plaintext in config\n")
 		if err := config.SetProfileField(profile, "client_secret", clientSecret); err != nil {
 			return fmt.Errorf("failed to save client secret to config: %w", err)

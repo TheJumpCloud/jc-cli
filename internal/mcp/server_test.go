@@ -888,6 +888,42 @@ func TestAuditLogger_CreatesDirectory(t *testing.T) {
 	}
 }
 
+func TestNewServer_AuditDisabledNoFile(t *testing.T) {
+	setupTest(t)
+	auditPath := filepath.Join(t.TempDir(), "should-not-exist", "audit.log")
+
+	_ = NewServer(Options{
+		AuditEnabled: false,
+		AuditLogPath: "", // no explicit path + disabled = no file
+	})
+
+	if _, err := os.Stat(auditPath); !os.IsNotExist(err) {
+		t.Error("audit log file should not be created when auditing is disabled")
+	}
+}
+
+func TestNewServer_AuditEnabledByExplicitPath(t *testing.T) {
+	setupTest(t)
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+
+	s := NewServer(Options{
+		AuditEnabled: false,        // disabled...
+		AuditLogPath: auditPath,    // ...but explicit path wins
+	})
+
+	// Write a log entry to confirm the logger is active.
+	s.auditLog.log("test_tool", nil, true, "")
+	s.auditLog.close()
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit log: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected audit log entries when explicit path is set")
+	}
+}
+
 func TestMCP_AuditLogIntegration(t *testing.T) {
 	setupTest(t)
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
@@ -1257,6 +1293,28 @@ func TestRedactParams_PreservesNonSensitive(t *testing.T) {
 	}
 	if m["limit"] != float64(50) {
 		t.Errorf("limit should be preserved, got: %v", m["limit"])
+	}
+}
+
+func TestRedactParams_CamelCaseKeys(t *testing.T) {
+	input := json.RawMessage(`{"clientSecret":"s1","apiKey":"s2","sharedSecret":"s3","publicKey":"s4","clientId":"keep","displayName":"keep"}`)
+	result := redactParams(input)
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(result, &m); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	for _, key := range []string{"clientSecret", "apiKey", "sharedSecret", "publicKey"} {
+		if m[key] != "****REDACTED****" {
+			t.Errorf("%s should be redacted, got: %v", key, m[key])
+		}
+	}
+	if m["clientId"] != "keep" {
+		t.Errorf("clientId should be preserved, got: %v", m["clientId"])
+	}
+	if m["displayName"] != "keep" {
+		t.Errorf("displayName should be preserved, got: %v", m["displayName"])
 	}
 }
 

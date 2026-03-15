@@ -41,7 +41,11 @@ type Options struct {
 	RateLimit int
 	// ReadOnly disables all mutation tools.
 	ReadOnly bool
-	// AuditLogPath overrides the default audit log path.
+	// AuditEnabled enables audit logging. When false and AuditLogPath is empty,
+	// no audit log file is created.
+	AuditEnabled bool
+	// AuditLogPath overrides the default audit log path. If set, audit logging
+	// is enabled regardless of AuditEnabled.
 	AuditLogPath string
 	// AllowedTools is a list of glob patterns for tools that are allowed.
 	// If empty, all tools are allowed (subject to BlockedTools).
@@ -60,11 +64,6 @@ func NewServer(opts Options) *Server {
 		opts.RateLimit = 60
 	}
 
-	auditPath := opts.AuditLogPath
-	if auditPath == "" {
-		auditPath = filepath.Join(config.ConfigDir(), "mcp-audit.log")
-	}
-
 	// Create slog logger that writes to stderr (not stdout, which is the JSON-RPC stream).
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -81,7 +80,16 @@ func NewServer(opts Options) *Server {
 		},
 	)
 
-	al := newAuditLogger(auditPath)
+	var al *auditLogger
+	if opts.AuditEnabled || opts.AuditLogPath != "" {
+		auditPath := opts.AuditLogPath
+		if auditPath == "" {
+			auditPath = filepath.Join(config.ConfigDir(), "mcp-audit.log")
+		}
+		al = newAuditLogger(auditPath)
+	} else {
+		al = &auditLogger{} // no-op: enc is nil, log() returns early
+	}
 
 	s := &Server{
 		mcpServer:  mcpServer,
@@ -340,6 +348,9 @@ var sensitiveParamKeys = map[string]bool{
 	"public_key":    true,
 	"client_secret": true,
 	"clientSecret":  true,
+	"sharedSecret":  true,
+	"apiKey":        true,
+	"publicKey":     true,
 	"token":         true,
 }
 

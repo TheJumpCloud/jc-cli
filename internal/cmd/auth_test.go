@@ -1832,3 +1832,107 @@ func TestAuthLogin_ServiceAccount_ViaRootCommand(t *testing.T) {
 		t.Errorf("auth login help should mention OAuth 2.0, got %q", got)
 	}
 }
+
+// --- Keychain unavailability tests ---
+
+// overrideKeychainAvailable overrides keychainIsAvailable for the test.
+func overrideKeychainAvailable(t *testing.T, available bool) {
+	t.Helper()
+	orig := keychainIsAvailable
+	t.Cleanup(func() { keychainIsAvailable = orig })
+	keychainIsAvailable = func() bool { return available }
+}
+
+func TestAuthLogin_KeychainUnavailable_FailsWithoutFlag(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	ts := startMockJCServer(t, "org-123", "Test Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+	overrideKeychainAvailable(t, false)
+
+	authCmd := newAuthCmd()
+	authCmd.SetOut(new(bytes.Buffer))
+	authCmd.SetErr(new(bytes.Buffer))
+	loginCmd, _, _ := authCmd.Find([]string{"login"})
+
+	err := runAuthLogin(loginCmd, "", &mockInput{apiKey: "test-key-1234"})
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable and --allow-plaintext not set")
+	}
+	if !strings.Contains(err.Error(), "keychain unavailable") {
+		t.Errorf("expected keychain unavailable error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-plaintext") {
+		t.Errorf("expected --allow-plaintext suggestion, got: %v", err)
+	}
+}
+
+func TestAuthLogin_KeychainUnavailable_SucceedsWithFlag(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	ts := startMockJCServer(t, "org-123", "Test Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+	overrideKeychainAvailable(t, false)
+
+	authCmd := newAuthCmd()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	authCmd.SetOut(stdout)
+	authCmd.SetErr(stderr)
+	// Set the persistent flag on the parent (auth) command.
+	authCmd.PersistentFlags().Set("allow-plaintext", "true")
+	loginCmd, _, _ := authCmd.Find([]string{"login"})
+
+	err := runAuthLogin(loginCmd, "", &mockInput{apiKey: "test-key-1234"})
+	if err != nil {
+		t.Fatalf("expected success with --allow-plaintext, got: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Logged in") {
+		t.Errorf("expected 'Logged in' message, got: %s", got)
+	}
+}
+
+func TestAuthLoginServiceAccount_KeychainUnavailable_FailsWithoutFlag(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+    org_id: ""
+`)
+
+	oauthURL, jcURL := startMockOAuthAndJCServer(t, "org-sa-123", "SA Test Org")
+	overrideOAuthURL(t, oauthURL)
+	overrideOAuthClient(t, jcURL)
+	overrideKeychainAvailable(t, false)
+
+	authCmd := newAuthCmd()
+	authCmd.SetOut(new(bytes.Buffer))
+	authCmd.SetErr(new(bytes.Buffer))
+	loginCmd, _, _ := authCmd.Find([]string{"login"})
+
+	input := &mockInput{apiKey: "test-secret", line: "test-client-id"}
+	err := runAuthLoginServiceAccount(loginCmd, "", input)
+	if err == nil {
+		t.Fatal("expected error when keychain unavailable and --allow-plaintext not set")
+	}
+	if !strings.Contains(err.Error(), "keychain unavailable") {
+		t.Errorf("expected keychain unavailable error, got: %v", err)
+	}
+}
