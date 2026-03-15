@@ -49,7 +49,13 @@ func (s Sparkline) View() string {
 		}
 	}
 
-	// Build sparkline string.
+	// Build sparkline string — each data point rendered as a repeated block
+	// to match label width (label + 1 space).
+	labelWidth := 3 // default: 2-char label + 1 space
+	if len(s.Labels) > 0 && len(s.Labels[0]) > 0 {
+		labelWidth = len(s.Labels[0]) + 1
+	}
+
 	sparkStyle := lipgloss.NewStyle().Foreground(color)
 	var spark strings.Builder
 	for _, v := range s.Data {
@@ -57,7 +63,7 @@ func (s Sparkline) View() string {
 		if maxVal > 0 {
 			idx = (v * (len(sparkBlocks) - 1)) / maxVal
 		}
-		spark.WriteRune(sparkBlocks[idx])
+		spark.WriteString(strings.Repeat(string(sparkBlocks[idx]), labelWidth))
 	}
 	sb.WriteString(sparkStyle.Render(spark.String()))
 	sb.WriteString("\n")
@@ -65,7 +71,11 @@ func (s Sparkline) View() string {
 	// Labels row.
 	if len(s.Labels) > 0 {
 		dimStyle := lipgloss.NewStyle().Foreground(style.ColorDimText)
-		sb.WriteString(dimStyle.Render(strings.Join(s.Labels, "")))
+		var labelRow strings.Builder
+		for _, l := range s.Labels {
+			labelRow.WriteString(fmt.Sprintf("%-*s", labelWidth, l))
+		}
+		sb.WriteString(dimStyle.Render(labelRow.String()))
 		sb.WriteString("\n")
 	}
 
