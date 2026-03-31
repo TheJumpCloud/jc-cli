@@ -797,7 +797,7 @@ export JC_API_KEY=your-key            # Or set via environment
 jc auth login --service-account       # Interactive client ID + secret entry
 ```
 
-API keys are stored in the OS keychain (macOS Keychain / Linux secret-tool) by default. The config file stores only a `keychain://jc/<profile>` reference, never the plaintext key.
+API keys are stored in the OS keychain (macOS Keychain / Linux secret-tool) by default. The config file stores only a `keychain://jc/<profile>` reference, never the plaintext key. If the keychain is unavailable, login will fail rather than silently storing credentials as plaintext — use `--allow-plaintext` to explicitly opt in to config file storage.
 
 ### Environment Variables
 
