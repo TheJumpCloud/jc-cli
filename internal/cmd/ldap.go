@@ -352,7 +352,11 @@ func runLDAPDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete LDAP server %q? [y/N] ", ldapServer.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -646,7 +650,11 @@ func runLDAPSambaDomainDelete(cmd *cobra.Command, ldapIdentifier, domainID strin
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete Samba domain %q from LDAP %q? [y/N] ", domainID, ldapIdentifier)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

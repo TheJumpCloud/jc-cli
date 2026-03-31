@@ -380,7 +380,11 @@ func runGroupsUserDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete user group %q? [y/N] ", group.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -760,7 +764,11 @@ func runGroupsDeviceDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete device group %q? [y/N] ", group.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

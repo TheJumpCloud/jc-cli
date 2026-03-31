@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
@@ -311,7 +310,11 @@ func runCommandsDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete command %q (%s)? [y/N] ", jcCmd.Name, jcCmd.CommandType)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -418,7 +421,11 @@ func runCommandsRun(cmd *cobra.Command, commandIdentifier, onTarget string) erro
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Run command %q on %s? [y/N] ", commandIdentifier, targetDesc)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

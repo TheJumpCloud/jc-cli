@@ -346,7 +346,11 @@ func runIPListsDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete IP list %q? [y/N] ", ipList.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

@@ -229,7 +229,11 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		lastContact := device.LastContact
 		if idx := strings.Index(lastContact, "T"); idx > 0 {
 			lastContact = lastContact[:idx]
@@ -524,7 +528,11 @@ func runDevicesMDMCommand(cmd *cobra.Command, identifier string, action string) 
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		promptVerb := strings.ToUpper(action[:1]) + action[1:]
 		if action == "erase" {
 			promptVerb = "ERASE (wipe all data on)"

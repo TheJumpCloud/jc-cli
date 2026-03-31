@@ -341,7 +341,11 @@ func runRADIUSDelete(cmd *cobra.Command, identifier string) error {
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete RADIUS server %q? [y/N] ", server.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

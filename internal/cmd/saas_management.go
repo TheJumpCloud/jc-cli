@@ -352,7 +352,11 @@ func runSaaSDelete(cmd *cobra.Command, identifier string) error {
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete SaaS application %q? [y/N] ", displayName)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -515,7 +519,11 @@ func runSaaSAccountDelete(cmd *cobra.Command, identifier, accountID string) erro
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete SaaS account %q from application %q? [y/N] ", accountID, appID)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

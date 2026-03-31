@@ -438,7 +438,11 @@ func runGraphManage(cmd *cobra.Command, from, to, op string) error {
 	}
 
 	// Confirmation for unbind (remove).
-	if op == "remove" && !viper.GetBool("force") {
+	if op == "remove" && mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if op == "remove" && shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Remove association %s → %s? [y/N] ", from, to)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

@@ -368,7 +368,11 @@ func runCustomEmailDelete(cmd *cobra.Command, emailType string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete custom email config %q? [y/N] ", emailType)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

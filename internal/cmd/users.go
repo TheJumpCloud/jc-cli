@@ -498,7 +498,11 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete user %s (%s)? [y/N] ", user.Username, user.Email)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -893,7 +897,11 @@ func runUsersSSHKeyDelete(cmd *cobra.Command, identifier, keyID string) error {
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete SSH key %s from user %s? [y/N] ", keyID, identifier)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

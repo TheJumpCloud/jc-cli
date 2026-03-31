@@ -572,6 +572,7 @@ func TestAssetsDevicesDelete_Cancel(t *testing.T) {
 	orig := confirmReader
 	confirmReader = bufio.NewReader(strings.NewReader("n\n"))
 	t.Cleanup(func() { confirmReader = orig })
+	overrideIsStdinPiped(t, false) // simulate TTY so confirmation prompt fires
 
 	cmd := NewRootCmd()
 	var buf, errBuf bytes.Buffer

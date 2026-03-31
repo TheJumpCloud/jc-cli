@@ -103,6 +103,10 @@ func runAsk(cmd *cobra.Command, args []string) error {
 	confirmBeforeExecute := true
 	if force || nonInteractive {
 		confirmBeforeExecute = false
+	} else if isStdinPiped() {
+		// Can't prompt on piped stdin — default to executing without confirmation
+		// (ask commands are non-destructive read operations, unlike delete commands).
+		confirmBeforeExecute = false
 	}
 
 	maxCommands := viper.GetInt("ask.max_commands")

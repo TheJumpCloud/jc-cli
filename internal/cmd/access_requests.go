@@ -336,7 +336,11 @@ func runAccessRequestsRevoke(cmd *cobra.Command, id string) error {
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Revoke access request %q? [y/N] ", id)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

@@ -238,7 +238,11 @@ func runDuoDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete Duo account %q? [y/N] ", account.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -484,7 +488,11 @@ func runDuoAppDelete(cmd *cobra.Command, identifier, appID string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete Duo application %q? [y/N] ", app.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

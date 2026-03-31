@@ -344,7 +344,11 @@ func runSoftwareDelete(cmd *cobra.Command, identifier string) error {
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete software app %q? [y/N] ", app.DisplayName)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
@@ -523,7 +527,11 @@ func runSoftwareReclaimLicense(cmd *cobra.Command, identifier, device string) er
 	}
 
 	// Confirmation prompt (unless --force is set).
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Reclaim license for software app %q from device %q? [y/N] ", id, deviceID)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

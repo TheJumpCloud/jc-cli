@@ -170,7 +170,11 @@ func runBulkUsers(cmd *cobra.Command, filePath string) error {
 		return nil
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		summary := fmt.Sprintf("Ready to process: %d creates, %d updates, %d deletes (%d total). Continue? [y/N] ",
 			creates, updates, deletes, len(rows))
 		fmt.Fprint(cmd.ErrOrStderr(), summary)

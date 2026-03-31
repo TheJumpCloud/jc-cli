@@ -397,7 +397,11 @@ func runAuthPoliciesDelete(cmd *cobra.Command, identifier string) error {
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete authentication policy %q? [y/N] ", policy.Name)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')

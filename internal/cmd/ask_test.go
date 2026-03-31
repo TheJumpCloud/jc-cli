@@ -91,6 +91,7 @@ func TestAsk_ConfirmNo(t *testing.T) {
 	}
 	overrideAskClient(t, client, nil)
 	overrideAskConfirmReader(t, "n\n")
+	overrideIsStdinPiped(t, false) // simulate TTY so confirmation prompt fires
 
 	cmd := NewRootCmd()
 	var stdout, stderr bytes.Buffer
@@ -100,7 +101,7 @@ func TestAsk_ConfirmNo(t *testing.T) {
 	_ = cmd.Execute()
 
 	if !strings.Contains(stderr.String(), "Aborted") {
-		t.Error("expected 'Aborted' when user says no")
+		t.Errorf("expected 'Aborted' when user says no, got stderr: %q", stderr.String())
 	}
 	if stdout.String() != "" {
 		t.Errorf("expected no stdout output, got: %s", stdout.String())
@@ -298,6 +299,7 @@ func TestAsk_ConfirmEmpty(t *testing.T) {
 	}
 	overrideAskClient(t, client, nil)
 	overrideAskConfirmReader(t, "\n") // empty = no
+	overrideIsStdinPiped(t, false)    // simulate TTY so confirmation prompt fires
 
 	cmd := NewRootCmd()
 	var stdout, stderr bytes.Buffer

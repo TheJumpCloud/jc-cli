@@ -12,7 +12,8 @@ import (
 var stdinSource io.Reader = os.Stdin
 
 // isStdinPiped returns true when stdin is piped (not a terminal).
-func isStdinPiped() bool {
+// Overridable in tests.
+var isStdinPiped = func() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
 		return false

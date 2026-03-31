@@ -345,7 +345,11 @@ func runAssetSubDelete(cmd *cobra.Command, sub assetSubResource, identifier stri
 		return renderPlan(cmd, p)
 	}
 
-	if !viper.GetBool("force") {
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Delete %s %q? [y/N] ", sub.noun, assetName)
 		reader := getConfirmReader()
 		answer, err := reader.ReadString('\n')
