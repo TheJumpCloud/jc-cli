@@ -239,9 +239,16 @@ func TestMCP_ListResources(t *testing.T) {
 		"jc://recipes/list",
 	}
 	uris := make(map[string]bool)
+	mimeTypes := make(map[string]string)
 	for _, r := range result.Resources {
 		uris[r.URI] = true
-		if r.MIMEType != "application/json" {
+		mimeTypes[r.URI] = r.MIMEType
+		// ui:// resources serve HTML; everything else is JSON.
+		if strings.HasPrefix(r.URI, "ui://") {
+			if r.MIMEType != "text/html" {
+				t.Errorf("resource %s: expected MIME type text/html, got %q", r.URI, r.MIMEType)
+			}
+		} else if r.MIMEType != "application/json" {
 			t.Errorf("resource %s: expected MIME type application/json, got %q", r.URI, r.MIMEType)
 		}
 	}

@@ -639,6 +639,9 @@ func (s *Server) registerTools() {
 
 	// --- Plan and explain tools ---
 	s.registerMetaTools()
+
+	// --- MCP App tools ---
+	s.registerAppTools()
 }
 
 func (s *Server) registerUserTools() {

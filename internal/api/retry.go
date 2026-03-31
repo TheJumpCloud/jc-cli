@@ -20,6 +20,14 @@ const (
 // Tests can override this to avoid real delays.
 var retrySleepFn = time.Sleep
 
+// SetRetrySleepFn overrides the retry backoff sleep function.
+// Used by cross-package tests to disable delays. Returns the previous function.
+func SetRetrySleepFn(fn func(time.Duration)) func(time.Duration) {
+	prev := retrySleepFn
+	retrySleepFn = fn
+	return prev
+}
+
 // retryTransport is an http.RoundTripper that retries transient errors
 // with exponential backoff and jitter.
 //

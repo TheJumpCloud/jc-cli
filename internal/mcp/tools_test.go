@@ -373,6 +373,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"app_templates_list", "app_templates_get",
 		// Utility
 		"recipe_run", "plan", "explain",
+		// MCP Apps
+		"dashboard_view",
 	}
 
 	toolNames := make(map[string]bool)
@@ -387,8 +389,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 194 {
-		t.Errorf("expected 194 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 195 {
+		t.Errorf("expected 195 tools, got %d", len(result.Tools))
 	}
 }
 

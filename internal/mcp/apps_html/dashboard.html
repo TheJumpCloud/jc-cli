@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --cyan: #06b6d4;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    line-height: 1.5;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .meta { font-size: 12px; color: var(--text-muted); }
+  .refresh-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .refresh-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
+
+  #loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid var(--red);
+    border-radius: var(--radius);
+    padding: 16px;
+    color: var(--red);
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+
+  #dashboard { display: none; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+    transition: border-color 0.15s;
+  }
+  .stat-card:hover { border-color: var(--accent); }
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .stat-card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .widgets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .widget {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .widget h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  .bar-group { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 80px;
+    text-align: right;
+  }
+  .bar-track {
+    flex: 1;
+    height: 22px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    min-width: 2px;
+  }
+  .bar-value {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 36px;
+  }
+
+  .mfa-ring { display: flex; align-items: center; gap: 24px; }
+  .ring-visual {
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .ring-inner {
+    width: 70px; height: 70px;
+    background: var(--surface);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .mfa-details { font-size: 13px; color: var(--text-muted); }
+  .mfa-details .highlight { color: var(--text); font-weight: 600; }
+
+  .seg-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .seg-bar > div { transition: width 0.4s ease; min-width: 2px; }
+  .seg-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-muted); }
+  .seg-legend .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .seg-legend .count { font-weight: 600; color: var(--text); }
+
+  .event-stat { text-align: center; padding: 20px 0; }
+  .event-stat .value { font-size: 36px; font-weight: 700; color: var(--accent-light); }
+  .event-stat .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>JumpCloud Dashboard</h1>
+      <div class="meta" id="timestamp"></div>
+    </div>
+    <button class="refresh-btn" id="refresh-btn">Refresh</button>
+  </header>
+
+  <div id="loading"><div class="spinner"></div>Loading dashboard data...</div>
+  <div id="error"></div>
+  <div id="dashboard">
+    <div class="stats-grid" id="stats-grid"></div>
+    <div class="widgets-grid" id="widgets-grid"></div>
+  </div>
+
+<script>
+(function() {
+  "use strict";
+
+  // --- Safe DOM helpers ---
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function(k) {
+        if (k === 'className') node.className = attrs[k];
+        else if (k === 'textContent') node.textContent = attrs[k];
+        else node.style[k] = attrs[k];
+      });
+    }
+    if (children) {
+      children.forEach(function(c) {
+        if (typeof c === 'string') node.appendChild(document.createTextNode(c));
+        else if (c) node.appendChild(c);
+      });
+    }
+    return node;
+  }
+
+  function clearChildren(parent) {
+    while (parent.firstChild) parent.removeChild(parent.firstChild);
+  }
+
+  // --- MCP PostMessage Client ---
+  var rpcId = 0;
+  var pending = {};
+  var toolResultHandler = null;
+
+  window.addEventListener('message', function(event) {
+    var msg = event.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+
+    if (msg.id !== undefined && pending[msg.id]) {
+      var cb = pending[msg.id];
+      delete pending[msg.id];
+      if (msg.error) cb.reject(msg.error);
+      else cb.resolve(msg.result);
+    }
+
+    if (msg.method === 'tools/result' && toolResultHandler) {
+      toolResultHandler(msg.params);
+    }
+  });
+
+  function callTool(name, args) {
+    var id = ++rpcId;
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        delete pending[id];
+        reject(new Error('Tool call timed out after 30s'));
+      }, 30000);
+      pending[id] = {
+        resolve: function(v) { clearTimeout(timer); resolve(v); },
+        reject: function(e) { clearTimeout(timer); reject(e); }
+      };
+      window.parent.postMessage({
+        jsonrpc: '2.0',
+        id: id,
+        method: 'tools/call',
+        params: { name: name, arguments: args || {} }
+      }, '*');
+    });
+  }
+
+  // Signal readiness to host
+  window.parent.postMessage({
+    jsonrpc: '2.0',
+    method: 'ui/ready',
+    params: { name: 'JumpCloud Dashboard', version: '1.0.0' }
+  }, '*');
+
+  // --- Color constants ---
+  var C = {
+    green: '#22c55e', yellow: '#eab308', red: '#ef4444',
+    blue: '#3b82f6', orange: '#f97316', cyan: '#06b6d4',
+    accent: '#818cf8', purple: '#a855f7'
+  };
+  var osColorMap = {
+    'Mac OS X': C.blue, 'Windows': C.cyan,
+    'Linux': C.orange, 'Ubuntu': C.purple
+  };
+  var fallbackColors = [C.blue, C.cyan, C.orange, C.purple, C.green, C.yellow];
+
+  // --- Formatting ---
+  function fmtNum(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  // --- Build stat card ---
+  function buildStatCard(value, label) {
+    var card = el('div', { className: 'stat-card' });
+    var valDiv = el('div', { className: 'value' }, [fmtNum(value)]);
+    var labDiv = el('div', { className: 'label' }, [label]);
+    card.appendChild(valDiv);
+    card.appendChild(labDiv);
+    return card;
+  }
+
+  // --- Build bar group ---
+  function buildBarGroup(items, total) {
+    var group = el('div', { className: 'bar-group' });
+    items.forEach(function(item) {
+      var pct = total > 0 ? (item.value / total * 100) : 0;
+      var row = el('div', { className: 'bar-row' });
+
+      var lbl = el('span', { className: 'bar-label' }, [item.label]);
+      var track = el('div', { className: 'bar-track' });
+      var fill = el('div', { className: 'bar-fill' });
+      fill.style.width = pct + '%';
+      fill.style.background = item.color;
+      track.appendChild(fill);
+      var val = el('span', { className: 'bar-value' }, [String(item.value)]);
+
+      row.appendChild(lbl);
+      row.appendChild(track);
+      row.appendChild(val);
+      group.appendChild(row);
+    });
+    return group;
+  }
+
+  // --- Build segmented bar ---
+  function buildSegBar(segs, total) {
+    var wrap = document.createDocumentFragment();
+    var bar = el('div', { className: 'seg-bar' });
+    segs.forEach(function(s) {
+      var pct = total > 0 ? (s.value / total * 100) : 0;
+      if (pct > 0) {
+        var seg = document.createElement('div');
+        seg.style.width = pct + '%';
+        seg.style.background = s.color;
+        bar.appendChild(seg);
+      }
+    });
+    wrap.appendChild(bar);
+
+    var legend = el('div', { className: 'seg-legend' });
+    segs.forEach(function(s) {
+      var span = document.createElement('span');
+      var dot = el('span', { className: 'dot' });
+      dot.style.background = s.color;
+      span.appendChild(dot);
+      span.appendChild(document.createTextNode(s.label + ' '));
+      var cnt = el('span', { className: 'count' }, [String(s.value)]);
+      span.appendChild(cnt);
+      legend.appendChild(span);
+    });
+    wrap.appendChild(legend);
+    return wrap;
+  }
+
+  // --- Build widget container ---
+  function buildWidget(title) {
+    var w = el('div', { className: 'widget' });
+    w.appendChild(el('h3', null, [title]));
+    return w;
+  }
+
+  // --- Build MFA ring ---
+  function buildMFARing(u) {
+    var pct = u.mfa_percentage || 0;
+    var ringColor = pct >= 80 ? C.green : pct >= 50 ? C.yellow : C.red;
+
+    var ring = el('div', { className: 'mfa-ring' });
+
+    var visual = el('div', { className: 'ring-visual' });
+    visual.style.background = 'conic-gradient(' + ringColor + ' ' + pct + '%, #1a1d27 0)';
+    var inner = el('div', { className: 'ring-inner' }, [Math.round(pct) + '%']);
+    visual.appendChild(inner);
+
+    var details = el('div', { className: 'mfa-details' });
+    var line1 = document.createElement('div');
+    var hl = el('span', { className: 'highlight' }, [String(u.mfa_enabled || 0)]);
+    line1.appendChild(hl);
+    line1.appendChild(document.createTextNode(' of ' + (u.total || 0) + ' users'));
+    details.appendChild(line1);
+    details.appendChild(el('div', null, ['have MFA enabled']));
+
+    ring.appendChild(visual);
+    ring.appendChild(details);
+    return ring;
+  }
+
+  // --- Render dashboard ---
+  function renderDashboard(data) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    if (data.timestamp) {
+      document.getElementById('timestamp').textContent = 'Updated ' + new Date(data.timestamp).toLocaleTimeString();
+    }
+
+    var u = data.users || {};
+    var d = data.devices || {};
+    var r = data.resources || {};
+    var e = data.events || {};
+
+    // Stat cards
+    var grid = document.getElementById('stats-grid');
+    clearChildren(grid);
+    var cards = [
+      [u.total || 0, 'Users'], [d.total || 0, 'Devices'],
+      [r.user_groups || 0, 'User Groups'], [r.device_groups || 0, 'Device Groups'],
+      [r.commands || 0, 'Commands'], [r.policies || 0, 'Policies'],
+      [r.applications || 0, 'Applications']
+    ];
+    cards.forEach(function(c) { grid.appendChild(buildStatCard(c[0], c[1])); });
+
+    // Widgets
+    var wg = document.getElementById('widgets-grid');
+    clearChildren(wg);
+
+    // User Status
+    var w1 = buildWidget('User Status');
+    w1.appendChild(buildBarGroup([
+      { label: 'Active', value: u.active || 0, color: C.green },
+      { label: 'Suspended', value: u.suspended || 0, color: C.yellow },
+      { label: 'Locked', value: u.locked || 0, color: C.red }
+    ], u.total || 1));
+    wg.appendChild(w1);
+
+    // MFA Adoption
+    var w2 = buildWidget('MFA Adoption');
+    w2.appendChild(buildMFARing(u));
+    wg.appendChild(w2);
+
+    // Device OS
+    var w3 = buildWidget('Device OS');
+    var osMap = d.os_breakdown || {};
+    var osKeys = Object.keys(osMap).sort(function(a, b) { return osMap[b] - osMap[a]; });
+    if (osKeys.length > 0) {
+      var colorIdx = 0;
+      var osItems = osKeys.map(function(k) {
+        return { label: k, value: osMap[k], color: osColorMap[k] || fallbackColors[colorIdx++ % fallbackColors.length] };
+      });
+      w3.appendChild(buildBarGroup(osItems, d.total || 1));
+    } else {
+      w3.appendChild(el('div', { color: 'var(--text-muted)', fontSize: '13px' }, ['No devices']));
+    }
+    wg.appendChild(w3);
+
+    // Device Connectivity
+    var w4 = buildWidget('Device Connectivity');
+    var conn = d.connectivity || {};
+    w4.appendChild(buildSegBar([
+      { label: 'Online', value: conn.online || 0, color: C.green },
+      { label: 'Recent', value: conn.recent || 0, color: C.blue },
+      { label: 'Stale', value: conn.stale || 0, color: C.yellow },
+      { label: 'Offline', value: conn.offline || 0, color: C.red }
+    ], d.total || 1));
+    wg.appendChild(w4);
+
+    // Events
+    var w5 = buildWidget('Events (Last 24h)');
+    var evStat = el('div', { className: 'event-stat' });
+    evStat.appendChild(el('div', { className: 'value' }, [fmtNum(e.last_24h || 0)]));
+    evStat.appendChild(el('div', { className: 'label' }, ['directory events in the last 24 hours']));
+    w5.appendChild(evStat);
+    wg.appendChild(w5);
+  }
+
+  function showError(msg) {
+    document.getElementById('loading').style.display = 'none';
+    var errEl = document.getElementById('error');
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+
+  function parseToolResult(result) {
+    if (result && result.content) {
+      var tc = result.content.find(function(c) { return c.type === 'text'; });
+      if (!tc) return null;
+      if (result.isError) throw new Error(tc.text);
+      return JSON.parse(tc.text);
+    }
+    return null;
+  }
+
+  // --- Initialization ---
+  var loaded = false;
+
+  toolResultHandler = function(params) {
+    if (loaded) return;
+    loaded = true;
+    try {
+      var data = parseToolResult(params);
+      if (data) renderDashboard(data);
+      else showError('Empty tool result');
+    } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
+  };
+
+  // Proactive fetch (gives host time to push result first)
+  setTimeout(function() {
+    if (loaded) return;
+    callTool('dashboard_view', {}).then(function(result) {
+      if (loaded) return;
+      loaded = true;
+      try {
+        var data = parseToolResult(result);
+        if (data) renderDashboard(data);
+        else showError('Empty dashboard response');
+      } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
+    }).catch(function(err) {
+      if (!loaded) showError('Failed to fetch data: ' + (err.message || String(err)));
+    });
+  }, 500);
+
+  // Refresh button
+  document.getElementById('refresh-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.classList.add('loading');
+    btn.textContent = 'Loading...';
+    callTool('dashboard_view', {}).then(function(result) {
+      try {
+        var data = parseToolResult(result);
+        if (data) renderDashboard(data);
+        else showError('Refresh returned empty data');
+      } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
+      btn.classList.remove('loading');
+      btn.textContent = 'Refresh';
+    }).catch(function(err) {
+      showError('Refresh failed: ' + (err.message || String(err)));
+      btn.classList.remove('loading');
+      btn.textContent = 'Refresh';
+    });
+  });
+})();
+</script>
+</body>
+</html>

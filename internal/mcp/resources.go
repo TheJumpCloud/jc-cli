@@ -33,6 +33,7 @@ func (s *Server) registerResources() {
 	s.registerFoundationResources()
 	s.registerSchemaResources()
 	s.registerRecipeResources()
+	s.registerAppResources()
 }
 
 // registerFoundationResources adds server info and config profile resources.
