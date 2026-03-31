@@ -219,7 +219,19 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 			APIKey:     apiKey,
 		})
 
+	case "http":
+		// Streamable HTTP transport for Claude Desktop custom connectors and MCP Apps.
+		// No auth by default on loopback — designed for local use with cloudflared tunnels.
+		listenAddr := resolveSSEAddr(addr, port)
+
+		fmt.Fprintf(os.Stderr, "jc: starting MCP server on Streamable HTTP transport at http://%s/mcp\n", listenAddr)
+
+		return server.RunStreamableHTTP(ctx, mcp.SSEConfig{
+			Addr:       listenAddr,
+			CORSOrigin: "*",
+		})
+
 	default:
-		return fmt.Errorf("unknown transport %q: must be 'stdio' or 'sse'", transport)
+		return fmt.Errorf("unknown transport %q: must be 'stdio', 'sse', or 'http'", transport)
 	}
 }

@@ -223,6 +223,57 @@ func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
 	return err
 }
 
+// RunStreamableHTTP starts the MCP server as a Streamable HTTP server.
+// This transport is required for Claude Desktop custom connectors and MCP Apps rendering.
+func (s *Server) RunStreamableHTTP(ctx context.Context, cfg SSEConfig) error {
+	defer s.auditLog.close()
+
+	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		return s.mcpServer
+	}, &mcp.StreamableHTTPOptions{
+		// Disable DNS rebinding protection so tunneled requests (e.g. cloudflared)
+		// with non-localhost Host headers are accepted.
+		DisableLocalhostProtection: true,
+	})
+
+	var h http.Handler = handler
+	if cfg.APIKey != "" {
+		h = s.authMiddleware(cfg.APIKey, h)
+	}
+	if cfg.CORSOrigin != "" {
+		h = corsMiddleware(cfg.CORSOrigin, h)
+	}
+
+	srv := buildHTTPServer(cfg, h)
+
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
+	}
+
+	s.mu.Lock()
+	s.listener = ln
+	s.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		srv.Close()
+	}()
+
+	fmt.Fprintf(os.Stderr, "MCP Streamable HTTP server listening on http://%s/mcp\n", ln.Addr())
+
+	// Mount handler at /mcp path.
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", h)
+	srv.Handler = mux
+
+	err = srv.Serve(ln)
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
 // Listener returns the active SSE listener address, or nil if not running.
 func (s *Server) Listener() net.Addr {
 	s.mu.Lock()
