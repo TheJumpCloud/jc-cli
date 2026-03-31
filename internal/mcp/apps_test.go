@@ -237,7 +237,7 @@ func TestDashboardResource_ServesHTML(t *testing.T) {
 		t.Fatal("expected non-empty resource contents")
 	}
 	content := result.Contents[0]
-	if content.MIMEType != "text/html" {
+	if content.MIMEType != "text/html;profile=mcp-app" {
 		t.Errorf("expected MIME type text/html, got %q", content.MIMEType)
 	}
 	if content.Text == "" {
@@ -266,7 +266,7 @@ func TestDashboardResource_InResourceList(t *testing.T) {
 	for _, r := range result.Resources {
 		if r.URI == "ui://jc/dashboard" {
 			found = true
-			if r.MIMEType != "text/html" {
+			if r.MIMEType != "text/html;profile=mcp-app" {
 				t.Errorf("expected MIME type text/html, got %q", r.MIMEType)
 			}
 			break

@@ -68,7 +68,10 @@ func (s *Server) registerAppTools() {
 	s.addToolWithMeta(
 		"dashboard_view",
 		"Show an interactive JumpCloud organization dashboard with user/device counts, MFA adoption, device OS breakdown, resource counts, and recent event activity. Returns structured data that renders as a rich HTML dashboard in MCP App-capable hosts.",
-		mcp.Meta{"ui": map[string]any{"resourceUri": "ui://jc/dashboard"}},
+		mcp.Meta{
+			"ui":              map[string]any{"resourceUri": "ui://jc/dashboard"},
+			"ui/resourceUri":  "ui://jc/dashboard", // legacy key for older hosts
+		},
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			data, err := fetchDashboardData(ctx)
 			if err != nil {
@@ -90,13 +93,13 @@ func (s *Server) registerAppResources() {
 			URI:         "ui://jc/dashboard",
 			Name:        "Dashboard App",
 			Description: "Interactive JumpCloud organization dashboard",
-			MIMEType:    "text/html",
+			MIMEType:    "text/html;profile=mcp-app",
 		},
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{
 				Contents: []*mcp.ResourceContents{{
 					URI:      "ui://jc/dashboard",
-					MIMEType: "text/html",
+					MIMEType: "text/html;profile=mcp-app",
 					Text:     dashboardHTML,
 				}},
 			}, nil

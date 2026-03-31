@@ -243,10 +243,10 @@ func TestMCP_ListResources(t *testing.T) {
 	for _, r := range result.Resources {
 		uris[r.URI] = true
 		mimeTypes[r.URI] = r.MIMEType
-		// ui:// resources serve HTML; everything else is JSON.
+		// ui:// resources serve MCP App HTML; everything else is JSON.
 		if strings.HasPrefix(r.URI, "ui://") {
-			if r.MIMEType != "text/html" {
-				t.Errorf("resource %s: expected MIME type text/html, got %q", r.URI, r.MIMEType)
+			if r.MIMEType != "text/html;profile=mcp-app" {
+				t.Errorf("resource %s: expected MIME type text/html;profile=mcp-app, got %q", r.URI, r.MIMEType)
 			}
 		} else if r.MIMEType != "application/json" {
 			t.Errorf("resource %s: expected MIME type application/json, got %q", r.URI, r.MIMEType)
