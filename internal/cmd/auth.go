@@ -211,6 +211,11 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 		}
 	}
 
+	// Clear any service account fields — this profile is now API key auth.
+	_ = config.SetProfileField(profile, "auth_method", "")
+	_ = config.SetProfileField(profile, "client_id", "")
+	_ = config.SetProfileField(profile, "client_secret", "")
+
 	// Set as active profile if it's not already.
 	if config.ActiveProfile() != profile {
 		if err := config.SetActiveProfile(profile); err != nil {
@@ -397,8 +402,6 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 		if clientID != "" && clientSecret != "" {
 			tc := api.NewTokenCache(clientID, clientSecret)
-			// Validate by obtaining a token — this proves credentials work.
-			// Don't rely on /organizations which may return 403 for service accounts.
 			_, tokenErr := tc.Token()
 			if tokenErr == nil {
 				status.Authenticated = true
@@ -408,7 +411,6 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 					status.TokenExpiry = expiresAt.UTC().Format("2006-01-02T15:04:05Z")
 				}
 
-				// Best-effort org info — service accounts may lack /organizations access.
 				client := newOAuthClient(tc)
 				org, err := client.ValidateAPIKey()
 				if err == nil {
@@ -419,13 +421,18 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-	} else {
+	}
+
+	// Fall back to API key if not yet authenticated (covers the case where
+	// auth_method is service_account but an API key was stored via auth login).
+	if !status.Authenticated {
 		apiKey := config.APIKey()
 		if apiKey != "" {
 			client := newAPIClient(apiKey)
 			org, err := client.ValidateAPIKey()
 			if err == nil {
 				status.Authenticated = true
+				status.AuthMethod = "api_key"
 				status.OrgName = org.DisplayName
 				status.OrgID = org.ID
 				status.APIKeyRedacted = api.RedactKey(apiKey)
