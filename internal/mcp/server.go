@@ -244,7 +244,11 @@ func (s *Server) RunStreamableHTTP(ctx context.Context, cfg SSEConfig) error {
 		h = corsMiddleware(cfg.CORSOrigin, h)
 	}
 
-	srv := buildHTTPServer(cfg, h)
+	// Mount handler at /mcp path.
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", h)
+
+	srv := buildHTTPServer(cfg, mux)
 
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
@@ -261,11 +265,6 @@ func (s *Server) RunStreamableHTTP(ctx context.Context, cfg SSEConfig) error {
 	}()
 
 	fmt.Fprintf(os.Stderr, "MCP Streamable HTTP server listening on http://%s/mcp\n", ln.Addr())
-
-	// Mount handler at /mcp path.
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", h)
-	srv.Handler = mux
 
 	err = srv.Serve(ln)
 	if err == http.ErrServerClosed {

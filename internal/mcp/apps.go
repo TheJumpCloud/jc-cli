@@ -16,7 +16,10 @@ import (
 //go:embed apps_html/dashboard.html
 var dashboardHTML string
 
-// --- MCP App tool registration ---
+const (
+	dashboardResourceURI = "ui://jc/dashboard"
+	mcpAppMIMEType       = "text/html;profile=mcp-app"
+)
 
 // addToolWithMeta wraps mcp.AddTool with rate limiting, audit logging, and
 // tool filtering — same as addTool but also sets Meta on the tool definition.
@@ -69,8 +72,8 @@ func (s *Server) registerAppTools() {
 		"dashboard_view",
 		"Show an interactive JumpCloud organization dashboard with user/device counts, MFA adoption, device OS breakdown, resource counts, and recent event activity. Returns structured data that renders as a rich HTML dashboard in MCP App-capable hosts.",
 		mcp.Meta{
-			"ui":              map[string]any{"resourceUri": "ui://jc/dashboard"},
-			"ui/resourceUri":  "ui://jc/dashboard", // legacy key for older hosts
+			"ui":              map[string]any{"resourceUri": dashboardResourceURI},
+			"ui/resourceUri":  dashboardResourceURI, // legacy key for older hosts
 		},
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			data, err := fetchDashboardData(ctx)
@@ -90,16 +93,16 @@ func (s *Server) registerAppTools() {
 func (s *Server) registerAppResources() {
 	s.mcpServer.AddResource(
 		&mcp.Resource{
-			URI:         "ui://jc/dashboard",
+			URI:         dashboardResourceURI,
 			Name:        "Dashboard App",
 			Description: "Interactive JumpCloud organization dashboard",
-			MIMEType:    "text/html;profile=mcp-app",
+			MIMEType:    mcpAppMIMEType,
 		},
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{
 				Contents: []*mcp.ResourceContents{{
-					URI:      "ui://jc/dashboard",
-					MIMEType: "text/html;profile=mcp-app",
+					URI:      dashboardResourceURI,
+					MIMEType: mcpAppMIMEType,
 					Text:     dashboardHTML,
 				}},
 			}, nil
@@ -269,7 +272,8 @@ func fetchDashboardData(ctx context.Context) (*dashboardData, error) {
 			return
 		}
 		var cmds, apps int
-		cmdResult, err := client.ListAll(ctx, "/commands", api.ListOptions{})
+		// Limit: 1 — we only need TotalCount from the first page, not all records.
+		cmdResult, err := client.ListAll(ctx, "/commands", api.ListOptions{Limit: 1})
 		if err != nil {
 			mu.Lock()
 			errs = append(errs, fmt.Sprintf("listing commands: %v", err))
@@ -277,7 +281,7 @@ func fetchDashboardData(ctx context.Context) (*dashboardData, error) {
 		} else {
 			cmds = cmdResult.TotalCount
 		}
-		appResult, err := client.ListAll(ctx, "/applications", api.ListOptions{})
+		appResult, err := client.ListAll(ctx, "/applications", api.ListOptions{Limit: 1})
 		if err != nil {
 			mu.Lock()
 			errs = append(errs, fmt.Sprintf("listing applications: %v", err))

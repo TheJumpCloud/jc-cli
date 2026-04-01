@@ -105,7 +105,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 
 	cmd.Flags().IntVar(&rateLimit, "rate-limit", 60, "Maximum tool calls per minute")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "Disable all mutation tools")
-	cmd.Flags().StringVar(&transport, "transport", "stdio", "Transport type: stdio or sse")
+	cmd.Flags().StringVar(&transport, "transport", "stdio", "Transport type: stdio, sse, or http")
 	cmd.Flags().StringVar(&addr, "addr", "", "Listen address for SSE transport (default 127.0.0.1:<port>)")
 	cmd.Flags().IntVar(&port, "port", 8080, "Port for SSE transport (default 8080)")
 	cmd.Flags().StringVar(&corsOrigin, "cors-origin", "", "Allowed CORS origin for SSE transport")
