@@ -43,9 +43,20 @@ type Client struct {
 	TokenCache *TokenCache
 }
 
-// NewClient creates a new API client using the currently configured API key.
-// Returns ErrNoAPIKey if no key is available from flags, env, or config.
+// NewClient creates a new API client using the currently configured credentials.
+// For service accounts, it creates an OAuth bearer-token client.
+// For API key auth, it creates an x-api-key client.
+// Returns ErrNoAPIKey if no credentials are available.
 func NewClient() (*Client, error) {
+	if config.AuthMethod() == "service_account" {
+		clientID := config.ClientID()
+		clientSecret := config.ClientSecret()
+		if clientID != "" && clientSecret != "" {
+			tc := NewTokenCache(clientID, clientSecret)
+			return NewClientWithToken(tc), nil
+		}
+	}
+
 	key := config.APIKey()
 	if key == "" {
 		return nil, ErrNoAPIKey
