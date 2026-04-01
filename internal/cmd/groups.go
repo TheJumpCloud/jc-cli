@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -74,9 +75,10 @@ func newGroupsUserCmd() *cobra.Command {
 
 func newGroupsUserListCmd() *cobra.Command {
 	var (
-		limitFlag  int
-		sortFlag   string
-		filterFlag []string
+		limitFlag   int
+		sortFlag    string
+		filterFlag  []string
+		membersFlag bool
 	)
 
 	cmd := &cobra.Command{
@@ -87,23 +89,25 @@ func newGroupsUserListCmd() *cobra.Command {
 
 Default fields: id, name, description, type.
 Use --output table for a readable ASCII table.
+Use --members to include a memberCount field (requires extra API calls).
 
 Filter examples:
   --filter 'name=Engineering'     Exact match
   --filter 'type=custom'          Filter by type`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGroupsUserList(cmd, limitFlag, sortFlag, filterFlag)
+			return runGroupsUserList(cmd, limitFlag, sortFlag, filterFlag, membersFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -name)")
 	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'name=Engineering')")
+	cmd.Flags().BoolVar(&membersFlag, "members", false, "Include memberCount field (extra API call per group)")
 
 	return cmd
 }
 
-func runGroupsUserList(cmd *cobra.Command, limit int, sort string, filters []string) error {
+func runGroupsUserList(cmd *cobra.Command, limit int, sort string, filters []string, members bool) error {
 	exprs, err := filter.ParseAll(filters)
 	if err != nil {
 		return err
@@ -123,15 +127,23 @@ func runGroupsUserList(cmd *cobra.Command, limit int, sort string, filters []str
 		return err
 	}
 
+	data := result.Data
+	if members {
+		data = enrichWithMemberCount(cmd.Context(), client, data, "/usergroups/%s/members")
+	}
+
 	opts := output.CurrentOptions()
 	opts.DefaultFields = userGroupDefaultFields
+	if members {
+		opts.DefaultFields = append(opts.DefaultFields, "memberCount")
+	}
 
-	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+	if err := output.WriteList(cmd.OutOrStdout(), data, opts); err != nil {
 		return err
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
 	}
 
 	return nil
@@ -438,6 +450,48 @@ func runGroupsUserDeleteStdin(cmd *cobra.Command) error {
 	return nil
 }
 
+// enrichWithMemberCount fetches member counts for each group in parallel and
+// injects a "memberCount" field into each group's JSON. The endpointFmt should
+// contain a %s placeholder for the group ID (e.g. "/usergroups/%s/members").
+func enrichWithMemberCount(ctx context.Context, client *api.V2Client, groups []json.RawMessage, endpointFmt string) []json.RawMessage {
+	result := make([]json.RawMessage, len(groups))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10) // bounded concurrency
+
+	for i, raw := range groups {
+		var g struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &g); err != nil || g.ID == "" {
+			result[i] = raw
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, groupID string, rawJSON json.RawMessage) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			endpoint := fmt.Sprintf(endpointFmt, groupID)
+			members, err := client.ListAll(ctx, endpoint, api.V2ListOptions{})
+
+			var obj map[string]any
+			json.Unmarshal(rawJSON, &obj)
+			if err != nil {
+				obj["memberCount"] = -1
+			} else {
+				obj["memberCount"] = len(members.Data)
+			}
+			enriched, _ := json.Marshal(obj)
+			result[idx] = enriched
+		}(i, g.ID, raw)
+	}
+
+	wg.Wait()
+	return result
+}
+
 // --- Device Groups ---
 
 func newGroupsDeviceCmd() *cobra.Command {
@@ -458,9 +512,10 @@ func newGroupsDeviceCmd() *cobra.Command {
 
 func newGroupsDeviceListCmd() *cobra.Command {
 	var (
-		limitFlag  int
-		sortFlag   string
-		filterFlag []string
+		limitFlag   int
+		sortFlag    string
+		filterFlag  []string
+		membersFlag bool
 	)
 
 	cmd := &cobra.Command{
@@ -471,23 +526,25 @@ func newGroupsDeviceListCmd() *cobra.Command {
 
 Default fields: id, name, description, type.
 Use --output table for a readable ASCII table.
+Use --members to include a memberCount field (requires extra API calls).
 
 Filter examples:
   --filter 'name=macOS Fleet'     Exact match
   --filter 'type=custom'          Filter by type`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGroupsDeviceList(cmd, limitFlag, sortFlag, filterFlag)
+			return runGroupsDeviceList(cmd, limitFlag, sortFlag, filterFlag, membersFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -name)")
 	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'name=macOS Fleet')")
+	cmd.Flags().BoolVar(&membersFlag, "members", false, "Include memberCount field (extra API call per group)")
 
 	return cmd
 }
 
-func runGroupsDeviceList(cmd *cobra.Command, limit int, sort string, filters []string) error {
+func runGroupsDeviceList(cmd *cobra.Command, limit int, sort string, filters []string, members bool) error {
 	exprs, err := filter.ParseAll(filters)
 	if err != nil {
 		return err
@@ -507,15 +564,23 @@ func runGroupsDeviceList(cmd *cobra.Command, limit int, sort string, filters []s
 		return err
 	}
 
+	data := result.Data
+	if members {
+		data = enrichWithMemberCount(cmd.Context(), client, data, "/systemgroups/%s/membership")
+	}
+
 	opts := output.CurrentOptions()
 	opts.DefaultFields = deviceGroupDefaultFields
+	if members {
+		opts.DefaultFields = append(opts.DefaultFields, "memberCount")
+	}
 
-	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+	if err := output.WriteList(cmd.OutOrStdout(), data, opts); err != nil {
 		return err
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
 	}
 
 	return nil
