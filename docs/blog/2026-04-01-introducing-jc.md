@@ -4,7 +4,7 @@
 
 ---
 
-If you manage a JumpCloud organization, you know the admin console well. It's polished, it's visual, and it works great for one-off tasks. But when you need to lock 50 suspended users, audit MFA adoption across your org, pipe device lists into a script, or automate onboarding from a CI pipeline, the console becomes the bottleneck.
+If you manage a JumpCloud organization, you know the admin console well. It's polished, it's visual, and it works great for one-off tasks. But when you need to lock 50 suspended users, audit MFA adoption across your org, pipe device lists into a script, or automate onboarding from a CI pipeline, the console can turn into a bottleneck.
 
 **jc** is an open-source command-line interface that gives you the full JumpCloud API surface in a single, dependency-free Go binary. It's built for the way power users and automation actually work: piping, filtering, scripting, and — increasingly — talking to AI.
 
