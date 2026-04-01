@@ -87,7 +87,7 @@ jc policies list -t
 
 For key policies (e.g., FileVault, screen lock):
 ```bash
-jc policies results <policy-name> -t
+jc policies results POLICY_NAME -t
 ```
 
 Check for devices with `failed` or `pending` status.

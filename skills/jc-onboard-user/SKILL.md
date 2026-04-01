@@ -26,7 +26,7 @@ Ask the user for:
 ### 1. Preview the user creation
 
 ```bash
-jc users create --username <username> --email <email> --firstname <first> --lastname <last> --department <dept> --plan
+jc users create --username USERNAME --email EMAIL --firstname FIRST --lastname LAST --department DEPT --plan
 ```
 
 Show the plan output. Confirm with the user before proceeding.
@@ -34,7 +34,7 @@ Show the plan output. Confirm with the user before proceeding.
 ### 2. Create the user
 
 ```bash
-jc users create --username <username> --email <email> --firstname <first> --lastname <last> --department <dept>
+jc users create --username USERNAME --email EMAIL --firstname FIRST --lastname LAST --department DEPT
 ```
 
 Capture the user ID from the output (`--ids` flag returns just the ID).
@@ -44,18 +44,18 @@ Capture the user ID from the output (`--ids` flag returns just the ID).
 For each group the user should be added to:
 
 ```bash
-jc groups add-member <group-name> --user <username>
+jc groups add-member GROUP_NAME --user USERNAME
 ```
 
 If a group doesn't exist, offer to create it first:
 ```bash
-jc groups user create --name <group-name>
+jc groups user create --name GROUP_NAME
 ```
 
 ### 4. Verify setup
 
 ```bash
-jc users get <username> -t
+jc users get USERNAME -t
 ```
 
 Check that the user exists, is activated, and has the correct details.
@@ -63,7 +63,7 @@ Check that the user exists, is activated, and has the correct details.
 ### 5. Verify group memberships
 
 ```bash
-jc graph traverse --from user:<username> --to user_group -t
+jc graph traverse --from user:USERNAME --to user_group -t
 ```
 
 Confirm the user appears in all expected groups.

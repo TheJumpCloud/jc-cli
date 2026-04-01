@@ -66,7 +66,7 @@ jc policies list -t
 For each critical policy (FileVault, screen lock, firewall, etc.):
 
 ```bash
-jc policies results <policy-name> --query "[?status=='failed' || status=='pending'].{system:systemID,status:status}" -t
+jc policies results POLICY_NAME --query "[?status=='failed' || status=='pending'].{system:systemID,status:status}" -t
 ```
 
 | Threshold | Result |
@@ -80,7 +80,7 @@ jc policies results <policy-name> --query "[?status=='failed' || status=='pendin
 **Goal:** Organization has a strong password policy configured.
 
 ```bash
-jc org settings <org-id> --query "passwordPolicy"
+jc org settings ORG_ID --query "passwordPolicy"
 ```
 
 Check for:
@@ -135,7 +135,7 @@ jc iplists list -t
 Produce a summary table:
 
 ```
-JumpCloud Compliance Report — <org-name> — <date>
+JumpCloud Compliance Report — ORG_NAME — DATE
 
 | # | Check                    | Status | Detail                           |
 |---|--------------------------|--------|----------------------------------|

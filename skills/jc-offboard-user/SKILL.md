@@ -22,7 +22,7 @@ Ask the user for:
 ### 1. Verify the user exists
 
 ```bash
-jc users get <username> -t
+jc users get USERNAME -t
 ```
 
 Confirm the user identity before proceeding.
@@ -30,7 +30,7 @@ Confirm the user identity before proceeding.
 ### 2. Lock the account immediately
 
 ```bash
-jc users lock <username>
+jc users lock USERNAME
 ```
 
 This prevents login right away.
@@ -38,7 +38,7 @@ This prevents login right away.
 ### 3. Find all group memberships
 
 ```bash
-jc graph traverse --from user:<username> --to user_group -t
+jc graph traverse --from user:USERNAME --to user_group -t
 ```
 
 ### 4. Remove from all groups
@@ -46,13 +46,13 @@ jc graph traverse --from user:<username> --to user_group -t
 For each group found in step 3:
 
 ```bash
-jc groups remove-member <group-name> --user <username> --force
+jc groups remove-member GROUP_NAME --user USERNAME --force
 ```
 
 ### 5. Reset MFA enrollment
 
 ```bash
-jc users reset-mfa <username>
+jc users reset-mfa USERNAME
 ```
 
 This invalidates any TOTP tokens the user has configured.
@@ -62,26 +62,26 @@ This invalidates any TOTP tokens the user has configured.
 If the admin confirmed deletion:
 
 ```bash
-jc users delete <username> --plan
+jc users delete USERNAME --plan
 ```
 
 Show the plan first. Then:
 
 ```bash
-jc users delete <username> --force
+jc users delete USERNAME --force
 ```
 
 ### 7. Verify
 
 If deleted:
 ```bash
-jc users get <username>
+jc users get USERNAME
 # Should return "not found"
 ```
 
 If locked (not deleted):
 ```bash
-jc users get <username> -t
+jc users get USERNAME -t
 # Should show account_locked: true
 ```
 
