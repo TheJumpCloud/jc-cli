@@ -121,6 +121,15 @@ For service account authentication (--service-account):
 			if serviceAccountFlag {
 				return runAuthLoginServiceAccount(cmd, profileFlag, defaultInput)
 			}
+			// Auto-detect: if the profile is configured as a service account, use that flow.
+			profile := profileFlag
+			if profile == "" {
+				profile = config.ActiveProfile()
+			}
+			method := viper.GetString("profiles." + profile + ".auth_method")
+			if method == "service_account" {
+				return runAuthLoginServiceAccount(cmd, profileFlag, defaultInput)
+			}
 			return runAuthLogin(cmd, profileFlag, defaultInput)
 		},
 	}
@@ -376,16 +385,25 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 		if clientID != "" && clientSecret != "" {
 			tc := api.NewTokenCache(clientID, clientSecret)
-			client := newOAuthClient(tc)
-			org, err := client.ValidateAPIKey()
-			if err == nil {
+			// Validate by obtaining a token — this proves credentials work.
+			// Don't rely on /organizations which may return 403 for service accounts.
+			_, tokenErr := tc.Token()
+			if tokenErr == nil {
 				status.Authenticated = true
-				status.OrgName = org.DisplayName
-				status.OrgID = org.ID
 				status.ClientID = clientID
 				expiresAt := tc.ExpiresAt()
 				if !expiresAt.IsZero() {
 					status.TokenExpiry = expiresAt.UTC().Format("2006-01-02T15:04:05Z")
+				}
+
+				// Best-effort org info — service accounts may lack /organizations access.
+				client := newOAuthClient(tc)
+				org, err := client.ValidateAPIKey()
+				if err == nil {
+					status.OrgName = org.DisplayName
+					status.OrgID = org.ID
+				} else {
+					status.OrgID = config.OrgID()
 				}
 			}
 		}
@@ -434,7 +452,12 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Authenticated: no\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "Profile:       %s\n", status.Profile)
-		fmt.Fprintf(cmd.OutOrStdout(), "Run 'jc auth login' to authenticate.\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "Auth Method:   %s\n", status.AuthMethod)
+		if status.AuthMethod == "service_account" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Run 'jc auth login --service-account' to re-authenticate.\n")
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Run 'jc auth login' to authenticate.\n")
+		}
 		return &ExitError{Code: ExitCodeAuthFailed}
 	}
 

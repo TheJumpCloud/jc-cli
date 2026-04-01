@@ -178,10 +178,10 @@ fi
 
 # MCP tools count
 MCP_COUNT=$($JC mcp tools 2>/dev/null | wc -l | tr -d ' ')
-if [ "$MCP_COUNT" -eq 189 ]; then
+if [ "$MCP_COUNT" -eq 195 ]; then
   pass "mcp tools count ($MCP_COUNT)"
 else
-  fail "mcp tools count" "expected 189, got $MCP_COUNT"
+  fail "mcp tools count" "expected 195, got $MCP_COUNT"
 fi
 
 # Org list (no --limit; org returns a single object)
@@ -390,6 +390,9 @@ run_ok "org list (yaml)"               $JC org list --output yaml
 run_ok "insights query (json)"         $JC insights query --service all --last 1h --limit 5
 run_ok "insights count"                $JC insights count --service all --last 1h
 
+# MCP Apps
+run_contains "mcp dashboard_view tool" "dashboard_view" $JC mcp tools
+
 # System Insights
 run_ok "system-insights tables"        $JC system-insights tables
 run_ok "system-insights os_version"    $JC system-insights os_version -t
@@ -407,6 +410,7 @@ run_ok "jmespath query"                $JC devices list --limit 2 --query "[].ho
 
 phase 5 "Utilities"
 
+run_contains "transport http in help" "http" $JC mcp serve --help
 run_contains "explain" "delete users" $JC explain users delete testuser
 run_ok "config view"           $JC config view
 run_contains "schema resources" "users" $JC schema resources
