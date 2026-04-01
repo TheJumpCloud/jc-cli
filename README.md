@@ -924,4 +924,6 @@ internal/
 
 ## License
 
-This project is proprietary software. All rights reserved.
+MIT License. See [LICENSE](LICENSE) for details.
+
+**Note:** jc is an independent, community-built open-source project. It is not developed, maintained, or endorsed by JumpCloud. For issues with jc, please use the [GitHub issue tracker](https://github.com/juergen-kc/jc/issues).
