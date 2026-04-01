@@ -79,8 +79,14 @@ jc policies results POLICY_NAME --query "[?status=='failed' || status=='pending'
 
 **Goal:** Organization has a strong password policy configured.
 
+First, get the org ID:
 ```bash
-jc org settings ORG_ID --query "passwordPolicy"
+jc org list --ids
+```
+
+Then check password policy:
+```bash
+jc org settings THE_ORG_ID --query "passwordPolicy"
 ```
 
 Check for:
