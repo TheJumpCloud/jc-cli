@@ -237,6 +237,18 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 		profile = config.ActiveProfile()
 	}
 
+	// If credentials are already stored and valid, skip prompting.
+	existingID := config.ClientID()
+	existingSecret := config.ClientSecret()
+	if existingID != "" && existingSecret != "" {
+		tc := api.NewTokenCache(existingID, existingSecret)
+		if _, err := tc.Token(); err == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Already authenticated as service account (profile: %s)\n", profile)
+			return nil
+		}
+		// Token fetch failed — fall through to re-prompt.
+	}
+
 	// Check if running non-interactively.
 	if viper.GetBool("non-interactive") {
 		return fmt.Errorf("auth login --service-account requires interactive input. Remove --non-interactive")
