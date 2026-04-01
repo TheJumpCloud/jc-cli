@@ -19,5 +19,8 @@ coverage.html
 # Build
 dist/
 
-# Large logs
-.chief/prds/main/claude.log
+# Internal planning artifacts
+.chief/
+CLAUDE.md
+JumpCloud-CLI-PRD.md
+progress.md
