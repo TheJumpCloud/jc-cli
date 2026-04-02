@@ -19,6 +19,22 @@ import (
 // softwareDefaultFields is the default field subset shown for software app output.
 var softwareDefaultFields = []string{"id", "displayName", "createdAt", "updatedAt"}
 
+// validPackageManagers is the set of accepted package manager values.
+var validPackageManagers = []string{
+	"APPLE_CUSTOM", "APPLE_VPP", "CHOCOLATEY",
+	"GOOGLE_ANDROID", "MICROSOFT_STORE", "WINDOWS_MDM", "WINGET",
+}
+
+func validatePackageManager(value string) (string, error) {
+	upper := strings.ToUpper(value)
+	for _, v := range validPackageManagers {
+		if upper == v {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("invalid package manager %q, must be one of: %s", value, strings.Join(validPackageManagers, ", "))
+}
+
 // resolveSoftwareApp resolves a software app name or ID to a JumpCloud software app ID.
 func resolveSoftwareApp(ctx context.Context, client *api.V2Client, identifier string) (string, error) {
 	r := resolve.NewV2Resolver(client)
@@ -148,8 +164,14 @@ func runSoftwareGet(cmd *cobra.Command, identifier string) error {
 
 func newSoftwareCreateCmd() *cobra.Command {
 	var (
-		name     string
-		settings string
+		name           string
+		settings       string
+		packageID      string
+		packageManager string
+		desiredState   string
+		location       string
+		description    string
+		autoUpdate     bool
 	)
 
 	cmd := &cobra.Command{
@@ -158,25 +180,61 @@ func newSoftwareCreateCmd() *cobra.Command {
 		Long: `Create a new JumpCloud software app.
 
 Required fields: --name.
-Optionally provide --settings as a raw JSON string for the settings array.
-The newly created software app object is returned.`,
+
+Package settings can be specified in two ways:
+
+1. Individual flags (recommended for single-package apps):
+   --package-id firefox --package-manager CHOCOLATEY
+
+2. Raw JSON (for advanced/multi-package use):
+   --settings '[{"packageId":"firefox","packageManager":"CHOCOLATEY"}]'
+
+Valid package managers: APPLE_CUSTOM, APPLE_VPP, CHOCOLATEY, GOOGLE_ANDROID,
+MICROSOFT_STORE, WINDOWS_MDM, WINGET.
+
+If --settings is provided, it takes precedence over individual package flags.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSoftwareCreate(cmd, name, settings)
+			return runSoftwareCreate(cmd, name, settings, packageID, packageManager, desiredState, location, description, autoUpdate)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Software app display name (required)")
-	cmd.Flags().StringVar(&settings, "settings", "", "Settings as raw JSON string")
+	cmd.Flags().StringVar(&settings, "settings", "", "Settings as raw JSON string (advanced)")
+	cmd.Flags().StringVar(&packageID, "package-id", "", "Package identifier (e.g. firefox, com.1password.1password)")
+	cmd.Flags().StringVar(&packageManager, "package-manager", "", "Package manager: CHOCOLATEY, APPLE_CUSTOM, APPLE_VPP, WINGET, MICROSOFT_STORE, WINDOWS_MDM, GOOGLE_ANDROID")
+	cmd.Flags().StringVar(&desiredState, "desired-state", "INSTALL", "Desired state (default: INSTALL)")
+	cmd.Flags().StringVar(&location, "location", "", "Download URL for custom packages")
+	cmd.Flags().StringVar(&description, "description", "", "Package description")
+	cmd.Flags().BoolVar(&autoUpdate, "auto-update", false, "Enable automatic updates")
 	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
 }
 
-func runSoftwareCreate(cmd *cobra.Command, name, settings string) error {
+func runSoftwareCreate(cmd *cobra.Command, name, settings, packageID, packageManager, desiredState, location, description string, autoUpdate bool) error {
+	// Validate package manager if individual flags are used.
+	if packageID != "" && packageManager == "" {
+		return fmt.Errorf("--package-manager is required when using --package-id")
+	}
+	if packageManager != "" {
+		var err error
+		packageManager, err = validatePackageManager(packageManager)
+		if err != nil {
+			return err
+		}
+	}
+
 	if viper.GetBool("plan") {
 		effects := []string{"displayName: " + name}
 		if settings != "" {
-			effects = append(effects, "settings: (provided)")
+			effects = append(effects, "settings: (raw JSON)")
+		} else if packageID != "" {
+			effects = append(effects, "packageId: "+packageID)
+			effects = append(effects, "packageManager: "+packageManager)
+			effects = append(effects, "desiredState: "+desiredState)
+			if location != "" {
+				effects = append(effects, "location: "+location)
+			}
 		}
 		p := &plan.Plan{
 			Action:     "create",
@@ -196,11 +254,28 @@ func runSoftwareCreate(cmd *cobra.Command, name, settings string) error {
 	body := map[string]any{
 		"displayName": name,
 	}
+
 	if settings != "" {
 		if !json.Valid([]byte(settings)) {
 			return fmt.Errorf("parsing --settings: invalid JSON")
 		}
 		body["settings"] = json.RawMessage(settings)
+	} else if packageID != "" {
+		pkg := map[string]any{
+			"packageId":      packageID,
+			"packageManager": packageManager,
+			"desiredState":   desiredState,
+		}
+		if location != "" {
+			pkg["location"] = location
+		}
+		if description != "" {
+			pkg["description"] = description
+		}
+		if autoUpdate {
+			pkg["autoUpdate"] = true
+		}
+		body["settings"] = []any{pkg}
 	}
 
 	result, err := client.Create(cmd.Context(), "/softwareapps", body)
@@ -214,8 +289,14 @@ func runSoftwareCreate(cmd *cobra.Command, name, settings string) error {
 
 func newSoftwareUpdateCmd() *cobra.Command {
 	var (
-		name     string
-		settings string
+		name           string
+		settings       string
+		packageID      string
+		packageManager string
+		desiredState   string
+		location       string
+		description    string
+		autoUpdate     bool
 	)
 
 	cmd := &cobra.Command{
@@ -224,21 +305,38 @@ func newSoftwareUpdateCmd() *cobra.Command {
 		Long: `Update an existing JumpCloud software app.
 
 Accepts a software app displayName or 24-character hex ID.
-Specify only the fields you want to change. The updated software app object is returned.`,
+Specify only the fields you want to change.
+
+Package settings can be updated via individual flags or raw JSON (--settings).
+If --settings is provided, it replaces the entire settings array.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSoftwareUpdate(cmd, args[0], name, settings)
+			return runSoftwareUpdate(cmd, args[0], name, settings, packageID, packageManager, desiredState, location, description, autoUpdate)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Software app display name")
-	cmd.Flags().StringVar(&settings, "settings", "", "Settings as raw JSON string")
+	cmd.Flags().StringVar(&settings, "settings", "", "Settings as raw JSON string (replaces entire settings array)")
+	cmd.Flags().StringVar(&packageID, "package-id", "", "Package identifier")
+	cmd.Flags().StringVar(&packageManager, "package-manager", "", "Package manager: CHOCOLATEY, APPLE_CUSTOM, APPLE_VPP, WINGET, MICROSOFT_STORE, WINDOWS_MDM, GOOGLE_ANDROID")
+	cmd.Flags().StringVar(&desiredState, "desired-state", "", "Desired state (e.g. INSTALL)")
+	cmd.Flags().StringVar(&location, "location", "", "Download URL for custom packages")
+	cmd.Flags().StringVar(&description, "description", "", "Package description")
+	cmd.Flags().BoolVar(&autoUpdate, "auto-update", false, "Enable automatic updates")
 
 	return cmd
 }
 
-func runSoftwareUpdate(cmd *cobra.Command, identifier, name, settings string) error {
+func runSoftwareUpdate(cmd *cobra.Command, identifier, name, settings, packageID, packageManager, desiredState, location, description string, autoUpdate bool) error {
+	if packageManager != "" {
+		var err error
+		packageManager, err = validatePackageManager(packageManager)
+		if err != nil {
+			return err
+		}
+	}
+
 	body := map[string]any{}
 
 	if cmd.Flags().Changed("name") {
@@ -249,10 +347,34 @@ func runSoftwareUpdate(cmd *cobra.Command, identifier, name, settings string) er
 			return fmt.Errorf("parsing --settings: invalid JSON")
 		}
 		body["settings"] = json.RawMessage(settings)
+	} else {
+		// Build settings from individual flags if any were provided.
+		pkg := map[string]any{}
+		if cmd.Flags().Changed("package-id") {
+			pkg["packageId"] = packageID
+		}
+		if cmd.Flags().Changed("package-manager") {
+			pkg["packageManager"] = packageManager
+		}
+		if cmd.Flags().Changed("desired-state") {
+			pkg["desiredState"] = desiredState
+		}
+		if cmd.Flags().Changed("location") {
+			pkg["location"] = location
+		}
+		if cmd.Flags().Changed("description") {
+			pkg["description"] = description
+		}
+		if cmd.Flags().Changed("auto-update") {
+			pkg["autoUpdate"] = autoUpdate
+		}
+		if len(pkg) > 0 {
+			body["settings"] = []any{pkg}
+		}
 	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --settings)")
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --package-id, --settings)")
 	}
 
 	if viper.GetBool("plan") {
