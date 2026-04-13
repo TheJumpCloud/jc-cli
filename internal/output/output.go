@@ -76,6 +76,10 @@ type Options struct {
 	// Query is a JMESPath expression applied to the output data after field selection.
 	// When set, the result of the JMESPath query replaces the original data before formatting.
 	Query string
+
+	// Brief limits output to a compact, token-efficient form: first 2 default
+	// fields and minified JSON. Designed for agent/LLM consumers.
+	Brief bool
 }
 
 // CurrentOptions reads output options from Viper flags and config.
@@ -89,6 +93,7 @@ func CurrentOptions() Options {
 		All:     viper.GetBool("all"),
 		IsPiped: !config.IsStdoutTerminal(),
 		Query:   viper.GetString("query"),
+		Brief:   viper.GetBool("brief"),
 	}
 }
 
@@ -129,13 +134,18 @@ func WriteList(w io.Writer, data []json.RawMessage, opts Options) error {
 	effectiveFields := opts.resolveEffectiveFields(data)
 
 	// Apply field selection to data when explicit field constraints are active.
-	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All {
+	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All || opts.Brief {
 		data = filterFields(data, effectiveFields)
 	}
 
 	// Apply JMESPath query if specified.
 	if opts.Query != "" {
 		return applyJMESPathAndWrite(w, data, opts)
+	}
+
+	// --brief with JSON format uses ndjson (one compact line per object) for token efficiency.
+	if opts.Brief && (opts.Format == FormatJSON || opts.Format == "") {
+		return writeNDJSONList(w, data)
 	}
 
 	switch opts.Format {
@@ -169,7 +179,7 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 	effectiveFields := opts.resolveEffectiveFields([]json.RawMessage{data})
 
 	// Apply field selection to data when explicit field constraints are active.
-	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All {
+	if len(opts.Fields) > 0 || len(opts.Exclude) > 0 || opts.All || opts.Brief {
 		filtered := filterFields([]json.RawMessage{data}, effectiveFields)
 		if len(filtered) > 0 {
 			data = filtered[0]
@@ -179,6 +189,11 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 	// Apply JMESPath query if specified.
 	if opts.Query != "" {
 		return applyJMESPathSingleAndWrite(w, data, opts)
+	}
+
+	// --brief with JSON format uses compact single-line output for token efficiency.
+	if opts.Brief && (opts.Format == FormatJSON || opts.Format == "") {
+		return writeNDJSONSingle(w, data)
 	}
 
 	switch opts.Format {
@@ -203,6 +218,15 @@ func WriteSingle(w io.Writer, data json.RawMessage, opts Options) error {
 func (opts Options) resolveEffectiveFields(data []json.RawMessage) []string {
 	if len(opts.Fields) > 0 {
 		return opts.Fields
+	}
+
+	// --brief: use only the first 2 default fields for a compact view.
+	if opts.Brief && len(opts.DefaultFields) > 0 {
+		n := 2
+		if len(opts.DefaultFields) < n {
+			n = len(opts.DefaultFields)
+		}
+		return opts.DefaultFields[:n]
 	}
 
 	if opts.All {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,11 @@ interface.`,
 				viper.Set("defaults.output", "table")
 			}
 
+			// --dry-run is an alias for --plan.
+			if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+				viper.Set("plan", true)
+			}
+
 			// Validate the output format.
 			format := viper.GetString("defaults.output")
 			validFormat := false
@@ -69,6 +75,15 @@ interface.`,
 				return NewCLIError(ErrCodeValidationError,
 					"--fields and --exclude are mutually exclusive",
 					"Use either --fields to include specific fields or --exclude to remove them")
+			}
+
+			// --timeout sets a deadline on the command context.
+			if timeout, _ := cmd.Flags().GetDuration("timeout"); timeout > 0 {
+				ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+				cmd.SetContext(ctx)
+				// Cancel is called when the context deadline expires;
+				// also register cleanup via cobra's post-run.
+				cobra.OnFinalize(func() { cancel() })
 			}
 
 			return nil
@@ -139,6 +154,7 @@ interface.`,
 	rootCmd.PersistentFlags().Bool("no-cache", false, "Bypass name-to-ID cache")
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable color output")
 	rootCmd.PersistentFlags().Bool("plan", false, "Preview changes without executing")
+	rootCmd.PersistentFlags().Bool("dry-run", false, "Preview changes without executing (alias for --plan)")
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
@@ -146,6 +162,8 @@ interface.`,
 	rootCmd.PersistentFlags().String("exclude", "", "Comma-separated list of fields to exclude (e.g. 'password_date,totp_enabled')")
 	rootCmd.PersistentFlags().Bool("all", false, "Include all available fields in output")
 	rootCmd.PersistentFlags().String("query", "", "JMESPath expression to filter/transform output (e.g. \"[?department=='Engineering'].{name:username,email:email}\")")
+	rootCmd.PersistentFlags().Bool("brief", false, "Compact output with minimal fields (optimized for agents/LLMs)")
+	rootCmd.PersistentFlags().Duration("timeout", 0, "Maximum execution time (e.g. 30s, 2m). 0 means no timeout")
 
 	// Register flag completion functions for flags with a fixed set of values.
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -176,6 +194,7 @@ interface.`,
 	_ = viper.BindPFlag("exclude", rootCmd.PersistentFlags().Lookup("exclude"))
 	_ = viper.BindPFlag("all", rootCmd.PersistentFlags().Lookup("all"))
 	_ = viper.BindPFlag("query", rootCmd.PersistentFlags().Lookup("query"))
+	_ = viper.BindPFlag("brief", rootCmd.PersistentFlags().Lookup("brief"))
 
 	return rootCmd
 }
