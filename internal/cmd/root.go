@@ -386,7 +386,7 @@ func expandAliases(args []string) ([]string, string) {
 		}
 		// Skip the value argument for flags that take a value.
 		if arg == "--output" || arg == "-o" || arg == "--org" || arg == "--api-key" ||
-			arg == "--fields" || arg == "--exclude" || arg == "--query" {
+			arg == "--fields" || arg == "--exclude" || arg == "--query" || arg == "--timeout" {
 			i++ // skip the value argument
 		}
 	}

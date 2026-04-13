@@ -233,6 +233,12 @@ func runGroupsUserCreate(cmd *cobra.Command, name, description string, ifNotExis
 			opts := output.CurrentOptions()
 			return output.WriteSingle(cmd.OutOrStdout(), existing, opts)
 		}
+		// Only proceed to creation if the error is "not found".
+		// Surface network errors, ambiguous matches, etc.
+		var resolveError *resolve.ResolveError
+		if !errors.As(resolveErr, &resolveError) {
+			return resolveErr
+		}
 	}
 
 	if viper.GetBool("plan") {
