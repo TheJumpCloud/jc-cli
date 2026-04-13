@@ -924,6 +924,6 @@ internal/
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is a Community Software Tool initially developed by JumpCloud. It is offered as an open source project under the MIT License "as is" without warranty of any kind. JumpCloud does not commit to maintaining, updating, or providing support for this project. Please use the [GitHub issue tracker](https://github.com/TheJumpCloud/jc-cli/issues) for any issues.
 
-**Note:** jc is an independent, community-built open-source project. It is not developed, maintained, or endorsed by JumpCloud. For issues with jc, please use the [GitHub issue tracker](https://github.com/juergen-kc/jc/issues).
+See [LICENSE](LICENSE) for the full MIT License text.
