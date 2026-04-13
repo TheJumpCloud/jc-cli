@@ -722,7 +722,7 @@ func (r *Resolver) writeCacheFile(cacheKey string, cf cacheFile) {
 // validateIdentifier checks that an identifier does not contain path traversal
 // sequences or control characters.
 func validateIdentifier(id string) error {
-	if strings.Contains(id, "../") || strings.Contains(id, "..\\") {
+	if strings.Contains(id, "../") || strings.Contains(id, "..\\") || strings.HasSuffix(id, "/..") || strings.HasSuffix(id, "\\..") || id == ".." {
 		return fmt.Errorf("invalid identifier %q: path traversal sequences are not allowed", id)
 	}
 	for _, r := range id {
