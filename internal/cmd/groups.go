@@ -191,6 +191,7 @@ func newGroupsUserCreateCmd() *cobra.Command {
 	var (
 		name        string
 		description string
+		ifNotExists bool
 	)
 
 	cmd := &cobra.Command{
@@ -199,20 +200,47 @@ func newGroupsUserCreateCmd() *cobra.Command {
 		Long: `Create a new JumpCloud user group.
 
 Required field: --name.
-The newly created group object is returned.`,
+The newly created group object is returned.
+
+Use --if-not-exists to skip creation when the group name already exists
+(returns the existing group instead of failing).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGroupsUserCreate(cmd, name, description)
+			return runGroupsUserCreate(cmd, name, description, ifNotExists)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Group name (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Group description")
+	cmd.Flags().BoolVar(&ifNotExists, "if-not-exists", false, "Skip creation if group name already exists (idempotent)")
 	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
 }
 
-func runGroupsUserCreate(cmd *cobra.Command, name, description string) error {
+func runGroupsUserCreate(cmd *cobra.Command, name, description string, ifNotExists bool) error {
+	if ifNotExists {
+		client, err := newV2Client()
+		if err != nil {
+			return err
+		}
+		r := resolve.NewV2Resolver(client)
+		id, resolveErr := r.Resolve(cmd.Context(), name, resolve.UserGroupConfig)
+		if resolveErr == nil {
+			existing, err := client.Get(cmd.Context(), "/usergroups/"+id)
+			if err != nil {
+				return err
+			}
+			opts := output.CurrentOptions()
+			return output.WriteSingle(cmd.OutOrStdout(), existing, opts)
+		}
+		// Only proceed to creation if the error is "not found".
+		// Surface network errors, ambiguous matches, etc.
+		var resolveError *resolve.ResolveError
+		if !errors.As(resolveErr, &resolveError) {
+			return resolveErr
+		}
+	}
+
 	if viper.GetBool("plan") {
 		effects := []string{"name: " + name}
 		if description != "" {

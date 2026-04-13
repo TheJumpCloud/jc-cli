@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -255,11 +256,12 @@ func runUsersGet(cmd *cobra.Command, identifier string) error {
 
 func newUsersCreateCmd() *cobra.Command {
 	var (
-		username   string
-		email      string
-		firstname  string
-		lastname   string
-		department string
+		username    string
+		email       string
+		firstname   string
+		lastname    string
+		department  string
+		ifNotExists bool
 	)
 
 	cmd := &cobra.Command{
@@ -268,9 +270,13 @@ func newUsersCreateCmd() *cobra.Command {
 		Long: `Create a new JumpCloud system user.
 
 Required fields: --username and --email.
-The newly created user object is returned.`,
+The newly created user object is returned.
+
+Use --if-not-exists to skip creation when the username already exists
+(returns the existing user instead of failing). This makes the operation
+idempotent and safe for agent retries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersCreate(cmd, username, email, firstname, lastname, department)
+			return runUsersCreate(cmd, username, email, firstname, lastname, department, ifNotExists)
 		},
 	}
 
@@ -279,13 +285,38 @@ The newly created user object is returned.`,
 	cmd.Flags().StringVar(&firstname, "firstname", "", "First name")
 	cmd.Flags().StringVar(&lastname, "lastname", "", "Last name")
 	cmd.Flags().StringVar(&department, "department", "", "Department")
+	cmd.Flags().BoolVar(&ifNotExists, "if-not-exists", false, "Skip creation if username already exists (idempotent)")
 	_ = cmd.MarkFlagRequired("username")
 	_ = cmd.MarkFlagRequired("email")
 
 	return cmd
 }
 
-func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname, department string) error {
+func runUsersCreate(cmd *cobra.Command, username, email, firstname, lastname, department string, ifNotExists bool) error {
+	// --if-not-exists: check if user already exists, return existing if so.
+	if ifNotExists {
+		client, err := newV1Client()
+		if err != nil {
+			return err
+		}
+		id, resolveErr := resolveUser(cmd.Context(), client, username)
+		if resolveErr == nil {
+			// User exists — fetch and return it.
+			existing, err := client.Get(cmd.Context(), "/systemusers/"+id)
+			if err != nil {
+				return err
+			}
+			opts := output.CurrentOptions()
+			return output.WriteSingle(cmd.OutOrStdout(), existing, opts)
+		}
+		// Only proceed to creation if the error is "not found".
+		// Surface network errors, ambiguous matches, etc.
+		var resolveError *resolve.ResolveError
+		if !errors.As(resolveErr, &resolveError) {
+			return resolveErr
+		}
+	}
+
 	if viper.GetBool("plan") {
 		effects := []string{"username: " + username, "email: " + email}
 		if firstname != "" {

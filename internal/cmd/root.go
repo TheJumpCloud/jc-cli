@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,11 @@ interface.`,
 				viper.Set("defaults.output", "table")
 			}
 
+			// --dry-run is an alias for --plan.
+			if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+				viper.Set("plan", true)
+			}
+
 			// Validate the output format.
 			format := viper.GetString("defaults.output")
 			validFormat := false
@@ -71,6 +77,15 @@ interface.`,
 					"Use either --fields to include specific fields or --exclude to remove them")
 			}
 
+			// --timeout sets a deadline on the command context.
+			if timeout, _ := cmd.Flags().GetDuration("timeout"); timeout > 0 {
+				ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+				cmd.SetContext(ctx)
+				// Cancel is called when the context deadline expires;
+				// also register cleanup via cobra's post-run.
+				cobra.OnFinalize(func() { cancel() })
+			}
+
 			return nil
 		},
 	}
@@ -85,48 +100,58 @@ interface.`,
 	// We use -V (uppercase) because -v is taken by --verbose.
 	rootCmd.Flags().BoolP("version", "V", false, "Print version information")
 
-	rootCmd.AddCommand(newVersionCmd())
-	rootCmd.AddCommand(newCompletionCmd())
-	rootCmd.AddCommand(newAuthCmd())
-	rootCmd.AddCommand(newConfigCmd())
-	rootCmd.AddCommand(newUsersCmd())
-	rootCmd.AddCommand(newDevicesCmd())
-	rootCmd.AddCommand(newGroupsCmd())
-	rootCmd.AddCommand(newCommandsCmd())
-	rootCmd.AddCommand(newPoliciesCmd())
-	rootCmd.AddCommand(newAppsCmd())
-	rootCmd.AddCommand(newGraphCmd())
-	rootCmd.AddCommand(newAdminsCmd())
-	rootCmd.AddCommand(newBulkCmd())
-	rootCmd.AddCommand(newInsightsCmd())
-	rootCmd.AddCommand(newRecipeCmd())
-	rootCmd.AddCommand(newAuthPoliciesCmd())
-	rootCmd.AddCommand(newIPListsCmd())
-	rootCmd.AddCommand(newLDAPCmd())
-	rootCmd.AddCommand(newSoftwareCmd())
-	rootCmd.AddCommand(newADCmd())
-	rootCmd.AddCommand(newMcpCmd())
-	rootCmd.AddCommand(newSchemaCmd())
-	rootCmd.AddCommand(newExplainCmd())
-	rootCmd.AddCommand(newAskCmd())
-	rootCmd.AddCommand(newOrgCmd())
-	rootCmd.AddCommand(newSystemInsightsCmd())
-	rootCmd.AddCommand(newRADIUSCmd())
-	rootCmd.AddCommand(newPolicyTemplatesCmd())
-	rootCmd.AddCommand(newPolicyGroupsCmd())
-	rootCmd.AddCommand(newAppleMDMCmd())
-	rootCmd.AddCommand(newUserStatesCmd())
-	rootCmd.AddCommand(newGsuiteCmd())
-	rootCmd.AddCommand(newOffice365Cmd())
-	rootCmd.AddCommand(newDuoCmd())
-	rootCmd.AddCommand(newCustomEmailsCmd())
-	rootCmd.AddCommand(newAppTemplatesCmd())
-	rootCmd.AddCommand(newAssetsCmd())
-	rootCmd.AddCommand(newIdentityProvidersCmd())
-	rootCmd.AddCommand(newSaaSManagementCmd())
-	rootCmd.AddCommand(newAccessRequestsCmd())
-	rootCmd.AddCommand(newTUICmd())
-	rootCmd.AddCommand(newSetupCmd())
+	// Command groups for organized help output.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "identity", Title: "Identity & Access:"},
+		&cobra.Group{ID: "devices", Title: "Devices & MDM:"},
+		&cobra.Group{ID: "security", Title: "Security & Policies:"},
+		&cobra.Group{ID: "directory", Title: "Directory Integrations:"},
+		&cobra.Group{ID: "insights", Title: "Insights & Monitoring:"},
+		&cobra.Group{ID: "ai", Title: "AI & Automation:"},
+		&cobra.Group{ID: "config", Title: "Setup & Config:"},
+	)
+
+	// Identity & Access
+	addToGroup(rootCmd, "identity",
+		newUsersCmd(), newGroupsCmd(), newAdminsCmd(),
+		newAppsCmd(), newAppTemplatesCmd(), newAuthPoliciesCmd(),
+		newIdentityProvidersCmd(), newUserStatesCmd(), newAccessRequestsCmd(),
+	)
+
+	// Devices & MDM
+	addToGroup(rootCmd, "devices",
+		newDevicesCmd(), newAppleMDMCmd(), newSoftwareCmd(),
+		newCommandsCmd(), newSystemInsightsCmd(), newAssetsCmd(),
+	)
+
+	// Security & Policies
+	addToGroup(rootCmd, "security",
+		newPoliciesCmd(), newPolicyGroupsCmd(), newPolicyTemplatesCmd(),
+		newIPListsCmd(), newRADIUSCmd(), newDuoCmd(), newCustomEmailsCmd(),
+	)
+
+	// Directory Integrations
+	addToGroup(rootCmd, "directory",
+		newLDAPCmd(), newADCmd(), newGsuiteCmd(),
+		newOffice365Cmd(), newSaaSManagementCmd(), newGraphCmd(),
+	)
+
+	// Insights & Monitoring
+	addToGroup(rootCmd, "insights",
+		newInsightsCmd(), newOrgCmd(),
+	)
+
+	// AI & Automation
+	addToGroup(rootCmd, "ai",
+		newMcpCmd(), newAskCmd(), newExplainCmd(),
+		newRecipeCmd(), newBulkCmd(), newSchemaCmd(),
+	)
+
+	// Setup & Config
+	addToGroup(rootCmd, "config",
+		newSetupCmd(), newAuthCmd(), newConfigCmd(),
+		newVersionCmd(), newCompletionCmd(), newTUICmd(),
+	)
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -139,6 +164,7 @@ interface.`,
 	rootCmd.PersistentFlags().Bool("no-cache", false, "Bypass name-to-ID cache")
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable color output")
 	rootCmd.PersistentFlags().Bool("plan", false, "Preview changes without executing")
+	rootCmd.PersistentFlags().Bool("dry-run", false, "Preview changes without executing (alias for --plan)")
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
@@ -146,6 +172,8 @@ interface.`,
 	rootCmd.PersistentFlags().String("exclude", "", "Comma-separated list of fields to exclude (e.g. 'password_date,totp_enabled')")
 	rootCmd.PersistentFlags().Bool("all", false, "Include all available fields in output")
 	rootCmd.PersistentFlags().String("query", "", "JMESPath expression to filter/transform output (e.g. \"[?department=='Engineering'].{name:username,email:email}\")")
+	rootCmd.PersistentFlags().Bool("brief", false, "Compact output with minimal fields (optimized for agents/LLMs)")
+	rootCmd.PersistentFlags().Duration("timeout", 0, "Maximum execution time (e.g. 30s, 2m). 0 means no timeout")
 
 	// Register flag completion functions for flags with a fixed set of values.
 	_ = rootCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -176,6 +204,7 @@ interface.`,
 	_ = viper.BindPFlag("exclude", rootCmd.PersistentFlags().Lookup("exclude"))
 	_ = viper.BindPFlag("all", rootCmd.PersistentFlags().Lookup("all"))
 	_ = viper.BindPFlag("query", rootCmd.PersistentFlags().Lookup("query"))
+	_ = viper.BindPFlag("brief", rootCmd.PersistentFlags().Lookup("brief"))
 
 	return rootCmd
 }
@@ -230,6 +259,14 @@ Fish:
 		},
 	}
 	return cmd
+}
+
+// addToGroup assigns commands to a group and adds them to the parent.
+func addToGroup(parent *cobra.Command, groupID string, cmds ...*cobra.Command) {
+	for _, cmd := range cmds {
+		cmd.GroupID = groupID
+		parent.AddCommand(cmd)
+	}
 }
 
 // flagErrorWithSuggestion wraps Cobra's flag parsing errors to suggest
@@ -349,7 +386,7 @@ func expandAliases(args []string) ([]string, string) {
 		}
 		// Skip the value argument for flags that take a value.
 		if arg == "--output" || arg == "-o" || arg == "--org" || arg == "--api-key" ||
-			arg == "--fields" || arg == "--exclude" || arg == "--query" {
+			arg == "--fields" || arg == "--exclude" || arg == "--query" || arg == "--timeout" {
 			i++ // skip the value argument
 		}
 	}
