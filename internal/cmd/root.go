@@ -100,48 +100,58 @@ interface.`,
 	// We use -V (uppercase) because -v is taken by --verbose.
 	rootCmd.Flags().BoolP("version", "V", false, "Print version information")
 
-	rootCmd.AddCommand(newVersionCmd())
-	rootCmd.AddCommand(newCompletionCmd())
-	rootCmd.AddCommand(newAuthCmd())
-	rootCmd.AddCommand(newConfigCmd())
-	rootCmd.AddCommand(newUsersCmd())
-	rootCmd.AddCommand(newDevicesCmd())
-	rootCmd.AddCommand(newGroupsCmd())
-	rootCmd.AddCommand(newCommandsCmd())
-	rootCmd.AddCommand(newPoliciesCmd())
-	rootCmd.AddCommand(newAppsCmd())
-	rootCmd.AddCommand(newGraphCmd())
-	rootCmd.AddCommand(newAdminsCmd())
-	rootCmd.AddCommand(newBulkCmd())
-	rootCmd.AddCommand(newInsightsCmd())
-	rootCmd.AddCommand(newRecipeCmd())
-	rootCmd.AddCommand(newAuthPoliciesCmd())
-	rootCmd.AddCommand(newIPListsCmd())
-	rootCmd.AddCommand(newLDAPCmd())
-	rootCmd.AddCommand(newSoftwareCmd())
-	rootCmd.AddCommand(newADCmd())
-	rootCmd.AddCommand(newMcpCmd())
-	rootCmd.AddCommand(newSchemaCmd())
-	rootCmd.AddCommand(newExplainCmd())
-	rootCmd.AddCommand(newAskCmd())
-	rootCmd.AddCommand(newOrgCmd())
-	rootCmd.AddCommand(newSystemInsightsCmd())
-	rootCmd.AddCommand(newRADIUSCmd())
-	rootCmd.AddCommand(newPolicyTemplatesCmd())
-	rootCmd.AddCommand(newPolicyGroupsCmd())
-	rootCmd.AddCommand(newAppleMDMCmd())
-	rootCmd.AddCommand(newUserStatesCmd())
-	rootCmd.AddCommand(newGsuiteCmd())
-	rootCmd.AddCommand(newOffice365Cmd())
-	rootCmd.AddCommand(newDuoCmd())
-	rootCmd.AddCommand(newCustomEmailsCmd())
-	rootCmd.AddCommand(newAppTemplatesCmd())
-	rootCmd.AddCommand(newAssetsCmd())
-	rootCmd.AddCommand(newIdentityProvidersCmd())
-	rootCmd.AddCommand(newSaaSManagementCmd())
-	rootCmd.AddCommand(newAccessRequestsCmd())
-	rootCmd.AddCommand(newTUICmd())
-	rootCmd.AddCommand(newSetupCmd())
+	// Command groups for organized help output.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "identity", Title: "Identity & Access:"},
+		&cobra.Group{ID: "devices", Title: "Devices & MDM:"},
+		&cobra.Group{ID: "security", Title: "Security & Policies:"},
+		&cobra.Group{ID: "directory", Title: "Directory Integrations:"},
+		&cobra.Group{ID: "insights", Title: "Insights & Monitoring:"},
+		&cobra.Group{ID: "ai", Title: "AI & Automation:"},
+		&cobra.Group{ID: "config", Title: "Setup & Config:"},
+	)
+
+	// Identity & Access
+	addToGroup(rootCmd, "identity",
+		newUsersCmd(), newGroupsCmd(), newAdminsCmd(),
+		newAppsCmd(), newAppTemplatesCmd(), newAuthPoliciesCmd(),
+		newIdentityProvidersCmd(), newUserStatesCmd(), newAccessRequestsCmd(),
+	)
+
+	// Devices & MDM
+	addToGroup(rootCmd, "devices",
+		newDevicesCmd(), newAppleMDMCmd(), newSoftwareCmd(),
+		newCommandsCmd(), newSystemInsightsCmd(), newAssetsCmd(),
+	)
+
+	// Security & Policies
+	addToGroup(rootCmd, "security",
+		newPoliciesCmd(), newPolicyGroupsCmd(), newPolicyTemplatesCmd(),
+		newIPListsCmd(), newRADIUSCmd(), newDuoCmd(), newCustomEmailsCmd(),
+	)
+
+	// Directory Integrations
+	addToGroup(rootCmd, "directory",
+		newLDAPCmd(), newADCmd(), newGsuiteCmd(),
+		newOffice365Cmd(), newSaaSManagementCmd(), newGraphCmd(),
+	)
+
+	// Insights & Monitoring
+	addToGroup(rootCmd, "insights",
+		newInsightsCmd(), newOrgCmd(),
+	)
+
+	// AI & Automation
+	addToGroup(rootCmd, "ai",
+		newMcpCmd(), newAskCmd(), newExplainCmd(),
+		newRecipeCmd(), newBulkCmd(), newSchemaCmd(),
+	)
+
+	// Setup & Config
+	addToGroup(rootCmd, "config",
+		newSetupCmd(), newAuthCmd(), newConfigCmd(),
+		newVersionCmd(), newCompletionCmd(), newTUICmd(),
+	)
 
 	// Persistent flags (global)
 	rootCmd.PersistentFlags().StringP("output", "o", "json", "Output format: json, table, csv, human, yaml, ndjson")
@@ -249,6 +259,14 @@ Fish:
 		},
 	}
 	return cmd
+}
+
+// addToGroup assigns commands to a group and adds them to the parent.
+func addToGroup(parent *cobra.Command, groupID string, cmds ...*cobra.Command) {
+	for _, cmd := range cmds {
+		cmd.GroupID = groupID
+		parent.AddCommand(cmd)
+	}
 }
 
 // flagErrorWithSuggestion wraps Cobra's flag parsing errors to suggest

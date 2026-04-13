@@ -299,6 +299,14 @@ var DuoAccountConfig = ResourceConfig{
 //   - Multiple matches found (ambiguous)
 //   - API error occurs
 func (r *Resolver) Resolve(ctx context.Context, identifier string, cfg ResourceConfig) (string, error) {
+	// Validate input: reject path traversal and control characters.
+	if err := validateIdentifier(identifier); err != nil {
+		return "", &ResolveError{
+			ResourceType: cfg.CacheKey,
+			Message:      err.Error(),
+		}
+	}
+
 	// Step 1: If it looks like an ID, use it directly.
 	if IsID(identifier) {
 		return identifier, nil
@@ -478,6 +486,13 @@ func NewV2Resolver(client *api.V2Client) *V2Resolver {
 // Resolve takes a human-friendly identifier (name or ID) and returns the JumpCloud ID
 // using the V2 API for lookup.
 func (r *V2Resolver) Resolve(ctx context.Context, identifier string, cfg ResourceConfig) (string, error) {
+	if err := validateIdentifier(identifier); err != nil {
+		return "", &ResolveError{
+			ResourceType: cfg.CacheKey,
+			Message:      err.Error(),
+		}
+	}
+
 	if IsID(identifier) {
 		return identifier, nil
 	}
@@ -702,4 +717,18 @@ func (r *Resolver) writeCacheFile(cacheKey string, cf cacheFile) {
 
 	path := filepath.Join(dir, cacheKey+".json")
 	_ = os.WriteFile(path, data, 0600)
+}
+
+// validateIdentifier checks that an identifier does not contain path traversal
+// sequences or control characters.
+func validateIdentifier(id string) error {
+	if strings.Contains(id, "../") || strings.Contains(id, "..\\") {
+		return fmt.Errorf("invalid identifier %q: path traversal sequences are not allowed", id)
+	}
+	for _, r := range id {
+		if r < 0x20 && r != '\t' {
+			return fmt.Errorf("invalid identifier %q: control characters are not allowed", id)
+		}
+	}
+	return nil
 }

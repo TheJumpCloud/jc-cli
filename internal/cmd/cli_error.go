@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
@@ -227,10 +230,39 @@ func ToCLIError(err error) *CLIError {
 		}
 	}
 
+	// Context timeout or cancellation.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &CLIError{
+			Code:       ErrCodeGeneral,
+			Message:    "operation timed out",
+			Suggestion: "Increase the --timeout value or check your network connection",
+			Err:        err,
+		}
+	}
+	if errors.Is(err, context.Canceled) {
+		return &CLIError{
+			Code:       ErrCodeGeneral,
+			Message:    "operation cancelled",
+			Suggestion: "",
+			Err:        err,
+		}
+	}
+
+	// Connection errors.
+	msg := err.Error()
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") {
+		return &CLIError{
+			Code:       ErrCodeGeneral,
+			Message:    msg,
+			Suggestion: "Check your network connection and verify JumpCloud API is reachable",
+			Err:        err,
+		}
+	}
+
 	// Generic error.
 	return &CLIError{
 		Code:    ErrCodeGeneral,
-		Message: err.Error(),
+		Message: msg,
 		Err:     err,
 	}
 }
