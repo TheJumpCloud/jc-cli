@@ -9,7 +9,7 @@ If you manage a JumpCloud organization, you know the admin console well. It's po
 **jc** is an open-source command-line interface that gives you the full JumpCloud API surface in a single, dependency-free Go binary. It's built for the way power users and automation actually work: piping, filtering, scripting, and — increasingly — talking to AI.
 
 ```
-https://github.com/juergen-kc/jc
+https://github.com/TheJumpCloud/jc-cli
 ```
 
 ---
@@ -175,15 +175,15 @@ For those who care about what's under the hood:
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-darwin-arm64.tar.gz | tar xz
 sudo mv jc-darwin-arm64/jc /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-darwin-amd64.tar.gz | tar xz
 sudo mv jc-darwin-amd64/jc /usr/local/bin/
 
 # Linux (x86_64)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-linux-amd64.tar.gz | tar xz
 sudo mv jc-linux-amd64/jc /usr/local/bin/
 ```
 
@@ -209,11 +209,11 @@ jc tui                               # Browse everything interactively
 jc is open source under the MIT license. The codebase is on GitHub:
 
 ```
-https://github.com/juergen-kc/jc
+https://github.com/TheJumpCloud/jc-cli
 ```
 
 Feedback, bug reports, and contributions are welcome. If you manage a JumpCloud org and find yourself doing anything repetitive in the console, there's probably a faster way to do it with jc.
 
 ---
 
-**Note:** jc is an independent, community-built open-source project. It is not developed, maintained, or endorsed by JumpCloud. For issues with jc, please use the [GitHub issue tracker](https://github.com/juergen-kc/jc/issues) — JumpCloud support will not be able to assist with this tool.
+**Note:** This project is a Community Software Tool initially developed by JumpCloud. It is offered as an open source project under the MIT License "as is" without warranty of any kind. JumpCloud does not commit to maintaining, updating, or providing support for this project. Please use the [GitHub issue tracker](https://github.com/TheJumpCloud/jc-cli/issues) for any issues.

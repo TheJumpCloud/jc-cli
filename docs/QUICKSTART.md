@@ -4,11 +4,11 @@
 
 ```bash
 # Option 1: Download binary (macOS Apple Silicon example)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-arm64 -o jc
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-darwin-arm64 -o jc
 chmod +x jc && sudo mv jc /usr/local/bin/
 
 # Option 2: Build from source
-git clone https://github.com/juergen-kc/jc.git && cd jc && make install
+git clone https://github.com/TheJumpCloud/jc-cli.git && cd jc-cli && make install
 
 # Run the setup wizard (walks you through auth, org, output prefs)
 jc setup

@@ -12,23 +12,23 @@ Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six out
 
 ### Pre-built binaries
 
-Download the latest release from [GitHub Releases](https://github.com/juergen-kc/jc/releases):
+Download the latest release from [GitHub Releases](https://github.com/TheJumpCloud/jc-cli/releases):
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-darwin-arm64.tar.gz | tar xz
 sudo mv jc-darwin-arm64/jc /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-darwin-amd64.tar.gz | tar xz
 sudo mv jc-darwin-amd64/jc /usr/local/bin/
 
 # Linux (x86_64)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-linux-amd64.tar.gz | tar xz
 sudo mv jc-linux-amd64/jc /usr/local/bin/
 
 # Linux (ARM64)
-curl -L https://github.com/juergen-kc/jc/releases/latest/download/jc-linux-arm64.tar.gz | tar xz
+curl -L https://github.com/TheJumpCloud/jc-cli/releases/latest/download/jc-linux-arm64.tar.gz | tar xz
 sudo mv jc-linux-arm64/jc /usr/local/bin/
 ```
 
@@ -37,8 +37,8 @@ sudo mv jc-linux-arm64/jc /usr/local/bin/
 Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/juergen-kc/jc.git
-cd jc
+git clone https://github.com/TheJumpCloud/jc-cli.git
+cd jc-cli
 make install    # installs to $GOPATH/bin
 ```
 
@@ -872,8 +872,8 @@ Plan mode makes no changes. It returns exit code 10 to distinguish from success 
 Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/juergen-kc/jc.git
-cd jc
+git clone https://github.com/TheJumpCloud/jc-cli.git
+cd jc-cli
 
 make build                    # Build binary → ./jc
 make test                     # Run all tests (unit)
@@ -924,6 +924,6 @@ internal/
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is a Community Software Tool initially developed by JumpCloud. It is offered as an open source project under the MIT License "as is" without warranty of any kind. JumpCloud does not commit to maintaining, updating, or providing support for this project. Please use the [GitHub issue tracker](https://github.com/TheJumpCloud/jc-cli/issues) for any issues.
 
-**Note:** jc is an independent, community-built open-source project. It is not developed, maintained, or endorsed by JumpCloud. For issues with jc, please use the [GitHub issue tracker](https://github.com/juergen-kc/jc/issues).
+See [LICENSE](LICENSE) for the full MIT License text.
