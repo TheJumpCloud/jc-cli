@@ -7,12 +7,19 @@ on:
 
 permissions:
   contents: write       # gh release create (creates tag + release)
-  pull-requests: read   # read merge labels
+                        # + listTags via API. That's all GITHUB_TOKEN needs;
+                        # labels are read from the event payload, not the API.
 
 # Serialize release runs so two PRs merging back-to-back don't both
 # compute the same next version and race on `gh release create`.
-# cancel-in-progress: false means queue, don't abort — we want both
-# releases, just one after the other.
+#
+# GitHub Actions concurrency guarantees at most ONE running + ONE pending
+# run per group. If a third run is queued while one is running and one is
+# pending, the third cancels the pending one. For jc-cli's merge cadence
+# (single-digit PRs/day, ~3-5min release runtime) this is a theoretical
+# edge case — if it ever bites, the cancelled run shows up in the Actions
+# tab and can be re-triggered manually. If it becomes a real problem,
+# swap this block for a proper queueing action.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -21,6 +28,8 @@ jobs:
   # =================================================================
   # == Parse the PR's release label
   # == Expects exactly one of: major, minor, patch, no version
+  # == Reads directly from the webhook event payload (no API call),
+  # == same pattern as internal common-github-actions/create_release.
   # =================================================================
   Check-PR-Labels:
     if: github.event.pull_request.merged == true
@@ -30,33 +39,26 @@ jobs:
     steps:
       - name: Parse PR labels
         id: labels
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LABELS_JSON=$(gh api \
-            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels")
-          echo "Labels on PR:"
-          echo "$LABELS_JSON" | jq -r '.[].name'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const valid = ['major', 'minor', 'patch', 'no version'];
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            core.info(`Labels on PR: ${labels.join(', ') || '(none)'}`);
 
-          # Count matches and pick the one we found
-          MATCHES=$(echo "$LABELS_JSON" | jq -r \
-            '[.[] | select(.name == "major" or .name == "minor" or .name == "patch" or .name == "no version")] | length')
-          TYPE=$(echo "$LABELS_JSON" | jq -r \
-            '[.[] | select(.name == "major" or .name == "minor" or .name == "patch" or .name == "no version")][0].name // ""')
+            const matches = labels.filter(name => valid.includes(name));
+            if (matches.length !== 1) {
+              core.setFailed(
+                `Expected exactly one of: ${valid.map(v => `'${v}'`).join(', ')}. Found ${matches.length}.`
+              );
+              return;
+            }
 
-          if [[ "$MATCHES" -ne 1 ]]; then
-            echo "::error::Expected exactly one of: major, minor, patch, 'no version'. Found $MATCHES."
-            exit 1
-          fi
-
-          # Normalize "no version" -> "none" for downstream shell-safe checks
-          if [[ "$TYPE" == "no version" ]]; then
-            TYPE="none"
-          fi
-
-          echo "RELEASE_TYPE=$TYPE" >> "$GITHUB_OUTPUT"
-          echo "Release type: $TYPE"
+            // Normalize "no version" -> "none" so the downstream
+            // job-level `if` expression is shell-safe (no space).
+            const type = matches[0] === 'no version' ? 'none' : matches[0];
+            core.info(`Release type: ${type}`);
+            core.setOutput('RELEASE_TYPE', type);
 
   # =================================================================
   # == Compute the next semver from the latest tag + the label
