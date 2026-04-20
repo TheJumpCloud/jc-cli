@@ -1,20 +1,102 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: write       # gh release create (creates tag + release)
+  pull-requests: read   # read merge labels
 
 jobs:
-  release:
+  # =================================================================
+  # == Parse the PR's release label
+  # == Expects exactly one of: major, minor, patch, no version
+  # =================================================================
+  Check-PR-Labels:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      RELEASE_TYPE: ${{ steps.labels.outputs.RELEASE_TYPE }}
+    steps:
+      - name: Parse PR labels
+        id: labels
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LABELS_JSON=$(gh api \
+            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels")
+          echo "Labels on PR:"
+          echo "$LABELS_JSON" | jq -r '.[].name'
+
+          # Count matches and pick the one we found
+          MATCHES=$(echo "$LABELS_JSON" | jq -r \
+            '[.[] | select(.name == "major" or .name == "minor" or .name == "patch" or .name == "no version")] | length')
+          TYPE=$(echo "$LABELS_JSON" | jq -r \
+            '[.[] | select(.name == "major" or .name == "minor" or .name == "patch" or .name == "no version")][0].name // ""')
+
+          if [[ "$MATCHES" -ne 1 ]]; then
+            echo "::error::Expected exactly one of: major, minor, patch, 'no version'. Found $MATCHES."
+            exit 1
+          fi
+
+          # Normalize "no version" -> "none" for downstream shell-safe checks
+          if [[ "$TYPE" == "no version" ]]; then
+            TYPE="none"
+          fi
+
+          echo "RELEASE_TYPE=$TYPE" >> "$GITHUB_OUTPUT"
+          echo "Release type: $TYPE"
+
+  # =================================================================
+  # == Compute the next semver from the latest v* tag + the label
+  # =================================================================
+  Compute-Version:
+    needs: Check-PR-Labels
+    if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.bump.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # need full tag history
+
+      - name: Bump semver
+        id: bump
+        shell: bash
+        run: |
+          LATEST=$(git tag --list 'v*.*.*' | sort -V | tail -n1)
+          if [[ -z "$LATEST" ]]; then
+            LATEST="v0.0.0"
+          fi
+          echo "Latest tag: $LATEST"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+
+          case "${{ needs.Check-PR-Labels.outputs.RELEASE_TYPE }}" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+
+          NEW="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW"
+          echo "VERSION=$NEW" >> "$GITHUB_OUTPUT"
+
+  # =================================================================
+  # == Build, test, and publish the release
+  # =================================================================
+  Release:
+    needs: [Check-PR-Labels, Compute-Version]
+    if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -26,14 +108,19 @@ jobs:
         run: make test
 
       - name: Build release archives
-        run: make release VERSION=${GITHUB_REF_NAME}
+        run: make release VERSION=${{ needs.Compute-Version.outputs.VERSION }}
 
-      - name: Create GitHub release
+      - name: Create tag + GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          VERSION="${{ needs.Compute-Version.outputs.VERSION }}"
+          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+
+          gh release create "$VERSION" \
+            --target "$SHA" \
+            --title "$VERSION" \
+            --generate-notes \
             dist/*.tar.gz \
             dist/*.zip \
-            dist/checksums.txt \
-            --generate-notes
+            dist/checksums.txt
