@@ -51,7 +51,10 @@ jobs:
           echo "Release type: $TYPE"
 
   # =================================================================
-  # == Compute the next semver from the latest v* tag + the label
+  # == Compute the next semver from the latest tag + the label
+  # == Uses the semver npm package (same as internal
+  # == common-github-actions/create_release) to avoid fragile bash
+  # == arithmetic on version strings.
   # =================================================================
   Compute-Version:
     needs: Check-PR-Labels
@@ -60,31 +63,49 @@ jobs:
     outputs:
       VERSION: ${{ steps.bump.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0    # need full tag history
+      - name: Install semver
+        run: npm install semver
 
-      - name: Bump semver
+      - name: Compute next version
         id: bump
-        shell: bash
-        run: |
-          LATEST=$(git tag --list 'v*.*.*' | sort -V | tail -n1)
-          if [[ -z "$LATEST" ]]; then
-            LATEST="v0.0.0"
-          fi
-          echo "Latest tag: $LATEST"
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TYPE: ${{ needs.Check-PR-Labels.outputs.RELEASE_TYPE }}
+        with:
+          script: |
+            const semver = require('semver');
+            const releaseType = process.env.RELEASE_TYPE;
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+            // Pull all tags, keep only valid semver ones.
+            // semver.valid() rejects things like v1.2.3.4 or bare branches
+            // that `git tag --list 'v*.*.*'` would otherwise match.
+            const tags = await github.paginate(
+              github.rest.repos.listTags,
+              { owner: context.repo.owner, repo: context.repo.repo }
+            );
 
-          case "${{ needs.Check-PR-Labels.outputs.RELEASE_TYPE }}" in
-            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
-            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
-            patch) PATCH=$((PATCH+1)) ;;
-          esac
+            const semverTags = tags
+              .map(t => t.name)
+              .filter(name => semver.valid(name))
+              .map(name => semver.parse(semver.clean(name)))
+              .sort(semver.rcompare);
 
-          NEW="v${MAJOR}.${MINOR}.${PATCH}"
-          echo "New version: $NEW"
-          echo "VERSION=$NEW" >> "$GITHUB_OUTPUT"
+            const latest = semverTags.length > 0
+              ? semverTags[0]
+              : semver.parse('0.0.0');
+
+            const next = semver.inc(latest, releaseType);
+            if (!next) {
+              core.setFailed(
+                `Unable to compute next version (latest=${latest}, releaseType=${releaseType})`
+              );
+              return;
+            }
+
+            const tag = `v${next}`;
+            core.info(`Latest semver tag: v${latest}`);
+            core.info(`Next version: ${tag}`);
+            core.setOutput('VERSION', tag);
 
   # =================================================================
   # == Build, test, and publish the release
