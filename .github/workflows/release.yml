@@ -9,6 +9,14 @@ permissions:
   contents: write       # gh release create (creates tag + release)
   pull-requests: read   # read merge labels
 
+# Serialize release runs so two PRs merging back-to-back don't both
+# compute the same next version and race on `gh release create`.
+# cancel-in-progress: false means queue, don't abort — we want both
+# releases, just one after the other.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   # =================================================================
   # == Parse the PR's release label
