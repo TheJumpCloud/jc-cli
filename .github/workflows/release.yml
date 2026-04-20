@@ -1,20 +1,133 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: write       # gh release create (creates tag + release)
+                        # + listTags via API. That's all GITHUB_TOKEN needs;
+                        # labels are read from the event payload, not the API.
+
+# Serialize release runs so two PRs merging back-to-back don't both
+# compute the same next version and race on `gh release create`.
+#
+# GitHub Actions concurrency guarantees at most ONE running + ONE pending
+# run per group. If a third run is queued while one is running and one is
+# pending, the third cancels the pending one. For jc-cli's merge cadence
+# (single-digit PRs/day, ~3-5min release runtime) this is a theoretical
+# edge case — if it ever bites, the cancelled run shows up in the Actions
+# tab and can be re-triggered manually. If it becomes a real problem,
+# swap this block for a proper queueing action.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # =================================================================
+  # == Parse the PR's release label
+  # == Expects exactly one of: major, minor, patch, no version
+  # == Reads directly from the webhook event payload (no API call),
+  # == same pattern as internal common-github-actions/create_release.
+  # =================================================================
+  Check-PR-Labels:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      RELEASE_TYPE: ${{ steps.labels.outputs.RELEASE_TYPE }}
+    steps:
+      - name: Parse PR labels
+        id: labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const valid = ['major', 'minor', 'patch', 'no version'];
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            core.info(`Labels on PR: ${labels.join(', ') || '(none)'}`);
+
+            const matches = labels.filter(name => valid.includes(name));
+            if (matches.length !== 1) {
+              core.setFailed(
+                `Expected exactly one of: ${valid.map(v => `'${v}'`).join(', ')}. Found ${matches.length}.`
+              );
+              return;
+            }
+
+            // Normalize "no version" -> "none" so the downstream
+            // job-level `if` expression is shell-safe (no space).
+            const type = matches[0] === 'no version' ? 'none' : matches[0];
+            core.info(`Release type: ${type}`);
+            core.setOutput('RELEASE_TYPE', type);
+
+  # =================================================================
+  # == Compute the next semver from the latest tag + the label
+  # == Uses the semver npm package (same as internal
+  # == common-github-actions/create_release) to avoid fragile bash
+  # == arithmetic on version strings.
+  # =================================================================
+  Compute-Version:
+    needs: Check-PR-Labels
+    if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.bump.outputs.VERSION }}
+    steps:
+      - name: Install semver
+        run: npm install semver
+
+      - name: Compute next version
+        id: bump
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TYPE: ${{ needs.Check-PR-Labels.outputs.RELEASE_TYPE }}
+        with:
+          script: |
+            const semver = require('semver');
+            const releaseType = process.env.RELEASE_TYPE;
+
+            // Pull all tags, keep only valid semver ones.
+            // semver.valid() rejects things like v1.2.3.4 or bare branches
+            // that `git tag --list 'v*.*.*'` would otherwise match.
+            const tags = await github.paginate(
+              github.rest.repos.listTags,
+              { owner: context.repo.owner, repo: context.repo.repo }
+            );
+
+            const semverTags = tags
+              .map(t => t.name)
+              .filter(name => semver.valid(name))
+              .map(name => semver.parse(semver.clean(name)))
+              .sort(semver.rcompare);
+
+            const latest = semverTags.length > 0
+              ? semverTags[0]
+              : semver.parse('0.0.0');
+
+            const next = semver.inc(latest, releaseType);
+            if (!next) {
+              core.setFailed(
+                `Unable to compute next version (latest=${latest}, releaseType=${releaseType})`
+              );
+              return;
+            }
+
+            const tag = `v${next}`;
+            core.info(`Latest semver tag: v${latest}`);
+            core.info(`Next version: ${tag}`);
+            core.setOutput('VERSION', tag);
+
+  # =================================================================
+  # == Build, test, and publish the release
+  # =================================================================
+  Release:
+    needs: [Check-PR-Labels, Compute-Version]
+    if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -26,14 +139,19 @@ jobs:
         run: make test
 
       - name: Build release archives
-        run: make release VERSION=${GITHUB_REF_NAME}
+        run: make release VERSION=${{ needs.Compute-Version.outputs.VERSION }}
 
-      - name: Create GitHub release
+      - name: Create tag + GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          VERSION="${{ needs.Compute-Version.outputs.VERSION }}"
+          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+
+          gh release create "$VERSION" \
+            --target "$SHA" \
+            --title "$VERSION" \
+            --generate-notes \
             dist/*.tar.gz \
             dist/*.zip \
-            dist/checksums.txt \
-            --generate-notes
+            dist/checksums.txt
