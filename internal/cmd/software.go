@@ -2,9 +2,15 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -14,6 +20,27 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+)
+
+// maxPackageSize is the per-file upload cap for JumpCloud's private repo
+// (https://jumpcloud.com/support/manage-software-with-jumpcloud-private-repo).
+const maxPackageSize = 5 * 1024 * 1024 * 1024 // 5 GB
+
+// supportedPackageExtensions maps JumpCloud-supported package file extensions
+// to a human-readable label. JumpCloud's private repo only accepts MSI, PKG,
+// and IPA — DMG/EXE/DEB are explicitly not supported.
+var supportedPackageExtensions = map[string]string{
+	".msi": "Windows MSI",
+	".pkg": "macOS PKG",
+	".ipa": "iOS IPA",
+}
+
+// uploadPollInterval and uploadPollTimeout bound the wait for server-side
+// validation after a binary is uploaded. Validation typically lands in a few
+// seconds; 2 minutes is generous for occasional slow paths.
+const (
+	uploadPollInterval = 3 * time.Second
+	uploadPollTimeout  = 2 * time.Minute
 )
 
 // softwareDefaultFields is the default field subset shown for software app output.
@@ -172,6 +199,8 @@ func newSoftwareCreateCmd() *cobra.Command {
 		location       string
 		description    string
 		autoUpdate     bool
+		filePath       string
+		noWait         bool
 	)
 
 	cmd := &cobra.Command{
@@ -181,20 +210,39 @@ func newSoftwareCreateCmd() *cobra.Command {
 
 Required fields: --name.
 
-Package settings can be specified in two ways:
+Package settings can be specified in three ways:
 
 1. Individual flags (recommended for single-package apps):
    --package-id firefox --package-manager CHOCOLATEY
 
-2. Raw JSON (for advanced/multi-package use):
+2. File upload to JumpCloud's private repo (APPLE_CUSTOM, WINDOWS_MDM, etc.):
+   --file ./MyApp.pkg --package-manager APPLE_CUSTOM
+
+3. Raw JSON (for advanced/multi-package use):
    --settings '[{"packageId":"firefox","packageManager":"CHOCOLATEY"}]'
 
 Valid package managers: APPLE_CUSTOM, APPLE_VPP, CHOCOLATEY, GOOGLE_ANDROID,
 MICROSOFT_STORE, WINDOWS_MDM, WINGET.
 
+File uploads (--file): accepts .msi/.pkg/.ipa up to 5 GB. Packages must be
+digitally signed with a trusted, unexpired cert — unsigned packages will be
+rejected by JumpCloud after upload. See
+https://jumpcloud.com/support/manage-software-with-jumpcloud-private-repo
+
 If --settings is provided, it takes precedence over individual package flags.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSoftwareCreate(cmd, name, settings, packageID, packageManager, desiredState, location, description, autoUpdate)
+			return runSoftwareCreate(cmd, softwareCreateOpts{
+				name:           name,
+				settings:       settings,
+				packageID:      packageID,
+				packageManager: packageManager,
+				desiredState:   desiredState,
+				location:       location,
+				description:    description,
+				autoUpdate:     autoUpdate,
+				filePath:       filePath,
+				noWait:         noWait,
+			})
 		},
 	}
 
@@ -206,40 +254,99 @@ If --settings is provided, it takes precedence over individual package flags.`,
 	cmd.Flags().StringVar(&location, "location", "", "Download URL for custom packages")
 	cmd.Flags().StringVar(&description, "description", "", "Package description")
 	cmd.Flags().BoolVar(&autoUpdate, "auto-update", false, "Enable automatic updates")
+	cmd.Flags().StringVar(&filePath, "file", "", "Path to a .msi/.pkg/.ipa package to upload (≤5 GB)")
+	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Skip polling for server-side package validation after upload")
 	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
 }
 
-func runSoftwareCreate(cmd *cobra.Command, name, settings, packageID, packageManager, desiredState, location, description string, autoUpdate bool) error {
-	// Validate package manager if individual flags are used.
-	if packageID != "" && packageManager == "" {
+// softwareCreateOpts groups create flags so the signature stays manageable.
+type softwareCreateOpts struct {
+	name           string
+	settings       string
+	packageID      string
+	packageManager string
+	desiredState   string
+	location       string
+	description    string
+	autoUpdate     bool
+	filePath       string
+	noWait         bool
+}
+
+func runSoftwareCreate(cmd *cobra.Command, o softwareCreateOpts) error {
+	// Flag-combination validation first (cheap, no I/O).
+	if o.filePath != "" {
+		if o.settings != "" {
+			return fmt.Errorf("--file cannot be combined with --settings")
+		}
+		if o.packageID != "" {
+			return fmt.Errorf("--file cannot be combined with --package-id (--file uploads to JumpCloud object storage; --package-id is for externally hosted packages)")
+		}
+		if o.packageManager == "" {
+			return fmt.Errorf("--package-manager is required with --file (typically APPLE_CUSTOM for .pkg, WINDOWS_MDM for .msi, APPLE_VPP for .ipa)")
+		}
+	}
+	if o.packageID != "" && o.packageManager == "" {
 		return fmt.Errorf("--package-manager is required when using --package-id")
 	}
-	if packageManager != "" {
+	if o.packageManager != "" {
 		var err error
-		packageManager, err = validatePackageManager(packageManager)
+		o.packageManager, err = validatePackageManager(o.packageManager)
 		if err != nil {
 			return err
 		}
 	}
 
+	// Stat the file to validate extension/size early, even in plan mode.
+	var fileInfo os.FileInfo
+	if o.filePath != "" {
+		if err := validatePackageExtension(o.filePath); err != nil {
+			return err
+		}
+		info, err := os.Stat(o.filePath)
+		if err != nil {
+			return fmt.Errorf("reading --file: %w", err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("--file must be a regular file, not a directory: %s", o.filePath)
+		}
+		if info.Size() > maxPackageSize {
+			return fmt.Errorf("--file is %d bytes; JumpCloud's per-file limit is 5 GB", info.Size())
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("--file is empty: %s", o.filePath)
+		}
+		fileInfo = info
+	}
+
 	if viper.GetBool("plan") {
-		effects := []string{"displayName: " + name}
-		if settings != "" {
+		effects := []string{"displayName: " + o.name}
+		switch {
+		case o.settings != "":
 			effects = append(effects, "settings: (raw JSON)")
-		} else if packageID != "" {
-			effects = append(effects, "packageId: "+packageID)
-			effects = append(effects, "packageManager: "+packageManager)
-			effects = append(effects, "desiredState: "+desiredState)
-			if location != "" {
-				effects = append(effects, "location: "+location)
+		case o.filePath != "":
+			effects = append(effects,
+				"packageManager: "+o.packageManager,
+				"desiredState: "+o.desiredState,
+				fmt.Sprintf("file: %s (%d bytes)", o.filePath, fileInfo.Size()),
+				"upload: POST /softwareapps then PUT binary to presigned S3 URL",
+			)
+		case o.packageID != "":
+			effects = append(effects,
+				"packageId: "+o.packageID,
+				"packageManager: "+o.packageManager,
+				"desiredState: "+o.desiredState,
+			)
+			if o.location != "" {
+				effects = append(effects, "location: "+o.location)
 			}
 		}
 		p := &plan.Plan{
 			Action:     "create",
 			Resource:   "software app",
-			Target:     name,
+			Target:     o.name,
 			Effects:    effects,
 			Reversible: true,
 		}
@@ -252,27 +359,59 @@ func runSoftwareCreate(cmd *cobra.Command, name, settings, packageID, packageMan
 	}
 
 	body := map[string]any{
-		"displayName": name,
+		"displayName": o.name,
 	}
 
-	if settings != "" {
-		if !json.Valid([]byte(settings)) {
+	switch {
+	case o.settings != "":
+		if !json.Valid([]byte(o.settings)) {
 			return fmt.Errorf("parsing --settings: invalid JSON")
 		}
-		body["settings"] = json.RawMessage(settings)
-	} else if packageID != "" {
+		body["settings"] = json.RawMessage(o.settings)
+	case o.filePath != "":
+		fileName := filepath.Base(o.filePath)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Hashing %s (%d bytes)...\n", fileName, fileInfo.Size())
+		sha, err := hashFileSHA256(o.filePath)
+		if err != nil {
+			return err
+		}
 		pkg := map[string]any{
-			"packageId":      packageID,
-			"packageManager": packageManager,
-			"desiredState":   desiredState,
+			"packageManager": o.packageManager,
+			"desiredState":   o.desiredState,
+			"storedPackage": map[string]any{
+				"versions": []any{
+					map[string]any{
+						"name":      fileName,
+						"version":   1,
+						"size":      fileInfo.Size(),
+						"sha256sum": sha,
+					},
+				},
+			},
 		}
-		if location != "" {
-			pkg["location"] = location
+		if o.location != "" {
+			pkg["location"] = o.location
 		}
-		if description != "" {
-			pkg["description"] = description
+		if o.description != "" {
+			pkg["description"] = o.description
 		}
-		if autoUpdate {
+		if o.autoUpdate {
+			pkg["autoUpdate"] = true
+		}
+		body["settings"] = []any{pkg}
+	case o.packageID != "":
+		pkg := map[string]any{
+			"packageId":      o.packageID,
+			"packageManager": o.packageManager,
+			"desiredState":   o.desiredState,
+		}
+		if o.location != "" {
+			pkg["location"] = o.location
+		}
+		if o.description != "" {
+			pkg["description"] = o.description
+		}
+		if o.autoUpdate {
 			pkg["autoUpdate"] = true
 		}
 		body["settings"] = []any{pkg}
@@ -283,8 +422,131 @@ func runSoftwareCreate(cmd *cobra.Command, name, settings, packageID, packageMan
 		return err
 	}
 
+	// For file uploads, extract uploadUrl, PUT the file, and optionally poll.
+	if o.filePath != "" {
+		var createResp struct {
+			ID        string `json:"id"`
+			UploadURL string `json:"uploadUrl"`
+		}
+		if err := json.Unmarshal(result, &createResp); err != nil {
+			return fmt.Errorf("parsing create response: %w", err)
+		}
+		if createResp.UploadURL == "" {
+			return fmt.Errorf("server did not return uploadUrl; verify the package manager supports custom binary uploads")
+		}
+
+		fmt.Fprintf(cmd.ErrOrStderr(), "Uploading %s...\n", filepath.Base(o.filePath))
+		if err := uploadFileToPresigned(cmd.Context(), o.filePath, createResp.UploadURL, fileInfo.Size()); err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(), "Upload complete.")
+
+		if o.noWait {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Skipped polling. Check validation status with: jc software get %s\n", createResp.ID)
+		} else {
+			finalResult, err := waitForPackageValidation(cmd.Context(), client, createResp.ID, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			result = finalResult
+		}
+	}
+
 	opts := output.CurrentOptions()
 	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+}
+
+// validatePackageExtension returns an error if the file's extension is not one
+// of JumpCloud's supported private-repo formats (.msi/.pkg/.ipa).
+func validatePackageExtension(path string) error {
+	ext := strings.ToLower(filepath.Ext(path))
+	if _, ok := supportedPackageExtensions[ext]; !ok {
+		return fmt.Errorf("unsupported package format %q: JumpCloud's private repo accepts .msi, .pkg, and .ipa only (see https://jumpcloud.com/support/manage-software-with-jumpcloud-private-repo)", ext)
+	}
+	return nil
+}
+
+// hashFileSHA256 streams the file through SHA-256 and returns the lowercase
+// hex digest. Streams rather than buffering to stay memory-bounded for large
+// packages.
+func hashFileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("opening file for hashing: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hashing file: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// uploadFileToPresigned opens the file and streams it to the presigned URL.
+// Re-opens the file (it was already read once for hashing); streaming rather
+// than buffering avoids loading a 5 GB file into memory.
+func uploadFileToPresigned(ctx context.Context, path, url string, size int64) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("opening file for upload: %w", err)
+	}
+	defer f.Close()
+	return api.PutPresigned(ctx, url, f, size)
+}
+
+// waitForPackageValidation polls the software app until the stored package
+// leaves PENDING/VALIDATING. Returns the latest app JSON. Surfaces
+// rejectedReason verbatim if the server rejects the package (typically due to
+// an unsigned binary or invalid cert).
+func waitForPackageValidation(ctx context.Context, client *api.V2Client, appID string, progressOut io.Writer) (json.RawMessage, error) {
+	fmt.Fprint(progressOut, "Waiting for server-side validation")
+	defer fmt.Fprintln(progressOut)
+
+	deadline := time.Now().Add(uploadPollTimeout)
+	var last json.RawMessage
+	for {
+		fmt.Fprint(progressOut, ".")
+
+		data, err := client.Get(ctx, "/softwareapps/"+appID)
+		if err != nil {
+			return nil, err
+		}
+		last = data
+
+		var parsed struct {
+			Settings []struct {
+				StoredPackage struct {
+					Versions []struct {
+						Status         string `json:"status"`
+						RejectedReason string `json:"rejectedReason"`
+					} `json:"versions"`
+				} `json:"storedPackage"`
+			} `json:"settings"`
+		}
+		if err := json.Unmarshal(data, &parsed); err == nil && len(parsed.Settings) > 0 && len(parsed.Settings[0].StoredPackage.Versions) > 0 {
+			v := parsed.Settings[0].StoredPackage.Versions[0]
+			switch v.Status {
+			case "AVAILABLE":
+				fmt.Fprint(progressOut, " AVAILABLE")
+				return last, nil
+			case "REJECTED":
+				fmt.Fprint(progressOut, " REJECTED")
+				return last, fmt.Errorf("package rejected by JumpCloud: %s", v.RejectedReason)
+			}
+		}
+
+		if time.Now().After(deadline) {
+			fmt.Fprint(progressOut, " timeout")
+			return last, fmt.Errorf("validation did not complete within %s; check status with: jc software get %s", uploadPollTimeout, appID)
+		}
+
+		select {
+		case <-ctx.Done():
+			return last, ctx.Err()
+		case <-time.After(uploadPollInterval):
+		}
+	}
 }
 
 func newSoftwareUpdateCmd() *cobra.Command {
