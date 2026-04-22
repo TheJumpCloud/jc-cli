@@ -51,7 +51,7 @@ func NewRecipeParamFormScreen(r *recipe.Recipe) *RecipeParamFormScreen {
 }
 
 func (s *RecipeParamFormScreen) Title() string {
-	return "Run: " + s.recipe.Name
+	return "Configure: " + s.recipe.Name
 }
 
 func (s *RecipeParamFormScreen) TextInputActive() bool {
@@ -153,7 +153,7 @@ func (s *RecipeParamFormScreen) submit() (tea.Model, tea.Cmd) {
 
 func (s *RecipeParamFormScreen) View() string {
 	var sb strings.Builder
-	sb.WriteString(style.Title.Render("Run: " + s.recipe.Name))
+	sb.WriteString(style.Title.Render("Configure: " + s.recipe.Name))
 	sb.WriteString("\n")
 
 	if s.recipe.Description != "" {

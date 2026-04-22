@@ -142,3 +142,104 @@ func TestRecipeRunScreen_DoneMsgSetsResult(t *testing.T) {
 		t.Errorf("view should show completion message; got:\n%s", view)
 	}
 }
+
+func TestRecipeRunScreen_ShowsStepOutput(t *testing.T) {
+	r := &recipe.Recipe{
+		Name: "audit",
+		Steps: []recipe.Step{
+			{Name: "list-devices", Command: "devices list -t"},
+		},
+	}
+	s := NewRecipeRunScreen(r, nil, false)
+	// Mark the step done and inject a done message with captured output.
+	s.steps[0].status = "done"
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	s.Update(recipeDoneMsg{
+		result: &recipe.ExecutionResult{
+			Recipe: "audit",
+			Status: "success",
+			Steps: []recipe.StepResult{
+				{Name: "list-devices", Status: "success",
+					Output: "HOSTNAME  OS\nfoo       Mac\nbar       Windows\n"},
+			},
+			Message: "done",
+		},
+	})
+
+	view := s.View()
+	if !strings.Contains(view, "HOSTNAME") {
+		t.Errorf("view should contain captured output header 'HOSTNAME'; got:\n%s", view)
+	}
+	if !strings.Contains(view, "foo") || !strings.Contains(view, "bar") {
+		t.Errorf("view should contain output rows; got:\n%s", view)
+	}
+}
+
+func TestRecipeRunScreen_ScrollOffsetJKMoves(t *testing.T) {
+	// Build an output large enough to force scrolling.
+	var many []string
+	for i := 0; i < 50; i++ {
+		many = append(many, "line"+string(rune('A'+i%26)))
+	}
+	longOutput := strings.Join(many, "\n")
+
+	r := &recipe.Recipe{
+		Name:  "t",
+		Steps: []recipe.Step{{Name: "s", Command: "c"}},
+	}
+	s := NewRecipeRunScreen(r, nil, false)
+	s.steps[0].status = "done"
+	s.Update(tea.WindowSizeMsg{Width: 80, Height: 20}) // viewport ~16 lines
+	s.Update(recipeDoneMsg{
+		result: &recipe.ExecutionResult{
+			Recipe: "t",
+			Status: "success",
+			Steps:  []recipe.StepResult{{Name: "s", Status: "success", Output: longOutput}},
+		},
+	})
+
+	initial := s.scrollOffset
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if s.scrollOffset != initial+1 {
+		t.Errorf("after j, scrollOffset = %d, want %d", s.scrollOffset, initial+1)
+	}
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if s.scrollOffset != initial {
+		t.Errorf("after k, scrollOffset = %d, want %d", s.scrollOffset, initial)
+	}
+	// Scroll to bottom with G, then ensure offset is clamped (View calls clampScroll).
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	_ = s.View() // triggers clampScroll
+	if s.scrollOffset > 50 {
+		t.Errorf("scrollOffset after G+View should be clamped; got %d", s.scrollOffset)
+	}
+	// Back to top with g.
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	if s.scrollOffset != 0 {
+		t.Errorf("after g, scrollOffset = %d, want 0", s.scrollOffset)
+	}
+}
+
+func TestRecipeRunScreen_SkippedStepHasNoOutput(t *testing.T) {
+	r := &recipe.Recipe{
+		Name: "t",
+		Steps: []recipe.Step{
+			{Name: "conditional", Command: "c", When: "{{ .flag }}"},
+		},
+	}
+	s := NewRecipeRunScreen(r, nil, false)
+	s.steps[0].status = "skipped"
+	s.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	s.Update(recipeDoneMsg{
+		result: &recipe.ExecutionResult{
+			Recipe: "t",
+			Status: "success",
+			Steps:  []recipe.StepResult{{Name: "conditional", Status: "skipped"}},
+		},
+	})
+
+	view := s.View()
+	if !strings.Contains(view, "conditional") {
+		t.Errorf("view should still list skipped step name; got:\n%s", view)
+	}
+}

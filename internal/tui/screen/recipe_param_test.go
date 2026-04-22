@@ -12,7 +12,7 @@ import (
 func TestRecipeParamFormScreen_TitleIncludesRecipe(t *testing.T) {
 	r := &recipe.Recipe{Name: "onboard-user", Steps: []recipe.Step{{Name: "x", Command: "y"}}}
 	s := NewRecipeParamFormScreen(r)
-	if s.Title() != "Run: onboard-user" {
+	if s.Title() != "Configure: onboard-user" {
 		t.Errorf("Title = %q", s.Title())
 	}
 }
@@ -105,7 +105,7 @@ func TestRecipeParamFormScreen_SubmitPushesRunScreen(t *testing.T) {
 		t.Fatalf("expected PushScreenMsg, got %T", msg)
 	}
 	if !strings.HasPrefix(push.Screen.Title(), "Run: ") {
-		t.Errorf("pushed title = %q, want prefix 'Run: '", push.Screen.Title())
+		t.Errorf("pushed title = %q, want prefix 'Run: ' (the run screen, not the configure screen)", push.Screen.Title())
 	}
 }
 

@@ -82,7 +82,7 @@ func TestRecipeListScreen_EnterPushesParamForm(t *testing.T) {
 	// Recipes are sorted alphabetically in LoadAll, but our fake bypasses that;
 	// accept either as long as it's one of our recipes.
 	title := pushMsg.Screen.Title()
-	if title != "Run: security-audit" && title != "Run: onboard-user" {
+	if title != "Configure: security-audit" && title != "Configure: onboard-user" {
 		t.Errorf("unexpected pushed screen title %q", title)
 	}
 }

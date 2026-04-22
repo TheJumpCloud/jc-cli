@@ -74,6 +74,10 @@ type RecipeRunScreen struct {
 
 	width  int
 	height int
+
+	// scrollOffset controls the first visible line of the scrollable body.
+	// Updated on j/k/up/down/page keys; clamped in clampScroll.
+	scrollOffset int
 }
 
 // NewRecipeRunScreen creates the run screen. When planMode is true, the screen
@@ -180,6 +184,30 @@ func (s *RecipeRunScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if s.done {
 				return s, func() tea.Msg { return tui.PopScreenMsg{} }
 			}
+		case "j", "down":
+			s.scrollOffset++
+			return s, nil
+		case "k", "up":
+			s.scrollOffset--
+			if s.scrollOffset < 0 {
+				s.scrollOffset = 0
+			}
+			return s, nil
+		case "g":
+			s.scrollOffset = 0
+			return s, nil
+		case "G":
+			s.scrollOffset = 1 << 30 // clamped in View
+			return s, nil
+		case "pgdown", " ":
+			s.scrollOffset += s.viewportHeight()
+			return s, nil
+		case "pgup":
+			s.scrollOffset -= s.viewportHeight()
+			if s.scrollOffset < 0 {
+				s.scrollOffset = 0
+			}
+			return s, nil
 		}
 
 	case recipeLineMsg:
@@ -250,25 +278,43 @@ func RegisterTeaProgram(p interface{ Send(tea.Msg) }) {
 	teaProgramSend = p.Send
 }
 
-func (s *RecipeRunScreen) View() string {
-	var sb strings.Builder
+// viewportHeight returns how many lines are available for the scrollable
+// body (everything except the fixed title and footer rows).
+func (s *RecipeRunScreen) viewportHeight() int {
+	// Title + blank + footer = 3 lines; plus 1 for scroll indicator when needed.
+	reserved := 4
+	h := s.height - reserved
+	if h < 5 {
+		h = 5
+	}
+	return h
+}
 
+// buildBodyLines assembles the scrollable body: per-step status, step output,
+// final error/summary message. Returns a slice of already-styled lines.
+func (s *RecipeRunScreen) buildBodyLines() []string {
 	if s.planMode {
-		sb.WriteString(style.Title.Render("Plan: " + s.recipe.Name))
-		sb.WriteString("\n\n")
+		out := []string{}
 		if s.err != "" {
-			sb.WriteString(style.Error.Render("  " + s.err))
+			out = append(out, style.Error.Render("  "+s.err))
 		} else {
-			sb.WriteString(s.planText)
+			for _, line := range strings.Split(strings.TrimRight(s.planText, "\n"), "\n") {
+				out = append(out, line)
+			}
 		}
-		sb.WriteString("\n")
-		sb.WriteString(style.DimRow.Render("  enter: back  esc: back"))
-		return sb.String()
+		return out
 	}
 
-	sb.WriteString(style.Title.Render("Run: " + s.recipe.Name))
-	sb.WriteString("\n\n")
+	// Build a quick lookup from step name → captured output, available only
+	// after the recipe finishes (recipeDoneMsg populates s.result).
+	outputs := map[string]string{}
+	if s.result != nil {
+		for _, sr := range s.result.Steps {
+			outputs[sr.Name] = sr.Output
+		}
+	}
 
+	var lines []string
 	for _, st := range s.steps {
 		icon := "○"
 		lineStyle := style.DimRow
@@ -286,27 +332,99 @@ func (s *RecipeRunScreen) View() string {
 			icon = "✗"
 			lineStyle = style.Error
 		}
-		sb.WriteString(lineStyle.Render(fmt.Sprintf("  %s %s", icon, st.name)))
-		sb.WriteString("\n")
+		lines = append(lines, lineStyle.Render(fmt.Sprintf("  %s %s", icon, st.name)))
+
+		// Show captured output below the step line once available. Keep the
+		// "skipped" case output-free (engine doesn't produce output for
+		// skipped steps, and showing empty whitespace is just noise).
+		if out, ok := outputs[st.name]; ok && st.status != "skipped" {
+			for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+				if line == "" {
+					lines = append(lines, "")
+					continue
+				}
+				lines = append(lines, "      "+line)
+			}
+			if st.status == "done" || st.status == "failed" {
+				lines = append(lines, "")
+			}
+		}
 	}
 
-	sb.WriteString("\n")
-
 	if s.err != "" {
-		sb.WriteString(style.Error.Render("  " + s.err))
-		sb.WriteString("\n")
+		lines = append(lines, "")
+		lines = append(lines, style.Error.Render("  "+s.err))
 	}
 
 	if s.done && s.result != nil && s.result.Message != "" {
-		sb.WriteString(style.Category.Render("  " + s.result.Message))
+		lines = append(lines, "")
+		lines = append(lines, style.Category.Render("  "+s.result.Message))
+	}
+
+	return lines
+}
+
+// clampScroll constrains scrollOffset to [0, max(0, totalLines - viewport)].
+func (s *RecipeRunScreen) clampScroll(totalLines int) {
+	max := totalLines - s.viewportHeight()
+	if max < 0 {
+		max = 0
+	}
+	if s.scrollOffset > max {
+		s.scrollOffset = max
+	}
+	if s.scrollOffset < 0 {
+		s.scrollOffset = 0
+	}
+}
+
+func (s *RecipeRunScreen) View() string {
+	var sb strings.Builder
+
+	// Title.
+	if s.planMode {
+		sb.WriteString(style.Title.Render("Plan: " + s.recipe.Name))
+	} else {
+		sb.WriteString(style.Title.Render("Run: " + s.recipe.Name))
+	}
+	sb.WriteString("\n\n")
+
+	// Body (scrollable).
+	body := s.buildBodyLines()
+	s.clampScroll(len(body))
+
+	vh := s.viewportHeight()
+	start := s.scrollOffset
+	end := start + vh
+	if end > len(body) {
+		end = len(body)
+	}
+	for i := start; i < end; i++ {
+		sb.WriteString(body[i])
+		sb.WriteString("\n")
+	}
+	// Fill short bodies so footer doesn't jump.
+	for i := end - start; i < vh; i++ {
 		sb.WriteString("\n")
 	}
 
-	if s.done {
-		sb.WriteString(style.DimRow.Render("  enter: back  esc: back"))
-	} else {
-		sb.WriteString(style.DimRow.Render("  esc: back (running in background)"))
+	// Scroll indicator + keys footer.
+	scrollHint := ""
+	if len(body) > vh {
+		scrollHint = fmt.Sprintf("  [%d-%d of %d]  j/k: scroll  g/G: top/bottom", start+1, end, len(body))
 	}
+
+	var keys string
+	if s.done {
+		keys = "enter: back  esc: back"
+	} else {
+		keys = "esc: back (running in background)"
+	}
+	if scrollHint != "" {
+		sb.WriteString(style.DimRow.Render(scrollHint))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(style.DimRow.Render("  " + keys))
 
 	return sb.String()
 }
