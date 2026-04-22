@@ -1515,3 +1515,21 @@ func TestRecipeImportCmd_Help(t *testing.T) {
 		t.Errorf("import help should mention url-or-path usage, got: %q", output)
 	}
 }
+
+// TestResetViperForRecipeStep ensures the reset restores the compiled defaults
+// for keys the root PersistentPreRunE can Set. Regression guard for the -t
+// leakage bug: step N's -t (which Sets defaults.output=table) used to persist
+// into step N+1 and break JSON-capturing steps.
+func TestResetViperForRecipeStep(t *testing.T) {
+	viper.Set("defaults.output", "table")
+	viper.Set("plan", true)
+
+	resetViperForRecipeStep()
+
+	if got := viper.GetString("defaults.output"); got != "json" {
+		t.Errorf("defaults.output = %q after reset, want 'json'", got)
+	}
+	if viper.GetBool("plan") {
+		t.Error("plan flag still true after reset")
+	}
+}
