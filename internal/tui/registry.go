@@ -16,6 +16,7 @@ const (
 	CategoryAccess     Category = "Access"
 	CategorySecurity   Category = "Security"
 	CategoryInsights   Category = "Insights"
+	CategoryWorkflows  Category = "Workflows"
 	CategorySettings   Category = "Settings"
 )
 
@@ -29,6 +30,7 @@ var CategoryOrder = []Category{
 	CategoryAccess,
 	CategorySecurity,
 	CategoryInsights,
+	CategoryWorkflows,
 	CategorySettings,
 }
 
@@ -40,6 +42,7 @@ var categoryColumns = map[Category]int{
 	CategorySettings:   1,
 	CategoryAccess:     2,
 	CategoryInsights:   2,
+	CategoryWorkflows:  2,
 }
 
 // CategoryColumn returns the grid column (0-2) for a category.
@@ -513,6 +516,14 @@ func BuildRegistry() []ResourceEntry {
 			SubMenu:     cloudDirChildren,
 		})
 	}
+
+	// Recipes: a virtual entry (no API endpoint) that opens the recipe runner.
+	// The home screen branches on Key="recipes" to open NewRecipeListScreen.
+	entries = append(entries, ResourceEntry{
+		Key:         "recipes",
+		DisplayName: "Recipes",
+		Category:    CategoryWorkflows,
+	})
 
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
