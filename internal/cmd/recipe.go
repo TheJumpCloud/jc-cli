@@ -47,6 +47,32 @@ const maxRecipeBodySize = 10 << 20 // 10 MB
 // initialization cycle (NewRootCmd → newRecipeCmd → newRootCmdForRecipe).
 var newRootCmdForRecipe func() recipe.CobraCommand
 
+// newRootCmdForRecipeStep returns a fresh root command for a recipe step,
+// having first reset viper state that would leak from a prior step. Used as
+// the dispatcher factory for both `jc recipe run` and the TUI runner screen.
+//
+// Without the reset, a step using -t (shorthand for --output table) calls
+// viper.Set("defaults.output", "table") in the root PersistentPreRunE. Because
+// viper.Set has higher precedence than flag bindings, the next step's default
+// JSON output is silently replaced with table format, breaking captures that
+// parse JSON (e.g., `insights count --query count` in security-audit).
+func newRootCmdForRecipeStep() recipe.CobraCommand {
+	resetViperForRecipeStep()
+	return NewRootCmd()
+}
+
+// resetViperForRecipeStep restores persistent-Set viper keys to their
+// compiled defaults. Kept narrow (only keys the root PersistentPreRunE
+// explicitly Sets) rather than viper.Reset which would also wipe bindings.
+//
+// Limitation: an explicit --output flag in a recipe step cannot win against
+// this reset because viper.Set has higher precedence than BindPFlag. Recipe
+// steps that need non-default output formats for capture should be reworked.
+func resetViperForRecipeStep() {
+	viper.Set("defaults.output", "json")
+	viper.Set("plan", false)
+}
+
 func newRecipeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "recipe",
@@ -237,7 +263,7 @@ func runRecipeRun(cmd *cobra.Command, args []string) error {
 	// Execute the recipe.
 	rootCmdFn := newRootCmdForRecipe
 	if rootCmdFn == nil {
-		rootCmdFn = func() recipe.CobraCommand { return NewRootCmd() }
+		rootCmdFn = newRootCmdForRecipeStep
 	}
 	dispatcher := recipe.NewDispatcher(rootCmdFn)
 	result, err := r.Execute(dispatcher, params, cmd.ErrOrStderr())

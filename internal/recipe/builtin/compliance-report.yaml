@@ -19,7 +19,9 @@ steps:
     command: 'devices list --fields displayName,hostname,os,osVersion,lastContact -t'
 
   - name: recent-auth-failures
-    command: 'insights count --service sso --event-type sso_auth_failed --last {{ .days }}d'
+    # --output json --query count: extract just the number and immunize the
+    # capture against persistent --output/-t state leaking from prior steps.
+    command: 'insights count --service sso --event-type sso_auth_failed --last {{ .days }}d --output json --query count'
     capture: auth_failures
     continue_on_error: true
 
