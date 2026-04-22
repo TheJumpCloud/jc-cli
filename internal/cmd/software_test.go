@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -712,5 +716,285 @@ func TestSoftwareReclaimLicense_Plan(t *testing.T) {
 	}
 	if exitErr.Code != 10 {
 		t.Errorf("exit code = %d, want 10", exitErr.Code)
+	}
+}
+
+// --- --file upload Tests ---
+
+func TestValidatePackageExtension(t *testing.T) {
+	cases := []struct {
+		path    string
+		wantErr bool
+	}{
+		{"MyApp.pkg", false},
+		{"installer.MSI", false},
+		{"MyApp.ipa", false},
+		{"relative/path/MyApp.pkg", false},
+		{"MyApp.dmg", true},
+		{"MyApp.exe", true},
+		{"MyApp.deb", true},
+		{"no-extension", true},
+	}
+	for _, c := range cases {
+		err := validatePackageExtension(c.path)
+		if (err != nil) != c.wantErr {
+			t.Errorf("validatePackageExtension(%q) err=%v, wantErr=%v", c.path, err, c.wantErr)
+		}
+	}
+}
+
+func TestHashFileSHA256(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.bin")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("writing temp file: %v", err)
+	}
+	// Known sha256 of "hello".
+	want := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	got, err := hashFileSHA256(path)
+	if err != nil {
+		t.Fatalf("hashFileSHA256 err: %v", err)
+	}
+	if got != want {
+		t.Errorf("hashFileSHA256 = %q, want %q", got, want)
+	}
+}
+
+// startSoftwareUploadServer mocks the two-step upload flow: POST /softwareapps
+// returns an uploadUrl pointing back to /upload/{id} on the same server, the
+// PUT to that URL is accepted, and the subsequent GET /softwareapps/{id}
+// returns the version status configured by the test.
+func startSoftwareUploadServer(t *testing.T, finalStatus, rejectedReason string) (*httptest.Server, *int32) {
+	t.Helper()
+	var uploads int32
+	mux := http.NewServeMux()
+
+	created := map[string]map[string]any{}
+
+	mux.HandleFunc("/softwareapps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var input map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		id := "upload123upload123upload"
+		input["id"] = id
+		created[id] = input
+
+		resp := map[string]any{
+			"id":          id,
+			"displayName": input["displayName"],
+			"settings":    input["settings"],
+			"uploadUrl":   "http://" + r.Host + "/upload/" + id,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	mux.HandleFunc("/upload/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		atomic.AddInt32(&uploads, 1)
+		// Drain body to exercise streaming code path.
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/softwareapps/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/softwareapps/")
+		app, ok := created[id]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// Project finalStatus into settings[0].storedPackage.versions[0] for GET responses.
+		out := map[string]any{
+			"id":          app["id"],
+			"displayName": app["displayName"],
+			"settings": []any{map[string]any{
+				"storedPackage": map[string]any{
+					"versions": []any{map[string]any{
+						"status":         finalStatus,
+						"rejectedReason": rejectedReason,
+					}},
+				},
+			}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	})
+
+	return httptest.NewServer(mux), &uploads
+}
+
+func writePkg(t *testing.T, name, contents string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing temp pkg: %v", err)
+	}
+	return path
+}
+
+func TestSoftwareCreate_File_Available(t *testing.T) {
+	setupUsersTest(t)
+	ts, uploads := startSoftwareUploadServer(t, "AVAILABLE", "")
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	pkg := writePkg(t, "MyApp.pkg", "fake package bytes")
+
+	cmd := NewRootCmd()
+	var out, errBuf bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"software", "create", "--name", "MyApp", "--file", pkg, "--package-manager", "APPLE_CUSTOM"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v\nstderr: %s", err, errBuf.String())
+	}
+
+	if atomic.LoadInt32(uploads) != 1 {
+		t.Errorf("expected 1 upload PUT, got %d", atomic.LoadInt32(uploads))
+	}
+	if !strings.Contains(errBuf.String(), "AVAILABLE") {
+		t.Errorf("stderr should mention AVAILABLE, got: %s", errBuf.String())
+	}
+}
+
+func TestSoftwareCreate_File_Rejected(t *testing.T) {
+	setupUsersTest(t)
+	ts, _ := startSoftwareUploadServer(t, "REJECTED", "package is not signed")
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	pkg := writePkg(t, "Bad.pkg", "unsigned junk")
+
+	cmd := NewRootCmd()
+	var out, errBuf bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"software", "create", "--name", "Bad", "--file", pkg, "--package-manager", "APPLE_CUSTOM"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for rejected package, got nil")
+	}
+	if !strings.Contains(err.Error(), "package is not signed") {
+		t.Errorf("error should surface rejectedReason, got: %v", err)
+	}
+}
+
+func TestSoftwareCreate_File_NoWait(t *testing.T) {
+	setupUsersTest(t)
+	// finalStatus unused when --no-wait; set to PENDING to prove we don't poll.
+	ts, uploads := startSoftwareUploadServer(t, "PENDING", "")
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	pkg := writePkg(t, "MyApp.pkg", "bytes")
+
+	cmd := NewRootCmd()
+	var out, errBuf bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"software", "create", "--name", "MyApp", "--file", pkg, "--package-manager", "APPLE_CUSTOM", "--no-wait"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v\nstderr: %s", err, errBuf.String())
+	}
+	if atomic.LoadInt32(uploads) != 1 {
+		t.Errorf("expected 1 upload PUT, got %d", atomic.LoadInt32(uploads))
+	}
+	if strings.Contains(errBuf.String(), "Waiting for server-side validation") {
+		t.Errorf("--no-wait should skip polling; stderr contained waiting message: %s", errBuf.String())
+	}
+}
+
+func TestSoftwareCreate_File_ConflictFlags(t *testing.T) {
+	setupUsersTest(t)
+	pkg := writePkg(t, "MyApp.pkg", "bytes")
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "with --settings",
+			args: []string{"software", "create", "--name", "X", "--file", pkg, "--package-manager", "APPLE_CUSTOM", "--settings", "[]"},
+			want: "cannot be combined with --settings",
+		},
+		{
+			name: "with --package-id",
+			args: []string{"software", "create", "--name", "X", "--file", pkg, "--package-manager", "APPLE_CUSTOM", "--package-id", "foo"},
+			want: "cannot be combined with --package-id",
+		},
+		{
+			name: "missing --package-manager",
+			args: []string{"software", "create", "--name", "X", "--file", pkg},
+			want: "--package-manager is required with --file",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := NewRootCmd()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs(c.args)
+
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error = %v, want substring %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestSoftwareCreate_File_BadExtension(t *testing.T) {
+	setupUsersTest(t)
+	pkg := writePkg(t, "MyApp.dmg", "bytes")
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "create", "--name", "X", "--file", pkg, "--package-manager", "APPLE_CUSTOM"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for .dmg, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported package format") {
+		t.Errorf("error = %v, want 'unsupported package format'", err)
+	}
+}
+
+func TestSoftwareCreate_File_EmptyFile(t *testing.T) {
+	setupUsersTest(t)
+	pkg := writePkg(t, "MyApp.pkg", "")
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"software", "create", "--name", "X", "--file", pkg, "--package-manager", "APPLE_CUSTOM"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for empty file, got nil")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error = %v, want 'empty'", err)
 	}
 }
