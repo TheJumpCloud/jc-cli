@@ -380,6 +380,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewInsightsFormScreen(entry)}
 		}
+	case "recipes":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewRecipeListScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}
@@ -629,6 +633,9 @@ func (h *HomeScreen) renderEntryLine(e tui.ResourceEntry, isSelected bool) strin
 		suffix = style.ResourceVerbs.Render(" (\u25b8)")
 	} else if e.Placeholder {
 		suffix = ""
+	} else if e.Key == "recipes" {
+		// Virtual entry (no schema) — show a workflow marker instead of verb count.
+		suffix = style.ResourceVerbs.Render(" (workflow)")
 	} else {
 		verbCount := len(e.Schema.Verbs)
 		suffix = style.ResourceVerbs.Render(fmt.Sprintf(" (%d ops)", verbCount))

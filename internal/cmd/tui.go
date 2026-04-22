@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/screen"
 )
@@ -28,7 +29,19 @@ Navigate resources with keyboard shortcuts:
 			home := screen.NewHomeScreen(entries)
 			app := tui.NewApp(home)
 			app.NewHelpScreen = func() tui.Screen { return screen.NewHelpScreen() }
+
+			// Wire the recipe dispatcher so the Recipes screen can execute steps.
+			// This uses a fresh root command per step (same pattern as jc recipe run)
+			// for isolated flag state.
+			screen.RecipeDispatcher = recipe.NewDispatcher(func() recipe.CobraCommand {
+				return NewRootCmd()
+			})
+
 			p := tea.NewProgram(app, tea.WithAltScreen())
+			// Register the program so the recipe-run goroutine can post
+			// completion messages back onto the update loop.
+			screen.RegisterTeaProgram(p)
+
 			_, err := p.Run()
 			return err
 		},
