@@ -168,7 +168,11 @@ func (s *RecipeListScreen) updateBrowseMode(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	switch msg.String() {
 	case "enter":
 		return s.openSelected()
-	case "esc", "q":
+	case "esc":
+		// Note: "q" is not handled here because the app-level GlobalKeyMap.Quit
+		// intercepts single-key "q" before screens see it (TextInputActive() is
+		// false in browse mode). Users quit with "q" globally and navigate back
+		// with "esc".
 		return s, func() tea.Msg { return tui.PopScreenMsg{} }
 	case "j", "down":
 		if s.cursor < len(s.filtered)-1 {
@@ -185,7 +189,6 @@ func (s *RecipeListScreen) updateBrowseMode(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		s.clampCursor()
 	case "/":
 		s.filtering = true
-		s.filter.Focus()
 		return s, s.filter.Focus()
 	case "r":
 		s.loadRecipes()

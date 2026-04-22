@@ -152,3 +152,41 @@ func TestRecipeListScreen_EmptyList(t *testing.T) {
 		t.Errorf("empty-list view should mention 'No recipes available'; got:\n%s", view)
 	}
 }
+
+// TestRecipeListScreen_QDoesNotPop is a guard against resurrecting the
+// unreachable `case "q":` handler. The app intercepts single-key "q" via
+// GlobalKeyMap.Quit before screens see it, so our screen must not attempt
+// to pop on "q" — if it did, it would hint at misleading behavior that
+// never fires in the real app.
+func TestRecipeListScreen_QDoesNotPop(t *testing.T) {
+	withRecipeLoaders(t, sampleRecipes(), sampleRecipes())
+	s := NewRecipeListScreen()
+	s.Init()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		return // no action, as expected
+	}
+	if _, isPop := cmd().(tui.PopScreenMsg); isPop {
+		t.Error("\"q\" must not produce PopScreenMsg at the screen level (app handles quit)")
+	}
+}
+
+// TestRecipeListScreen_FilterFocusesOnce ensures pressing "/" enters filter
+// mode and returns a single non-nil Cmd (the cursor-blink tick), not the
+// double-Focus pattern that silently discarded the first return value.
+func TestRecipeListScreen_FilterFocusesOnce(t *testing.T) {
+	withRecipeLoaders(t, sampleRecipes(), sampleRecipes())
+	s := NewRecipeListScreen()
+	s.Init()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	if !s.filtering {
+		t.Error("\"/\" should enter filtering mode")
+	}
+	if cmd == nil {
+		t.Error("\"/\" should produce a focus/blink Cmd")
+	}
+}

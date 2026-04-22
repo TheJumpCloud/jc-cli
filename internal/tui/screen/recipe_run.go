@@ -34,12 +34,6 @@ type recipeStepState struct {
 	status string // "pending" | "running" | "done" | "failed" | "skipped"
 }
 
-// recipeProgressMsg is emitted when a progress line is parsed from the engine.
-type recipeProgressMsg struct {
-	stepIdx int
-	status  string
-}
-
 // recipeStartMsg is emitted just before dispatcher invocation for a step, so
 // the UI can flip pending → running before the step completes.
 // The engine doesn't emit this directly; we synthesize it by tracking which
@@ -69,8 +63,9 @@ type RecipeRunScreen struct {
 	planText string
 
 	// Plumbing for async execution.
-	pipeR *io.PipeReader
-	pipeW *io.PipeWriter
+	pipeR      *io.PipeReader
+	pipeW      *io.PipeWriter
+	pipeReader *bufio.Reader // created once when the pipe is; prevents buffered-data loss across reads
 
 	width  int
 	height int
@@ -134,6 +129,9 @@ func (s *RecipeRunScreen) Init() tea.Cmd {
 	// screen but the in-flight step will finish before the goroutine exits.
 	// Wiring context.Context into Execute is tracked as a follow-up.
 	s.pipeR, s.pipeW = io.Pipe()
+	// One bufio.Reader for the lifetime of the pipe so buffered data
+	// (anything read past the \n) isn't discarded between Cmd invocations.
+	s.pipeReader = bufio.NewReader(s.pipeR)
 
 	go func() {
 		result, err := s.recipe.Execute(RecipeDispatcher, s.params, s.pipeW)
@@ -153,8 +151,11 @@ func (s *RecipeRunScreen) Init() tea.Cmd {
 // It emits recipeLineMsg on success; on EOF or error, it emits nothing
 // (the completion signal comes from the goroutine's recipeDoneMsg).
 func (s *RecipeRunScreen) readNextLine() tea.Cmd {
-	reader := bufio.NewReader(s.pipeR)
+	reader := s.pipeReader
 	return func() tea.Msg {
+		if reader == nil {
+			return nil
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return nil
