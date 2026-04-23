@@ -31,11 +31,10 @@ Navigate resources with keyboard shortcuts:
 			app.NewHelpScreen = func() tui.Screen { return screen.NewHelpScreen() }
 
 			// Wire the recipe dispatcher so the Recipes screen can execute steps.
-			// This uses a fresh root command per step (same pattern as jc recipe run)
-			// for isolated flag state.
-			screen.RecipeDispatcher = recipe.NewDispatcher(func() recipe.CobraCommand {
-				return NewRootCmd()
-			})
+			// Use newRootCmdForRecipeStep which resets persistent-Set viper keys
+			// between steps so -t in step N doesn't corrupt step N+1's output
+			// format (see comments on resetViperForRecipeStep in recipe.go).
+			screen.RecipeDispatcher = recipe.NewDispatcher(newRootCmdForRecipeStep)
 
 			p := tea.NewProgram(app, tea.WithAltScreen())
 			// Register the program so the recipe-run goroutine can post
