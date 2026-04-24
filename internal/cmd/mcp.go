@@ -94,8 +94,9 @@ Streamable HTTP Examples (for Claude Desktop custom connectors and MCP Apps):
 Security: the http transport is stateless and permissive by default (wide-open
 CORS, cross-origin checks disabled) so browser-based MCP clients like basic-host
 and MCP Apps UIs can connect. When exposing the server via a tunnel (cloudflared,
-ngrok, etc.), use --api-key to prevent unauthenticated tool calls from anyone
-who discovers the URL.
+ngrok, etc.), configure an API key — via 'jc auth login', the JC_API_KEY env
+var, or the --api-key global flag — so the auth middleware rejects
+unauthenticated tool calls from anyone who discovers the URL.
 
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -231,14 +232,32 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 
 	case "http":
 		// Streamable HTTP transport for Claude Desktop custom connectors and MCP Apps.
-		// No auth by default on loopback — designed for local use with cloudflared tunnels.
+		// Auth is optional here (unlike sse) so browser-based MCP clients like
+		// basic-host can connect during local development. When the operator has
+		// configured an API key (via `jc auth login`, JC_API_KEY, or --api-key),
+		// we pass it through so the server's auth middleware rejects unauth'd
+		// calls — critical when exposing via a cloudflared tunnel.
 		listenAddr := resolveSSEAddr(addr, port)
+		apiKey := config.APIKey()
 
-		fmt.Fprintf(os.Stderr, "jc: starting MCP server on Streamable HTTP transport at http://%s/mcp\n", listenAddr)
+		scheme := "http"
+		fmt.Fprintf(os.Stderr, "jc: starting MCP server on Streamable HTTP transport at %s://%s/mcp\n", scheme, listenAddr)
+		if apiKey == "" {
+			// Warn if binding beyond loopback without auth — that's the
+			// combination a tunnel creates, too.
+			if host, _, err := net.SplitHostPort(listenAddr); err == nil {
+				if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+					fmt.Fprintln(os.Stderr, "jc: WARNING: HTTP transport running without an API key. Anyone who reaches the server can call all tools.")
+				}
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "jc: HTTP transport requires x-api-key or Authorization: Bearer header for all requests.")
+		}
 
 		return server.RunStreamableHTTP(ctx, mcp.SSEConfig{
 			Addr:       listenAddr,
 			CORSOrigin: "*",
+			APIKey:     apiKey,
 		})
 
 	default:

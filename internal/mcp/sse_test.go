@@ -597,3 +597,111 @@ func generateTestCert(t *testing.T) (certFile, keyFile string) {
 
 	return certFile, keyFile
 }
+
+// startHTTPStreamServer mirrors startSSEServer but for the Streamable HTTP
+// transport. Returns the base URL (including the /mcp path).
+func startHTTPStreamServer(t *testing.T, cfg SSEConfig) (*Server, string) {
+	t.Helper()
+	setupTest(t)
+
+	if cfg.Addr == "" {
+		cfg.Addr = ":0"
+	}
+
+	server := NewServer(Options{
+		RateLimit:    60,
+		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.RunStreamableHTTP(ctx, cfg) }()
+
+	var addr net.Addr
+	for i := 0; i < 50; i++ {
+		addr = server.Listener()
+		if addr != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if addr == nil {
+		t.Fatal("HTTP stream server did not start listening")
+	}
+
+	return server, "http://" + addr.String() + "/mcp"
+}
+
+// TestHTTP_AuthRejectsUnauthenticated is the regression guard for the high-
+// severity Bugbot finding: when APIKey is set on the http transport, requests
+// without credentials must be rejected.
+func TestHTTP_AuthRejectsUnauthenticated(t *testing.T) {
+	_, baseURL := startHTTPStreamServer(t, SSEConfig{
+		APIKey:     "test-key",
+		CORSOrigin: "*",
+	})
+
+	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`)
+	req, _ := http.NewRequest(http.MethodPost, baseURL, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized without x-api-key, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTP_AuthAcceptsCorrectKey confirms auth is actually checked, not bypassed.
+func TestHTTP_AuthAcceptsCorrectKey(t *testing.T) {
+	_, baseURL := startHTTPStreamServer(t, SSEConfig{
+		APIKey:     "test-key",
+		CORSOrigin: "*",
+	})
+
+	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`)
+	req, _ := http.NewRequest(http.MethodPost, baseURL, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("x-api-key", "test-key")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 with correct x-api-key, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTP_NoAuthWhenNoKey asserts the permissive default: no API key → any
+// client can connect (needed for basic-host and local MCP Apps dev).
+func TestHTTP_NoAuthWhenNoKey(t *testing.T) {
+	_, baseURL := startHTTPStreamServer(t, SSEConfig{
+		CORSOrigin: "*",
+	})
+
+	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`)
+	req, _ := http.NewRequest(http.MethodPost, baseURL, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 without auth when no API key configured, got %d", resp.StatusCode)
+	}
+}
