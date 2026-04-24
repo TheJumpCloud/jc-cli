@@ -219,6 +219,7 @@
     <div class="widgets-grid" id="widgets-grid"></div>
   </div>
 
+<!--JC_APP_COMMON-->
 <script>
 (function() {
   "use strict";
@@ -246,53 +247,8 @@
     while (parent.firstChild) parent.removeChild(parent.firstChild);
   }
 
-  // --- MCP PostMessage Client ---
-  var rpcId = 0;
-  var pending = {};
-  var toolResultHandler = null;
-
-  window.addEventListener('message', function(event) {
-    var msg = event.data;
-    if (!msg || msg.jsonrpc !== '2.0') return;
-
-    if (msg.id !== undefined && pending[msg.id]) {
-      var cb = pending[msg.id];
-      delete pending[msg.id];
-      if (msg.error) cb.reject(msg.error);
-      else cb.resolve(msg.result);
-    }
-
-    if (msg.method === 'tools/result' && toolResultHandler) {
-      toolResultHandler(msg.params);
-    }
-  });
-
-  function callTool(name, args) {
-    var id = ++rpcId;
-    return new Promise(function(resolve, reject) {
-      var timer = setTimeout(function() {
-        delete pending[id];
-        reject(new Error('Tool call timed out after 30s'));
-      }, 30000);
-      pending[id] = {
-        resolve: function(v) { clearTimeout(timer); resolve(v); },
-        reject: function(e) { clearTimeout(timer); reject(e); }
-      };
-      window.parent.postMessage({
-        jsonrpc: '2.0',
-        id: id,
-        method: 'tools/call',
-        params: { name: name, arguments: args || {} }
-      }, '*');
-    });
-  }
-
-  // Signal readiness to host
-  window.parent.postMessage({
-    jsonrpc: '2.0',
-    method: 'ui/ready',
-    params: { name: 'JumpCloud Dashboard', version: '1.0.0' }
-  }, '*');
+  // Signal readiness to host (via shared scaffolding).
+  jcApp.ready('JumpCloud Dashboard', '1.0.0');
 
   // --- Color constants ---
   var C = {
@@ -494,37 +450,27 @@
     errEl.style.display = 'block';
   }
 
-  function parseToolResult(result) {
-    if (result && result.content) {
-      var tc = result.content.find(function(c) { return c.type === 'text'; });
-      if (!tc) return null;
-      if (result.isError) throw new Error(tc.text);
-      return JSON.parse(tc.text);
-    }
-    return null;
-  }
-
   // --- Initialization ---
   var loaded = false;
 
-  toolResultHandler = function(params) {
+  jcApp.onToolResult(function(params) {
     if (loaded) return;
     loaded = true;
     try {
-      var data = parseToolResult(params);
+      var data = jcApp.parseToolResult(params);
       if (data) renderDashboard(data);
       else showError('Empty tool result');
     } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
-  };
+  });
 
   // Proactive fetch (gives host time to push result first)
   setTimeout(function() {
     if (loaded) return;
-    callTool('dashboard_view', {}).then(function(result) {
+    jcApp.callTool('dashboard_view', {}).then(function(result) {
       if (loaded) return;
       loaded = true;
       try {
-        var data = parseToolResult(result);
+        var data = jcApp.parseToolResult(result);
         if (data) renderDashboard(data);
         else showError('Empty dashboard response');
       } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
@@ -538,9 +484,9 @@
     var btn = this;
     btn.classList.add('loading');
     btn.textContent = 'Loading...';
-    callTool('dashboard_view', {}).then(function(result) {
+    jcApp.callTool('dashboard_view', {}).then(function(result) {
       try {
-        var data = parseToolResult(result);
+        var data = jcApp.parseToolResult(result);
         if (data) renderDashboard(data);
         else showError('Refresh returned empty data');
       } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
