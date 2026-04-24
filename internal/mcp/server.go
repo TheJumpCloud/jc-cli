@@ -336,12 +336,13 @@ func corsMiddleware(origin string, next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		// Streamable HTTP clients send several custom headers: Mcp-Session-Id,
-		// Mcp-Protocol-Version, Last-Event-ID. Rather than chase each new one
-		// the TS SDK starts sending, allow all headers when the operator has
-		// explicitly opted into CORS — this is already a permissive config.
-		// Content-Type, x-api-key, and Authorization are also accepted for
-		// auth flows when CORSOrigin is non-wildcard.
-		w.Header().Set("Access-Control-Allow-Headers", "*")
+		// Mcp-Protocol-Version, Last-Event-ID. The wildcard covers all of
+		// those plus x-api-key. Authorization must be listed explicitly — per
+		// the Fetch spec it's a special-cased header that wildcards don't
+		// cover (https://fetch.spec.whatwg.org/#cors-safelisted-request-header)
+		// and browser clients using Authorization: Bearer would otherwise fail
+		// the preflight even though authMiddleware accepts it.
+		w.Header().Set("Access-Control-Allow-Headers", "*, Authorization")
 		// Clients need to read Mcp-Session-Id from the initialize response
 		// to echo it back on subsequent requests.
 		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
