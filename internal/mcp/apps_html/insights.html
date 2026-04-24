@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud Insights Explorer</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --cyan: #06b6d4;
+    --purple: #a855f7;
+    --pink: #ec4899;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    line-height: 1.5;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px; padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .meta { font-size: 12px; color: var(--text-muted); }
+
+  .filters {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px;
+    margin-bottom: 16px; align-items: end;
+  }
+  .filters label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+  .filters input, .filters select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 13px; min-width: 120px;
+  }
+  .filters button {
+    background: var(--accent); color: white; border: none;
+    border-radius: 6px; padding: 8px 16px; font-size: 13px;
+    font-weight: 500; cursor: pointer;
+  }
+  .filters button:hover { background: var(--accent-light); }
+  .filters button.loading { opacity: 0.5; pointer-events: none; }
+
+  #warnings {
+    display: none;
+    background: rgba(234,179,8,0.1);
+    border: 1px solid var(--yellow);
+    border-radius: var(--radius);
+    padding: 10px 14px; margin-bottom: 16px;
+    color: var(--yellow); font-size: 12px;
+  }
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid var(--red);
+    border-radius: var(--radius);
+    padding: 12px; margin-bottom: 16px;
+    color: var(--red); font-size: 13px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 16px;
+  }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 12px;
+  }
+
+  .summary {
+    display: flex; gap: 20px; margin-bottom: 12px; font-size: 13px;
+    color: var(--text-muted); flex-wrap: wrap;
+  }
+  .summary strong { color: var(--text); font-weight: 600; }
+
+  .chart { display: flex; flex-direction: column; gap: 2px; min-height: 200px; }
+  .chart-row {
+    display: grid; grid-template-columns: 100px 1fr 50px;
+    align-items: center; gap: 8px; font-size: 11px;
+  }
+  .chart-label {
+    color: var(--text-muted); text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .chart-bar {
+    display: flex; height: 18px; background: var(--bg);
+    border-radius: 3px; overflow: hidden;
+  }
+  .chart-bar > span { transition: width 0.25s ease; min-width: 1px; }
+  .chart-value {
+    font-size: 11px; color: var(--text);
+    font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .chart-empty {
+    color: var(--text-muted); text-align: center;
+    padding: 40px 0; font-size: 13px;
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-top: 12px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted);
+  }
+  .legend-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 4px; vertical-align: middle;
+  }
+
+  .top-users { display: flex; flex-direction: column; gap: 6px; }
+  .top-user {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 8px; border-radius: 4px; font-size: 12px;
+  }
+  .top-user:hover { background: var(--surface-hover); }
+  .top-user .name {
+    color: var(--text); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; flex: 1;
+  }
+  .top-user .count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Directory Insights</h1>
+      <div class="meta" id="window-meta"></div>
+    </div>
+    <button type="button" class="refresh-btn" id="refresh-btn" style="background:var(--surface);color:var(--text-muted);border:1px solid var(--border);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;">Refresh</button>
+  </header>
+
+  <form class="filters" id="filters">
+    <label>Service
+      <select name="service">
+        <option value="all">all</option>
+        <option value="sso">sso</option>
+        <option value="ldap">ldap</option>
+        <option value="radius">radius</option>
+        <option value="directory">directory</option>
+      </select>
+    </label>
+    <label>Last
+      <select name="last">
+        <option value="1h">1h</option>
+        <option value="24h" selected>24h</option>
+        <option value="7d">7d</option>
+        <option value="30d">30d</option>
+      </select>
+    </label>
+    <label>Event type
+      <input type="text" name="event_type" placeholder="e.g. sso_auth_failed">
+    </label>
+    <label>User
+      <input type="text" name="user" placeholder="username">
+    </label>
+    <button type="submit">Apply</button>
+  </form>
+
+  <div id="warnings"></div>
+  <div id="error"></div>
+  <div id="loading"><div class="spinner"></div>Loading…</div>
+  <div id="content" style="display:none;">
+    <div class="summary" id="summary"></div>
+    <div class="layout">
+      <div class="card">
+        <h3>Events over time</h3>
+        <div class="chart" id="chart"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card">
+        <h3>Top users</h3>
+        <div class="top-users" id="top-users"></div>
+      </div>
+    </div>
+  </div>
+
+<!--JC_APP_COMMON-->
+<script>
+(function() {
+  "use strict";
+
+  // --- Color palette for event types (cycled). ---
+  var palette = ["#6366f1","#22c55e","#eab308","#ef4444","#3b82f6","#f97316","#06b6d4","#a855f7","#ec4899","#8b8fa3"];
+  var eventColors = {};
+  function colorFor(et) {
+    if (!eventColors[et]) eventColors[et] = palette[Object.keys(eventColors).length % palette.length];
+    return eventColors[et];
+  }
+
+  function fmtNum(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+    return String(n);
+  }
+
+  function fmtBucketLabel(iso, bucketSize) {
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    if (bucketSize && bucketSize.endsWith("d")) {
+      return d.toISOString().slice(5, 10); // MM-DD
+    }
+    return d.toISOString().slice(5, 16).replace("T", " "); // MM-DD HH:MM
+  }
+
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "className") n.className = attrs[k];
+      else if (k === "textContent") n.textContent = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    });
+    if (children) children.forEach(function(c){
+      if (c == null) return;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else n.appendChild(c);
+    });
+    return n;
+  }
+
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function renderSummary(data) {
+    var root = document.getElementById("summary");
+    clear(root);
+    var total = el("span", null, [el("strong", { textContent: fmtNum(data.total) }), " events"]);
+    var window_ = el("span", null, ["window: ", el("strong", { textContent: (data.start || "") + " → " + (data.end || "") })]);
+    var bs = el("span", null, ["bucket: ", el("strong", { textContent: data.bucket_size })]);
+    var svc = el("span", null, ["service: ", el("strong", { textContent: data.service })]);
+    [total, window_, bs, svc].forEach(function(s){ root.appendChild(s); });
+    if (data.event_type) root.appendChild(el("span", null, ["event_type: ", el("strong", { textContent: data.event_type })]));
+    if (data.user) root.appendChild(el("span", null, ["user: ", el("strong", { textContent: data.user })]));
+  }
+
+  function renderChart(data) {
+    var root = document.getElementById("chart");
+    clear(root);
+    if (!data.bins || data.bins.length === 0) {
+      root.appendChild(el("div", { className: "chart-empty", textContent: "No events in this window." }));
+      return;
+    }
+    var maxTotal = 0;
+    data.bins.forEach(function(b){
+      var t = 0; Object.keys(b.counts || {}).forEach(function(k){ t += b.counts[k]; });
+      if (t > maxTotal) maxTotal = t;
+    });
+    if (maxTotal === 0) {
+      root.appendChild(el("div", { className: "chart-empty", textContent: "No events in this window." }));
+      return;
+    }
+    data.bins.forEach(function(b){
+      var counts = b.counts || {};
+      var total = 0; Object.keys(counts).forEach(function(k){ total += counts[k]; });
+      var bar = el("div", { className: "chart-bar" });
+      Object.keys(counts).sort().forEach(function(et){
+        var seg = el("span");
+        seg.style.background = colorFor(et);
+        seg.style.width = ((counts[et] / maxTotal) * 100) + "%";
+        seg.title = et + ": " + counts[et];
+        bar.appendChild(seg);
+      });
+      if (total === 0) {
+        var ghost = el("span");
+        ghost.style.background = "var(--border)"; ghost.style.width = "100%";
+        bar.appendChild(ghost);
+      }
+      var row = el("div", { className: "chart-row" }, [
+        el("div", { className: "chart-label", textContent: fmtBucketLabel(b.bucket, data.bucket_size) }),
+        bar,
+        el("div", { className: "chart-value", textContent: fmtNum(total) })
+      ]);
+      root.appendChild(row);
+    });
+  }
+
+  function renderLegend(data) {
+    var root = document.getElementById("legend");
+    clear(root);
+    (data.event_types || []).forEach(function(et){
+      var dot = el("span", { className: "legend-dot" });
+      dot.style.background = colorFor(et);
+      root.appendChild(el("span", null, [dot, et]));
+    });
+  }
+
+  function renderTopUsers(data) {
+    var root = document.getElementById("top-users");
+    clear(root);
+    if (!data.top_users || data.top_users.length === 0) {
+      root.appendChild(el("div", { className: "chart-empty", textContent: "No user activity." }));
+      return;
+    }
+    data.top_users.forEach(function(u){
+      root.appendChild(el("div", { className: "top-user" }, [
+        el("span", { className: "name", textContent: u.username }),
+        el("span", { className: "count", textContent: String(u.count) })
+      ]));
+    });
+  }
+
+  function renderAll(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "";
+    document.getElementById("error").style.display = "none";
+
+    var warn = document.getElementById("warnings");
+    if (data.warnings && data.warnings.length) {
+      warn.textContent = data.warnings.join(" ");
+      warn.style.display = "";
+    } else {
+      warn.style.display = "none";
+    }
+
+    document.getElementById("window-meta").textContent =
+      "Updated " + new Date().toLocaleTimeString();
+
+    renderSummary(data);
+    renderChart(data);
+    renderLegend(data);
+    renderTopUsers(data);
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").style.display = "none";
+    var e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "";
+  }
+
+  function collectFilters() {
+    var form = document.getElementById("filters");
+    var out = {};
+    new FormData(form).forEach(function(v, k) {
+      if (v) out[k] = v;
+    });
+    return out;
+  }
+
+  function load(args, btn) {
+    if (btn) { btn.classList.add("loading"); btn.textContent = "Loading…"; }
+    document.getElementById("loading").style.display = "";
+    document.getElementById("content").style.display = "none";
+    jcApp.callTool("insights_view", args || {}).then(function(result){
+      try {
+        var data = jcApp.parseToolResult(result);
+        if (data) renderAll(data);
+        else showError("Empty response");
+      } catch (e) { showError(e.message || String(e)); }
+      if (btn) { btn.classList.remove("loading"); btn.textContent = "Apply"; }
+    }).catch(function(err){
+      showError("Failed to load: " + (err.message || String(err)));
+      if (btn) { btn.classList.remove("loading"); btn.textContent = "Apply"; }
+    });
+  }
+
+  jcApp.ready("JumpCloud Insights Explorer", "1.0.0");
+
+  var initialized = false;
+  jcApp.onToolResult(function(params) {
+    if (initialized) return;
+    initialized = true;
+    try {
+      var data = jcApp.parseToolResult(params);
+      if (data) renderAll(data);
+    } catch (e) { /* proactive fetch below will retry */ }
+  });
+
+  setTimeout(function() {
+    if (initialized) return;
+    initialized = true;
+    load(collectFilters(), null);
+  }, 500);
+
+  document.getElementById("filters").addEventListener("submit", function(ev) {
+    ev.preventDefault();
+    load(collectFilters(), ev.submitter);
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", function() {
+    load(collectFilters(), null);
+  });
+})();
+</script>
+</body>
+</html>

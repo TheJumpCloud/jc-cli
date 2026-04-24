@@ -79,6 +79,51 @@ func renderAppHTML(raw string) string {
 	return strings.Replace(raw, appCommonMarker, "<script>"+appCommonJS+"</script>", 1)
 }
 
+// addToolWithMetaTyped wraps mcp.AddTool with rate limiting, audit logging,
+// tool filtering, and Meta support — the typed-input variant of
+// addToolWithMeta for MCP Apps that accept parameters (service filters,
+// time ranges, target IDs, etc.). The In type parameter is used by the SDK
+// to auto-derive the tool's JSON input schema.
+func addToolWithMetaTyped[In any](s *Server, name, description string, meta mcp.Meta, handler func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error)) {
+	if !s.toolFilter.isAllowed(name) {
+		return
+	}
+
+	tool := &mcp.Tool{
+		Name:        name,
+		Description: description,
+		Meta:        meta,
+	}
+
+	wrapped := func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error) {
+		if err := s.limiter.allow(); err != nil {
+			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
+			return errorResult(err.Error()), nil, nil
+		}
+
+		result, out, err := handler(ctx, req, args)
+
+		if err != nil {
+			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
+		} else if result != nil && result.IsError {
+			errMsg := "tool error"
+			if len(result.Content) > 0 {
+				if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+					errMsg = tc.Text
+				}
+			}
+			s.auditLog.log(name, req.Params.Arguments, false, errMsg)
+		} else {
+			s.auditLog.log(name, req.Params.Arguments, true, "")
+		}
+
+		return result, out, err
+	}
+
+	mcp.AddTool(s.mcpServer, tool, wrapped)
+	s.toolNames = append(s.toolNames, name)
+}
+
 // addToolWithMeta wraps mcp.AddTool with rate limiting, audit logging, and
 // tool filtering — same as addTool but also sets Meta on the tool definition.
 // This is used for MCP App tools that need _meta.ui.resourceUri.
@@ -124,12 +169,17 @@ func (s *Server) addToolWithMeta(name, description string, meta mcp.Meta, handle
 
 // --- MCP App registration entry points ---
 
-// registerAppTools registers the tool half of every MCP App in appSpecs.
+// registerAppTools registers the tool half of every MCP App in appSpecs,
+// plus any apps with typed inputs that live outside the no-args slice.
 // Each tool carries _meta.ui.resourceUri pointing at its matching ui:// resource.
 func (s *Server) registerAppTools() {
 	for _, spec := range appSpecs {
 		s.registerAppTool(spec)
 	}
+	// Apps that accept parameters are registered individually because they
+	// need typed handler generics. Each call registers both tool and resource
+	// (the resource half is no different from a no-args app).
+	s.registerInsightsView()
 }
 
 // registerAppResources registers the ui:// resource half of every MCP App.
