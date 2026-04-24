@@ -333,8 +333,18 @@ func TestSSE_CORSHeaders(t *testing.T) {
 		t.Errorf("expected CORS methods to include GET and POST, got %q", methods)
 	}
 	headers := resp.Header.Get("Access-Control-Allow-Headers")
-	if !strings.Contains(headers, "x-api-key") {
-		t.Errorf("expected CORS headers to include x-api-key, got %q", headers)
+	// Server sends "*" so all custom MCP headers (Mcp-Session-Id,
+	// Mcp-Protocol-Version, Last-Event-ID, x-api-key, etc.) are allowed
+	// without having to enumerate them and chase SDK additions.
+	if !strings.Contains(headers, "*") && !strings.Contains(headers, "x-api-key") {
+		t.Errorf("expected CORS headers to be wildcard or include x-api-key, got %q", headers)
+	}
+	if !strings.Contains(headers, "*") && !strings.Contains(headers, "Mcp-Session-Id") {
+		t.Errorf("expected CORS headers to be wildcard or include Mcp-Session-Id, got %q", headers)
+	}
+	exposed := resp.Header.Get("Access-Control-Expose-Headers")
+	if !strings.Contains(exposed, "Mcp-Session-Id") {
+		t.Errorf("expected Mcp-Session-Id in Access-Control-Expose-Headers so clients can read it from the initialize response, got %q", exposed)
 	}
 }
 

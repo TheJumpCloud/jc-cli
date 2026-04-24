@@ -69,6 +69,15 @@ func NewServer(opts Options) *Server {
 		Level: slog.LevelInfo,
 	}))
 
+	// Declare support for the MCP Apps extension so clients (Claude, VS Code
+	// Copilot, etc.) know to fetch ui:// resources and render them in a
+	// sandboxed iframe. Without this, the _meta.ui.resourceUri on tool
+	// definitions is silently ignored by the client per the MCP extension
+	// handshake rules. See:
+	// https://modelcontextprotocol.io/extensions/client-matrix
+	caps := &mcp.ServerCapabilities{}
+	caps.AddExtension("io.modelcontextprotocol/ui", map[string]any{})
+
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "jc",
@@ -77,6 +86,7 @@ func NewServer(opts Options) *Server {
 		&mcp.ServerOptions{
 			Instructions: "JumpCloud CLI MCP server. Manage users, devices, groups, policies, commands, and more.",
 			Logger:       logger,
+			Capabilities: caps,
 		},
 	)
 
@@ -228,13 +238,31 @@ func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
 func (s *Server) RunStreamableHTTP(ctx context.Context, cfg SSEConfig) error {
 	defer s.auditLog.close()
 
-	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		return s.mcpServer
-	}, &mcp.StreamableHTTPOptions{
+	opts := &mcp.StreamableHTTPOptions{
 		// Disable DNS rebinding protection so tunneled requests (e.g. cloudflared)
 		// with non-localhost Host headers are accepted.
 		DisableLocalhostProtection: true,
-	})
+		// Stateless skips Mcp-Session-Id validation. Browser clients cannot
+		// send custom headers on EventSource (the GET SSE stream), so strict
+		// session validation breaks basic-host, MCP Apps UIs, etc. The trade-
+		// off is that server→client requests are rejected, but MCP Apps only
+		// use client-initiated tool calls and resource reads.
+		Stateless: true,
+	}
+	// When CORS is explicitly configured, the operator wants browser clients
+	// to connect (basic-host, MCP Apps UIs, web dashboards). The SDK's default
+	// CrossOriginProtection rejects such requests via Sec-Fetch-Site with 403
+	// "cross-origin request detected". Bypass the check on /mcp — that's the
+	// only path we mount, and CORS headers still enforce origin policy.
+	if cfg.CORSOrigin != "" {
+		cop := http.NewCrossOriginProtection()
+		cop.AddInsecureBypassPattern("/mcp")
+		opts.CrossOriginProtection = cop
+	}
+
+	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		return s.mcpServer
+	}, opts)
 
 	var h http.Handler = handler
 	if cfg.APIKey != "" {
@@ -306,8 +334,17 @@ func (s *Server) authMiddleware(apiKey string, next http.Handler) http.Handler {
 func corsMiddleware(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, x-api-key, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		// Streamable HTTP clients send several custom headers: Mcp-Session-Id,
+		// Mcp-Protocol-Version, Last-Event-ID. Rather than chase each new one
+		// the TS SDK starts sending, allow all headers when the operator has
+		// explicitly opted into CORS — this is already a permissive config.
+		// Content-Type, x-api-key, and Authorization are also accepted for
+		// auth flows when CORSOrigin is non-wildcard.
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		// Clients need to read Mcp-Session-Id from the initialize response
+		// to echo it back on subsequent requests.
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

@@ -87,6 +87,16 @@ SSE Examples:
   jc mcp serve --transport sse --addr 0.0.0.0:8080 --tls-cert cert.pem --tls-key key.pem
   jc mcp serve --transport sse --cors-origin "https://app.example.com"
 
+Streamable HTTP Examples (for Claude Desktop custom connectors and MCP Apps):
+  jc mcp serve --transport http
+  jc mcp serve --transport http --port 8090
+
+Security: the http transport is stateless and permissive by default (wide-open
+CORS, cross-origin checks disabled) so browser-based MCP clients like basic-host
+and MCP Apps UIs can connect. When exposing the server via a tunnel (cloudflared,
+ngrok, etc.), use --api-key to prevent unauthenticated tool calls from anyone
+who discovers the URL.
+
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Use config values as defaults; CLI flags override.

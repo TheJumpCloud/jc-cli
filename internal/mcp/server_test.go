@@ -142,6 +142,14 @@ func TestMCP_Initialize(t *testing.T) {
 	if initResult.Capabilities.Resources == nil {
 		t.Fatal("expected resources capability")
 	}
+	// MCP Apps extension must be advertised for ui:// resources to render in
+	// supporting clients (Claude web/desktop, VS Code Copilot, etc.). Without
+	// this, clients skip the iframe render even though tool defs carry
+	// _meta.ui.resourceUri.
+	if _, ok := initResult.Capabilities.Extensions["io.modelcontextprotocol/ui"]; !ok {
+		t.Fatalf("expected 'io.modelcontextprotocol/ui' extension in capabilities; got %v",
+			initResult.Capabilities.Extensions)
+	}
 }
 
 func TestMCP_ListTools(t *testing.T) {
