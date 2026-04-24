@@ -124,47 +124,11 @@ func addToolWithMetaTyped[In any](s *Server, name, description string, meta mcp.
 	s.toolNames = append(s.toolNames, name)
 }
 
-// addToolWithMeta wraps mcp.AddTool with rate limiting, audit logging, and
-// tool filtering — same as addTool but also sets Meta on the tool definition.
-// This is used for MCP App tools that need _meta.ui.resourceUri.
+// addToolWithMeta is the no-args convenience wrapper for addToolWithMetaTyped.
+// Kept as a method on *Server for call-site ergonomics (s.addToolWithMeta(...))
+// since no-args App tools are the common case.
 func (s *Server) addToolWithMeta(name, description string, meta mcp.Meta, handler func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error)) {
-	if !s.toolFilter.isAllowed(name) {
-		return
-	}
-
-	tool := &mcp.Tool{
-		Name:        name,
-		Description: description,
-		Meta:        meta,
-	}
-
-	wrappedHandler := func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-		if err := s.limiter.allow(); err != nil {
-			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
-			return errorResult(err.Error()), nil, nil
-		}
-
-		result, out, err := handler(ctx, req, args)
-
-		if err != nil {
-			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
-		} else if result != nil && result.IsError {
-			errMsg := "tool error"
-			if len(result.Content) > 0 {
-				if tc, ok := result.Content[0].(*mcp.TextContent); ok {
-					errMsg = tc.Text
-				}
-			}
-			s.auditLog.log(name, req.Params.Arguments, false, errMsg)
-		} else {
-			s.auditLog.log(name, req.Params.Arguments, true, "")
-		}
-
-		return result, out, err
-	}
-
-	mcp.AddTool(s.mcpServer, tool, wrappedHandler)
-	s.toolNames = append(s.toolNames, name)
+	addToolWithMetaTyped[struct{}](s, name, description, meta, handler)
 }
 
 // --- MCP App registration entry points ---

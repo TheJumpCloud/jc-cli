@@ -404,10 +404,17 @@
   var initialized = false;
   jcApp.onToolResult(function(params) {
     if (initialized) return;
-    initialized = true;
+    // Only mark initialized after a successful render; a thrown error or
+    // null payload leaves initialized=false so the setTimeout fallback
+    // below takes over and issues a real callTool with proper error
+    // handling. Previously setting the flag up-front could leave the UI
+    // stuck on the loading spinner.
     try {
       var data = jcApp.parseToolResult(params);
-      if (data) renderAll(data);
+      if (data) {
+        initialized = true;
+        renderAll(data);
+      }
     } catch (e) { /* proactive fetch below will retry */ }
   });
 
