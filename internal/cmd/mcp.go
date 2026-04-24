@@ -38,13 +38,14 @@ Configure in Claude Desktop:
 
 func newMcpServeCmd() *cobra.Command {
 	var (
-		rateLimit  int
-		readOnly   bool
-		transport  string
-		addr       string
-		port       int
-		corsOrigin string
-		tlsCert    string
+		rateLimit   int
+		readOnly    bool
+		transport   string
+		addr        string
+		port        int
+		corsOrigin  string
+		requireAuth bool
+		tlsCert     string
 		tlsKey     string
 	)
 
@@ -90,13 +91,15 @@ SSE Examples:
 Streamable HTTP Examples (for Claude Desktop custom connectors and MCP Apps):
   jc mcp serve --transport http
   jc mcp serve --transport http --port 8090
+  jc mcp serve --transport http --require-auth      (for tunnels)
 
 Security: the http transport is stateless and permissive by default (wide-open
 CORS, cross-origin checks disabled) so browser-based MCP clients like basic-host
-and MCP Apps UIs can connect. When exposing the server via a tunnel (cloudflared,
-ngrok, etc.), configure an API key — via 'jc auth login', the JC_API_KEY env
-var, or the --api-key global flag — so the auth middleware rejects
-unauthenticated tool calls from anyone who discovers the URL.
+and MCP Apps UIs can connect without friction. When exposing the server via a
+tunnel (cloudflared, ngrok, etc.), add --require-auth to enforce that every
+request carries the configured JumpCloud API key via x-api-key or
+Authorization: Bearer. --require-auth reads the key from 'jc auth login',
+JC_API_KEY, or the --api-key global flag, and refuses to start without one.
 
 Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -110,7 +113,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("port") {
 				port = config.MCPSSEPort()
 			}
-			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey)
+			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth)
 		},
 	}
 
@@ -122,6 +125,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 	cmd.Flags().StringVar(&corsOrigin, "cors-origin", "", "Allowed CORS origin for SSE transport")
 	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file for SSE transport")
 	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "TLS private key file for SSE transport")
+	cmd.Flags().BoolVar(&requireAuth, "require-auth", false, "Require x-api-key / Authorization Bearer on every request (http transport). Off by default so local browser clients like basic-host can connect. Turn on when exposing via a tunnel.")
 
 	return cmd
 }
@@ -174,7 +178,7 @@ func resolveSSEAddr(addr string, port int) string {
 	return addr
 }
 
-func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string) error {
+func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth bool) error {
 	server := mcp.NewServer(mcp.Options{
 		RateLimit:    rateLimit,
 		ReadOnly:     readOnly,
@@ -231,33 +235,37 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 		})
 
 	case "http":
-		// Streamable HTTP transport for Claude Desktop custom connectors and MCP Apps.
-		// Auth is optional here (unlike sse) so browser-based MCP clients like
-		// basic-host can connect during local development. When the operator has
-		// configured an API key (via `jc auth login`, JC_API_KEY, or --api-key),
-		// we pass it through so the server's auth middleware rejects unauth'd
-		// calls — critical when exposing via a cloudflared tunnel.
+		// Streamable HTTP transport for Claude Desktop custom connectors and
+		// MCP Apps. Auth is off by default so browser-based clients like
+		// basic-host can connect for local dev. Enable with --require-auth
+		// when exposing via a tunnel; the server then requires x-api-key or
+		// Authorization: Bearer matching the configured JumpCloud API key.
 		listenAddr := resolveSSEAddr(addr, port)
-		apiKey := config.APIKey()
 
-		scheme := "http"
-		fmt.Fprintf(os.Stderr, "jc: starting MCP server on Streamable HTTP transport at %s://%s/mcp\n", scheme, listenAddr)
-		if apiKey == "" {
-			// Warn if binding beyond loopback without auth — that's the
-			// combination a tunnel creates, too.
+		var httpAPIKey string
+		if requireAuth {
+			httpAPIKey = config.APIKey()
+			if httpAPIKey == "" {
+				return fmt.Errorf("--require-auth needs an API key to enforce. Run 'jc auth login' or set JC_API_KEY, or drop --require-auth for local dev")
+			}
+		}
+
+		fmt.Fprintf(os.Stderr, "jc: starting MCP server on Streamable HTTP transport at http://%s/mcp\n", listenAddr)
+		if httpAPIKey != "" {
+			fmt.Fprintln(os.Stderr, "jc: auth REQUIRED (x-api-key or Authorization: Bearer).")
+		} else {
+			// Warn on non-loopback binds without auth — effectively public.
 			if host, _, err := net.SplitHostPort(listenAddr); err == nil {
 				if host != "127.0.0.1" && host != "::1" && host != "localhost" {
-					fmt.Fprintln(os.Stderr, "jc: WARNING: HTTP transport running without an API key. Anyone who reaches the server can call all tools.")
+					fmt.Fprintln(os.Stderr, "jc: WARNING: bound to a non-loopback address without --require-auth. Anyone who reaches the server can call all tools.")
 				}
 			}
-		} else {
-			fmt.Fprintln(os.Stderr, "jc: HTTP transport requires x-api-key or Authorization: Bearer header for all requests.")
 		}
 
 		return server.RunStreamableHTTP(ctx, mcp.SSEConfig{
 			Addr:       listenAddr,
 			CORSOrigin: "*",
-			APIKey:     apiKey,
+			APIKey:     httpAPIKey,
 		})
 
 	default:
