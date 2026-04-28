@@ -218,7 +218,8 @@
     } else if (u.activated) {
       badgesEl.appendChild(el("span", { className: "badge active", textContent: "Active" }));
     }
-    if (mfa && mfa.totp_enabled) {
+    var mfaEnrolled = mfa && (mfa.status === "ENROLLED" || mfa.totp_enabled);
+    if (mfaEnrolled) {
       badgesEl.appendChild(el("span", { className: "badge mfa-on", textContent: "MFA enrolled" }));
     } else {
       badgesEl.appendChild(el("span", { className: "badge mfa-off", textContent: "MFA off" }));

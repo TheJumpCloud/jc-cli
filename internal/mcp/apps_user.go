@@ -100,6 +100,39 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 		return nil, fmt.Errorf("resolving user %q: %w", args.User, err)
 	}
 
+	// Fetch user detail synchronously before fanning out: the events filter
+	// needs the canonical `username` (not the caller's raw input which may
+	// be an email or hex ID), and the cost is one cheap GET — keeps the
+	// downstream goroutines correct without resorting to channels.
+	rawUser, err := v1.Get(ctx, "/systemusers/"+id)
+	if err != nil {
+		return nil, fmt.Errorf("fetching user %q: %w", args.User, err)
+	}
+	var u struct {
+		ID            string `json:"_id"`
+		Username      string `json:"username"`
+		Email         string `json:"email"`
+		Firstname     string `json:"firstname"`
+		Lastname      string `json:"lastname"`
+		Department    string `json:"department"`
+		Description   string `json:"description"`
+		Activated     bool   `json:"activated"`
+		Suspended     bool   `json:"suspended"`
+		AccountLocked bool   `json:"account_locked"`
+		TOTPEnabled   bool   `json:"totp_enabled"`
+		Created       string `json:"created"`
+		MFA           struct {
+			Configured bool `json:"configured"`
+		} `json:"mfa"`
+	}
+	if err := json.Unmarshal(rawUser, &u); err != nil {
+		return nil, fmt.Errorf("parsing user %q: %w", args.User, err)
+	}
+	mfaStatus := "NOT_ENROLLED"
+	if u.TOTPEnabled || u.MFA.Configured {
+		mfaStatus = "ENROLLED"
+	}
+
 	var (
 		mu       sync.Mutex
 		data     userViewData
@@ -111,53 +144,16 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 		mu.Unlock()
 	}
 
-	var wg sync.WaitGroup
+	data.User = userHeader{
+		ID: u.ID, Username: u.Username, Email: u.Email,
+		Firstname: u.Firstname, Lastname: u.Lastname,
+		Department: u.Department, Description: u.Description,
+		Activated: u.Activated, Suspended: u.Suspended, Locked: u.AccountLocked,
+		Created: u.Created,
+	}
+	data.MFA = userMFA{TOTPEnabled: u.TOTPEnabled, Status: mfaStatus}
 
-	// User detail (header + MFA flags).
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		raw, err := v1.Get(ctx, "/systemusers/"+id)
-		if err != nil {
-			addWarning(fmt.Sprintf("fetching user: %v", err))
-			return
-		}
-		var u struct {
-			ID            string `json:"_id"`
-			Username      string `json:"username"`
-			Email         string `json:"email"`
-			Firstname     string `json:"firstname"`
-			Lastname      string `json:"lastname"`
-			Department    string `json:"department"`
-			Description   string `json:"description"`
-			Activated     bool   `json:"activated"`
-			Suspended     bool   `json:"suspended"`
-			AccountLocked bool   `json:"account_locked"`
-			TOTPEnabled   bool   `json:"totp_enabled"`
-			Created       string `json:"created"`
-			MFA           struct {
-				Configured bool `json:"configured"`
-			} `json:"mfa"`
-		}
-		if err := json.Unmarshal(raw, &u); err != nil {
-			addWarning(fmt.Sprintf("parsing user: %v", err))
-			return
-		}
-		mfaStatus := "NOT_ENROLLED"
-		if u.TOTPEnabled || u.MFA.Configured {
-			mfaStatus = "ENROLLED"
-		}
-		mu.Lock()
-		data.User = userHeader{
-			ID: u.ID, Username: u.Username, Email: u.Email,
-			Firstname: u.Firstname, Lastname: u.Lastname,
-			Department: u.Department, Description: u.Description,
-			Activated: u.Activated, Suspended: u.Suspended, Locked: u.AccountLocked,
-			Created: u.Created,
-		}
-		data.MFA = userMFA{TOTPEnabled: u.TOTPEnabled, Status: mfaStatus}
-		mu.Unlock()
-	}()
+	var wg sync.WaitGroup
 
 	// Group memberships via the V2 graph: user → user_group.
 	wg.Add(1)
@@ -241,13 +237,10 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 			addWarning(fmt.Sprintf("insights client: %v", err))
 			return
 		}
-		// We don't know the username yet (the user-detail goroutine is
-		// running in parallel). Use the username we resolved against —
-		// args.User passes through resolve and is what users see in
-		// Insights filters. If the caller passed an ID, fall back to the
-		// username from the user header once available; for now we use
-		// args.User which works for the common case.
-		username := args.User
+		// Filter by the canonical username from the resolved user record —
+		// args.User may be an email or hex ID, neither of which match
+		// `initiated_by.username` in Insights.
+		username := u.Username
 		now := nowFunc().UTC()
 		query := api.InsightsQuery{
 			Service:   "all",
