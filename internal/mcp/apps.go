@@ -16,10 +16,68 @@ import (
 //go:embed apps_html/dashboard.html
 var dashboardHTML string
 
+//go:embed apps_html/common.js
+var appCommonJS string
+
 const (
-	dashboardResourceURI = "ui://jc/dashboard"
-	mcpAppMIMEType       = "text/html;profile=mcp-app"
+	mcpAppMIMEType = "text/html;profile=mcp-app"
+	// appCommonMarker in an app's HTML is replaced at registration time with a
+	// <script> tag containing common.js. Keeps postMessage plumbing out of each
+	// app's content.
+	appCommonMarker = "<!--JC_APP_COMMON-->"
 )
+
+// appSpec describes a single MCP App (tool + ui:// resource pair).
+// Adding a new app means: one new .html file under apps_html/, one entry in
+// appSpecs, no other Go wiring required.
+type appSpec struct {
+	// Name is the MCP tool name (e.g. "dashboard_view").
+	Name string
+	// Description is the MCP tool description shown to LLMs.
+	Description string
+	// ResourceURI is the ui:// resource the host fetches to render the app
+	// (e.g. "ui://jc/dashboard"). Must be unique across the server.
+	ResourceURI string
+	// ResourceName and ResourceDescription populate the MCP Resource
+	// metadata; ResourceName is what users see in resource listings.
+	ResourceName        string
+	ResourceDescription string
+	// HTML is the embedded app template. It may include the appCommonMarker
+	// comment, which the registrar replaces with common.js at registration.
+	HTML string
+	// Handler returns the JSON-serializable payload pushed to the app as the
+	// initial tool result. Server wraps the returned value in an MCP
+	// CallToolResult (text content block) automatically.
+	Handler func(ctx context.Context) (any, error)
+}
+
+// appSpecs lists every MCP App this server exposes. Each entry wires a tool,
+// a ui:// resource, the _meta.ui.resourceUri link, and server-side data
+// aggregation. Add a new app by appending here + dropping its HTML in
+// apps_html/.
+var appSpecs = []appSpec{
+	{
+		Name:                "dashboard_view",
+		Description:         "Show an interactive JumpCloud organization dashboard with user/device counts, MFA adoption, device OS breakdown, resource counts, and recent event activity. Returns structured data that renders as a rich HTML dashboard in MCP App-capable hosts.",
+		ResourceURI:         "ui://jc/dashboard",
+		ResourceName:        "Dashboard App",
+		ResourceDescription: "Interactive JumpCloud organization dashboard",
+		HTML:                dashboardHTML,
+		Handler: func(ctx context.Context) (any, error) {
+			return fetchDashboardData(ctx)
+		},
+	},
+}
+
+// renderAppHTML returns the app's HTML with the common.js scaffolding injected
+// in place of appCommonMarker. If the marker is absent the HTML is returned
+// unchanged, letting apps opt out of the shared scaffolding.
+func renderAppHTML(raw string) string {
+	if !strings.Contains(raw, appCommonMarker) {
+		return raw
+	}
+	return strings.Replace(raw, appCommonMarker, "<script>"+appCommonJS+"</script>", 1)
+}
 
 // addToolWithMeta wraps mcp.AddTool with rate limiting, audit logging, and
 // tool filtering — same as addTool but also sets Meta on the tool definition.
@@ -66,19 +124,39 @@ func (s *Server) addToolWithMeta(name, description string, meta mcp.Meta, handle
 
 // --- MCP App registration entry points ---
 
-// registerAppTools registers MCP App tools (tools with _meta.ui.resourceUri).
+// registerAppTools registers the tool half of every MCP App in appSpecs.
+// Each tool carries _meta.ui.resourceUri pointing at its matching ui:// resource.
 func (s *Server) registerAppTools() {
+	for _, spec := range appSpecs {
+		s.registerAppTool(spec)
+	}
+}
+
+// registerAppResources registers the ui:// resource half of every MCP App.
+// Resource bodies are HTML with common.js injected in place of the marker.
+func (s *Server) registerAppResources() {
+	for _, spec := range appSpecs {
+		s.registerAppResource(spec)
+	}
+}
+
+// registerAppTool wires one app's tool side: adds an MCP tool with
+// _meta.ui.resourceUri so capable hosts render the app inline, and a
+// wrapped handler that runs the spec's Handler and marshals its return
+// value into a text-content tool result.
+func (s *Server) registerAppTool(spec appSpec) {
+	handler := spec.Handler
 	s.addToolWithMeta(
-		"dashboard_view",
-		"Show an interactive JumpCloud organization dashboard with user/device counts, MFA adoption, device OS breakdown, resource counts, and recent event activity. Returns structured data that renders as a rich HTML dashboard in MCP App-capable hosts.",
+		spec.Name,
+		spec.Description,
 		mcp.Meta{
-			"ui":              map[string]any{"resourceUri": dashboardResourceURI},
-			"ui/resourceUri":  dashboardResourceURI, // legacy key for older hosts
+			"ui":             map[string]any{"resourceUri": spec.ResourceURI},
+			"ui/resourceUri": spec.ResourceURI, // legacy key for older hosts
 		},
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-			data, err := fetchDashboardData(ctx)
+			data, err := handler(ctx)
 			if err != nil {
-				return errorResult(fmt.Sprintf("fetching dashboard data: %v", err)), nil, nil
+				return errorResult(fmt.Sprintf("fetching %s data: %v", spec.Name, err)), nil, nil
 			}
 			res, err := jsonResult(data)
 			if err != nil {
@@ -89,21 +167,24 @@ func (s *Server) registerAppTools() {
 	)
 }
 
-// registerAppResources registers MCP App UI resources (ui:// scheme).
-func (s *Server) registerAppResources() {
+// registerAppResource wires one app's UI resource side: serves its HTML (with
+// common.js injected) at the ui:// URI with the MCP App MIME type. The final
+// HTML is precomputed once at registration.
+func (s *Server) registerAppResource(spec appSpec) {
+	html := renderAppHTML(spec.HTML)
 	s.mcpServer.AddResource(
 		&mcp.Resource{
-			URI:         dashboardResourceURI,
-			Name:        "Dashboard App",
-			Description: "Interactive JumpCloud organization dashboard",
+			URI:         spec.ResourceURI,
+			Name:        spec.ResourceName,
+			Description: spec.ResourceDescription,
 			MIMEType:    mcpAppMIMEType,
 		},
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{
 				Contents: []*mcp.ResourceContents{{
-					URI:      dashboardResourceURI,
+					URI:      spec.ResourceURI,
 					MIMEType: mcpAppMIMEType,
-					Text:     dashboardHTML,
+					Text:     html,
 				}},
 			}, nil
 		},

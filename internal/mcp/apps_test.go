@@ -410,19 +410,102 @@ func TestDashboardHTML_Integrity(t *testing.T) {
 		t.Fatal("dashboardHTML embed is empty")
 	}
 
-	required := []string{
+	// Raw template must carry the app-specific frame and the injection marker.
+	// postMessage/tools/call/ui/ready now live in common.js (injected at serve time).
+	templateRequired := []string{
 		"<!DOCTYPE html>",
 		"<html",
 		"</html>",
-		"postMessage",
 		"dashboard_view",
-		"tools/call",
-		"ui/ready",
 		"JumpCloud Dashboard",
+		appCommonMarker,
 	}
-	for _, s := range required {
+	for _, s := range templateRequired {
 		if !strings.Contains(dashboardHTML, s) {
-			t.Errorf("embedded HTML missing required content: %q", s)
+			t.Errorf("embedded dashboard HTML missing required content: %q", s)
 		}
+	}
+
+	// The rendered HTML (what clients actually receive) must carry the
+	// scaffolding from common.js — postMessage, tools/call, ui/ready — and
+	// must no longer contain the marker.
+	rendered := renderAppHTML(dashboardHTML)
+	renderedRequired := []string{"postMessage", "tools/call", "ui/ready", "window.jcApp"}
+	for _, s := range renderedRequired {
+		if !strings.Contains(rendered, s) {
+			t.Errorf("rendered dashboard HTML missing scaffolding content: %q", s)
+		}
+	}
+	if strings.Contains(rendered, appCommonMarker) {
+		t.Errorf("rendered HTML still contains %q — marker was not replaced", appCommonMarker)
+	}
+}
+
+// TestRenderAppHTML_ReplacesMarker ensures the injection wraps common.js in a
+// script tag and substitutes it for the marker exactly once.
+func TestRenderAppHTML_ReplacesMarker(t *testing.T) {
+	template := `<!DOCTYPE html>
+<html>
+<head><title>T</title></head>
+<body>` + appCommonMarker + `<script>console.log("app");</script></body>
+</html>`
+
+	out := renderAppHTML(template)
+	if strings.Contains(out, appCommonMarker) {
+		t.Error("marker should be replaced in output")
+	}
+	if !strings.Contains(out, "<script>") {
+		t.Error("output should contain a <script> tag from the replacement")
+	}
+	if !strings.Contains(out, "window.jcApp") {
+		t.Error("output should contain common.js content (window.jcApp define)")
+	}
+}
+
+// TestRenderAppHTML_MarkerAbsentLeavesUnchanged is the opt-out path: an app
+// that doesn't want the shared scaffolding simply omits the marker.
+func TestRenderAppHTML_MarkerAbsentLeavesUnchanged(t *testing.T) {
+	template := "<!DOCTYPE html><html><body>no marker here</body></html>"
+	if got := renderAppHTML(template); got != template {
+		t.Errorf("expected HTML to pass through unchanged when marker absent, got changed output:\n%s", got)
+	}
+}
+
+// TestAppSpecs_DashboardRegistered guards the MCP App catalog so nobody
+// accidentally drops dashboard_view in a future refactor.
+func TestAppSpecs_DashboardRegistered(t *testing.T) {
+	var found *appSpec
+	for i := range appSpecs {
+		if appSpecs[i].Name == "dashboard_view" {
+			found = &appSpecs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected 'dashboard_view' in appSpecs")
+	}
+	if found.ResourceURI == "" || found.HTML == "" || found.Handler == nil {
+		t.Errorf("dashboard_view appSpec has empty required fields: %+v", *found)
+	}
+	if !strings.HasPrefix(found.ResourceURI, "ui://") {
+		t.Errorf("ResourceURI must use ui:// scheme, got %q", found.ResourceURI)
+	}
+}
+
+// TestAppSpecs_UniqueNamesAndURIs ensures the registrar can run without
+// collisions (two tools with same name or two resources with same URI would
+// panic the SDK or overwrite silently).
+func TestAppSpecs_UniqueNamesAndURIs(t *testing.T) {
+	names := map[string]bool{}
+	uris := map[string]bool{}
+	for _, spec := range appSpecs {
+		if names[spec.Name] {
+			t.Errorf("duplicate appSpec name: %q", spec.Name)
+		}
+		names[spec.Name] = true
+		if uris[spec.ResourceURI] {
+			t.Errorf("duplicate appSpec ResourceURI: %q", spec.ResourceURI)
+		}
+		uris[spec.ResourceURI] = true
 	}
 }
