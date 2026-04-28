@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -282,7 +283,7 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 	// If the header never populated, the user truly couldn't be fetched —
 	// surface that as an error rather than returning an empty card.
 	if data.User.ID == "" && data.User.Username == "" {
-		return nil, fmt.Errorf("could not fetch user %q: %s", args.User, joinWarnings(warnings))
+		return nil, fmt.Errorf("could not fetch user %q: %s", args.User, strings.Join(warnings, "; "))
 	}
 
 	return &data, nil
@@ -313,17 +314,6 @@ func previewSSHKey(pub string) string {
 		return pub[:bodyLen+8] + "…"
 	}
 	return pub
-}
-
-func joinWarnings(ws []string) string {
-	out := ""
-	for i, w := range ws {
-		if i > 0 {
-			out += "; "
-		}
-		out += w
-	}
-	return out
 }
 
 // registerUserView wires the user_view MCP App: typed tool + ui:// resource.
