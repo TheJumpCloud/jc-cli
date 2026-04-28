@@ -11,10 +11,13 @@ chmod +x jc && sudo mv jc /usr/local/bin/
 git clone https://github.com/TheJumpCloud/jc-cli.git && cd jc-cli && make install
 
 # Run the setup wizard (walks you through auth, org, output prefs)
+# The wizard recommends service-account (OAuth 2.0) auth — short-lived
+# tokens, easy to rotate. API key auth is the fallback.
 jc setup
 
-# Or authenticate manually
-jc auth login
+# Or authenticate manually:
+jc auth login --service-account     # recommended for new deployments
+jc auth login                       # API key (legacy, still works)
 ```
 
 Verify: `jc users list -t` should show your org's users.

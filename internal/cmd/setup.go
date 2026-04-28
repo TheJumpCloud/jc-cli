@@ -189,10 +189,13 @@ func (wiz *setupWizard) stepAuth(profile string) (*api.Organization, error) {
 		}
 	}
 
-	// Choose auth method.
+	// Choose auth method. Service Account is presented first and as the
+	// default because it issues short-lived bearer tokens that refresh
+	// against a service-account identity — easier to rotate, revoke, and
+	// scope than a personal API key.
 	fmt.Fprintln(wiz.w, "Authentication method:")
-	fmt.Fprintln(wiz.w, "  1) API Key")
-	fmt.Fprintln(wiz.w, "  2) Service Account (OAuth 2.0)")
+	fmt.Fprintln(wiz.w, "  1) Service Account (OAuth 2.0) — recommended")
+	fmt.Fprintln(wiz.w, "  2) API Key")
 	fmt.Fprintf(wiz.w, "Select [1]: ")
 
 	choice, err := wiz.input.ReadLine()
@@ -202,9 +205,9 @@ func (wiz *setupWizard) stepAuth(profile string) (*api.Organization, error) {
 	choice = strings.TrimSpace(choice)
 
 	if choice == "" || choice == "1" {
-		return wiz.authAPIKey(profile)
-	} else if choice == "2" {
 		return wiz.authServiceAccount(profile)
+	} else if choice == "2" {
+		return wiz.authAPIKey(profile)
 	}
 	return nil, fmt.Errorf("invalid auth method selection: %s", choice)
 }
