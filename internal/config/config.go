@@ -35,6 +35,7 @@ mcp:
   read_only: false
   audit_log: true
   plan_first: true
+  require_step_up_for_destructive: false
 
 profiles:
   default:
@@ -98,6 +99,7 @@ func setDefaults() {
 	viper.SetDefault("mcp.read_only", false)
 	viper.SetDefault("mcp.audit_log", true)
 	viper.SetDefault("mcp.plan_first", true)
+	viper.SetDefault("mcp.require_step_up_for_destructive", false)
 	viper.SetDefault("ask.provider", "disabled")
 	viper.SetDefault("ask.api_key", "")
 	viper.SetDefault("ask.model", "")
@@ -393,6 +395,7 @@ var ValidConfigKeys = []string{
 	"mcp.read_only",
 	"mcp.audit_log",
 	"mcp.plan_first",
+	"mcp.require_step_up_for_destructive",
 	"mcp.sse_port",
 	"mcp.allowed_tools",
 	"mcp.blocked_tools",
@@ -425,7 +428,8 @@ func coerceValue(key, value string) interface{} {
 			return n
 		}
 	case "defaults.confirm_destructive", "defaults.color", "cache.enabled",
-		"mcp.read_only", "mcp.audit_log", "mcp.plan_first", "ask.confirm_before_execute":
+		"mcp.read_only", "mcp.audit_log", "mcp.plan_first",
+		"mcp.require_step_up_for_destructive", "ask.confirm_before_execute":
 		// Attempt bool conversion.
 		switch strings.ToLower(value) {
 		case "true", "1", "yes":
@@ -455,6 +459,15 @@ func MCPAuditLog() bool {
 // MCPPlanFirst returns true if destructive MCP tools should default to plan mode.
 func MCPPlanFirst() bool {
 	return viper.GetBool("mcp.plan_first")
+}
+
+// MCPRequireStepUp returns true if destructive MCP tool invocations
+// (any tool argument with Execute: true) must clear a step-up
+// authentication challenge before firing the underlying API call.
+// When enabled, the chokepoint in addTypedTool blocks the call until
+// the configured authenticator approves it.
+func MCPRequireStepUp() bool {
+	return viper.GetBool("mcp.require_step_up_for_destructive")
 }
 
 // MCPSSEPort returns the configured SSE transport port (default 8080).
