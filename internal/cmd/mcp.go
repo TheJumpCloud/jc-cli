@@ -238,6 +238,19 @@ func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOn
 }
 
 func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp bool) error {
+	// Step-up auth needs an API key to derive the challenge answer. Gate
+	// the read on the explicit opt-in flag and fail-fast at startup if
+	// it's missing — matches the --require-auth pattern below so an
+	// operator who turns step-up on without a credential gets a clear
+	// startup error instead of silent runtime denials.
+	var stepUpAPIKey string
+	if requireStepUp {
+		stepUpAPIKey = config.APIKey()
+		if stepUpAPIKey == "" {
+			return fmt.Errorf("--require-step-up needs an API key to derive the challenge answer. Run 'jc auth login' or set JC_API_KEY, or drop --require-step-up")
+		}
+	}
+
 	server := mcp.NewServer(mcp.Options{
 		RateLimit:     rateLimit,
 		ReadOnly:      readOnly,
@@ -245,7 +258,7 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 		AllowedTools:  config.MCPAllowedTools(),
 		BlockedTools:  config.MCPBlockedTools(),
 		RequireStepUp: requireStepUp,
-		StepUpAPIKey:  config.APIKey(),
+		StepUpAPIKey:  stepUpAPIKey,
 	})
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.
