@@ -170,7 +170,7 @@
     if (children) children.forEach(function(c){
       if (c == null) return;
       if (typeof c === "string") n.appendChild(document.createTextNode(c));
-      else n.appendChild(c);
+      else if (c instanceof Node) n.appendChild(c);
     });
     return n;
   }

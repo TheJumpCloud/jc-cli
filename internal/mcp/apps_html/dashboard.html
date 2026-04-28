@@ -237,7 +237,7 @@
     if (children) {
       children.forEach(function(c) {
         if (typeof c === 'string') node.appendChild(document.createTextNode(c));
-        else if (c) node.appendChild(c);
+        else if (c instanceof Node) node.appendChild(c);
       });
     }
     return node;
