@@ -225,13 +225,17 @@
   "use strict";
 
   // --- Safe DOM helpers ---
+  // Text-content-only: callers set className/textContent or inline style
+  // properties (string CSS values from a fixed palette). Anything else
+  // is dropped rather than forwarded to setAttribute, so the helper can
+  // never become an XSS surface for href/onclick/srcdoc/etc.
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
       Object.keys(attrs).forEach(function(k) {
-        if (k === 'className') node.className = attrs[k];
-        else if (k === 'textContent') node.textContent = attrs[k];
-        else node.style[k] = attrs[k];
+        if (k === 'className') node.className = String(attrs[k]);
+        else if (k === 'textContent') node.textContent = String(attrs[k]);
+        else node.style[k] = String(attrs[k]);
       });
     }
     if (children) {

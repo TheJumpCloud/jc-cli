@@ -249,12 +249,15 @@
     return d.toISOString().slice(5, 16).replace("T", " "); // MM-DD HH:MM
   }
 
+  // Text-content-only DOM builder: callers only set className/textContent
+  // and pass already-constructed Nodes as children. Anything else is a
+  // bug — drop unknown attribute keys rather than forwarding them to
+  // setAttribute (which would open an XSS surface for href/onclick/etc.).
   function el(tag, attrs, children) {
     var n = document.createElement(tag);
     if (attrs) Object.keys(attrs).forEach(function(k){
-      if (k === "className") n.className = attrs[k];
-      else if (k === "textContent") n.textContent = attrs[k];
-      else n.setAttribute(k, attrs[k]);
+      if (k === "className") n.className = String(attrs[k]);
+      else if (k === "textContent") n.textContent = String(attrs[k]);
     });
     if (children) children.forEach(function(c){
       if (c == null) return;
