@@ -122,3 +122,35 @@ func DeleteClientSecret(profile string) error {
 func ClientSecretURI(profile string) string {
 	return URIPrefix + profile + ":client_secret"
 }
+
+// SetSigningKey stores an Ed25519 signing private key (raw 64-byte seed+pub
+// blob, base64-encoded) in the OS keychain for the given profile. Used by
+// the MCP destructive-op signer (KLA-411) to attest each destructive call
+// without ever writing the private key to disk.
+func SetSigningKey(profile, encodedKey string) error {
+	account := profile + ":signing_key"
+	if err := keyring.Set(ServiceName, account, encodedKey); err != nil {
+		return fmt.Errorf("failed to store signing key in keychain for profile %q: %w", profile, err)
+	}
+	return nil
+}
+
+// GetSigningKey retrieves the Ed25519 signing private key (base64-encoded)
+// from the OS keychain for the given profile.
+func GetSigningKey(profile string) (string, error) {
+	account := profile + ":signing_key"
+	secret, err := keyring.Get(ServiceName, account)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve signing key from keychain for profile %q: %w", profile, err)
+	}
+	return secret, nil
+}
+
+// DeleteSigningKey removes the signing key from the OS keychain.
+func DeleteSigningKey(profile string) error {
+	account := profile + ":signing_key"
+	if err := keyring.Delete(ServiceName, account); err != nil {
+		return fmt.Errorf("failed to remove signing key from keychain for profile %q: %w", profile, err)
+	}
+	return nil
+}

@@ -277,13 +277,33 @@ Before a record is written, parameters are walked and any of the following keys 
 
 The redaction is shallow (top-level keys only). Tool authors who add new sensitive fields must add them to `sensitiveParamKeys` in `internal/mcp/server.go`.
 
-### Limitations
+### Signed audit log (opt-in)
 
-- **No per-operator identity is captured.** The audit log says "the credential called users_delete," not "Jane called users_delete." Two operators sharing one API key are indistinguishable in the log.
-- **No signature.** A laptop-local attacker who can write to the log file can forge or scrub entries.
+Enable `mcp.sign_destructive_ops: true` (or pass `--sign-destructive` to `jc mcp serve`) to emit a tamper-evident manifest to `~/.config/jc/mcp-audit-signed.log` for every successful destructive op. Each manifest carries an Ed25519 signature over the tool name, redacted args, target, timestamp, and a 32-byte nonce.
+
+Storage:
+
+- A per-profile keypair is generated lazily on the first signed op.
+- Private key lives in the OS keychain at `service="jc"`, account `"<profile>:signing_key"`. No plaintext fallback — fail closed if the keychain is unavailable.
+- Public key is persisted to config at `profiles.<name>.signing_pubkey` so verifiers can trust the chain on first use without consulting the keychain.
+
+Verification:
+
+```bash
+jc audit verify                           # active profile, default log path
+jc audit verify --profile production      # named profile
+jc audit verify --pubkey <base64>         # override the configured pubkey
+jc audit verify --log /path/to/audit.log  # alternate log path
+```
+
+A successful run reports the count of verified records and exits 0; any signature mismatch, truncation, or decode error exits non-zero with the offending manifest's nonce + tool so operators can grep the file.
+
+This is detection, not prevention: a successful credential exfiltration still produces forensic record signed with the original keypair, which is hard to forge without also stealing the keychain entry. Pair it with TTY step-up (`mcp.require_step_up_for_destructive`) for in-the-loop pause + signed trail.
+
+### Other audit-log limitations
+
+- **No per-operator identity at the JumpCloud Console level.** The signed manifest binds an op to *the local Ed25519 keypair*, not to a specific person — multiple operators sharing one jc profile are still indistinguishable. Real per-user audit identity needs OAuth Device Flow, tracked in [KLA-414](https://linear.app/klaassenconsulting/issue/KLA-414).
 - **Stdio transport carries no session metadata** — there is no client identifier in the record beyond the tool call itself.
-
-This is tracked in [KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408): the proposed Slice 2 is a signed manifest per destructive op (Ed25519 signature over `{tool, args, target_ids, timestamp, nonce, operator_pubkey}`).
 
 ## Threat model summary
 
@@ -291,8 +311,8 @@ This is tracked in [KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408
 |---|---|---|
 | **Laptop is online, operator is at the keyboard** | TTY confirmation, `--plan`, `--read-only` MCP mode, keychain storage | — |
 | **Laptop is stolen with screen unlocked** | Credentials are in the keychain, not on disk; the OS lock screen is the boundary | jc itself does not require re-auth on resume |
-| **API key exfiltrated** | Validated keys hit the org's normal API rate limits and audit log on JumpCloud | jc has no key-rotation reminder, no per-op fingerprinting, no anomaly detection |
-| **Compromised MCP agent prompt** | Read-only mode, tool allow/block lists, rate limiting, the `execute: true` gate | The agent controls `execute: true`; nothing forces a human in the loop |
+| **API key exfiltrated** | Validated keys hit the org's normal API rate limits and audit log on JumpCloud; `mcp.sign_destructive_ops` produces a tamper-evident local trail | jc has no key-rotation reminder; signed manifests detect rather than prevent |
+| **Compromised MCP agent prompt** | Read-only mode, tool allow/block lists, rate limiting, the `execute: true` gate, optional TTY step-up, optional signed-manifest audit trail | The agent controls `execute: true` unless step-up is enabled; signing is post-hoc detection, not prevention |
 | **MCP server exposed via tunnel without `--require-auth`** | Loopback default + explicit warning when binding non-loopback without TLS | Once exposed, anyone reaching the URL has full credential privilege |
 | **Plaintext config used (`--allow-plaintext`)** | Mode-`0600` config file in a `0700` dir | jc cannot prevent backups, sync clients, or `cat ~/.config/jc/config.yaml` from leaking it |
 
@@ -300,9 +320,9 @@ This is tracked in [KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408
 
 Active backlog tickets that close gaps called out in this document:
 
-- **[KLA-407](https://linear.app/klaassenconsulting/issue/KLA-407) — Default to OAuth + roadmap to user-bound auth (device flow).** Slice A flips `jc auth login` to recommend OAuth client credentials over personal API keys; Slice B adds OAuth Device Flow once the JumpCloud platform exposes the endpoint.
-- **[KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408) — Step-up auth gate for MCP-invoked destructive ops.** Touch ID / PIN reprompt before any `execute: true` destructive call, plus signed-manifest audit entries.
-- **[KLA-409](https://linear.app/klaassenconsulting/issue/KLA-409) — MCP server tool allowlist + read-only mode.** Most of this already shipped (allow/block lists, `--read-only`); the remaining slice is profile-level read-only enforcement so a profile bound to a read-only OAuth client can't be misconfigured into a mutation-capable session.
+- **[KLA-412](https://linear.app/klaassenconsulting/issue/KLA-412) — Touch ID / WebAuthn step-up authenticator.** macOS Touch ID via `LocalAuthentication.framework` so the prompt works in stdio transport (Claude Desktop). Today's TTY step-up only works in HTTP/SSE transport with a real terminal attached.
+- **[KLA-413](https://linear.app/klaassenconsulting/issue/KLA-413) — Out-of-band approval for MCP destructive ops.** Webhook-based dual-control for "delete in production" workflows.
+- **[KLA-414](https://linear.app/klaassenconsulting/issue/KLA-414) — OAuth Device Flow.** Per-operator audit identity once JumpCloud exposes `/oauth2/device`. Currently platform-blocked.
 
 ## Quick reference
 

@@ -36,6 +36,7 @@ mcp:
   audit_log: true
   plan_first: true
   require_step_up_for_destructive: false
+  sign_destructive_ops: false
 
 profiles:
   default:
@@ -100,6 +101,7 @@ func setDefaults() {
 	viper.SetDefault("mcp.audit_log", true)
 	viper.SetDefault("mcp.plan_first", true)
 	viper.SetDefault("mcp.require_step_up_for_destructive", false)
+	viper.SetDefault("mcp.sign_destructive_ops", false)
 	viper.SetDefault("ask.provider", "disabled")
 	viper.SetDefault("ask.api_key", "")
 	viper.SetDefault("ask.model", "")
@@ -396,6 +398,7 @@ var ValidConfigKeys = []string{
 	"mcp.audit_log",
 	"mcp.plan_first",
 	"mcp.require_step_up_for_destructive",
+	"mcp.sign_destructive_ops",
 	"mcp.sse_port",
 	"mcp.allowed_tools",
 	"mcp.blocked_tools",
@@ -429,7 +432,8 @@ func coerceValue(key, value string) interface{} {
 		}
 	case "defaults.confirm_destructive", "defaults.color", "cache.enabled",
 		"mcp.read_only", "mcp.audit_log", "mcp.plan_first",
-		"mcp.require_step_up_for_destructive", "ask.confirm_before_execute":
+		"mcp.require_step_up_for_destructive", "mcp.sign_destructive_ops",
+		"ask.confirm_before_execute":
 		// Attempt bool conversion.
 		switch strings.ToLower(value) {
 		case "true", "1", "yes":
@@ -468,6 +472,32 @@ func MCPPlanFirst() bool {
 // the configured authenticator approves it.
 func MCPRequireStepUp() bool {
 	return viper.GetBool("mcp.require_step_up_for_destructive")
+}
+
+// MCPSignDestructiveOps returns true if every successful destructive MCP
+// op should produce a signed manifest in the audit log. Used by the
+// chokepoint to opt the Ed25519 signer in.
+func MCPSignDestructiveOps() bool {
+	return viper.GetBool("mcp.sign_destructive_ops")
+}
+
+// SigningPubkey returns the Ed25519 public key (base64-encoded) recorded
+// for the named profile. The pubkey is persisted to config so the
+// `jc audit verify` command can validate the signature chain on first
+// use without trusting the keychain. Empty string means no signing key
+// has been generated for this profile yet.
+func SigningPubkey(profile string) string {
+	if profile == "" {
+		profile = ActiveProfile()
+	}
+	return viper.GetString("profiles." + profile + ".signing_pubkey")
+}
+
+// SetSigningPubkey writes the (base64-encoded) public key to the named
+// profile. Called once when the signer generates a fresh keypair on
+// first destructive op.
+func SetSigningPubkey(profile, pubkeyB64 string) error {
+	return SetProfileField(profile, "signing_pubkey", pubkeyB64)
 }
 
 // MCPSSEPort returns the configured SSE transport port (default 8080).
