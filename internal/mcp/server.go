@@ -29,6 +29,7 @@ type Server struct {
 	auditLog   *auditLogger
 	readOnly   bool
 	toolFilter *toolFilter
+	stepUp     stepUpAuthenticator
 	toolNames  []string // registered tool names, in registration order
 
 	mu       sync.Mutex
@@ -53,6 +54,20 @@ type Options struct {
 	// BlockedTools is a list of glob patterns for tools that are blocked.
 	// Block list takes precedence over allow list.
 	BlockedTools []string
+	// RequireStepUp gates every destructive tool invocation (any tool
+	// argument carrying Execute: true) behind a fresh proof of operator
+	// presence. When true, the server prompts on its controlling TTY for
+	// the last 6 chars of StepUpAPIKey before each destructive call.
+	RequireStepUp bool
+	// StepUpAPIKey is the credential the TTY authenticator uses to derive
+	// the prompt's expected answer. Typically the same key the server is
+	// authenticated with (config.APIKey()). Required when RequireStepUp
+	// is true; ignored otherwise.
+	StepUpAPIKey string
+	// stepUp injects a custom authenticator. Reserved for tests within
+	// the mcp package; production callers configure step-up via
+	// RequireStepUp + StepUpAPIKey.
+	stepUp stepUpAuthenticator
 }
 
 // nowFunc is overridable for tests.
@@ -101,12 +116,18 @@ func NewServer(opts Options) *Server {
 		al = &auditLogger{} // no-op: enc is nil, log() returns early
 	}
 
+	stepUp := opts.stepUp
+	if stepUp == nil {
+		stepUp = newStepUp(opts.RequireStepUp, opts.StepUpAPIKey)
+	}
+
 	s := &Server{
 		mcpServer:  mcpServer,
 		limiter:    newRateLimiter(opts.RateLimit),
 		auditLog:   al,
 		readOnly:   opts.ReadOnly,
 		toolFilter: newToolFilter(opts.AllowedTools, opts.BlockedTools),
+		stepUp:     stepUp,
 	}
 
 	s.registerTools()

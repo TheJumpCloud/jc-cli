@@ -5162,6 +5162,20 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 			return errorResult(err.Error()), nil, nil
 		}
 
+		// Step-up auth gate: any tool input carrying Execute: true is a
+		// destructive operation about to fire against the JumpCloud API.
+		// When the operator opted in via mcp.require_step_up_for_destructive,
+		// challenge them before the call. Reflection lets a single
+		// chokepoint cover all 30+ destructive tool types without a
+		// per-handler hook.
+		if isExecutingDestructive(args) {
+			if err := s.stepUp.authorize(ctx, name, destructiveTarget(args)); err != nil {
+				msg := fmt.Sprintf("step-up auth required for %s: %v", name, err)
+				s.auditLog.log(name, req.Params.Arguments, false, msg)
+				return errorResult(msg), nil, nil
+			}
+		}
+
 		// Execute the tool.
 		result, out, err := handler(ctx, req, args)
 

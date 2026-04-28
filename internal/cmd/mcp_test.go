@@ -157,6 +157,14 @@ func TestMcpServeCmd_FlagDefaults(t *testing.T) {
 	if cors.DefValue != "" {
 		t.Errorf("expected cors-origin default empty, got %s", cors.DefValue)
 	}
+
+	stepUp := mcpCmd.Flags().Lookup("require-step-up")
+	if stepUp == nil {
+		t.Fatal("expected require-step-up flag")
+	}
+	if stepUp.DefValue != "false" {
+		t.Errorf("expected require-step-up default false, got %s", stepUp.DefValue)
+	}
 }
 
 func TestRootCmd_IncludesMcp(t *testing.T) {
