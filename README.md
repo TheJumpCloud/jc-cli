@@ -799,6 +799,8 @@ jc auth login --service-account       # Interactive client ID + secret entry
 
 API keys are stored in the OS keychain (macOS Keychain / Linux secret-tool) by default. The config file stores only a `keychain://jc/<profile>` reference, never the plaintext key. If the keychain is unavailable, login will fail rather than silently storing credentials as plaintext — use `--allow-plaintext` to explicitly opt in to config file storage.
 
+For the full authentication and authorization model — credential storage, MCP server trust model, audit log shape and redaction, threat model, and what jc does *not* enforce — see [`docs/AUTH.md`](docs/AUTH.md).
+
 ### Environment Variables
 
 | Variable | Description |
