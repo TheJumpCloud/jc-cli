@@ -1350,3 +1350,132 @@ func TestNoColor_FlagOverridesTTY(t *testing.T) {
 		t.Error("NoColor() = false, want true when --no-color flag is set even with TTY")
 	}
 }
+
+func TestProfileRole_DefaultEmpty(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := ProfileRole(""); got != "" {
+		t.Errorf("ProfileRole('') = %q, want empty", got)
+	}
+	if IsReadOnlyProfile() {
+		t.Error("IsReadOnlyProfile() = true on a profile with no role")
+	}
+}
+
+func TestProfileRole_ReadOnly(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: reporting
+profiles:
+  reporting:
+    api_key: ""
+    auth_profile_role: read_only
+  admin:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if got := ProfileRole("reporting"); got != ProfileRoleReadOnly {
+		t.Errorf("ProfileRole('reporting') = %q, want %q", got, ProfileRoleReadOnly)
+	}
+	if !IsReadOnlyProfile() {
+		t.Error("IsReadOnlyProfile() = false on the active read-only profile")
+	}
+	if got := ProfileRole("admin"); got != "" {
+		t.Errorf("ProfileRole('admin') = %q, want empty", got)
+	}
+}
+
+func TestSetProfileRole_Valid(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+	t.Setenv("JC_PROFILE", "")
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetProfileRole("default", ProfileRoleReadOnly); err != nil {
+		t.Fatalf("SetProfileRole(read_only) error: %v", err)
+	}
+	if got := ProfileRole("default"); got != ProfileRoleReadOnly {
+		t.Errorf("after SetProfileRole(read_only): role = %q, want %q", got, ProfileRoleReadOnly)
+	}
+
+	// Clear the role.
+	if err := SetProfileRole("default", ""); err != nil {
+		t.Fatalf("SetProfileRole('') error: %v", err)
+	}
+	if got := ProfileRole("default"); got != "" {
+		t.Errorf("after SetProfileRole(''): role = %q, want empty", got)
+	}
+}
+
+func TestSetProfileRole_Invalid(t *testing.T) {
+	resetViper()
+	defer resetViper()
+
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "jc")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	t.Setenv("JC_CONFIG", cfgPath)
+
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(cfgPath, []byte(`active_profile: default
+profiles:
+  default:
+    api_key: ""
+`), 0600)
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	if err := SetProfileRole("default", "admin"); err == nil {
+		t.Error("SetProfileRole('admin') accepted unknown role; want error")
+	}
+	if got := ProfileRole("default"); got != "" {
+		t.Errorf("ProfileRole after rejected SetProfileRole = %q, want empty", got)
+	}
+}
