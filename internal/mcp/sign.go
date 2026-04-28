@@ -120,14 +120,22 @@ func (s *ed25519Signer) sign(toolName string, args any) error {
 }
 
 // ensureKeyLoaded materializes the per-profile keypair from the keychain,
-// generating + persisting a new one if none exists yet. Caller must hold s.mu.
+// generating + persisting a new one only if no entry exists yet. Caller
+// must hold s.mu.
+//
+// Critical: any non-not-found error from the keychain (locked, permission
+// denied, corrupted entry, transient I/O) propagates rather than falling
+// through to keypair regeneration. Otherwise a transient keychain glitch
+// would overwrite an existing key and permanently break verification of
+// every previously signed manifest in the audit log.
 func (s *ed25519Signer) ensureKeyLoaded() error {
 	if s.priv != nil {
 		return nil
 	}
 
 	encoded, err := keychainGetSigningKey(s.profile)
-	if err == nil && encoded != "" {
+	switch {
+	case err == nil && encoded != "":
 		raw, decErr := base64.StdEncoding.DecodeString(encoded)
 		if decErr != nil {
 			return fmt.Errorf("decoding stored signing key: %w", decErr)
@@ -139,6 +147,15 @@ func (s *ed25519Signer) ensureKeyLoaded() error {
 		s.pub = s.priv.Public().(ed25519.PublicKey)
 		s.pubB64 = base64.StdEncoding.EncodeToString(s.pub)
 		return nil
+	case err == nil && encoded == "":
+		// Empty value with no error — treat as not-found and bootstrap.
+	case keychain.IsNotFound(err):
+		// Genuine not-found — bootstrap.
+	default:
+		// Locked, permission denied, corrupted, transient I/O — fail
+		// closed. Generating a new key would overwrite the existing
+		// entry once the keychain comes back, severing the audit chain.
+		return fmt.Errorf("retrieving signing key: %w", err)
 	}
 
 	// Generate fresh keypair.

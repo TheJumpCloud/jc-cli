@@ -7,11 +7,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/keychain"
 )
 
 // signerFixture overrides the keychain/config seams with in-memory state
@@ -34,7 +37,10 @@ func signerFixture(t *testing.T) (logPath string, cleanup func()) {
 	keychainGetSigningKey = func(profile string) (string, error) {
 		v, ok := store[profile]
 		if !ok {
-			return "", errors.New("not found")
+			// Return the sentinel so ensureKeyLoaded distinguishes
+			// "no entry yet, bootstrap" from "transient keychain
+			// failure, fail closed".
+			return "", keychain.ErrNotFound
 		}
 		return v, nil
 	}
@@ -229,6 +235,68 @@ func TestVerifyManifestStream_WrongPubkey(t *testing.T) {
 	data, _ := os.ReadFile(logPath)
 	if _, err := VerifyManifestStream(bytes.NewReader(data), otherPub); err == nil {
 		t.Fatal("expected verification to fail with wrong pubkey, got nil")
+	}
+}
+
+func TestEd25519Signer_TransientKeychainErrorDoesNotRegenerate(t *testing.T) {
+	// Regression for the Bugbot finding on PR #25: a transient,
+	// non-not-found keychain error (locked, permission denied, etc.)
+	// must NOT fall through to keypair regeneration. Doing so would
+	// overwrite an existing entry once the keychain comes back, breaking
+	// verification of every previously-signed manifest.
+	logPath, cleanup := signerFixture(t)
+	defer cleanup()
+
+	// Override the seam to simulate a transient failure.
+	prevGet := keychainGetSigningKey
+	defer func() { keychainGetSigningKey = prevGet }()
+
+	var setCalled atomic.Int64
+	prevSet := keychainSetSigningKey
+	keychainSetSigningKey = func(profile, encoded string) error {
+		setCalled.Add(1)
+		return prevSet(profile, encoded)
+	}
+	defer func() { keychainSetSigningKey = prevSet }()
+
+	keychainGetSigningKey = func(profile string) (string, error) {
+		return "", fmt.Errorf("keychain locked: %w", errors.New("user not authenticated"))
+	}
+
+	s := newEd25519Signer("default", logPath)
+	err := s.sign("users_delete", destructiveInput{Identifier: "alice", Execute: true})
+	if err == nil {
+		t.Fatal("expected sign() to fail on transient keychain error, got nil")
+	}
+	if !strings.Contains(err.Error(), "retrieving signing key") {
+		t.Errorf("error should name the retrieval step, got: %v", err)
+	}
+	if setCalled.Load() != 0 {
+		t.Errorf("keychain Set called %d times — must NOT regenerate on transient errors", setCalled.Load())
+	}
+	// Manifest log must not have been written.
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Errorf("signed log should not exist after failed sign attempt; stat err = %v", err)
+	}
+}
+
+func TestEd25519Signer_NotFoundErrorBootstraps(t *testing.T) {
+	// Counterpart to the transient-error test: a genuine ErrNotFound
+	// (the expected first-run state) DOES trigger bootstrap.
+	logPath, cleanup := signerFixture(t)
+	defer cleanup()
+
+	s := newEd25519Signer("default", logPath)
+	if err := s.sign("users_delete", destructiveInput{Identifier: "alice", Execute: true}); err != nil {
+		t.Fatalf("first-run sign should bootstrap and succeed, got: %v", err)
+	}
+	// Second op should reuse, not regenerate.
+	pub1 := s.pubB64
+	if err := s.sign("users_delete", destructiveInput{Identifier: "bob", Execute: true}); err != nil {
+		t.Fatalf("second sign: %v", err)
+	}
+	if s.pubB64 != pub1 {
+		t.Errorf("pubkey changed across ops: %q → %q", pub1, s.pubB64)
 	}
 }
 

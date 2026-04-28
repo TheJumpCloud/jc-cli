@@ -1,6 +1,7 @@
 package keychain
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,21 @@ const (
 	// URIPrefix is the prefix for keychain reference URIs stored in config.
 	URIPrefix = "keychain://jc/"
 )
+
+// ErrNotFound is returned when an account doesn't exist in the keychain.
+// Re-exported from go-keyring so callers can distinguish "this profile
+// has no entry yet" (safe to bootstrap) from "the keychain is locked /
+// permission denied / corrupted" (must NOT silently regenerate, since
+// that would overwrite an existing entry the caller can't currently see).
+var ErrNotFound = keyring.ErrNotFound
+
+// IsNotFound reports whether err is a not-found keychain error. Use this
+// instead of errors.Is(err, ErrNotFound) when the wrapping chain may
+// include fmt.Errorf with %w — both forms work, but IsNotFound makes the
+// intent explicit at call sites.
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
 
 // Set stores an API key in the OS keychain for the given profile.
 func Set(profile, apiKey string) error {
