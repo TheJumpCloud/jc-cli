@@ -324,3 +324,75 @@ func TestMcpCmd_IncludesToolsSubcommand(t *testing.T) {
 		t.Error("expected mcp help to mention tools subcommand")
 	}
 }
+
+func TestApplyProfileRole_NoRolePassesThrough(t *testing.T) {
+	cases := []struct {
+		flagChanged bool
+		readOnly    bool
+	}{
+		{flagChanged: false, readOnly: false},
+		{flagChanged: false, readOnly: true},
+		{flagChanged: true, readOnly: false},
+		{flagChanged: true, readOnly: true},
+	}
+	for _, c := range cases {
+		got, warn, err := applyProfileRole("default", false, c.flagChanged, c.readOnly)
+		if err != nil {
+			t.Errorf("unexpected error for %+v: %v", c, err)
+		}
+		if warn != "" {
+			t.Errorf("unexpected warning for %+v: %q", c, warn)
+		}
+		if got != c.readOnly {
+			t.Errorf("for %+v: got readOnly=%v, want %v", c, got, c.readOnly)
+		}
+	}
+}
+
+func TestApplyProfileRole_ReadOnlyProfileForcesTrue(t *testing.T) {
+	got, warn, err := applyProfileRole("reporting", true, false, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Errorf("readOnly = false, want true (read-only profile, no flag)")
+	}
+	if !strings.Contains(warn, "reporting") {
+		t.Errorf("warning missing profile name: %q", warn)
+	}
+	if !strings.Contains(warn, "read-only") {
+		t.Errorf("warning missing read-only mention: %q", warn)
+	}
+}
+
+func TestApplyProfileRole_ReadOnlyProfileSilentWhenFlagAgrees(t *testing.T) {
+	got, warn, err := applyProfileRole("reporting", true, true, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Errorf("readOnly = false, want true")
+	}
+	if warn != "" {
+		t.Errorf("expected no warning when operator and profile agree, got %q", warn)
+	}
+}
+
+func TestApplyProfileRole_ReadOnlyProfileRejectsExplicitFalse(t *testing.T) {
+	got, warn, err := applyProfileRole("reporting", true, true, false)
+	if err == nil {
+		t.Fatal("expected error when --read-only=false is passed against a read-only profile")
+	}
+	if !strings.Contains(err.Error(), "reporting") {
+		t.Errorf("error missing profile name: %v", err)
+	}
+	if !strings.Contains(err.Error(), "incompatible") {
+		t.Errorf("error should call out the incompatibility: %v", err)
+	}
+	if got {
+		t.Errorf("on error, readOnly should not be coerced to true; got %v", got)
+	}
+	if warn != "" {
+		t.Errorf("on error, warning should be empty; got %q", warn)
+	}
+}

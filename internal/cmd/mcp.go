@@ -113,6 +113,23 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("port") {
 				port = config.MCPSSEPort()
 			}
+			// Profile-role enforcement: a profile bound to a read-only OAuth
+			// client must not advertise mutation tools. Reject the start
+			// rather than silently coercing — operators who passed
+			// --read-only=false should see the error, not a phantom override.
+			coerced, warning, err := applyProfileRole(
+				config.ActiveProfile(),
+				config.IsReadOnlyProfile(),
+				cmd.Flags().Changed("read-only"),
+				readOnly,
+			)
+			if err != nil {
+				return err
+			}
+			readOnly = coerced
+			if warning != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), warning)
+			}
 			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth)
 		},
 	}
@@ -176,6 +193,31 @@ func resolveSSEAddr(addr string, port int) string {
 		return fmt.Sprintf("127.0.0.1:%d", port)
 	}
 	return addr
+}
+
+// applyProfileRole reconciles the --read-only flag with the active
+// profile's role. Returns the effective read-only value, an optional
+// warning message to surface to the operator, and an error if the flag
+// and profile role conflict.
+//
+// Rules:
+//   - Profile is not read-only → pass through unchanged.
+//   - Profile is read-only and operator passed --read-only=false → error.
+//   - Profile is read-only and read-only is already true → no warning,
+//     no change (operator and profile agree).
+//   - Profile is read-only and read-only is false but flag wasn't
+//     explicitly set → coerce to true and emit a warning.
+func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOnly bool) (bool, string, error) {
+	if !profileReadOnly {
+		return readOnly, "", nil
+	}
+	if flagChanged && !readOnly {
+		return false, "", fmt.Errorf("active profile %q is read-only; --read-only=false is incompatible", activeProfile)
+	}
+	if readOnly {
+		return true, "", nil
+	}
+	return true, fmt.Sprintf("Profile %q is read-only — forcing --read-only and rejecting destructive tools.", activeProfile), nil
 }
 
 func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth bool) error {

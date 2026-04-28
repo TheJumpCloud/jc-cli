@@ -439,6 +439,67 @@ profiles:
 	}
 }
 
+func TestAuthStatus_ShowsProfileRoleWhenSet(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: reporting
+profiles:
+  reporting:
+    api_key: ""
+    auth_profile_role: read_only
+`)
+	viper.Set("defaults.output", "table")
+
+	ts := startMockJCServer(t, "org-ro", "Reporting Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	viper.Set("api_key", "readonly-key-9876")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runAuthStatus(cmd, nil); err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "Profile Role:  read_only") {
+		t.Errorf("expected 'Profile Role:  read_only' in output, got %q", got)
+	}
+}
+
+func TestAuthStatus_OmitsProfileRoleWhenUnset(t *testing.T) {
+	keyring.MockInit()
+	setupTestConfig(t, `active_profile: default
+profiles:
+  default:
+    api_key: ""
+`)
+	viper.Set("defaults.output", "table")
+
+	ts := startMockJCServer(t, "org-norole", "No Role Org", http.StatusOK)
+	defer ts.Close()
+	overrideAPIClient(t, ts.URL)
+
+	viper.Set("api_key", "test-key-norole-1234")
+
+	cmd := &cobra.Command{}
+	stdout := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runAuthStatus(cmd, nil); err != nil {
+		t.Fatalf("runAuthStatus() error: %v", err)
+	}
+
+	got := stdout.String()
+	if strings.Contains(got, "Profile Role:") {
+		t.Errorf("did not expect 'Profile Role:' line when role is unset; got %q", got)
+	}
+}
+
 func TestAuthStatus_NotAuthenticated_ExitCode3(t *testing.T) {
 	keyring.MockInit()
 	setupTestConfig(t, `active_profile: default

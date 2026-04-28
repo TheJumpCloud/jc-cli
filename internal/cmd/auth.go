@@ -394,6 +394,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 		Authenticated: false,
 		Profile:       profile,
 		AuthMethod:    authMethod,
+		ProfileRole:   config.ProfileRole(profile),
 	}
 
 	if authMethod == "service_account" {
@@ -457,6 +458,9 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	if status.Authenticated {
 		fmt.Fprintf(cmd.OutOrStdout(), "Authenticated: yes\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "Profile:       %s\n", status.Profile)
+		if status.ProfileRole != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Profile Role:  %s\n", status.ProfileRole)
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Auth Method:   %s\n", status.AuthMethod)
 		fmt.Fprintf(cmd.OutOrStdout(), "Org Name:      %s\n", status.OrgName)
 		fmt.Fprintf(cmd.OutOrStdout(), "Org ID:        %s\n", status.OrgID)
@@ -471,6 +475,9 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Authenticated: no\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "Profile:       %s\n", status.Profile)
+		if status.ProfileRole != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Profile Role:  %s\n", status.ProfileRole)
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Auth Method:   %s\n", status.AuthMethod)
 		if status.AuthMethod == "service_account" {
 			fmt.Fprintf(cmd.OutOrStdout(), "Run 'jc auth login --service-account' to re-authenticate.\n")
@@ -486,6 +493,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 type authStatusInfo struct {
 	Authenticated  bool   `json:"authenticated"`
 	Profile        string `json:"profile"`
+	ProfileRole    string `json:"profile_role,omitempty"`
 	AuthMethod     string `json:"auth_method"`
 	OrgName        string `json:"org_name,omitempty"`
 	OrgID          string `json:"org_id,omitempty"`

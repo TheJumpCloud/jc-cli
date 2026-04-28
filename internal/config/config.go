@@ -203,6 +203,39 @@ func AuthMethod() string {
 	return "api_key"
 }
 
+// ProfileRoleReadOnly is the role value that constrains a profile to
+// read-only operations. When the active profile carries this role, the
+// MCP server boots with ReadOnly=true regardless of the --read-only flag.
+const ProfileRoleReadOnly = "read_only"
+
+// ProfileRole returns the role assigned to the named profile. An empty
+// string means the profile has no role and behaves normally. The only
+// non-empty value currently understood is ProfileRoleReadOnly.
+func ProfileRole(profile string) string {
+	if profile == "" {
+		profile = ActiveProfile()
+	}
+	return viper.GetString("profiles." + profile + ".auth_profile_role")
+}
+
+// IsReadOnlyProfile returns true if the active profile is bound to
+// read-only operations. Used by `jc mcp serve` to refuse mutation tools
+// even if the operator forgot the --read-only flag.
+func IsReadOnlyProfile() bool {
+	return ProfileRole("") == ProfileRoleReadOnly
+}
+
+// SetProfileRole writes the role onto the named profile. Pass an empty
+// role to clear it. Only ProfileRoleReadOnly (or "") is accepted today;
+// unknown values return an error so the config doesn't carry typos that
+// silently fail to enforce anything.
+func SetProfileRole(profile, role string) error {
+	if role != "" && role != ProfileRoleReadOnly {
+		return fmt.Errorf("invalid profile role %q (must be %q or empty)", role, ProfileRoleReadOnly)
+	}
+	return SetProfileField(profile, "auth_profile_role", role)
+}
+
 // ClientID returns the OAuth 2.0 client ID for the active profile.
 func ClientID() string {
 	profile := ActiveProfile()
