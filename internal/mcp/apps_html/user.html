@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud User Profile</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5;
+  }
+
+  header {
+    display: flex; gap: 16px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 600; color: white; flex-shrink: 0;
+  }
+  .profile-meta { flex: 1; min-width: 0; }
+  .profile-meta .name { font-size: 18px; font-weight: 600; }
+  .profile-meta .email { font-size: 13px; color: var(--text-muted); }
+  .profile-meta .extra { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 3px 8px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600;
+  }
+  .badge.active   { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .badge.suspend  { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+  .badge.locked   { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .badge.mfa-on   { background: rgba(99,102,241,0.15); color: var(--accent-light); }
+  .badge.mfa-off  { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .refresh-btn {
+    background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); padding: 6px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+  }
+  .refresh-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  .layout {
+    display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px;
+  }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 12px;
+  }
+
+  .pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    background: rgba(99,102,241,0.12);
+    color: var(--accent-light);
+    padding: 4px 10px; border-radius: 12px;
+    font-size: 12px; font-weight: 500;
+  }
+  .empty { color: var(--text-muted); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--text-muted); font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.4px; }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+           color: var(--text-muted); font-size: 11px; }
+
+  #warnings {
+    display: none;
+    background: rgba(234,179,8,0.1); border: 1px solid var(--yellow);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    color: var(--yellow); font-size: 12px;
+  }
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 16px;
+    color: var(--red); font-size: 13px;
+  }
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="warnings"></div>
+  <div id="error"></div>
+  <div id="loading"><div class="spinner"></div>Loading user profile…</div>
+  <div id="content" style="display:none;">
+    <header>
+      <div class="avatar" id="avatar">?</div>
+      <div class="profile-meta">
+        <div class="name" id="name"></div>
+        <div class="email" id="email"></div>
+        <div class="extra" id="extra"></div>
+        <div class="badges" id="badges" style="margin-top:6px;"></div>
+      </div>
+      <button type="button" class="refresh-btn" id="refresh-btn">Refresh</button>
+    </header>
+
+    <div class="layout">
+      <div>
+        <div class="card" style="margin-bottom:16px;">
+          <h3>Groups</h3>
+          <div class="pill-list" id="groups"></div>
+        </div>
+        <div class="card">
+          <h3>SSH keys</h3>
+          <div id="ssh-keys"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Recent events (last 30d)</h3>
+        <div id="recent-events"></div>
+      </div>
+    </div>
+  </div>
+
+<!--JC_APP_COMMON-->
+<script>
+(function() {
+  "use strict";
+
+  // Text-content-only DOM builder: callers only set className/textContent
+  // and pass already-constructed Nodes as children. Unknown attribute
+  // keys are dropped rather than forwarded to setAttribute, so the
+  // helper can never become an XSS surface for href/onclick/etc.
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "className") n.className = String(attrs[k]);
+      else if (k === "textContent") n.textContent = String(attrs[k]);
+    });
+    if (children) children.forEach(function(c){
+      if (c == null) return;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else if (c instanceof Node) n.appendChild(c);
+    });
+    return n;
+  }
+
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function fmtTimestamp(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toISOString().slice(0, 16).replace("T", " ") + "Z";
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toISOString().slice(0, 10);
+  }
+
+  function renderHeader(u, mfa) {
+    var initials = "?";
+    if (u.firstname || u.lastname) {
+      initials = ((u.firstname || "")[0] || "") + ((u.lastname || "")[0] || "");
+    } else if (u.username) {
+      initials = u.username.slice(0, 2);
+    }
+    document.getElementById("avatar").textContent = initials.toUpperCase();
+    var name = (u.firstname || "") + " " + (u.lastname || "");
+    document.getElementById("name").textContent = name.trim() || u.username || "(unknown)";
+    document.getElementById("email").textContent = u.email || "";
+    var extras = [];
+    if (u.username && (u.firstname || u.lastname)) extras.push("@" + u.username);
+    if (u.department) extras.push(u.department);
+    if (u.created) extras.push("joined " + fmtDate(u.created));
+    if (u.last_login) extras.push("last seen " + fmtTimestamp(u.last_login));
+    document.getElementById("extra").textContent = extras.join("  ·  ");
+
+    var badgesEl = document.getElementById("badges");
+    clear(badgesEl);
+    if (u.locked) {
+      badgesEl.appendChild(el("span", { className: "badge locked", textContent: "Locked" }));
+    } else if (u.suspended) {
+      badgesEl.appendChild(el("span", { className: "badge suspend", textContent: "Suspended" }));
+    } else if (u.activated) {
+      badgesEl.appendChild(el("span", { className: "badge active", textContent: "Active" }));
+    }
+    var mfaEnrolled = mfa && (mfa.status === "ENROLLED" || mfa.totp_enabled);
+    if (mfaEnrolled) {
+      badgesEl.appendChild(el("span", { className: "badge mfa-on", textContent: "MFA enrolled" }));
+    } else {
+      badgesEl.appendChild(el("span", { className: "badge mfa-off", textContent: "MFA off" }));
+    }
+  }
+
+  function renderGroups(groups) {
+    var root = document.getElementById("groups");
+    clear(root);
+    if (!groups || groups.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No group memberships." }));
+      return;
+    }
+    groups.forEach(function(g){
+      root.appendChild(el("span", { className: "pill", textContent: g.name || g.id }));
+    });
+  }
+
+  function renderSSHKeys(keys) {
+    var root = document.getElementById("ssh-keys");
+    clear(root);
+    if (!keys || keys.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No SSH keys." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "Name" }),
+        el("th", { textContent: "Preview" }),
+        el("th", { textContent: "Created" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    keys.forEach(function(k){
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: k.name || "—" }),
+        el("td", { className: "mono", textContent: k.public_key_preview || "" }),
+        el("td", { textContent: fmtDate(k.create_date) })
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  function renderEvents(events) {
+    var root = document.getElementById("recent-events");
+    clear(root);
+    if (!events || events.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No recent activity in last 30 days." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "When" }),
+        el("th", { textContent: "Service" }),
+        el("th", { textContent: "Event" }),
+        el("th", { textContent: "Result" }),
+        el("th", { textContent: "Client IP" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    events.forEach(function(e){
+      // Defensive parsing: every field is optional in the raw payload.
+      var ip = "";
+      if (e.client_ip) ip = e.client_ip;
+      else if (e.client && e.client.ip) ip = e.client.ip;
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: fmtTimestamp(e.timestamp) }),
+        el("td", { textContent: e.service || "" }),
+        el("td", { textContent: e.event_type || "" }),
+        el("td", { textContent: e.success === true ? "ok" : (e.success === false ? "fail" : (e.message || "")) }),
+        el("td", { className: "mono", textContent: ip })
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  function renderAll(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "";
+    document.getElementById("error").style.display = "none";
+
+    var warn = document.getElementById("warnings");
+    if (data.warnings && data.warnings.length) {
+      warn.textContent = data.warnings.join(" ");
+      warn.style.display = "";
+    } else {
+      warn.style.display = "none";
+    }
+
+    renderHeader(data.user || {}, data.mfa || {});
+    renderGroups(data.groups);
+    renderSSHKeys(data.ssh_keys);
+    renderEvents(data.recent_events || []);
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").style.display = "none";
+    var e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "";
+  }
+
+  // Identifier carries through refresh — captured from the first payload's
+  // user.username (fallback to user.id).
+  var currentUser = "";
+
+  function refresh(btn) {
+    if (!currentUser) return;
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+    jcApp.callTool("user_view", { user: currentUser }).then(function(result){
+      try {
+        var data = jcApp.parseToolResult(result);
+        if (data) renderAll(data);
+        else showError("Empty response");
+      } catch (e) { showError(e.message || String(e)); }
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    }).catch(function(err){
+      showError("Failed to load: " + (err.message || String(err)));
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    });
+  }
+
+  jcApp.ready("JumpCloud User Profile", "1.0.0");
+
+  var initialized = false;
+  jcApp.onToolResult(function(params) {
+    if (initialized) return;
+    try {
+      var data = jcApp.parseToolResult(params);
+      if (data) {
+        initialized = true;
+        currentUser = (data.user && (data.user.username || data.user.id)) || "";
+        renderAll(data);
+      }
+    } catch (e) { /* the message-without-data case shouldn't lock us */ }
+  });
+
+  // No proactive fetch — without a user identifier we'd get nowhere. The
+  // refresh button only works after the host has pushed an initial result
+  // (which carries the username we use for subsequent calls).
+
+  document.getElementById("refresh-btn").addEventListener("click", function() {
+    refresh(this);
+  });
+})();
+</script>
+</body>
+</html>
