@@ -90,7 +90,7 @@ func newAuthCmd() *cobra.Command {
 		Long:  "Login, logout, and check authentication status for JumpCloud.",
 	}
 
-	cmd.PersistentFlags().Bool("allow-plaintext", false, "Allow storing credentials as plaintext in config when keychain is unavailable")
+	cmd.PersistentFlags().Bool("allow-plaintext", false, "Allow storing credentials as plaintext in the config file when the OS keychain is unavailable. SECURITY RISK: anyone reading ~/.config/jc/config.yaml (backups, sync clients, malware) recovers the credential. Prefer fixing the keychain or running on a host where it works.")
 
 	cmd.AddCommand(newAuthLoginCmd())
 	cmd.AddCommand(newAuthStatusCmd())
@@ -107,16 +107,20 @@ func newAuthLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with JumpCloud",
-		Long: `Authenticate with JumpCloud by providing an API key or service account credentials.
+		Long: `Authenticate with JumpCloud by providing service account credentials or an API key.
 
-For API key authentication (default):
-  The API key is validated, stored in the OS keychain, and a reference is saved
-  to the config file.
-
-For service account authentication (--service-account):
+Recommended — service account (--service-account):
   Prompts for client ID and client secret (OAuth 2.0 client credentials).
-  The client secret is stored in the OS keychain. A bearer token is obtained
-  from the OAuth token endpoint and used for subsequent API calls.`,
+  The client secret is stored in the OS keychain. A short-lived bearer
+  token is obtained from the OAuth token endpoint and refreshed
+  automatically. Service accounts are easier to rotate, revoke, and
+  scope than personal API keys, so this is the recommended path for new
+  deployments.
+
+Alternative — API key (default for backwards compatibility):
+  The API key is validated, stored in the OS keychain, and a reference
+  is saved to the config file. API keys are long-lived bearer secrets;
+  prefer service account auth for production use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if serviceAccountFlag {
 				return runAuthLoginServiceAccount(cmd, profileFlag, defaultInput)
@@ -150,6 +154,14 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 	if viper.GetBool("non-interactive") {
 		return fmt.Errorf("auth login requires interactive input. Remove --non-interactive or set JC_API_KEY")
 	}
+
+	// One-line nudge toward the recommended path. Operators who explicitly
+	// want API key auth see it once and continue; new operators learn
+	// service account exists. Printed to stderr so it doesn't pollute any
+	// stdout-piping setup.
+	fmt.Fprintln(cmd.ErrOrStderr(),
+		"Tip: service account auth (jc auth login --service-account) is recommended over personal API keys. "+
+			"See docs/AUTH.md for details.")
 
 	// Prompt for API key with masked input.
 	fmt.Fprint(cmd.ErrOrStderr(), "Enter JumpCloud API key: ")
@@ -193,7 +205,11 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 			if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
 				return fmt.Errorf("failed to save API key to config: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: API key stored as plaintext in config file\n")
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"Warning: API key stored as plaintext in %s. "+
+					"Anyone with read access to that file recovers the credential. "+
+					"Fix your keychain setup and re-run 'jc auth login' as soon as possible.\n",
+				config.ConfigPath())
 		} else {
 			// Write keychain reference to config.
 			ref := keychain.URI(profile)
@@ -205,7 +221,11 @@ func runAuthLogin(cmd *cobra.Command, profileFlag string, input InputReader) err
 		if !allowPlaintext {
 			return fmt.Errorf("OS keychain unavailable. Use --allow-plaintext to store credentials in config file, or fix your keychain setup")
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: OS keychain unavailable. Storing API key as plaintext in config\n")
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"Warning: OS keychain unavailable. Storing API key as plaintext in %s. "+
+				"Anyone with read access to that file recovers the credential. "+
+				"Fix your keychain setup and re-run 'jc auth login' as soon as possible.\n",
+			config.ConfigPath())
 		if err := config.SetProfileField(profile, "api_key", apiKey); err != nil {
 			return fmt.Errorf("failed to save API key to config: %w", err)
 		}

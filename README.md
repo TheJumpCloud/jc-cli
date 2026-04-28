@@ -784,20 +784,24 @@ jc users list --org staging           # One-off profile override
 
 ### Authentication Methods
 
-**API Key** (default):
+**Service Account (OAuth 2.0) — recommended**:
+
+```bash
+jc auth login --service-account       # Interactive client ID + secret entry
+```
+
+Service accounts issue short-lived bearer tokens that refresh automatically against an upstream identity. They are easier to rotate, revoke, and scope than personal API keys, so this is the recommended path for new deployments. The setup wizard (`jc setup`) presents service accounts as the default option.
+
+**API Key** (alternative; legacy):
 
 ```bash
 jc auth login                         # Interactive, stores in OS keychain
 export JC_API_KEY=your-key            # Or set via environment
 ```
 
-**Service Account (OAuth 2.0)**:
+API keys are long-lived bearer secrets. They still work for backwards compatibility, but new deployments should prefer service accounts.
 
-```bash
-jc auth login --service-account       # Interactive client ID + secret entry
-```
-
-API keys are stored in the OS keychain (macOS Keychain / Linux secret-tool) by default. The config file stores only a `keychain://jc/<profile>` reference, never the plaintext key. If the keychain is unavailable, login will fail rather than silently storing credentials as plaintext — use `--allow-plaintext` to explicitly opt in to config file storage.
+Both methods store credentials in the OS keychain (macOS Keychain / Linux secret-tool) by default. The config file stores only a `keychain://jc/<profile>` reference, never the plaintext credential. If the keychain is unavailable, login fails rather than silently storing credentials as plaintext — pass `--allow-plaintext` to explicitly opt in to file storage. **Plaintext storage is a security risk** (backups, sync clients, and other process readers all recover the credential); prefer fixing the keychain.
 
 For the full authentication and authorization model — credential storage, MCP server trust model, audit log shape and redaction, threat model, and what jc does *not* enforce — see [`docs/AUTH.md`](docs/AUTH.md).
 

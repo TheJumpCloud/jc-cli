@@ -65,13 +65,13 @@ profiles:
 
 	// Wizard steps:
 	// 1. Profile: Enter (keep "default")
-	// 2. Auth method: "1" (API key)
+	// 2. Auth method: "2" (API key — option 2 since the menu now leads with Service Account)
 	// 3. Org ID: Enter (keep auto-detected)
 	// 4. Output format: "table"
 	// 5. Color: Enter (keep yes)
 	// 6. Limit: "50"
 	input := &wizardInput{
-		lines:  []string{"", "1", "", "table", "", "50"},
+		lines:  []string{"", "2", "", "table", "", "50"},
 		masked: []string{"test-setup-key-1234"},
 	}
 	overrideSetupInput(t, input)
@@ -179,9 +179,9 @@ profiles:
 	defer ts.Close()
 	overrideAPIClient(t, ts.URL)
 
-	// Steps: profile(keep), keep-creds(no), auth-method(1), org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), keep-creds(no), auth-method(2 → API Key), org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "n", "1", "", "", "", ""},
+		lines:  []string{"", "n", "2", "", "", "", ""},
 		masked: []string{"new-api-key-9999"},
 	}
 	overrideSetupInput(t, input)
@@ -232,9 +232,9 @@ profiles:
 	overrideOAuthURL(t, oauthURL)
 	overrideOAuthClient(t, jcURL)
 
-	// Steps: profile(keep), auth-method(2), org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), auth-method(1 → Service Account, the new default), org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "2", "test-sa-client-id", "", "", "", ""},
+		lines:  []string{"", "1", "test-sa-client-id", "", "", "", ""},
 		masked: []string{"test-sa-secret"},
 	}
 	overrideSetupInput(t, input)
@@ -279,9 +279,9 @@ profiles:
 	defer ts.Close()
 	overrideAPIClient(t, ts.URL)
 
-	// Steps: profile(keep), auth-method(1)
+	// Steps: profile(keep), auth-method(2 → API Key)
 	input := &wizardInput{
-		lines:  []string{"", "1"},
+		lines:  []string{"", "2"},
 		masked: []string{"bad-key-invalid"},
 	}
 	overrideSetupInput(t, input)
@@ -321,9 +321,9 @@ profiles:
 	defer ts.Close()
 	overrideAPIClient(t, ts.URL)
 
-	// Steps: profile(production), auth-method(1), org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(production), auth-method(2 → API Key), org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"production", "1", "", "", "", ""},
+		lines:  []string{"production", "2", "", "", "", ""},
 		masked: []string{"production-key-1234"},
 	}
 	overrideSetupInput(t, input)
@@ -408,9 +408,9 @@ profiles:
 	defer ts.Close()
 	overrideAPIClient(t, ts.URL)
 
-	// Steps: profile(keep), auth-method(1), org("custom-org-999"), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), auth-method(2 → API Key), org("custom-org-999"), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "1", "custom-org-999", "", "", ""},
+		lines:  []string{"", "2", "custom-org-999", "", "", ""},
 		masked: []string{"custom-org-key"},
 	}
 	overrideSetupInput(t, input)
@@ -493,9 +493,9 @@ profiles:
 	defer ts.Close()
 	overrideAPIClient(t, ts.URL)
 
-	// Steps: profile(keep), [validation fails], auth-method(1), org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), [validation fails], auth-method(2 → API Key), org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "1", "", "", "", ""},
+		lines:  []string{"", "2", "", "", "", ""},
 		masked: []string{"fresh-key-1234"},
 	}
 	overrideSetupInput(t, input)
@@ -622,9 +622,9 @@ profiles:
 	t.Cleanup(func() { keychainIsAvailable = orig })
 	keychainIsAvailable = func() bool { return false }
 
-	// Steps: profile(keep), auth-method(1)
+	// Steps: profile(keep), auth-method(2 → API Key)
 	input := &wizardInput{
-		lines:  []string{"", "1"},
+		lines:  []string{"", "2"},
 		masked: []string{"test-setup-key-1234"},
 	}
 	overrideSetupInput(t, input)
@@ -673,9 +673,9 @@ profiles:
 	t.Cleanup(func() { keychainIsAvailable = orig })
 	keychainIsAvailable = func() bool { return false }
 
-	// Steps: profile(keep), auth-method(1), org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), auth-method(2 → API Key), org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "1", "", "", "", ""},
+		lines:  []string{"", "2", "", "", "", ""},
 		masked: []string{"test-setup-key-1234"},
 	}
 	overrideSetupInput(t, input)
@@ -737,9 +737,9 @@ profiles:
 	defer jcServer.Close()
 	overrideOAuthClient(t, jcServer.URL)
 
-	// Steps: profile(keep), auth-method(2), client-id, org(keep), output(keep), color(keep), limit(keep)
+	// Steps: profile(keep), auth-method(1 → Service Account, the new default), client-id, org(keep), output(keep), color(keep), limit(keep)
 	input := &wizardInput{
-		lines:  []string{"", "2", "test-sa-client-id", "", "", "", ""},
+		lines:  []string{"", "1", "test-sa-client-id", "", "", "", ""},
 		masked: []string{"test-sa-secret"},
 	}
 	overrideSetupInput(t, input)
