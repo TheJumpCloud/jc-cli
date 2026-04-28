@@ -144,6 +144,7 @@ func (s *Server) registerAppTools() {
 	// need typed handler generics. Each call registers both tool and resource
 	// (the resource half is no different from a no-args app).
 	s.registerInsightsView()
+	s.registerUserView()
 }
 
 // registerAppResources registers the ui:// resource half of every MCP App.
