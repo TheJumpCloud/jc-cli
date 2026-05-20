@@ -16,6 +16,9 @@ import (
 //go:embed apps_html/dashboard.html
 var dashboardHTML string
 
+//go:embed apps_html/compliance.html
+var complianceHTML string
+
 //go:embed apps_html/common.js
 var appCommonJS string
 
@@ -65,6 +68,17 @@ var appSpecs = []appSpec{
 		HTML:                dashboardHTML,
 		Handler: func(ctx context.Context) (any, error) {
 			return fetchDashboardData(ctx)
+		},
+	},
+	{
+		Name:                "compliance_view",
+		Description:         "Show a JumpCloud compliance snapshot scoped to audit-friendly metrics: MFA adoption (% enrolled + list of users without MFA), device encryption (% FDE-enabled, segmented by OS, with unencrypted-device drill-down), password-age histogram (<30d / 30-60d / 60-90d / >90d), and admin inventory (per-admin email, role, MFA status, last login). Renders as a 4-card report in MCP App-capable hosts; returns the same data as JSON when rendering isn't supported.",
+		ResourceURI:         "ui://jc/compliance",
+		ResourceName:        "Compliance Snapshot App",
+		ResourceDescription: "Audit-friendly JumpCloud compliance snapshot (MFA, FDE, password age, admins)",
+		HTML:                complianceHTML,
+		Handler: func(ctx context.Context) (any, error) {
+			return fetchComplianceData(ctx)
 		},
 	},
 }

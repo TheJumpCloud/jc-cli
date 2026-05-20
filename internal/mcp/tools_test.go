@@ -378,6 +378,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"insights_view",
 		"user_view",
 		"device_view",
+		"compliance_view",
 	}
 
 	toolNames := make(map[string]bool)
@@ -392,8 +393,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 198 {
-		t.Errorf("expected 198 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 199 {
+		t.Errorf("expected 199 tools, got %d", len(result.Tools))
 	}
 }
 
