@@ -414,16 +414,23 @@
     var root = document.getElementById("step-list");
     clear(root);
     plans.forEach(function(p, i){
-      var step = el("div", { className: "step planned" }, [
+      // recipe.StepPlan ships as { name, command, when?, would_run }.
+      // Skipped steps have would_run=false; the step header shows
+      // "would skip" so the operator sees the same outcome the runner
+      // would render at execute time.
+      var willSkip = p.would_run === false;
+      var statusText = willSkip ? "would skip" : "planned";
+      var stepClass = willSkip ? "step skipped" : "step planned";
+      var step = el("div", { className: stepClass }, [
         el("div", { className: "step-head" }, [
           el("span", { className: "step-num", textContent: "[" + (i + 1) + "]" }),
           el("span", { className: "step-name", textContent: p.name }),
-          el("span", { className: "step-status", textContent: "planned" })
+          el("span", { className: "step-status", textContent: statusText })
         ])
       ]);
       if (p.command) step.appendChild(el("div", { className: "cmd", textContent: p.command }));
-      if (p.skipped) step.appendChild(el("div", { className: "err",
-        textContent: "would skip — when condition: " + (p.when || "(false)") }));
+      if (willSkip) step.appendChild(el("div", { className: "err",
+        textContent: "when condition: " + (p.when || "(false)") }));
       root.appendChild(step);
     });
   }
