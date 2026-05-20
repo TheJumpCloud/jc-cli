@@ -65,6 +65,12 @@ type Options struct {
 	// authenticated with (config.APIKey()). Required when RequireStepUp
 	// is true; ignored otherwise.
 	StepUpAPIKey string
+	// StepUpAuthenticator selects which step-up channel handles the
+	// challenge. Empty or "auto" picks the strongest available channel
+	// (Touch ID on darwin, TTY everywhere else). "tty" forces the API
+	// key last-N prompt; "touchid" pins the biometric path with TTY as
+	// runtime fallback if biometrics are unavailable.
+	StepUpAuthenticator string
 	// stepUp injects a custom authenticator. Reserved for tests within
 	// the mcp package; production callers configure step-up via
 	// RequireStepUp + StepUpAPIKey.
@@ -131,7 +137,7 @@ func NewServer(opts Options) *Server {
 
 	stepUp := opts.stepUp
 	if stepUp == nil {
-		stepUp = newStepUp(opts.RequireStepUp, opts.StepUpAPIKey)
+		stepUp = newStepUp(opts.RequireStepUp, opts.StepUpAPIKey, opts.StepUpAuthenticator)
 	}
 
 	signer := opts.signer
