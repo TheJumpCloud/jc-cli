@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud Compliance Snapshot</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5;
+  }
+
+  header {
+    display: flex; gap: 16px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  header .icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 20px;
+  }
+  header .title { flex: 1; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .refresh-btn {
+    background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); padding: 6px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+  }
+  .refresh-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 12px;
+  }
+
+  .big-number {
+    font-size: 32px; font-weight: 700; line-height: 1;
+  }
+  .big-number .unit {
+    font-size: 16px; color: var(--text-muted); margin-left: 4px;
+    font-weight: 500;
+  }
+  .sub-line {
+    color: var(--text-muted); font-size: 12px; margin-top: 4px;
+  }
+
+  /* Coverage bar with a single percentage + text label. */
+  .bar {
+    background: var(--border); border-radius: 4px; height: 8px;
+    overflow: hidden; margin-top: 10px;
+  }
+  .bar > span { display: block; height: 100%; background: var(--green); }
+  .bar > span.warn { background: var(--yellow); }
+  .bar > span.crit { background: var(--red); }
+
+  /* Histogram of password-age buckets: 4 columns, equal width. */
+  .histogram { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 8px; }
+  .histogram .col {
+    text-align: center; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 6px;
+  }
+  .histogram .count { font-size: 22px; font-weight: 600; line-height: 1; }
+  .histogram .label { font-size: 11px; color: var(--text-muted); margin-top: 4px;
+    text-transform: uppercase; letter-spacing: 0.4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  th, td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--text-muted); font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.4px; }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+           color: var(--text-muted); font-size: 11px; }
+
+  .truncation-note {
+    color: var(--text-muted); font-size: 11px; margin-top: 6px;
+    font-style: italic;
+  }
+
+  .empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+
+  .badge {
+    display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 8px;
+    text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600;
+  }
+  .badge.ok    { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .badge.no    { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+  #warnings {
+    display: none;
+    background: rgba(234,179,8,0.1); border: 1px solid var(--yellow);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    color: var(--yellow); font-size: 12px;
+  }
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 16px;
+    color: var(--red); font-size: 13px;
+  }
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="warnings"></div>
+  <div id="error"></div>
+  <div id="loading"><div class="spinner"></div>Loading compliance snapshot…</div>
+  <div id="content" style="display:none;">
+    <header>
+      <div class="icon">JC</div>
+      <div class="title">
+        <h1>Compliance Snapshot</h1>
+        <div class="sub" id="snapshot-time"></div>
+      </div>
+      <button type="button" class="refresh-btn" id="refresh-btn">Refresh</button>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>MFA adoption</h2>
+        <div id="mfa-summary"></div>
+        <div id="mfa-without"></div>
+      </div>
+      <div class="card">
+        <h2>Device encryption (FDE)</h2>
+        <div id="fde-summary"></div>
+        <div id="fde-by-os"></div>
+        <div id="fde-unencrypted"></div>
+      </div>
+      <div class="card">
+        <h2>Password age</h2>
+        <div id="password-summary"></div>
+        <div class="histogram" id="password-histogram"></div>
+      </div>
+      <div class="card">
+        <h2>Admin inventory</h2>
+        <div id="admin-summary"></div>
+        <div id="admin-list"></div>
+      </div>
+    </div>
+  </div>
+
+<!--JC_APP_COMMON-->
+<script>
+(function() {
+  "use strict";
+
+  // Text-content-only DOM builder — same XSS-safe helper used by the
+  // other apps. Setting className/textContent only; unknown attribute
+  // keys are dropped rather than forwarded to setAttribute.
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "className") n.className = String(attrs[k]);
+      else if (k === "textContent") n.textContent = String(attrs[k]);
+    });
+    if (children) children.forEach(function(c){
+      if (c == null) return;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else if (c instanceof Node) n.appendChild(c);
+    });
+    return n;
+  }
+
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function fmtTimestamp(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toISOString().slice(0, 16).replace("T", " ") + "Z";
+  }
+
+  function fmtPct(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "—";
+    if (n >= 99.95) return "100%";
+    return n.toFixed(1) + "%";
+  }
+
+  // Color-codes a coverage bar by where the percentage falls: green is
+  // "compliant," yellow warns, red flags. Symmetric thresholds across
+  // MFA and FDE so the cards read the same way at a glance.
+  function coverageClass(pct) {
+    if (typeof pct !== "number" || !isFinite(pct)) return "crit";
+    if (pct >= 95) return "";
+    if (pct >= 80) return "warn";
+    return "crit";
+  }
+
+  function renderMFA(mfa) {
+    var summary = document.getElementById("mfa-summary");
+    clear(summary);
+    if (!mfa) {
+      summary.appendChild(el("div", { className: "empty",
+        textContent: "MFA data not available." }));
+      return;
+    }
+    var pct = mfa.percentage || 0;
+    summary.appendChild(el("div", { className: "big-number" }, [
+      fmtPct(pct),
+      el("span", { className: "unit",
+        textContent: " " + mfa.enrolled + " / " + mfa.total + " active users" })
+    ]));
+    var bar = el("div", { className: "bar" });
+    var fill = el("span", { className: coverageClass(pct) });
+    fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    bar.appendChild(fill);
+    summary.appendChild(bar);
+
+    var without = document.getElementById("mfa-without");
+    clear(without);
+    var list = mfa.without_mfa || [];
+    if (list.length === 0) {
+      without.appendChild(el("div", { className: "empty", textContent: "All active users have MFA enrolled." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "Without MFA" }),
+        el("th", { textContent: "Email" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    list.forEach(function(u){
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: u.username || u.id || "—" }),
+        el("td", { className: "mono", textContent: u.email || "" })
+      ]));
+    });
+    table.appendChild(tbody);
+    without.appendChild(table);
+    var total = mfa.without_mfa_total || list.length;
+    if (total > list.length) {
+      without.appendChild(el("div", { className: "truncation-note",
+        textContent: "Showing " + list.length + " of " + total + "." }));
+    }
+  }
+
+  function renderFDE(fde) {
+    var summary = document.getElementById("fde-summary");
+    clear(summary);
+    if (!fde) {
+      summary.appendChild(el("div", { className: "empty",
+        textContent: "Device encryption data not available." }));
+      return;
+    }
+    var pct = fde.percentage || 0;
+    summary.appendChild(el("div", { className: "big-number" }, [
+      fmtPct(pct),
+      el("span", { className: "unit",
+        textContent: " " + fde.encrypted + " / " + fde.total + " devices encrypted" })
+    ]));
+    var bar = el("div", { className: "bar" });
+    var fill = el("span", { className: coverageClass(pct) });
+    fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    bar.appendChild(fill);
+    summary.appendChild(bar);
+
+    var byOSEl = document.getElementById("fde-by-os");
+    clear(byOSEl);
+    var byOS = fde.by_os || [];
+    if (byOS.length === 0) {
+      // single-OS orgs — bar above already captures the picture.
+    } else {
+      var table = el("table", null, [
+        el("thead", null, [el("tr", null, [
+          el("th", { textContent: "OS" }),
+          el("th", { textContent: "Encrypted" }),
+          el("th", { textContent: "Coverage" })
+        ])])
+      ]);
+      var tbody = el("tbody");
+      byOS.forEach(function(o){
+        tbody.appendChild(el("tr", null, [
+          el("td", { textContent: o.os }),
+          el("td", { textContent: o.encrypted + " / " + o.total }),
+          el("td", { textContent: fmtPct(o.percentage || 0) })
+        ]));
+      });
+      table.appendChild(tbody);
+      byOSEl.appendChild(table);
+    }
+
+    var unencEl = document.getElementById("fde-unencrypted");
+    clear(unencEl);
+    var unenc = fde.unencrypted || [];
+    if (unenc.length === 0) return;
+    var head = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "Unencrypted device" }),
+        el("th", { textContent: "OS" })
+      ])])
+    ]);
+    var tbody2 = el("tbody");
+    unenc.forEach(function(d){
+      tbody2.appendChild(el("tr", null, [
+        el("td", { textContent: d.hostname || d.id || "—" }),
+        el("td", { textContent: d.os || "—" })
+      ]));
+    });
+    head.appendChild(tbody2);
+    unencEl.appendChild(head);
+    var total = fde.unencrypted_total || unenc.length;
+    if (total > unenc.length) {
+      unencEl.appendChild(el("div", { className: "truncation-note",
+        textContent: "Showing " + unenc.length + " of " + total + "." }));
+    }
+  }
+
+  function renderPasswords(pwd) {
+    var summary = document.getElementById("password-summary");
+    clear(summary);
+    if (!pwd) {
+      summary.appendChild(el("div", { className: "empty",
+        textContent: "Password data not available." }));
+      return;
+    }
+    var nodataNote = pwd.no_data > 0
+      ? " · " + pwd.no_data + " without recorded date"
+      : "";
+    summary.appendChild(el("div", { className: "sub-line",
+      textContent: pwd.total + " users with a recorded password date" + nodataNote }));
+
+    var hist = document.getElementById("password-histogram");
+    clear(hist);
+    (pwd.buckets || []).forEach(function(b){
+      hist.appendChild(el("div", { className: "col" }, [
+        el("div", { className: "count", textContent: String(b.count) }),
+        el("div", { className: "label", textContent: b.label })
+      ]));
+    });
+  }
+
+  function renderAdmins(admins) {
+    var summary = document.getElementById("admin-summary");
+    clear(summary);
+    if (!admins) {
+      summary.appendChild(el("div", { className: "empty",
+        textContent: "Admin data not available." }));
+      return;
+    }
+    summary.appendChild(el("div", { className: "big-number" }, [
+      String(admins.total),
+      el("span", { className: "unit", textContent: " admins" })
+    ]));
+
+    var list = document.getElementById("admin-list");
+    clear(list);
+    var rows = admins.list || [];
+    if (rows.length === 0) {
+      list.appendChild(el("div", { className: "empty", textContent: "No admins returned." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "Admin" }),
+        el("th", { textContent: "Role" }),
+        el("th", { textContent: "MFA" }),
+        el("th", { textContent: "Last login" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    rows.forEach(function(a){
+      var mfaBadge = a.enable_multi_factor
+        ? el("span", { className: "badge ok", textContent: "Yes" })
+        : el("span", { className: "badge no", textContent: "No" });
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: a.email || a.id || "—" }),
+        el("td", { textContent: a.role_name || "—" }),
+        el("td", null, [mfaBadge]),
+        el("td", { textContent: a.last_login ? fmtTimestamp(a.last_login) : "—" })
+      ]));
+    });
+    table.appendChild(tbody);
+    list.appendChild(table);
+  }
+
+  function renderAll(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "";
+    document.getElementById("error").style.display = "none";
+
+    var warn = document.getElementById("warnings");
+    if (data.warnings && data.warnings.length) {
+      warn.textContent = data.warnings.join(" ");
+      warn.style.display = "";
+    } else {
+      warn.style.display = "none";
+    }
+
+    document.getElementById("snapshot-time").textContent =
+      data.timestamp ? "Snapshot at " + fmtTimestamp(data.timestamp) : "";
+
+    renderMFA(data.mfa);
+    renderFDE(data.fde);
+    renderPasswords(data.passwords);
+    renderAdmins(data.admins);
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").style.display = "none";
+    var e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "";
+  }
+
+  function refresh(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+    jcApp.callTool("compliance_view", {}).then(function(result){
+      try {
+        var data = jcApp.parseToolResult(result);
+        if (data) renderAll(data);
+        else showError("Empty response");
+      } catch (e) { showError(e.message || String(e)); }
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    }).catch(function(err){
+      showError("Failed to load: " + (err.message || String(err)));
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    });
+  }
+
+  jcApp.ready("JumpCloud Compliance Snapshot", "1.0.0");
+
+  var initialized = false;
+  jcApp.onToolResult(function(params) {
+    if (initialized) return;
+    try {
+      var data = jcApp.parseToolResult(params);
+      if (data) { initialized = true; renderAll(data); }
+    } catch (e) { /* swallow — refresh button will recover */ }
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", function() {
+    refresh(this);
+  });
+})();
+</script>
+</body>
+</html>
