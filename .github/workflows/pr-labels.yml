@@ -1,0 +1,35 @@
+name: PR Label Check
+
+# Validates that every PR carries exactly one semver label before merge.
+# The release workflow re-checks this on `pull_request closed`, but by then
+# it's too late — a merge with no label produces no release. Running the
+# same check on PR events surfaces the problem while it's still fixable.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  Check-PR-Labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse PR labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const valid = ['major', 'minor', 'patch', 'no version'];
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            core.info(`Labels on PR: ${labels.join(', ') || '(none)'}`);
+
+            const matches = labels.filter(name => valid.includes(name));
+            if (matches.length !== 1) {
+              core.setFailed(
+                `Expected exactly one of: ${valid.map(v => `'${v}'`).join(', ')}. Found ${matches.length}.`
+              );
+              return;
+            }
+
+            core.info(`Release type: ${matches[0]}`);
