@@ -217,10 +217,16 @@
   }
 
   // Format byte counts as humane sizes (GB / TB). Used for disk size
-  // and free space. Returns "—" on missing/invalid input so the table
-  // never shows raw zeros for fields the agent didn't report.
+  // and free space. Negative / non-numeric input renders as "—" since
+  // those signal "agent didn't report this." Exact zero is preserved
+  // as "0 B" because for free space it carries real meaning ("disk is
+  // 100% full") — the Go side deliberately doesn't omitempty FreeBytes
+  // for the same reason. SizeBytes uses omitempty on the Go side, so
+  // a missing size arrives as undefined here and still falls back to
+  // "—" via the typeof guard.
   function fmtBytes(n) {
-    if (typeof n !== "number" || !isFinite(n) || n <= 0) return "—";
+    if (typeof n !== "number" || !isFinite(n) || n < 0) return "—";
+    if (n === 0) return "0 B";
     var units = ["B", "KB", "MB", "GB", "TB", "PB"];
     var i = 0;
     while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
@@ -240,7 +246,11 @@
   function osInitials(os) {
     if (!os) return "?";
     var s = os.toLowerCase();
-    if (s.indexOf("mac") >= 0 || s.indexOf("darwin") >= 0) return "";
+    // Two-char codes keep the avatar circle a uniform width; we
+    // intentionally don't use the Apple logo glyph because it lives
+    // in a private-use Unicode block and renders blank in fonts that
+    // don't ship it (Linux iframes, sandboxed renderers, etc.).
+    if (s.indexOf("mac") >= 0 || s.indexOf("darwin") >= 0) return "MC";
     if (s.indexOf("win") >= 0) return "WN";
     if (s.indexOf("linux") >= 0 || s.indexOf("ubuntu") >= 0 || s.indexOf("debian") >= 0) return "LX";
     return os.slice(0, 2).toUpperCase();
