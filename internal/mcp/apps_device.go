@@ -107,7 +107,12 @@ type deviceInsightsDisk struct {
 	Name       string `json:"name"`
 	Mountpoint string `json:"mountpoint,omitempty"`
 	SizeBytes  int64  `json:"size_bytes,omitempty"`
-	FreeBytes  int64  `json:"free_bytes,omitempty"`
+	// FreeBytes deliberately has no `omitempty`: 0 means the disk is
+	// 100 % full, not "data missing." Omitting the field would make
+	// the iframe's `typeof d.free_bytes === "number"` guard fail and
+	// render the usage bar at 0 % — the opposite of correct for the
+	// exact case we'd want the red "critical" bar.
+	FreeBytes int64 `json:"free_bytes"`
 }
 
 // fetchDeviceViewData runs the parallel API calls behind device_view and

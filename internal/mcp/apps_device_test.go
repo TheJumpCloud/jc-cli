@@ -234,6 +234,37 @@ func TestFetchDeviceViewData_Aggregates(t *testing.T) {
 	}
 }
 
+// A disk that is completely full reports FreeBytes == 0. Marshal must
+// emit `"free_bytes":0` (no `omitempty`) so the iframe's number-check
+// passes and the usage bar fills to 100 % — Bugbot caught this on
+// PR #29. Pin the contract here so a future omitempty regression
+// fails loudly.
+func TestDeviceInsightsDisk_FullDiskKeepsFreeBytesField(t *testing.T) {
+	full := deviceInsightsDisk{
+		Name: "/dev/sda1", Mountpoint: "/",
+		SizeBytes: 500_000_000_000,
+		FreeBytes: 0,
+	}
+	b, err := json.Marshal(full)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"free_bytes":0`) {
+		t.Errorf("full-disk row should serialize free_bytes:0; got: %s", b)
+	}
+
+	// And confirm a disk with no size metadata still drops size_bytes
+	// (that's the case where omitempty is correct).
+	missing := deviceInsightsDisk{Name: "/dev/sda1"}
+	b, err = json.Marshal(missing)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"size_bytes"`) {
+		t.Errorf("missing-size disk should omit size_bytes; got: %s", b)
+	}
+}
+
 func TestFetchDeviceViewData_RequiresDevice(t *testing.T) {
 	_, err := fetchDeviceViewData(context.Background(), deviceViewArgs{})
 	if err == nil || !strings.Contains(err.Error(), "device is required") {
