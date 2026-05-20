@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud Device Inventory</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5;
+  }
+
+  header {
+    display: flex; gap: 16px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 600; color: white; flex-shrink: 0;
+  }
+  .profile-meta { flex: 1; min-width: 0; }
+  .profile-meta .name { font-size: 18px; font-weight: 600; }
+  .profile-meta .sub { font-size: 13px; color: var(--text-muted); }
+  .profile-meta .extra { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 3px 8px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600;
+  }
+  .badge.online   { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .badge.recent   { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge.stale    { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+  .badge.offline  { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .badge.fde-on   { background: rgba(99,102,241,0.15); color: var(--accent-light); }
+  .badge.fde-off  { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .badge.mdm-on   { background: rgba(99,102,241,0.15); color: var(--accent-light); }
+  .badge.inactive { background: rgba(239,68,68,0.15);  color: var(--red); }
+  .refresh-btn {
+    background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); padding: 6px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+  }
+  .refresh-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  .layout {
+    display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px;
+  }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 12px;
+  }
+
+  .pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    background: rgba(99,102,241,0.12);
+    color: var(--accent-light);
+    padding: 4px 10px; border-radius: 12px;
+    font-size: 12px; font-weight: 500;
+  }
+  .empty { color: var(--text-muted); font-size: 13px; }
+
+  .kv { display: grid; grid-template-columns: 100px 1fr; gap: 6px 12px; font-size: 12px; }
+  .kv dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; font-size: 11px; }
+  .kv dd { color: var(--text); }
+
+  .bar-disk { background: var(--border); border-radius: 4px; height: 6px; overflow: hidden; margin-top: 4px; }
+  .bar-disk > span { display: block; height: 100%; background: var(--accent-light); }
+  .bar-disk > span.warn { background: var(--yellow); }
+  .bar-disk > span.crit { background: var(--red); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--text-muted); font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.4px; }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+           color: var(--text-muted); font-size: 11px; }
+
+  #warnings {
+    display: none;
+    background: rgba(234,179,8,0.1); border: 1px solid var(--yellow);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    color: var(--yellow); font-size: 12px;
+  }
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 16px;
+    color: var(--red); font-size: 13px;
+  }
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="warnings"></div>
+  <div id="error"></div>
+  <div id="loading"><div class="spinner"></div>Loading device inventory…</div>
+  <div id="content" style="display:none;">
+    <header>
+      <div class="avatar" id="avatar">?</div>
+      <div class="profile-meta">
+        <div class="name" id="name"></div>
+        <div class="sub" id="sub"></div>
+        <div class="extra" id="extra"></div>
+        <div class="badges" id="badges" style="margin-top:6px;"></div>
+      </div>
+      <button type="button" class="refresh-btn" id="refresh-btn">Refresh</button>
+    </header>
+
+    <div class="layout">
+      <div>
+        <div class="card" style="margin-bottom:16px;">
+          <h3>Details</h3>
+          <dl class="kv" id="details"></dl>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+          <h3>Groups</h3>
+          <div class="pill-list" id="groups"></div>
+        </div>
+        <div class="card">
+          <h3>Applied policies</h3>
+          <div id="policies"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px;">
+          <h3>System insights</h3>
+          <div id="system-insights"></div>
+        </div>
+        <div class="card">
+          <h3>Recent events (last 30d)</h3>
+          <div id="recent-events"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!--JC_APP_COMMON-->
+<script>
+(function() {
+  "use strict";
+
+  // Text-content-only DOM builder: callers only set className/textContent
+  // and pass already-constructed Nodes as children. Unknown attribute
+  // keys are dropped rather than forwarded to setAttribute, so the
+  // helper can never become an XSS surface for href/onclick/etc.
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "className") n.className = String(attrs[k]);
+      else if (k === "textContent") n.textContent = String(attrs[k]);
+    });
+    if (children) children.forEach(function(c){
+      if (c == null) return;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else if (c instanceof Node) n.appendChild(c);
+    });
+    return n;
+  }
+
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function fmtTimestamp(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toISOString().slice(0, 16).replace("T", " ") + "Z";
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Format byte counts as humane sizes (GB / TB). Used for disk size
+  // and free space. Returns "—" on missing/invalid input so the table
+  // never shows raw zeros for fields the agent didn't report.
+  function fmtBytes(n) {
+    if (typeof n !== "number" || !isFinite(n) || n <= 0) return "—";
+    var units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(n < 10 ? 1 : 0) + " " + units[i];
+  }
+
+  // Render uptime seconds as "Nd Nh" (or "<1h" when under an hour).
+  function fmtUptime(secs) {
+    if (typeof secs !== "number" || !isFinite(secs) || secs <= 0) return "—";
+    var days = Math.floor(secs / 86400);
+    var hours = Math.floor((secs % 86400) / 3600);
+    if (days === 0 && hours === 0) return "<1h";
+    if (days === 0) return hours + "h";
+    return days + "d " + hours + "h";
+  }
+
+  function osInitials(os) {
+    if (!os) return "?";
+    var s = os.toLowerCase();
+    if (s.indexOf("mac") >= 0 || s.indexOf("darwin") >= 0) return "";
+    if (s.indexOf("win") >= 0) return "WN";
+    if (s.indexOf("linux") >= 0 || s.indexOf("ubuntu") >= 0 || s.indexOf("debian") >= 0) return "LX";
+    return os.slice(0, 2).toUpperCase();
+  }
+
+  function renderHeader(dev, status) {
+    document.getElementById("avatar").textContent = osInitials(dev.os);
+    document.getElementById("name").textContent =
+      dev.display_name || dev.hostname || dev.id || "(unknown)";
+    var subParts = [];
+    if (dev.hostname && dev.display_name && dev.hostname !== dev.display_name) {
+      subParts.push(dev.hostname);
+    }
+    if (dev.os) {
+      subParts.push(dev.os + (dev.os_version ? " " + dev.os_version : ""));
+    }
+    document.getElementById("sub").textContent = subParts.join("  ·  ");
+    var extras = [];
+    if (dev.serial_number) extras.push("SN " + dev.serial_number);
+    if (dev.agent_version) extras.push("agent " + dev.agent_version);
+    if (dev.last_contact) extras.push("last contact " + fmtTimestamp(dev.last_contact));
+    document.getElementById("extra").textContent = extras.join("  ·  ");
+
+    var badgesEl = document.getElementById("badges");
+    clear(badgesEl);
+
+    var connLabel = {
+      online:  "Online",
+      recent:  "Recent",
+      stale:   "Stale",
+      offline: "Offline"
+    }[status && status.connectivity] || "Offline";
+    badgesEl.appendChild(el("span", {
+      className: "badge " + (status && status.connectivity ? status.connectivity : "offline"),
+      textContent: connLabel
+    }));
+
+    if (status && status.active === false) {
+      badgesEl.appendChild(el("span", { className: "badge inactive", textContent: "Inactive" }));
+    }
+    if (status && status.fde_enabled) {
+      badgesEl.appendChild(el("span", { className: "badge fde-on", textContent: "FDE on" }));
+    } else if (status) {
+      // FDE off is a real risk signal — call it out explicitly rather
+      // than just omitting the badge.
+      badgesEl.appendChild(el("span", { className: "badge fde-off", textContent: "FDE off" }));
+    }
+    if (status && status.mdm_enrolled) {
+      badgesEl.appendChild(el("span", { className: "badge mdm-on", textContent: "MDM enrolled" }));
+    }
+  }
+
+  function renderDetails(dev) {
+    var root = document.getElementById("details");
+    clear(root);
+    var rows = [
+      ["ID", dev.id || "—"],
+      ["Hostname", dev.hostname || "—"],
+      ["OS", (dev.os || "—") + (dev.os_version ? " " + dev.os_version : "")],
+      ["Serial", dev.serial_number || "—"],
+      ["Agent", dev.agent_version || "—"],
+      ["Created", fmtDate(dev.created)],
+      ["Last contact", fmtTimestamp(dev.last_contact)]
+    ];
+    rows.forEach(function(r){
+      root.appendChild(el("dt", { textContent: r[0] }));
+      root.appendChild(el("dd", { textContent: r[1] }));
+    });
+  }
+
+  function renderGroups(groups) {
+    var root = document.getElementById("groups");
+    clear(root);
+    if (!groups || groups.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No group memberships." }));
+      return;
+    }
+    groups.forEach(function(g){
+      root.appendChild(el("span", { className: "pill", textContent: g.name || g.id }));
+    });
+  }
+
+  function renderPolicies(policies) {
+    var root = document.getElementById("policies");
+    clear(root);
+    if (!policies || policies.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No policies applied." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "Policy" }),
+        el("th", { textContent: "ID" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    policies.forEach(function(p){
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: p.name || "(unnamed)" }),
+        el("td", { className: "mono", textContent: p.id || "" })
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  function renderSystemInsights(insights) {
+    var root = document.getElementById("system-insights");
+    clear(root);
+    if (!insights) {
+      root.appendChild(el("div", { className: "empty",
+        textContent: "No system-insights data (agent down, table unsupported, or not yet collected)." }));
+      return;
+    }
+
+    // Uptime + logged-in users in a compact key-value block.
+    var kv = el("dl", { className: "kv" });
+    kv.appendChild(el("dt", { textContent: "Uptime" }));
+    kv.appendChild(el("dd", { textContent: fmtUptime(insights.uptime_seconds) }));
+    var liu = insights.logged_in_users || [];
+    kv.appendChild(el("dt", { textContent: "Sessions" }));
+    if (liu.length === 0) {
+      kv.appendChild(el("dd", { textContent: "—" }));
+    } else {
+      // Show first 3 users; let the count overflow into "+N more".
+      var summary = liu.slice(0, 3).map(function(u){ return u.user || "?"; }).join(", ");
+      if (liu.length > 3) summary += "  +" + (liu.length - 3) + " more";
+      kv.appendChild(el("dd", { textContent: summary }));
+    }
+    root.appendChild(kv);
+
+    // Disks: one row per filesystem with a usage bar.
+    var disks = insights.disks || [];
+    if (disks.length > 0) {
+      var disksHeader = el("h3", { textContent: "Disks" });
+      disksHeader.style.marginTop = "12px";
+      root.appendChild(disksHeader);
+      var table = el("table", null, [
+        el("thead", null, [el("tr", null, [
+          el("th", { textContent: "Mount" }),
+          el("th", { textContent: "Size" }),
+          el("th", { textContent: "Free" }),
+          el("th", { textContent: "Usage" })
+        ])])
+      ]);
+      var tbody = el("tbody");
+      disks.forEach(function(d){
+        var usedPct = 0;
+        if (typeof d.size_bytes === "number" && d.size_bytes > 0 && typeof d.free_bytes === "number") {
+          usedPct = Math.max(0, Math.min(100,
+            Math.round(((d.size_bytes - d.free_bytes) / d.size_bytes) * 100)));
+        }
+        var bar = el("div", { className: "bar-disk" });
+        var fill = el("span");
+        fill.style.width = usedPct + "%";
+        if (usedPct >= 90) fill.className = "crit";
+        else if (usedPct >= 75) fill.className = "warn";
+        bar.appendChild(fill);
+        tbody.appendChild(el("tr", null, [
+          el("td", { textContent: d.mountpoint || d.name || "—" }),
+          el("td", { textContent: fmtBytes(d.size_bytes) }),
+          el("td", { textContent: fmtBytes(d.free_bytes) }),
+          el("td", null, [bar])
+        ]));
+      });
+      table.appendChild(tbody);
+      root.appendChild(table);
+    }
+  }
+
+  function renderEvents(events) {
+    var root = document.getElementById("recent-events");
+    clear(root);
+    if (!events || events.length === 0) {
+      root.appendChild(el("div", { className: "empty", textContent: "No recent activity in last 30 days." }));
+      return;
+    }
+    var table = el("table", null, [
+      el("thead", null, [el("tr", null, [
+        el("th", { textContent: "When" }),
+        el("th", { textContent: "Service" }),
+        el("th", { textContent: "Event" }),
+        el("th", { textContent: "Result" })
+      ])])
+    ]);
+    var tbody = el("tbody");
+    events.forEach(function(e){
+      tbody.appendChild(el("tr", null, [
+        el("td", { textContent: fmtTimestamp(e.timestamp) }),
+        el("td", { textContent: e.service || "" }),
+        el("td", { textContent: e.event_type || "" }),
+        el("td", { textContent: e.success === true ? "ok" : (e.success === false ? "fail" : (e.message || "")) })
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  function renderAll(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "";
+    document.getElementById("error").style.display = "none";
+
+    var warn = document.getElementById("warnings");
+    if (data.warnings && data.warnings.length) {
+      warn.textContent = data.warnings.join(" ");
+      warn.style.display = "";
+    } else {
+      warn.style.display = "none";
+    }
+
+    renderHeader(data.device || {}, data.status || {});
+    renderDetails(data.device || {});
+    renderGroups(data.groups);
+    renderPolicies(data.policies);
+    renderSystemInsights(data.system_insights);
+    renderEvents(data.recent_events || []);
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").style.display = "none";
+    var e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "";
+  }
+
+  // Identifier carries through refresh — captured from the first payload's
+  // device.id (fallback to hostname).
+  var currentDevice = "";
+
+  function refresh(btn) {
+    if (!currentDevice) return;
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+    jcApp.callTool("device_view", { device: currentDevice }).then(function(result){
+      try {
+        var data = jcApp.parseToolResult(result);
+        if (data) renderAll(data);
+        else showError("Empty response");
+      } catch (e) { showError(e.message || String(e)); }
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    }).catch(function(err){
+      showError("Failed to load: " + (err.message || String(err)));
+      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
+    });
+  }
+
+  jcApp.ready("JumpCloud Device Inventory", "1.0.0");
+
+  var initialized = false;
+  jcApp.onToolResult(function(params) {
+    if (initialized) return;
+    try {
+      var data = jcApp.parseToolResult(params);
+      if (data) {
+        initialized = true;
+        currentDevice = (data.device && (data.device.id || data.device.hostname)) || "";
+        renderAll(data);
+      }
+    } catch (e) { /* message-without-data: don't lock the UI */ }
+  });
+
+  // No proactive fetch — without a device identifier we'd get nowhere.
+  // The refresh button only works after the host has pushed an initial
+  // result (which carries the id we use for subsequent calls).
+
+  document.getElementById("refresh-btn").addEventListener("click", function() {
+    refresh(this);
+  });
+})();
+</script>
+</body>
+</html>

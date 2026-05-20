@@ -145,6 +145,7 @@ func (s *Server) registerAppTools() {
 	// (the resource half is no different from a no-args app).
 	s.registerInsightsView()
 	s.registerUserView()
+	s.registerDeviceView()
 }
 
 // registerAppResources registers the ui:// resource half of every MCP App.
