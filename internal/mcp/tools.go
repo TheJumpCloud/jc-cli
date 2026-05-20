@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -5173,14 +5174,25 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 		// The error message names jc as the gate source and points at
 		// the config key — otherwise downstream AI clients see "step-up
 		// auth" and misattribute the denial to JumpCloud (suggesting
-		// account-level fixes that don't apply).
+		// account-level fixes that don't apply). The follow-up sentence
+		// branches on the sentinel error so an unavailable-channel
+		// failure doesn't tell the operator to "approve the prompt"
+		// (there is no prompt to approve in that case).
 		if isExecutingDestructive(args) {
 			if err := s.stepUp.authorize(ctx, name, destructiveTarget(args)); err != nil {
+				var followUp string
+				switch {
+				case errors.Is(err, errStepUpDenied):
+					followUp = "the operator must approve the Touch ID or TTY prompt on retry to proceed."
+				case errors.Is(err, errStepUpUnavailable):
+					followUp = "the operator's environment cannot present a challenge — run jc on a Touch-ID-capable Mac, switch to --transport=http on a real terminal, or unset mcp.require_step_up_for_destructive."
+				default:
+					followUp = "see the jc server logs for details."
+				}
 				msg := fmt.Sprintf(
 					"jc blocked %s: local step-up gate (mcp.require_step_up_for_destructive) — %v. "+
-						"This is a jc-side policy, not a JumpCloud requirement; the operator must approve "+
-						"the Touch ID or TTY prompt to proceed.",
-					name, err,
+						"This is a jc-side policy, not a JumpCloud requirement; %s",
+					name, err, followUp,
 				)
 				s.auditLog.log(name, req.Params.Arguments, false, msg)
 				return errorResult(msg), nil, nil
