@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 
 	"github.com/klaassen-consulting/jc/internal/config"
@@ -150,7 +149,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			// warning if the resolved authenticator runs out-of-band of
 			// the transport — on darwin, Touch ID is an OS modal that
 			// reaches the operator regardless of stdin.
-			if requireStepUp && transport == "stdio" && !stepUpReachesOperatorOnStdio(stepUpAuth) {
+			if requireStepUp && transport == "stdio" && !mcp.StepUpReachesOperatorOnStdio(stepUpAuth) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"jc: --require-step-up is set but transport is stdio; TTY prompts cannot reach the operator. "+
 						"Destructive calls will be rejected as 'step-up unavailable'. Use --transport http with a terminal "+
@@ -248,26 +247,6 @@ func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOn
 		return true, "", nil
 	}
 	return true, fmt.Sprintf("Profile %q is read-only — forcing --read-only and rejecting destructive tools.", activeProfile), nil
-}
-
-// stepUpReachesOperatorOnStdio reports whether the resolved step-up
-// authenticator can present a challenge while the MCP transport owns
-// stdin/stdout. Touch ID renders an OS-level modal so it's transport-
-// independent on darwin; TTY needs a controlling terminal that stdio
-// transport has already commandeered.
-func stepUpReachesOperatorOnStdio(authPref string) bool {
-	if runtime.GOOS != "darwin" {
-		return false
-	}
-	// On darwin, both "auto" and "touchid" resolve to Touch ID (with
-	// TTY as a runtime fallback). "tty" explicitly opts out of biometric
-	// and keeps the legacy unreachable behavior.
-	switch authPref {
-	case "", "auto", "touchid":
-		return true
-	default:
-		return false
-	}
 }
 
 func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp bool, stepUpAuth string, signDestructiveOps bool) error {

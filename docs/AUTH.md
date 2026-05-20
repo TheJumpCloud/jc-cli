@@ -174,16 +174,18 @@ When enabled, the chokepoint in `internal/mcp/stepup.go` blocks every tool call 
 
 | Authenticator | Platform | Channel | Stdio transport |
 |---|---|---|---|
-| `touchid` | macOS only | OS biometric modal (`LocalAuthentication.framework`) | ✅ Reaches the operator regardless of stdin |
+| `touchid` | macOS with Touch ID hardware | OS biometric modal (`LocalAuthentication.framework`) | ✅ Reaches the operator regardless of stdin |
 | `tty` | All | Prompt on the controlling terminal for the last 6 chars of the API key | ❌ Cannot reach the operator (stdin is the JSON-RPC stream) |
-| `auto` (default) | All | Touch ID on macOS, TTY elsewhere | ✅ on macOS, ❌ elsewhere |
+| `auto` (default) | All | Touch ID where available, TTY otherwise | ✅ on Macs with Touch ID; ❌ elsewhere |
+
+The factory probes `LAContext.canEvaluatePolicy` at startup, so a Mac without Touch ID hardware (Mac mini, Mac Pro, VM) — or one whose biometrics are locked out — quietly falls back to the TTY authenticator instead of resolving to a `touchid` instance that would later fail every destructive op closed. The startup warning about stdio reachability honors that probe too, so you'll see it on a hardware-less Mac.
 
 A denied or unanswered prompt fails the underlying API call closed with `step-up auth required but no challenge channel is available` or `operator denied step-up auth challenge`. Pair this with `mcp.sign_destructive_ops` for an in-the-loop pause *and* a tamper-evident signed audit trail.
 
 ### Limitations & known gaps
 
 - **The `execute: true` bit is agent-controlled** until step-up auth is enabled. A connected MCP client (Claude Desktop, Claude Code, a custom agent) can flip it itself; there is no human-in-the-loop unless `mcp.require_step_up_for_destructive: true` is set.
-- **Step-up over stdio without Touch ID has no channel.** On Linux/Windows or when `step_up_authenticator: tty` is pinned, an stdio-transport server fails destructive ops closed with `step-up unavailable` because the operator has no terminal to answer on. Use `--transport http` with a real terminal, or run on macOS with the default `auto` authenticator.
+- **Step-up over stdio without Touch ID has no channel.** On Linux/Windows, on Macs without Touch ID hardware, or when `step_up_authenticator: tty` is pinned, an stdio-transport server fails destructive ops closed with `step-up unavailable` because the operator has no terminal to answer on. Use `--transport http` with a real terminal, or run on a Touch-ID-capable Mac with the default `auto` authenticator.
 - **TTY step-up is a weak challenge.** Anyone holding the API key can answer the prompt. Its value is in catching an autonomous agent that flipped `execute: true` without the operator noticing, not in cryptographic binding. Touch ID provides a stronger binding because biometric approval cannot be replayed by holding a credential.
 - **No per-operator identity in the audit trail.** The audit log records *what tool was called and with what parameters*, but not *who flipped `execute: true`*. Real per-user audit identity needs OAuth Device Flow, tracked in [KLA-414](https://linear.app/klaassenconsulting/issue/KLA-414) (currently platform-blocked).
 

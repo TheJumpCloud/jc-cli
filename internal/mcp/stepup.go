@@ -188,11 +188,32 @@ const (
 	stepUpAuthTouchID = "touchid"
 )
 
+// StepUpReachesOperatorOnStdio reports whether the resolved step-up
+// authenticator can present a challenge to the operator while the MCP
+// transport owns stdin/stdout. Touch ID renders an OS-level modal so
+// it's transport-independent — but only when biometric hardware is
+// actually usable. On a darwin host without Touch ID (Mac mini, Mac
+// Pro, VM) we'd fall back to TTY, which can't reach an stdio-bound
+// operator. The probe (touchIDAvailable) is what makes the check
+// honest in that case.
+//
+// Called from cmd/mcp.go to decide whether to print the "TTY prompts
+// cannot reach the operator" startup warning.
+func StepUpReachesOperatorOnStdio(authPref string) bool {
+	switch authPref {
+	case "", stepUpAuthAuto, stepUpAuthTouchID:
+		return touchIDAvailable()
+	default:
+		return false
+	}
+}
+
 // newStepUp returns the authenticator a Server should use given the
 // requested configuration. Callers that haven't enabled the feature
 // get noopStepUp (zero-cost path). When `authenticatorPref` is empty
 // or "auto", we ask the platform-tagged hook newTouchIDStepUpIfSupported
-// first and fall back to TTY if it's nil (non-darwin builds).
+// first and fall back to TTY if it's nil (non-darwin builds, or darwin
+// without Touch ID hardware).
 func newStepUp(required bool, apiKey, authenticatorPref string) stepUpAuthenticator {
 	if !required {
 		return noopStepUp{}

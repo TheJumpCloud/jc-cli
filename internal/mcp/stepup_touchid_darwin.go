@@ -11,6 +11,23 @@ package mcp
 #include <dispatch/dispatch.h>
 #include <string.h>
 
+// jc_touchid_available reports whether LocalAuthentication is willing to
+// run a biometric challenge on this device right now. Returns 1 when
+// canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics) succeeds
+// (Touch ID hardware present, fingerprints enrolled, not locked out),
+// 0 otherwise. Called at factory time so the step-up factory can fall
+// back to TTY on Macs without Touch ID hardware (Mac mini, Mac Pro,
+// VMs) instead of picking touchIDStepUp and silently failing every
+// destructive op at authorize-time.
+int jc_touchid_available(void) {
+    @autoreleasepool {
+        LAContext *ctx = [[LAContext alloc] init];
+        NSError *err = nil;
+        return [ctx canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics
+                                error:&err] ? 1 : 0;
+    }
+}
+
 // jc_touchid_evaluate presents a biometric prompt to the operator and
 // blocks until they accept, decline, or the system errors out.
 //
@@ -114,11 +131,26 @@ func newTouchIDStepUp() *touchIDStepUp {
 	return &touchIDStepUp{}
 }
 
+// touchIDAvailable reports whether this darwin host actually has a
+// usable biometric stack (hardware present, fingerprints enrolled, not
+// locked out). The check is a cheap LAContext.canEvaluatePolicy call.
+// Cached intentionally NOT — hardware availability can change (lid
+// closed, biometry locked out from too many failed attempts) and we
+// want each factory call to reflect current state.
+func touchIDAvailable() bool {
+	return C.jc_touchid_available() != 0
+}
+
 // newTouchIDStepUpIfSupported is the build-tagged constructor consulted
-// by newStepUp. On darwin we always return an authenticator; whether the
-// device actually has Touch ID enrolled is decided at authorize-time
-// (LAContext.canEvaluatePolicy) so we don't have to probe at startup.
+// by newStepUp. Returns nil — so the factory falls back to TTY — when
+// the device has no usable biometric stack, even though we're on darwin.
+// This is the correctness fix for Macs without Touch ID hardware: if we
+// returned a touchIDStepUp here, every destructive op would later trip
+// errStepUpUnavailable at authorize-time and fail closed silently.
 func newTouchIDStepUpIfSupported() stepUpAuthenticator {
+	if !touchIDAvailable() {
+		return nil
+	}
 	return newTouchIDStepUp()
 }
 
