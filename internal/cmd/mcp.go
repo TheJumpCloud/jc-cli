@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/klaassen-consulting/jc/internal/config"
@@ -46,6 +47,7 @@ func newMcpServeCmd() *cobra.Command {
 		corsOrigin         string
 		requireAuth        bool
 		requireStepUp      bool
+		stepUpAuth         string
 		signDestructiveOps bool
 		tlsCert            string
 		tlsKey             string
@@ -118,6 +120,9 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("require-step-up") {
 				requireStepUp = config.MCPRequireStepUp()
 			}
+			if !cmd.Flags().Changed("step-up-authenticator") {
+				stepUpAuth = config.MCPStepUpAuthenticator()
+			}
 			if !cmd.Flags().Changed("sign-destructive") {
 				signDestructiveOps = config.MCPSignDestructiveOps()
 			}
@@ -141,16 +146,18 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			}
 
 			// Stdio transport hands stdin/stdout to the JSON-RPC stream;
-			// a TTY-based step-up prompt has nowhere to go. Warn the
-			// operator at startup so destructive calls don't silently
-			// fail closed with "no challenge channel available."
-			if requireStepUp && transport == "stdio" {
+			// a TTY-based step-up prompt has nowhere to go. Skip the
+			// warning if the resolved authenticator runs out-of-band of
+			// the transport — on darwin, Touch ID is an OS modal that
+			// reaches the operator regardless of stdin.
+			if requireStepUp && transport == "stdio" && !stepUpReachesOperatorOnStdio(stepUpAuth) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"jc: --require-step-up is set but transport is stdio; TTY prompts cannot reach the operator. "+
 						"Destructive calls will be rejected as 'step-up unavailable'. Use --transport http with a terminal "+
-						"session, or wait for an out-of-band authenticator (KLA-408 Slice 3).")
+						"session, or set --step-up-authenticator=touchid on macOS (KLA-412), or wait for the out-of-band "+
+						"authenticator in KLA-413.")
 			}
-			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth, requireStepUp, signDestructiveOps)
+			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth, requireStepUp, stepUpAuth, signDestructiveOps)
 		},
 	}
 
@@ -163,7 +170,8 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file for SSE transport")
 	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "TLS private key file for SSE transport")
 	cmd.Flags().BoolVar(&requireAuth, "require-auth", false, "Require x-api-key / Authorization Bearer on every request (http transport). Off by default so local browser clients like basic-host can connect. Turn on when exposing via a tunnel.")
-	cmd.Flags().BoolVar(&requireStepUp, "require-step-up", false, "Require step-up auth (last-6 of API key prompt) before any destructive tool with execute=true fires. Only effective when stdin is a TTY; not usable in stdio transport mode. Defaults to mcp.require_step_up_for_destructive in config.")
+	cmd.Flags().BoolVar(&requireStepUp, "require-step-up", false, "Require step-up auth before any destructive tool with execute=true fires. On macOS, the default authenticator is Touch ID (works in stdio transport too); on other platforms it's a TTY API-key prompt that needs a controlling terminal. Defaults to mcp.require_step_up_for_destructive in config.")
+	cmd.Flags().StringVar(&stepUpAuth, "step-up-authenticator", "auto", "Which step-up channel to use when --require-step-up is set: 'auto' (Touch ID on macOS, TTY elsewhere), 'tty' (force API-key prompt), 'touchid' (macOS biometric, falls back to TTY if unavailable). Defaults to mcp.step_up_authenticator in config.")
 	cmd.Flags().BoolVar(&signDestructiveOps, "sign-destructive", false, "Append a signed Ed25519 manifest to ~/.config/jc/mcp-audit-signed.log for every successful destructive op. Generates a per-profile keypair on first use; private key in keychain, pubkey in config. Verify chain with 'jc audit verify'. Defaults to mcp.sign_destructive_ops in config.")
 
 	return cmd
@@ -242,7 +250,27 @@ func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOn
 	return true, fmt.Sprintf("Profile %q is read-only — forcing --read-only and rejecting destructive tools.", activeProfile), nil
 }
 
-func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp, signDestructiveOps bool) error {
+// stepUpReachesOperatorOnStdio reports whether the resolved step-up
+// authenticator can present a challenge while the MCP transport owns
+// stdin/stdout. Touch ID renders an OS-level modal so it's transport-
+// independent on darwin; TTY needs a controlling terminal that stdio
+// transport has already commandeered.
+func stepUpReachesOperatorOnStdio(authPref string) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	// On darwin, both "auto" and "touchid" resolve to Touch ID (with
+	// TTY as a runtime fallback). "tty" explicitly opts out of biometric
+	// and keeps the legacy unreachable behavior.
+	switch authPref {
+	case "", "auto", "touchid":
+		return true
+	default:
+		return false
+	}
+}
+
+func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp bool, stepUpAuth string, signDestructiveOps bool) error {
 	// Step-up auth needs an API key to derive the challenge answer. Gate
 	// the read on the explicit opt-in flag and fail-fast at startup if
 	// it's missing — matches the --require-auth pattern below so an
@@ -257,15 +285,16 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 	}
 
 	server := mcp.NewServer(mcp.Options{
-		RateLimit:          rateLimit,
-		ReadOnly:           readOnly,
-		AuditEnabled:       config.MCPAuditLog(),
-		AllowedTools:       config.MCPAllowedTools(),
-		BlockedTools:       config.MCPBlockedTools(),
-		RequireStepUp:      requireStepUp,
-		StepUpAPIKey:       stepUpAPIKey,
-		SignDestructiveOps: signDestructiveOps,
-		SigningProfile:     config.ActiveProfile(),
+		RateLimit:           rateLimit,
+		ReadOnly:            readOnly,
+		AuditEnabled:        config.MCPAuditLog(),
+		AllowedTools:        config.MCPAllowedTools(),
+		BlockedTools:        config.MCPBlockedTools(),
+		RequireStepUp:       requireStepUp,
+		StepUpAPIKey:        stepUpAPIKey,
+		StepUpAuthenticator: stepUpAuth,
+		SignDestructiveOps:  signDestructiveOps,
+		SigningProfile:      config.ActiveProfile(),
 	})
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.

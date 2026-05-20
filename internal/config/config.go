@@ -36,6 +36,7 @@ mcp:
   audit_log: true
   plan_first: true
   require_step_up_for_destructive: false
+  step_up_authenticator: auto
   sign_destructive_ops: false
 
 profiles:
@@ -101,6 +102,7 @@ func setDefaults() {
 	viper.SetDefault("mcp.audit_log", true)
 	viper.SetDefault("mcp.plan_first", true)
 	viper.SetDefault("mcp.require_step_up_for_destructive", false)
+	viper.SetDefault("mcp.step_up_authenticator", "auto")
 	viper.SetDefault("mcp.sign_destructive_ops", false)
 	viper.SetDefault("ask.provider", "disabled")
 	viper.SetDefault("ask.api_key", "")
@@ -398,6 +400,7 @@ var ValidConfigKeys = []string{
 	"mcp.audit_log",
 	"mcp.plan_first",
 	"mcp.require_step_up_for_destructive",
+	"mcp.step_up_authenticator",
 	"mcp.sign_destructive_ops",
 	"mcp.sse_port",
 	"mcp.allowed_tools",
@@ -472,6 +475,15 @@ func MCPPlanFirst() bool {
 // the configured authenticator approves it.
 func MCPRequireStepUp() bool {
 	return viper.GetBool("mcp.require_step_up_for_destructive")
+}
+
+// MCPStepUpAuthenticator returns the configured step-up authenticator
+// preference. Recognized values: "auto" (default — pick the strongest
+// channel the platform offers; Touch ID on darwin, TTY elsewhere),
+// "tty" (force the API-key last-N prompt), "touchid" (pin biometric
+// path, fall back to TTY if biometrics are unavailable).
+func MCPStepUpAuthenticator() string {
+	return viper.GetString("mcp.step_up_authenticator")
 }
 
 // MCPSignDestructiveOps returns true if every successful destructive MCP

@@ -51,16 +51,20 @@ func TestNoopStepUp_AlwaysAllows(t *testing.T) {
 }
 
 func TestNewStepUp_DisabledReturnsNoop(t *testing.T) {
-	a := newStepUp(false, "anything")
+	a := newStepUp(false, "anything", "")
 	if _, ok := a.(noopStepUp); !ok {
 		t.Errorf("newStepUp(false) = %T, want noopStepUp", a)
 	}
 }
 
-func TestNewStepUp_EnabledReturnsTTY(t *testing.T) {
-	a := newStepUp(true, "key12345678")
+func TestNewStepUp_TTYPrefForcesTTY(t *testing.T) {
+	// Explicit "tty" must return ttyStepUp on every platform, even ones
+	// that would otherwise pick a stronger authenticator. This is the
+	// operator escape hatch when Touch ID is unwanted (CI runner, shared
+	// session, headless box with a TTY).
+	a := newStepUp(true, "key12345678", "tty")
 	if _, ok := a.(*ttyStepUp); !ok {
-		t.Errorf("newStepUp(true) = %T, want *ttyStepUp", a)
+		t.Errorf("newStepUp(true, _, \"tty\") = %T, want *ttyStepUp", a)
 	}
 }
 

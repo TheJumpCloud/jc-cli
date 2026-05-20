@@ -176,12 +176,45 @@ func (t *ttyStepUp) authorize(ctx context.Context, toolName, target string) erro
 	return nil
 }
 
+// Authenticator preference strings recognized by newStepUp. The default
+// (empty or "auto") picks the strongest channel the platform supports —
+// today, Touch ID on darwin and TTY everywhere else. Explicit choices
+// let an operator pin the prompt channel: "tty" for the legacy API-key
+// last-N challenge, "touchid" to require the biometric path (with TTY
+// as a runtime fallback if Touch ID is unavailable).
+const (
+	stepUpAuthAuto    = "auto"
+	stepUpAuthTTY     = "tty"
+	stepUpAuthTouchID = "touchid"
+)
+
 // newStepUp returns the authenticator a Server should use given the
 // requested configuration. Callers that haven't enabled the feature
-// get noopStepUp (zero-cost path).
-func newStepUp(required bool, apiKey string) stepUpAuthenticator {
+// get noopStepUp (zero-cost path). When `authenticatorPref` is empty
+// or "auto", we ask the platform-tagged hook newTouchIDStepUpIfSupported
+// first and fall back to TTY if it's nil (non-darwin builds).
+func newStepUp(required bool, apiKey, authenticatorPref string) stepUpAuthenticator {
 	if !required {
 		return noopStepUp{}
 	}
-	return newTTYStepUp(apiKey)
+	switch authenticatorPref {
+	case stepUpAuthTTY:
+		return newTTYStepUp(apiKey)
+	case stepUpAuthTouchID:
+		if tid := newTouchIDStepUpIfSupported(); tid != nil {
+			return tid
+		}
+		// Operator pinned touchid but the platform can't supply it —
+		// fall back to TTY rather than booting noop, so the chokepoint
+		// still presents *some* challenge. The stdio-transport warning
+		// in cmd/mcp.go covers the case where TTY itself is unreachable.
+		return newTTYStepUp(apiKey)
+	default:
+		// Empty pref or "auto" or any unrecognized value — prefer the
+		// strongest channel the platform offers.
+		if tid := newTouchIDStepUpIfSupported(); tid != nil {
+			return tid
+		}
+		return newTTYStepUp(apiKey)
+	}
 }
