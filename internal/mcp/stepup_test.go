@@ -216,8 +216,16 @@ func TestChokepoint_DenialBlocksDestructiveCall(t *testing.T) {
 		t.Fatal("expected destructive call to be blocked when step-up denies; got success")
 	}
 	text := getResultText(t, result)
-	if !strings.Contains(text, "step-up auth required") {
-		t.Errorf("error result missing step-up message: %q", text)
+
+	// Verify the message is self-describing enough that downstream AI
+	// clients don't misattribute the denial to JumpCloud — the bug that
+	// motivated KLA-417. Three substrings cover the load-bearing claims:
+	// (1) jc is the gate source, (2) the config key is named, (3) the
+	// message says this is *not* a JumpCloud requirement.
+	for _, want := range []string{"jc blocked", "mcp.require_step_up_for_destructive", "not a JumpCloud requirement"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("error result missing %q: %q", want, text)
+		}
 	}
 	if got := rec.calls.Load(); got != 1 {
 		t.Errorf("step-up calls = %d, want 1", got)

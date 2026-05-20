@@ -5169,9 +5169,19 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 		// challenge them before the call. Reflection lets a single
 		// chokepoint cover all 30+ destructive tool types without a
 		// per-handler hook.
+		//
+		// The error message names jc as the gate source and points at
+		// the config key — otherwise downstream AI clients see "step-up
+		// auth" and misattribute the denial to JumpCloud (suggesting
+		// account-level fixes that don't apply).
 		if isExecutingDestructive(args) {
 			if err := s.stepUp.authorize(ctx, name, destructiveTarget(args)); err != nil {
-				msg := fmt.Sprintf("step-up auth required for %s: %v", name, err)
+				msg := fmt.Sprintf(
+					"jc blocked %s: local step-up gate (mcp.require_step_up_for_destructive) — %v. "+
+						"This is a jc-side policy, not a JumpCloud requirement; the operator must approve "+
+						"the Touch ID or TTY prompt to proceed.",
+					name, err,
+				)
 				s.auditLog.log(name, req.Params.Arguments, false, msg)
 				return errorResult(msg), nil, nil
 			}
