@@ -133,6 +133,40 @@ func TestAggregateUserCompliance_MFAAndPasswordBuckets(t *testing.T) {
 	}
 }
 
+// Bugbot KLA-405 catch: a password_date in the future (clock skew,
+// tenant emitting expiration date instead of set date, etc.) must NOT
+// inflate the healthy <30d bucket. Route it to >90d instead so the
+// anomaly is visible to the auditor.
+func TestAggregateUserCompliance_FutureDateRoutesToOver90d(t *testing.T) {
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	users := []map[string]any{
+		// 10 days in the future — clearly anomalous.
+		{"_id": "u1", "username": "alice", "activated": true, "totp_enabled": true,
+			"password_date": now.Add(10 * 24 * time.Hour).Format(time.RFC3339)},
+		// Sanity-check anchor: a real fresh date stays in <30d.
+		{"_id": "u2", "username": "bob", "activated": true, "totp_enabled": true,
+			"password_date": passwordDateDaysAgo(now, 5)},
+	}
+	raws := make([]json.RawMessage, len(users))
+	for i, u := range users {
+		raws[i], _ = json.Marshal(u)
+	}
+
+	_, pwd := aggregateUserCompliance(raws, now)
+
+	if pwd.Buckets[0].Count != 1 {
+		t.Errorf("bucket[<30d].Count = %d, want 1 (only bob); future-dated alice should not land here",
+			pwd.Buckets[0].Count)
+	}
+	if pwd.Buckets[3].Count != 1 {
+		t.Errorf("bucket[>90d].Count = %d, want 1 (alice, future-dated)",
+			pwd.Buckets[3].Count)
+	}
+	if pwd.Total != 2 {
+		t.Errorf("Total = %d, want 2 (both users counted, neither no_data)", pwd.Total)
+	}
+}
+
 func TestAggregateDeviceCompliance_FDEBuckets(t *testing.T) {
 	devices := []map[string]any{
 		{"_id": "d1", "hostname": "mac-1", "os": "Mac OS X", "fde": map[string]any{"active": true}},

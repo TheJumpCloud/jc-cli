@@ -270,6 +270,16 @@ func aggregateUserCompliance(data []json.RawMessage, now time.Time) (*compliance
 		}
 		days := int(now.Sub(t).Hours() / 24)
 		switch {
+		case days < 0:
+			// Future password_date: clock skew, API timestamp oddity,
+			// or a tenant that records the *expiration* date instead
+			// of the set date. Route to >90d so the anomaly surfaces
+			// in the suspicious bucket rather than inflating the
+			// healthy <30d bucket. Comment on complianceAgeLT* says
+			// the bucket "catches anything stale-er (or any
+			// password_date in the future, defensively)" — this is
+			// the route that delivers on that promise.
+			bucketCounts[3]++
 		case days < complianceAgeLT30:
 			bucketCounts[0]++
 		case days < complianceAgeLT60:

@@ -421,13 +421,17 @@
 
   function renderAll(data) {
     document.getElementById("loading").style.display = "none";
+    // #content's CSS has no `display: none` rule (only inline
+    // display:none on the element), so clearing the inline style with
+    // "" works here. #warnings and #error need explicit "block" though
+    // because their CSS rules set display:none.
     document.getElementById("content").style.display = "";
     document.getElementById("error").style.display = "none";
 
     var warn = document.getElementById("warnings");
     if (data.warnings && data.warnings.length) {
       warn.textContent = data.warnings.join(" ");
-      warn.style.display = "";
+      warn.style.display = "block";
     } else {
       warn.style.display = "none";
     }
@@ -445,7 +449,10 @@
     document.getElementById("loading").style.display = "none";
     var e = document.getElementById("error");
     e.textContent = msg;
-    e.style.display = "";
+    // CSS has `display: none` on #error; inline "" only removes the
+    // override, leaving the stylesheet rule in effect. Must set an
+    // explicit block. Mirrors the pattern in dashboard.html.
+    e.style.display = "block";
   }
 
   function refresh(btn) {
