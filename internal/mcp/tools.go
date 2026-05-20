@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/klaassen-consulting/jc/internal/api"
@@ -5180,6 +5181,7 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 		result, out, err := handler(ctx, req, args)
 
 		// Audit log.
+		toolFailed := err != nil || (result != nil && result.IsError)
 		if err != nil {
 			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
 		} else if result != nil && result.IsError {
@@ -5192,6 +5194,18 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 			s.auditLog.log(name, req.Params.Arguments, false, errMsg)
 		} else {
 			s.auditLog.log(name, req.Params.Arguments, true, "")
+		}
+
+		// Op-envelope signing (KLA-411): on a successful destructive op,
+		// emit a signed manifest to the signed audit log. This is a
+		// post-success forensic record — failures don't sign because
+		// "the op didn't happen" is the truth we want recorded by the
+		// regular audit log instead. Signing errors are surfaced on
+		// stderr but do not roll back the op (the API call already fired).
+		if !toolFailed && isExecutingDestructive(args) {
+			if signErr := s.signer.sign(name, args); signErr != nil {
+				fmt.Fprintf(os.Stderr, "jc: warning: failed to sign destructive-op manifest for %s: %v\n", name, signErr)
+			}
 		}
 
 		return result, out, err

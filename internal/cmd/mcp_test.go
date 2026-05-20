@@ -165,6 +165,14 @@ func TestMcpServeCmd_FlagDefaults(t *testing.T) {
 	if stepUp.DefValue != "false" {
 		t.Errorf("expected require-step-up default false, got %s", stepUp.DefValue)
 	}
+
+	signDest := mcpCmd.Flags().Lookup("sign-destructive")
+	if signDest == nil {
+		t.Fatal("expected sign-destructive flag")
+	}
+	if signDest.DefValue != "false" {
+		t.Errorf("expected sign-destructive default false, got %s", signDest.DefValue)
+	}
 }
 
 func TestRootCmd_IncludesMcp(t *testing.T) {

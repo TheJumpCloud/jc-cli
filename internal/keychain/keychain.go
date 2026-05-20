@@ -1,6 +1,7 @@
 package keychain
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,21 @@ const (
 	// URIPrefix is the prefix for keychain reference URIs stored in config.
 	URIPrefix = "keychain://jc/"
 )
+
+// ErrNotFound is returned when an account doesn't exist in the keychain.
+// Re-exported from go-keyring so callers can distinguish "this profile
+// has no entry yet" (safe to bootstrap) from "the keychain is locked /
+// permission denied / corrupted" (must NOT silently regenerate, since
+// that would overwrite an existing entry the caller can't currently see).
+var ErrNotFound = keyring.ErrNotFound
+
+// IsNotFound reports whether err is a not-found keychain error. Use this
+// instead of errors.Is(err, ErrNotFound) when the wrapping chain may
+// include fmt.Errorf with %w — both forms work, but IsNotFound makes the
+// intent explicit at call sites.
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
 
 // Set stores an API key in the OS keychain for the given profile.
 func Set(profile, apiKey string) error {
@@ -121,4 +137,36 @@ func DeleteClientSecret(profile string) error {
 // ClientSecretURI returns the keychain reference URI for a profile's client secret.
 func ClientSecretURI(profile string) string {
 	return URIPrefix + profile + ":client_secret"
+}
+
+// SetSigningKey stores an Ed25519 signing private key (raw 64-byte seed+pub
+// blob, base64-encoded) in the OS keychain for the given profile. Used by
+// the MCP destructive-op signer (KLA-411) to attest each destructive call
+// without ever writing the private key to disk.
+func SetSigningKey(profile, encodedKey string) error {
+	account := profile + ":signing_key"
+	if err := keyring.Set(ServiceName, account, encodedKey); err != nil {
+		return fmt.Errorf("failed to store signing key in keychain for profile %q: %w", profile, err)
+	}
+	return nil
+}
+
+// GetSigningKey retrieves the Ed25519 signing private key (base64-encoded)
+// from the OS keychain for the given profile.
+func GetSigningKey(profile string) (string, error) {
+	account := profile + ":signing_key"
+	secret, err := keyring.Get(ServiceName, account)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve signing key from keychain for profile %q: %w", profile, err)
+	}
+	return secret, nil
+}
+
+// DeleteSigningKey removes the signing key from the OS keychain.
+func DeleteSigningKey(profile string) error {
+	account := profile + ":signing_key"
+	if err := keyring.Delete(ServiceName, account); err != nil {
+		return fmt.Errorf("failed to remove signing key from keychain for profile %q: %w", profile, err)
+	}
+	return nil
 }

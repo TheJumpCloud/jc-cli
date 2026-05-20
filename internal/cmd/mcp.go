@@ -38,16 +38,17 @@ Configure in Claude Desktop:
 
 func newMcpServeCmd() *cobra.Command {
 	var (
-		rateLimit     int
-		readOnly      bool
-		transport     string
-		addr          string
-		port          int
-		corsOrigin    string
-		requireAuth   bool
-		requireStepUp bool
-		tlsCert       string
-		tlsKey        string
+		rateLimit          int
+		readOnly           bool
+		transport          string
+		addr               string
+		port               int
+		corsOrigin         string
+		requireAuth        bool
+		requireStepUp      bool
+		signDestructiveOps bool
+		tlsCert            string
+		tlsKey             string
 	)
 
 	cmd := &cobra.Command{
@@ -117,6 +118,9 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 			if !cmd.Flags().Changed("require-step-up") {
 				requireStepUp = config.MCPRequireStepUp()
 			}
+			if !cmd.Flags().Changed("sign-destructive") {
+				signDestructiveOps = config.MCPSignDestructiveOps()
+			}
 
 			// Profile-role enforcement: a profile bound to a read-only OAuth
 			// client must not advertise mutation tools. Reject the start
@@ -146,7 +150,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 						"Destructive calls will be rejected as 'step-up unavailable'. Use --transport http with a terminal "+
 						"session, or wait for an out-of-band authenticator (KLA-408 Slice 3).")
 			}
-			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth, requireStepUp)
+			return runMcpServe(rateLimit, readOnly, transport, addr, port, corsOrigin, tlsCert, tlsKey, requireAuth, requireStepUp, signDestructiveOps)
 		},
 	}
 
@@ -160,6 +164,7 @@ Use JC_PROFILE environment variable to select which JumpCloud org to use.`,
 	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "TLS private key file for SSE transport")
 	cmd.Flags().BoolVar(&requireAuth, "require-auth", false, "Require x-api-key / Authorization Bearer on every request (http transport). Off by default so local browser clients like basic-host can connect. Turn on when exposing via a tunnel.")
 	cmd.Flags().BoolVar(&requireStepUp, "require-step-up", false, "Require step-up auth (last-6 of API key prompt) before any destructive tool with execute=true fires. Only effective when stdin is a TTY; not usable in stdio transport mode. Defaults to mcp.require_step_up_for_destructive in config.")
+	cmd.Flags().BoolVar(&signDestructiveOps, "sign-destructive", false, "Append a signed Ed25519 manifest to ~/.config/jc/mcp-audit-signed.log for every successful destructive op. Generates a per-profile keypair on first use; private key in keychain, pubkey in config. Verify chain with 'jc audit verify'. Defaults to mcp.sign_destructive_ops in config.")
 
 	return cmd
 }
@@ -237,7 +242,7 @@ func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOn
 	return true, fmt.Sprintf("Profile %q is read-only — forcing --read-only and rejecting destructive tools.", activeProfile), nil
 }
 
-func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp bool) error {
+func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp, signDestructiveOps bool) error {
 	// Step-up auth needs an API key to derive the challenge answer. Gate
 	// the read on the explicit opt-in flag and fail-fast at startup if
 	// it's missing — matches the --require-auth pattern below so an
@@ -252,13 +257,15 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 	}
 
 	server := mcp.NewServer(mcp.Options{
-		RateLimit:     rateLimit,
-		ReadOnly:      readOnly,
-		AuditEnabled:  config.MCPAuditLog(),
-		AllowedTools:  config.MCPAllowedTools(),
-		BlockedTools:  config.MCPBlockedTools(),
-		RequireStepUp: requireStepUp,
-		StepUpAPIKey:  stepUpAPIKey,
+		RateLimit:          rateLimit,
+		ReadOnly:           readOnly,
+		AuditEnabled:       config.MCPAuditLog(),
+		AllowedTools:       config.MCPAllowedTools(),
+		BlockedTools:       config.MCPBlockedTools(),
+		RequireStepUp:      requireStepUp,
+		StepUpAPIKey:       stepUpAPIKey,
+		SignDestructiveOps: signDestructiveOps,
+		SigningProfile:     config.ActiveProfile(),
 	})
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.

@@ -30,6 +30,7 @@ type Server struct {
 	readOnly   bool
 	toolFilter *toolFilter
 	stepUp     stepUpAuthenticator
+	signer     manifestSigner
 	toolNames  []string // registered tool names, in registration order
 
 	mu       sync.Mutex
@@ -68,6 +69,18 @@ type Options struct {
 	// the mcp package; production callers configure step-up via
 	// RequireStepUp + StepUpAPIKey.
 	stepUp stepUpAuthenticator
+	// SignDestructiveOps enables Ed25519 op-envelope signing — every
+	// successful destructive op (any tool input with Execute: true) is
+	// recorded in ~/.config/jc/mcp-audit-signed.log with a per-profile
+	// signature. Verifiable post-hoc via `jc audit verify`. Layers on
+	// top of (does not replace) RequireStepUp. Default false.
+	SignDestructiveOps bool
+	// SigningProfile selects which profile's keychain entry holds the
+	// signing key. Empty defaults to the active profile. Required when
+	// SignDestructiveOps is true.
+	SigningProfile string
+	// signer injects a custom manifestSigner. Reserved for tests.
+	signer manifestSigner
 }
 
 // nowFunc is overridable for tests.
@@ -121,6 +134,15 @@ func NewServer(opts Options) *Server {
 		stepUp = newStepUp(opts.RequireStepUp, opts.StepUpAPIKey)
 	}
 
+	signer := opts.signer
+	if signer == nil {
+		profile := opts.SigningProfile
+		if profile == "" {
+			profile = config.ActiveProfile()
+		}
+		signer = newSigner(opts.SignDestructiveOps, profile)
+	}
+
 	s := &Server{
 		mcpServer:  mcpServer,
 		limiter:    newRateLimiter(opts.RateLimit),
@@ -128,6 +150,7 @@ func NewServer(opts Options) *Server {
 		readOnly:   opts.ReadOnly,
 		toolFilter: newToolFilter(opts.AllowedTools, opts.BlockedTools),
 		stepUp:     stepUp,
+		signer:     signer,
 	}
 
 	s.registerTools()

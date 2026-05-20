@@ -149,7 +149,7 @@ interface.`,
 
 	// Setup & Config
 	addToGroup(rootCmd, "config",
-		newSetupCmd(), newAuthCmd(), newConfigCmd(),
+		newSetupCmd(), newAuthCmd(), newAuditCmd(), newConfigCmd(),
 		newVersionCmd(), newCompletionCmd(), newTUICmd(),
 	)
 
