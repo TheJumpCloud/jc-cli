@@ -12,12 +12,15 @@ import (
 // recordingStepUp captures the (toolName, target) of every call and
 // returns the configured response. Used by integration tests to verify
 // the chokepoint actually invokes the authenticator on Execute: true
-// destructive calls and skips it for everything else.
+// destructive calls and skips it for everything else. Set denyErr to
+// exercise a specific sentinel (errStepUpUnavailable, etc.); deny alone
+// returns the default errStepUpDenied.
 type recordingStepUp struct {
 	calls    atomic.Int64
 	lastTool string
 	lastArg  string
 	deny     bool
+	denyErr  error
 }
 
 func (r *recordingStepUp) authorize(_ context.Context, toolName, target string) error {
@@ -25,6 +28,9 @@ func (r *recordingStepUp) authorize(_ context.Context, toolName, target string) 
 	r.lastTool = toolName
 	r.lastArg = target
 	if r.deny {
+		if r.denyErr != nil {
+			return r.denyErr
+		}
 		return errStepUpDenied
 	}
 	return nil
@@ -216,11 +222,65 @@ func TestChokepoint_DenialBlocksDestructiveCall(t *testing.T) {
 		t.Fatal("expected destructive call to be blocked when step-up denies; got success")
 	}
 	text := getResultText(t, result)
-	if !strings.Contains(text, "step-up auth required") {
-		t.Errorf("error result missing step-up message: %q", text)
+
+	// Verify the message is self-describing enough that downstream AI
+	// clients don't misattribute the denial to JumpCloud — the bug that
+	// motivated KLA-417. Four substrings cover the load-bearing claims:
+	// (1) jc is the gate source, (2) the config key is named, (3) the
+	// message disclaims JumpCloud, (4) the denied path tells the
+	// operator to approve a prompt on retry.
+	for _, want := range []string{
+		"jc blocked",
+		"mcp.require_step_up_for_destructive",
+		"not a JumpCloud requirement",
+		"approve the Touch ID or TTY prompt",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("error result missing %q: %q", want, text)
+		}
 	}
 	if got := rec.calls.Load(); got != 1 {
 		t.Errorf("step-up calls = %d, want 1", got)
+	}
+}
+
+// Unavailable channel must produce a different follow-up than the
+// denial path: "approve the prompt" is meaningless when there's no
+// prompt to approve. Bugbot caught the regression where both cases
+// shared the same hardcoded tail; this test pins the branch.
+func TestChokepoint_UnavailableProducesEnvironmentFollowUp(t *testing.T) {
+	setupToolTest(t)
+
+	rec := &recordingStepUp{deny: true, denyErr: errStepUpUnavailable}
+	cs := connectToolTestServer(t, Options{stepUp: rec})
+
+	result := callTool(t, cs, "users_delete", map[string]any{
+		"identifier": "aabbccddee112233aabbcc01",
+		"execute":    true,
+	})
+	if !result.IsError {
+		t.Fatal("expected destructive call to be blocked when step-up unavailable; got success")
+	}
+	text := getResultText(t, result)
+
+	// Same disclaimer + gate source as the denial path.
+	for _, want := range []string{
+		"jc blocked",
+		"mcp.require_step_up_for_destructive",
+		"not a JumpCloud requirement",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("error result missing %q: %q", want, text)
+		}
+	}
+	// But the unavailable path must NOT tell the operator to approve a
+	// prompt (there is none) — it should describe the environmental
+	// remedies instead.
+	if strings.Contains(text, "approve the Touch ID or TTY prompt") {
+		t.Errorf("unavailable path should not mention approving a prompt: %q", text)
+	}
+	if !strings.Contains(text, "cannot present a challenge") {
+		t.Errorf("unavailable path should explain the environment: %q", text)
 	}
 }
 
