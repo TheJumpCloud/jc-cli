@@ -10,6 +10,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/mcp"
+	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/spf13/cobra"
 )
 
@@ -262,6 +263,14 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 			return fmt.Errorf("--require-step-up needs an API key to derive the challenge answer. Run 'jc auth login' or set JC_API_KEY, or drop --require-step-up")
 		}
 	}
+
+	// Wire the recipe dispatcher so the recipe_run tool can actually
+	// execute (Execute: true) and the recipe_runner_view MCP App can
+	// drive end-to-end runs. Mirrors the TUI wiring at
+	// `screen.RecipeDispatcher = recipe.NewDispatcher(...)`. Plan-mode
+	// (Execute: false) doesn't need this, so the assignment is safe
+	// even on servers that never run recipes.
+	mcp.RecipeDispatcher = recipe.NewDispatcher(newRootCmdForRecipeStep)
 
 	server := mcp.NewServer(mcp.Options{
 		RateLimit:           rateLimit,
