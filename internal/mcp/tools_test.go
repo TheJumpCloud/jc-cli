@@ -379,6 +379,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"user_view",
 		"device_view",
 		"compliance_view",
+		"recipe_runner_view",
+		// Recipe catalog tool (paired with recipe_run + recipe_runner_view).
+		"recipe_list",
 	}
 
 	toolNames := make(map[string]bool)
@@ -393,8 +396,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 199 {
-		t.Errorf("expected 199 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 201 {
+		t.Errorf("expected 201 tools, got %d", len(result.Tools))
 	}
 }
 

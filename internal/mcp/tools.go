@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -90,8 +91,9 @@ type commandRunInput struct {
 }
 
 type recipeRunInput struct {
-	Name   string            `json:"name" jsonschema:"Recipe name to run"`
-	Params map[string]string `json:"params,omitempty" jsonschema:"Recipe parameters as key-value pairs"`
+	Name    string            `json:"name" jsonschema:"Recipe name to run"`
+	Params  map[string]string `json:"params,omitempty" jsonschema:"Recipe parameters as key-value pairs"`
+	Execute bool              `json:"execute,omitempty" jsonschema:"Set to true to actually execute the recipe steps. Without this the tool returns a plan preview (rendered commands per step) and never calls the JumpCloud API. Execute: true routes through the step-up auth gate just like users_delete and other destructive ops."`
 }
 
 type authPolicyCreateInput struct {
@@ -156,16 +158,16 @@ type identityProviderUpdateInput struct {
 }
 
 type saasCreateInput struct {
-	CatalogAppID    string `json:"catalog_app_id" jsonschema:"Catalog application ID"`
-	Status          string `json:"status,omitempty" jsonschema:"Application status (APPROVED, UNAPPROVED, IGNORED)"`
+	CatalogAppID      string `json:"catalog_app_id" jsonschema:"Catalog application ID"`
+	Status            string `json:"status,omitempty" jsonschema:"Application status (APPROVED, UNAPPROVED, IGNORED)"`
 	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"Access restriction (DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING)"`
 }
 
 type saasUpdateInput struct {
-	Identifier      string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the SaaS application to update"`
-	Status          string `json:"status,omitempty" jsonschema:"New status (APPROVED, UNAPPROVED, IGNORED)"`
+	Identifier        string `json:"identifier" jsonschema:"Catalog app ID or hex ID of the SaaS application to update"`
+	Status            string `json:"status,omitempty" jsonschema:"New status (APPROVED, UNAPPROVED, IGNORED)"`
 	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"New access restriction"`
-	Execute         bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+	Execute           bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
 type saasAccountInput struct {
@@ -3896,10 +3898,35 @@ func flattenAssociations(data []json.RawMessage) []json.RawMessage {
 }
 
 func (s *Server) registerRecipeTools() {
-	addTypedTool(s, "recipe_run", "Run a named jc recipe with parameters. Recipes are multi-step automated workflows.",
+	// recipe_list: catalog of built-in + user recipes with the metadata a
+	// caller needs to construct a parameter form (Parameters[]) and a step
+	// preview (step names + counts). Read-only; safe under --read-only.
+	addToolWithMetaTyped(s, "recipe_list",
+		"List all available jc recipes (built-in + user recipes from ~/.config/jc/recipes/). "+
+			"Returns each recipe's name, description, parameters, step list, and source (\"builtin\" or \"user\"). "+
+			"Pair with recipe_run to either preview (execute: false) or execute (execute: true) a chosen recipe.",
+		nil,
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			data, err := fetchRecipeListData()
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing recipes: %v", err)), nil, nil
+			}
+			res, err := jsonResult(data)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "recipe_run",
+		"Run a named jc recipe with parameters. Recipes are multi-step automated workflows. "+
+			"Without execute: true, returns a structured plan (rendered commands per step) and never calls the JumpCloud API. "+
+			"With execute: true, dispatches each step to the CLI command tree and returns an ExecutionResult with per-step status. "+
+			"Execute: true routes through the step-up auth gate (Touch ID / TTY prompt) and the audit log just like users_delete.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args recipeRunInput) (*mcp.CallToolResult, any, error) {
-			if s.readOnly {
-				return errorResult("server is in read-only mode"), nil, nil
+			if s.readOnly && args.Execute {
+				return errorResult("server is in read-only mode; recipe_run with execute=true is not allowed"), nil, nil
 			}
 			recipes, err := recipe.LoadAll()
 			if err != nil {
@@ -3917,18 +3944,110 @@ func (s *Server) registerRecipeTools() {
 			if params == nil {
 				params = map[string]string{}
 			}
-			// Preview the recipe steps.
-			plans, err := r.Plan(params)
-			if err != nil {
-				return errorResult(fmt.Sprintf("planning recipe: %v", err)), nil, nil
+
+			if !args.Execute {
+				// Plan-only path. Preserves the pre-KLA-406 behavior so
+				// callers that omit execute: true still get a safe preview.
+				plans, err := r.Plan(params)
+				if err != nil {
+					return errorResult(fmt.Sprintf("planning recipe: %v", err)), nil, nil
+				}
+				res, err := jsonResult(plans)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				return res, nil, nil
 			}
-			res, err := jsonResult(plans)
+
+			// Execute path. The dispatcher is wired at MCP server startup
+			// by cmd.runMcpServe; tests that exercise execute: true must
+			// set mcp.RecipeDispatcher explicitly. Nil-check fails closed
+			// with a clear message rather than panicking.
+			if RecipeDispatcher == nil {
+				return errorResult("recipe execution is not wired into this MCP server instance (RecipeDispatcher is nil). " +
+					"This is a server-config issue, not a recipe issue; restart the server via 'jc mcp serve'."), nil, nil
+			}
+			// Capture progress to a buffer so the operator can see the
+			// step-by-step "[1/N] step... done" trace alongside the
+			// structured ExecutionResult.
+			var progress bytes.Buffer
+			result, err := r.Execute(RecipeDispatcher, params, &progress)
+			if err != nil {
+				return errorResult(fmt.Sprintf("executing recipe: %v", err)), nil, nil
+			}
+			res, err := jsonResult(map[string]any{
+				"execution": result,
+				"progress":  progress.String(),
+			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
 			return res, nil, nil
 		},
 	)
+}
+
+// recipeListEntry is the per-recipe shape returned by recipe_list and
+// surfaced in the recipe_runner_view initial payload. Includes everything
+// the iframe form needs to render an input control per parameter and a
+// scannable step preview.
+type recipeListEntry struct {
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Author      string             `json:"author,omitempty"`
+	Version     string             `json:"version,omitempty"`
+	Tags        []string           `json:"tags,omitempty"`
+	Parameters  []recipe.Parameter `json:"parameters,omitempty"`
+	StepCount   int                `json:"step_count"`
+	StepNames   []string           `json:"step_names,omitempty"`
+	Source      string             `json:"source"` // "builtin" or "user"
+}
+
+// recipeListData is the response shape for the recipe_list tool and the
+// recipe_runner_view MCP App's initial payload.
+type recipeListData struct {
+	Recipes []recipeListEntry `json:"recipes"`
+}
+
+// fetchRecipeListData enumerates the recipe catalog (built-in first, then
+// user) and shapes it for the MCP wire. The recipe.LoadAll function already
+// merges both sources; we re-walk the user directory only to label each
+// entry with its source for the UI.
+func fetchRecipeListData() (*recipeListData, error) {
+	all, err := recipe.LoadAll()
+	if err != nil {
+		return nil, err
+	}
+	// Identify user-defined recipes by their presence on disk under the
+	// user recipe dir. recipe.LoadAll doesn't expose source per entry, so
+	// we list the user dir once and check names against it.
+	userNames := map[string]bool{}
+	if userRecipes, err := recipe.LoadFromDir(recipe.RecipesDir()); err == nil {
+		for _, ur := range userRecipes {
+			userNames[ur.Name] = true
+		}
+	}
+
+	entries := make([]recipeListEntry, 0, len(all))
+	for _, r := range all {
+		stepNames := make([]string, 0, len(r.Steps))
+		for _, s := range r.Steps {
+			stepNames = append(stepNames, s.Name)
+		}
+		source := "builtin"
+		if userNames[r.Name] {
+			source = "user"
+		}
+		entries = append(entries, recipeListEntry{
+			Name: r.Name, Description: r.Description,
+			Author: r.Author, Version: r.Version, Tags: r.Tags,
+			Parameters: r.Parameters,
+			StepCount:  len(r.Steps),
+			StepNames:  stepNames,
+			Source:     source,
+		})
+	}
+	return &recipeListData{Recipes: entries}, nil
 }
 
 func (s *Server) registerMetaTools() {

@@ -19,6 +19,9 @@ var dashboardHTML string
 //go:embed apps_html/compliance.html
 var complianceHTML string
 
+//go:embed apps_html/recipe_runner.html
+var recipeRunnerHTML string
+
 //go:embed apps_html/common.js
 var appCommonJS string
 
@@ -79,6 +82,17 @@ var appSpecs = []appSpec{
 		HTML:                complianceHTML,
 		Handler: func(ctx context.Context) (any, error) {
 			return fetchComplianceData(ctx)
+		},
+	},
+	{
+		Name:                "recipe_runner_view",
+		Description:         "Show an interactive JumpCloud recipe runner: browse built-in and user recipes, fill in parameters via an auto-generated form, preview the plan, and (with operator approval) execute the recipe end-to-end. Initial payload is the recipe catalog (same shape as recipe_list); the iframe drives subsequent plan/execute calls via recipe_run.",
+		ResourceURI:         "ui://jc/recipe-runner",
+		ResourceName:        "Recipe Runner App",
+		ResourceDescription: "Interactive jc recipe runner (browse → parameter form → plan/execute)",
+		HTML:                recipeRunnerHTML,
+		Handler: func(ctx context.Context) (any, error) {
+			return fetchRecipeListData()
 		},
 	},
 }

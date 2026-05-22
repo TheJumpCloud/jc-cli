@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpCloud Recipe Runner</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22263a;
+    --border: #2a2e3d;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --orange: #f97316;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5;
+  }
+
+  header {
+    display: flex; gap: 16px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  header .icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 20px;
+  }
+  header .title { flex: 1; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .btn {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent-light); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 12px;
+  }
+
+  /* Recipe list grid. */
+  .recipe-search {
+    width: 100%; box-sizing: border-box; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px; color: var(--text); font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .recipe-search:focus { outline: none; border-color: var(--accent); }
+
+  .recipe-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+  }
+  .recipe-item {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; cursor: pointer;
+    transition: border-color 0.1s;
+  }
+  .recipe-item:hover { border-color: var(--accent); }
+  .recipe-item .name { font-weight: 600; font-size: 13px; }
+  .recipe-item .desc { color: var(--text-muted); font-size: 12px; margin-top: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; }
+  .recipe-item .meta { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 8px;
+    background: rgba(99,102,241,0.15); color: var(--accent-light);
+    text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;
+  }
+  .tag.source-user    { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .tag.source-builtin { background: rgba(59,130,246,0.15); color: var(--blue); }
+
+  /* Parameter form. */
+  .param-form { display: grid; gap: 12px; }
+  .param-form label { display: block; font-size: 12px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .param-form .param-desc { color: var(--text-muted); font-size: 11px;
+    margin-top: 4px; font-style: italic; }
+  .param-form input[type="text"],
+  .param-form input[type="number"] {
+    width: 100%; box-sizing: border-box; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; color: var(--text); font-size: 13px;
+  }
+  .param-form input:focus { outline: none; border-color: var(--accent); }
+  .param-form .checkbox {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    font-size: 13px; color: var(--text); padding: 4px 0;
+  }
+  .param-form .required { color: var(--red); margin-left: 2px; }
+
+  .actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+  /* Plan + execution step list. */
+  .step-list { display: grid; gap: 8px; }
+  .step {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .step.success { border-color: var(--green); }
+  .step.failed  { border-color: var(--red); }
+  .step.skipped { border-color: var(--yellow); opacity: 0.85; }
+  .step .step-head { display: flex; gap: 10px; align-items: center; }
+  .step .step-num { font-family: ui-monospace, Menlo, monospace;
+    color: var(--text-muted); font-size: 11px; min-width: 30px; }
+  .step .step-name { font-weight: 600; font-size: 13px; flex: 1; }
+  .step .step-status {
+    font-size: 10px; padding: 2px 6px; border-radius: 8px;
+    text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600;
+  }
+  .step.success .step-status { background: rgba(34,197,94,0.15); color: var(--green); }
+  .step.failed .step-status  { background: rgba(239,68,68,0.15); color: var(--red); }
+  .step.skipped .step-status { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .step.planned .step-status { background: rgba(139,143,163,0.15); color: var(--text-muted); }
+  .step .cmd {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    color: var(--text-muted); margin-top: 6px;
+    overflow-x: auto; white-space: pre;
+  }
+  .step .output {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    color: var(--text); margin-top: 6px; padding: 6px 8px;
+    background: rgba(0,0,0,0.2); border-radius: 4px;
+    overflow-x: auto; white-space: pre-wrap; max-height: 200px;
+  }
+  .step .err { color: var(--red); margin-top: 4px; font-size: 11px; }
+
+  #result-progress {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    color: var(--text); margin-bottom: 10px; padding: 6px 8px;
+    background: rgba(0,0,0,0.2); border-radius: 4px;
+    overflow-x: auto; white-space: pre-wrap; max-height: 160px;
+  }
+
+  .outcome {
+    margin-top: 16px; padding: 12px; border-radius: 8px;
+    font-size: 13px;
+  }
+  .outcome.success { background: rgba(34,197,94,0.1); border: 1px solid var(--green); }
+  .outcome.failed  { background: rgba(239,68,68,0.1); border: 1px solid var(--red); }
+
+  #warnings {
+    display: none;
+    background: rgba(234,179,8,0.1); border: 1px solid var(--yellow);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    color: var(--yellow); font-size: 12px;
+  }
+  #error {
+    display: none;
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 16px;
+    color: var(--red); font-size: 13px;
+  }
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 14px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <div id="warnings"></div>
+  <div id="error"></div>
+  <div id="loading"><div class="spinner"></div>Loading recipes…</div>
+  <div id="content" style="display:none;">
+    <header>
+      <div class="icon">JC</div>
+      <div class="title">
+        <h1 id="title">Recipes</h1>
+        <div class="sub" id="subtitle"></div>
+      </div>
+      <button type="button" class="btn" id="back-btn" style="display:none;">← Back</button>
+    </header>
+
+    <div id="view-list">
+      <div class="card">
+        <h2>Recipe catalog</h2>
+        <input type="text" class="recipe-search" id="search"
+          placeholder="Filter by name, description, or tag…">
+        <div class="recipe-grid" id="recipe-grid"></div>
+      </div>
+    </div>
+
+    <div id="view-form" style="display:none;">
+      <div class="card">
+        <h2 id="form-recipe-meta">Parameters</h2>
+        <form class="param-form" id="param-form"></form>
+        <div class="actions">
+          <button type="button" class="btn"         id="action-plan">Preview plan</button>
+          <button type="button" class="btn primary" id="action-execute">Run with execute</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-result" style="display:none;">
+      <div class="card">
+        <h2 id="result-title">Result</h2>
+        <div id="result-progress" style="display:none;"></div>
+        <div class="step-list" id="step-list"></div>
+        <div id="outcome"></div>
+      </div>
+    </div>
+  </div>
+
+<!--JC_APP_COMMON-->
+<script>
+(function() {
+  "use strict";
+
+  // Text-content-only DOM builder (same XSS-safe helper used by the other
+  // MCP Apps). Only className/textContent are forwarded; everything else
+  // is dropped so unknown attributes can never become a script sink.
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "className") n.className = String(attrs[k]);
+      else if (k === "textContent") n.textContent = String(attrs[k]);
+    });
+    if (children) children.forEach(function(c){
+      if (c == null) return;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else if (c instanceof Node) n.appendChild(c);
+    });
+    return n;
+  }
+  // Empty a node by removing each child individually. Avoids assigning to
+  // innerHTML, which the security-reminder hook (rightly) flags as an XSS
+  // surface even when the assigned value is a constant.
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  // Application state. Three screens: list → form → result.
+  var allRecipes = [];
+  var selectedRecipe = null;
+  var inputElements = {}; // param name → input element, refreshed per recipe
+
+  function showView(which) {
+    document.getElementById("view-list").style.display   = (which === "list")   ? "" : "none";
+    document.getElementById("view-form").style.display   = (which === "form")   ? "" : "none";
+    document.getElementById("view-result").style.display = (which === "result") ? "" : "none";
+    document.getElementById("back-btn").style.display    = (which === "list")   ? "none" : "";
+  }
+
+  function showError(msg) {
+    var e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "block";
+  }
+  function clearError() { document.getElementById("error").style.display = "none"; }
+
+  function renderHeader(view, recipe) {
+    var title = document.getElementById("title");
+    var sub = document.getElementById("subtitle");
+    if (view === "list") {
+      title.textContent = "Recipes";
+      sub.textContent = allRecipes.length + " recipes available";
+    } else if (recipe) {
+      title.textContent = recipe.name;
+      sub.textContent = recipe.description || "";
+    }
+  }
+
+  function recipeMatches(r, needle) {
+    if (!needle) return true;
+    needle = needle.toLowerCase();
+    if (r.name.toLowerCase().indexOf(needle) >= 0) return true;
+    if (r.description && r.description.toLowerCase().indexOf(needle) >= 0) return true;
+    if (r.tags) for (var i = 0; i < r.tags.length; i++) {
+      if (r.tags[i].toLowerCase().indexOf(needle) >= 0) return true;
+    }
+    return false;
+  }
+
+  function renderRecipeList(filter) {
+    var root = document.getElementById("recipe-grid");
+    clear(root);
+    var shown = 0;
+    allRecipes.forEach(function(r){
+      if (!recipeMatches(r, filter)) return;
+      shown++;
+      var item = el("div", { className: "recipe-item" });
+      item.appendChild(el("div", { className: "name", textContent: r.name }));
+      if (r.description) {
+        item.appendChild(el("div", { className: "desc", textContent: r.description }));
+      }
+      var meta = el("div", { className: "meta" });
+      meta.appendChild(el("span", {
+        className: "tag source-" + (r.source || "builtin"),
+        textContent: r.source || "builtin"
+      }));
+      meta.appendChild(el("span", { className: "tag",
+        textContent: r.step_count + (r.step_count === 1 ? " step" : " steps") }));
+      if (r.parameters && r.parameters.length) {
+        meta.appendChild(el("span", { className: "tag",
+          textContent: r.parameters.length + " params" }));
+      }
+      (r.tags || []).forEach(function(t){
+        meta.appendChild(el("span", { className: "tag", textContent: t }));
+      });
+      item.appendChild(meta);
+      item.addEventListener("click", function() { selectRecipe(r); });
+      root.appendChild(item);
+    });
+    if (shown === 0) {
+      root.appendChild(el("div", { className: "empty",
+        textContent: "No recipes match the filter." }));
+    }
+  }
+
+  // Build a form input for one parameter. Returns the input element so the
+  // submit handler can read its value back without re-querying the DOM.
+  function buildParamControl(p) {
+    var wrap = el("div");
+    var lbl = el("label", { textContent: p.name });
+    if (p.required) lbl.appendChild(el("span", { className: "required", textContent: " *" }));
+    wrap.appendChild(lbl);
+
+    var input;
+    if (p.type === "bool") {
+      input = el("input"); input.type = "checkbox";
+      if (p.default === "true") input.checked = true;
+      var line = el("label", { className: "checkbox" }, [input,
+        el("span", { textContent: "Enabled (param: " + p.name + ")" })]);
+      wrap.appendChild(line);
+    } else if (p.type === "int") {
+      input = el("input"); input.type = "number";
+      if (p.default) input.value = p.default;
+      wrap.appendChild(input);
+    } else {
+      input = el("input"); input.type = "text";
+      if (p.default) input.value = p.default;
+      if (p.required) input.required = true;
+      wrap.appendChild(input);
+    }
+    if (p.description) {
+      wrap.appendChild(el("div", { className: "param-desc", textContent: p.description }));
+    }
+    inputElements[p.name] = { el: input, type: p.type || "string" };
+    return wrap;
+  }
+
+  function selectRecipe(r) {
+    selectedRecipe = r;
+    inputElements = {};
+    renderHeader("form", r);
+
+    var meta = document.getElementById("form-recipe-meta");
+    var pieces = [];
+    if (r.author)  pieces.push("by " + r.author);
+    if (r.version) pieces.push("v" + r.version);
+    pieces.push(r.step_count + (r.step_count === 1 ? " step" : " steps"));
+    meta.textContent = pieces.join(" · ");
+
+    var form = document.getElementById("param-form");
+    clear(form);
+    var params = r.parameters || [];
+    if (params.length === 0) {
+      form.appendChild(el("div", { className: "param-desc",
+        textContent: "This recipe takes no parameters." }));
+    } else {
+      params.forEach(function(p){ form.appendChild(buildParamControl(p)); });
+    }
+    showView("form");
+  }
+
+  // Pull form values out into a string-keyed map, the shape recipe_run
+  // expects. Empty optional fields are omitted so the recipe's defaults
+  // win at the server.
+  function collectParams() {
+    var out = {};
+    Object.keys(inputElements).forEach(function(name){
+      var entry = inputElements[name];
+      var v;
+      if (entry.type === "bool") {
+        v = entry.el.checked ? "true" : "false";
+      } else {
+        v = entry.el.value;
+      }
+      if (v !== "" && v != null) out[name] = String(v);
+    });
+    return out;
+  }
+
+  function renderPlan(plans) {
+    var root = document.getElementById("step-list");
+    clear(root);
+    plans.forEach(function(p, i){
+      // recipe.StepPlan ships as { name, command, when?, would_run }.
+      // Skipped steps have would_run=false; the step header shows
+      // "would skip" so the operator sees the same outcome the runner
+      // would render at execute time.
+      var willSkip = p.would_run === false;
+      var statusText = willSkip ? "would skip" : "planned";
+      var stepClass = willSkip ? "step skipped" : "step planned";
+      var step = el("div", { className: stepClass }, [
+        el("div", { className: "step-head" }, [
+          el("span", { className: "step-num", textContent: "[" + (i + 1) + "]" }),
+          el("span", { className: "step-name", textContent: p.name }),
+          el("span", { className: "step-status", textContent: statusText })
+        ])
+      ]);
+      if (p.command) step.appendChild(el("div", { className: "cmd", textContent: p.command }));
+      if (willSkip) step.appendChild(el("div", { className: "err",
+        textContent: "when condition: " + (p.when || "(false)") }));
+      root.appendChild(step);
+    });
+  }
+
+  function renderExecution(payload) {
+    var exec = payload.execution || {};
+    var progress = payload.progress || "";
+
+    var progressEl = document.getElementById("result-progress");
+    if (progress) {
+      progressEl.textContent = progress;
+      progressEl.style.display = "block";
+    } else {
+      progressEl.style.display = "none";
+    }
+
+    var root = document.getElementById("step-list");
+    clear(root);
+    (exec.steps || []).forEach(function(s, i){
+      var status = s.status || "success";
+      var step = el("div", { className: "step " + status }, [
+        el("div", { className: "step-head" }, [
+          el("span", { className: "step-num", textContent: "[" + (i + 1) + "]" }),
+          el("span", { className: "step-name", textContent: s.name }),
+          el("span", { className: "step-status", textContent: status })
+        ])
+      ]);
+      if (s.output) step.appendChild(el("div", { className: "output", textContent: s.output }));
+      if (s.error)  step.appendChild(el("div", { className: "err", textContent: s.error }));
+      root.appendChild(step);
+    });
+
+    var outcome = document.getElementById("outcome");
+    clear(outcome);
+    var status = exec.status || "success";
+    var div = el("div", { className: "outcome " + status });
+    div.appendChild(el("strong", { textContent: status === "success" ? "Succeeded" : "Failed" }));
+    if (exec.message) {
+      div.appendChild(el("div", { textContent: exec.message }));
+    }
+    outcome.appendChild(div);
+  }
+
+  // Lock the form actions while a tool call is in flight so the operator
+  // can't double-fire Plan/Run during the Touch ID round trip.
+  function setBusy(busy) {
+    document.getElementById("action-plan").disabled    = busy;
+    document.getElementById("action-execute").disabled = busy;
+  }
+
+  function resetResultView(titleText) {
+    document.getElementById("result-title").textContent = titleText;
+    clear(document.getElementById("outcome"));
+    clear(document.getElementById("step-list"));
+    document.getElementById("result-progress").style.display = "none";
+    document.getElementById("result-progress").textContent = "";
+    showView("result");
+  }
+
+  function runPlan() {
+    if (!selectedRecipe) return;
+    clearError(); setBusy(true);
+    resetResultView("Plan preview — " + selectedRecipe.name);
+
+    jcApp.callTool("recipe_run", {
+      name: selectedRecipe.name,
+      params: collectParams(),
+      execute: false
+    }).then(function(result){
+      setBusy(false);
+      var data;
+      try { data = jcApp.parseToolResult(result); }
+      catch (e) { showError("Plan failed: " + e.message); return; }
+      if (Array.isArray(data)) renderPlan(data);
+      else showError("Unexpected plan shape from recipe_run");
+    }).catch(function(err){
+      setBusy(false);
+      showError("Plan failed: " + (err.message || String(err)));
+    });
+  }
+
+  function runExecute() {
+    if (!selectedRecipe) return;
+    clearError(); setBusy(true);
+    resetResultView("Run — " + selectedRecipe.name);
+
+    jcApp.callTool("recipe_run", {
+      name: selectedRecipe.name,
+      params: collectParams(),
+      execute: true
+    }).then(function(result){
+      setBusy(false);
+      var data;
+      try { data = jcApp.parseToolResult(result); }
+      catch (e) { showError("Run failed: " + e.message); return; }
+      renderExecution(data || {});
+    }).catch(function(err){
+      setBusy(false);
+      showError("Run failed: " + (err.message || String(err)));
+    });
+  }
+
+  function renderAll(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("content").style.display = "";
+    clearError();
+
+    var warn = document.getElementById("warnings");
+    if (data.warnings && data.warnings.length) {
+      warn.textContent = data.warnings.join(" ");
+      warn.style.display = "block";
+    } else {
+      warn.style.display = "none";
+    }
+
+    allRecipes = (data.recipes || []).slice();
+    allRecipes.sort(function(a, b){ return a.name.localeCompare(b.name); });
+    renderHeader("list");
+    renderRecipeList("");
+    showView("list");
+  }
+
+  jcApp.ready("JumpCloud Recipe Runner", "1.0.0");
+
+  var initialized = false;
+  jcApp.onToolResult(function(params) {
+    if (initialized) return;
+    try {
+      var data = jcApp.parseToolResult(params);
+      if (data) { initialized = true; renderAll(data); }
+    } catch (e) { /* swallow — controls below let the user retry */ }
+  });
+
+  document.getElementById("search").addEventListener("input", function(e){
+    renderRecipeList(e.target.value);
+  });
+  document.getElementById("back-btn").addEventListener("click", function(){
+    renderHeader("list");
+    renderRecipeList(document.getElementById("search").value || "");
+    showView("list");
+  });
+  document.getElementById("action-plan").addEventListener("click", runPlan);
+  document.getElementById("action-execute").addEventListener("click", runExecute);
+})();
+</script>
+</body>
+</html>
