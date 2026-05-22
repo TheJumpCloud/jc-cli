@@ -34,6 +34,19 @@ func TestNewStepUp_TouchIDPrefFallsBackToTTYOnNonDarwin(t *testing.T) {
 	}
 }
 
+// On non-darwin every channel except webhook ends up needing the
+// API key, because newStepUp's fallback path resolves to TTY.
+func TestStepUpNeedsAPIKey_NonDarwinPrefersTTY(t *testing.T) {
+	for _, pref := range []string{"", "auto", "tty", "touchid"} {
+		if !StepUpNeedsAPIKey(pref) {
+			t.Errorf("StepUpNeedsAPIKey(%q) = false on non-darwin, want true (fallback to TTY)", pref)
+		}
+	}
+	if StepUpNeedsAPIKey("webhook") {
+		t.Errorf("StepUpNeedsAPIKey(webhook) = true on non-darwin, want false")
+	}
+}
+
 func TestStepUpReachesOperatorOnStdio_NonDarwinAlwaysFalse(t *testing.T) {
 	// Without a biometric channel, every stdio configuration leaves the
 	// operator unreachable. The warning must always fire.

@@ -81,6 +81,18 @@ func TestNoopStepUp_AlwaysAllows(t *testing.T) {
 	}
 }
 
+// StepUpNeedsAPIKey is platform-agnostic for the explicit channels:
+// webhook never needs the API key, tty always does. Darwin and
+// non-darwin builds add their own probes for the auto/touchid path.
+func TestStepUpNeedsAPIKey_ExplicitChannels(t *testing.T) {
+	if StepUpNeedsAPIKey(stepUpAuthWebhook) {
+		t.Errorf("StepUpNeedsAPIKey(webhook) = true, want false (webhook ignores the API key)")
+	}
+	if !StepUpNeedsAPIKey(stepUpAuthTTY) {
+		t.Errorf("StepUpNeedsAPIKey(tty) = false, want true (TTY derives challenge from API key)")
+	}
+}
+
 func TestNewStepUp_DisabledReturnsNoop(t *testing.T) {
 	a, err := newStepUp(stepUpConfig{Required: false, APIKey: "anything"})
 	if err != nil {

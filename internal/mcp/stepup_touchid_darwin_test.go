@@ -71,6 +71,20 @@ func TestStepUpReachesOperatorOnStdio_DarwinTracksHardware(t *testing.T) {
 	}
 }
 
+// On darwin, the auto / touchid / empty paths only need the API key
+// when biometric hardware is missing (the runtime fallback to TTY).
+// Stays in lockstep with newStepUp's resolution logic.
+func TestStepUpNeedsAPIKey_DarwinTracksHardware(t *testing.T) {
+	for _, pref := range []string{"", "auto", "touchid"} {
+		got := StepUpNeedsAPIKey(pref)
+		want := !touchIDAvailable()
+		if got != want {
+			t.Errorf("StepUpNeedsAPIKey(%q) = %v on darwin (biometrics=%v), want %v",
+				pref, got, touchIDAvailable(), want)
+		}
+	}
+}
+
 func TestStepUpReachesOperatorOnStdio_TTYPrefAlwaysFalse(t *testing.T) {
 	// Explicit "tty" must report unreachable on stdio everywhere — the
 	// operator has chosen the channel that depends on a controlling

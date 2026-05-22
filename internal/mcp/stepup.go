@@ -218,6 +218,40 @@ const (
 	stepUpAuthWebhook = "webhook"
 )
 
+// StepUpNeedsAPIKey reports whether the resolved step-up authenticator
+// will derive its challenge from the API key. Only the TTY authenticator
+// does — it asks the operator for the last N chars of the key. The
+// webhook authenticator uses out-of-band approval; Touch ID uses the
+// OS biometric stack. Both ignore the key.
+//
+// The "auto" and unknown prefs resolve at runtime, so we conservatively
+// report key-needed when Touch ID isn't probably available — that's the
+// path that falls back to TTY. Same for explicit "touchid" when the
+// hardware is missing (newStepUp also falls back to TTY there).
+//
+// Called by cmd/mcp.go to decide whether to fail the server start when
+// the operator opted into step-up but never configured an API key. Per
+// Bugbot on PR #34, gating that check on requireStepUp alone confused
+// webhook operators with a misleading "to derive the challenge answer"
+// error that didn't apply to their authenticator.
+func StepUpNeedsAPIKey(authPref string) bool {
+	switch authPref {
+	case stepUpAuthWebhook:
+		return false
+	case stepUpAuthTTY:
+		return true
+	case stepUpAuthTouchID, "", stepUpAuthAuto:
+		// touchid + auto + empty all fall back to TTY when the host
+		// lacks biometric hardware, so the key becomes load-bearing
+		// at authorize-time. Probe matches newStepUp's runtime choice.
+		return !touchIDAvailable()
+	default:
+		// Unknown pref → newStepUp treats it as auto. Match the auto
+		// branch so the startup guard stays in sync.
+		return !touchIDAvailable()
+	}
+}
+
 // StepUpReachesOperatorOnStdio reports whether the resolved step-up
 // authenticator can present a challenge to the operator while the MCP
 // transport owns stdin/stdout. Touch ID renders an OS-level modal so
