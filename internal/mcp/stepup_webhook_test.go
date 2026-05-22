@@ -98,6 +98,33 @@ func (m *mockReceiver) handle(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
+func TestWebhookStepUp_RemediationIsChannelAware(t *testing.T) {
+	// Pin the webhook-flavored remediation text — what makes Bugbot's
+	// learned rule satisfied is that webhook errors don't suggest TTY
+	// or Touch ID. Drift in the message wording (e.g. dropping the
+	// config-key reference) would defeat the remediation hint.
+	w := &webhookStepUp{}
+
+	denyText := w.remediation(errStepUpDenied)
+	if !strings.Contains(denyText, "approver") {
+		t.Errorf("deny remediation should reference the approver: %q", denyText)
+	}
+	if !strings.Contains(denyText, "mcp.approval_timeout") {
+		t.Errorf("deny remediation should name mcp.approval_timeout: %q", denyText)
+	}
+	if strings.Contains(denyText, "Touch ID") || strings.Contains(denyText, "TTY") {
+		t.Errorf("deny remediation should not mention TTY/Touch ID: %q", denyText)
+	}
+
+	unavailText := w.remediation(errStepUpUnavailable)
+	if !strings.Contains(unavailText, "mcp.approval_webhook_url") {
+		t.Errorf("unavailable remediation should name mcp.approval_webhook_url: %q", unavailText)
+	}
+	if strings.Contains(unavailText, "Touch-ID-capable Mac") {
+		t.Errorf("unavailable remediation should not suggest a Touch-ID-capable Mac: %q", unavailText)
+	}
+}
+
 func TestNewWebhookStepUp_RejectsEmptyURL(t *testing.T) {
 	_, err := newWebhookStepUp("", "", 0, "default")
 	if err == nil {

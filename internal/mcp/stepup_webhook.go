@@ -184,6 +184,22 @@ func (w *webhookStepUp) Close() error {
 	return w.server.Shutdown(ctx)
 }
 
+// remediation returns the operator-facing follow-up text the chokepoint
+// appends to the "jc blocked X" error. Webhook-flavored: an AI client
+// receiving the message must understand the channel is an out-of-band
+// approval, not a TTY or Touch ID prompt — otherwise it will tell the
+// operator to "approve the prompt" when no such prompt exists.
+func (w *webhookStepUp) remediation(err error) string {
+	switch {
+	case errors.Is(err, errStepUpDenied):
+		return "the approver denied the request or did not respond within mcp.approval_timeout; retry will issue a fresh approval request to mcp.approval_webhook_url."
+	case errors.Is(err, errStepUpUnavailable):
+		return "the approval webhook at mcp.approval_webhook_url could not be reached or returned a non-2xx response — verify the receiver is up and the URL is correct, then retry."
+	default:
+		return "see the jc server logs for details."
+	}
+}
+
 // authorize implements the stepUpAuthenticator contract. Computes the
 // envelope, POSTs it to the configured webhook, then blocks on the
 // callback or the timeout. Fail closed: every error path returns

@@ -14,13 +14,18 @@ import (
 // the chokepoint actually invokes the authenticator on Execute: true
 // destructive calls and skips it for everything else. Set denyErr to
 // exercise a specific sentinel (errStepUpUnavailable, etc.); deny alone
-// returns the default errStepUpDenied.
+// returns the default errStepUpDenied. remediator overrides the
+// channel-specific follow-up text the chokepoint formats — leave nil to
+// keep the historical TTY/Touch ID phrasing the legacy chokepoint tests
+// pin against; set it to webhookRemediation (etc.) to exercise the
+// channel-aware remediation path that PR #34 wired up.
 type recordingStepUp struct {
-	calls    atomic.Int64
-	lastTool string
-	lastArg  string
-	deny     bool
-	denyErr  error
+	calls      atomic.Int64
+	lastTool   string
+	lastArg    string
+	deny       bool
+	denyErr    error
+	remediator func(error) string
 }
 
 func (r *recordingStepUp) authorize(_ context.Context, toolName, target string) error {
@@ -34,6 +39,13 @@ func (r *recordingStepUp) authorize(_ context.Context, toolName, target string) 
 		return errStepUpDenied
 	}
 	return nil
+}
+
+func (r *recordingStepUp) remediation(err error) string {
+	if r.remediator != nil {
+		return r.remediator(err)
+	}
+	return ttyTouchIDRemediation(err)
 }
 
 // mustStepUp wraps newStepUp for tests that don't exercise the
@@ -300,6 +312,75 @@ func TestChokepoint_UnavailableProducesEnvironmentFollowUp(t *testing.T) {
 	}
 	if !strings.Contains(text, "cannot present a challenge") {
 		t.Errorf("unavailable path should explain the environment: %q", text)
+	}
+}
+
+// Bugbot finding on PR #34 (KLA-413): the chokepoint hardcoded
+// "approve the Touch ID or TTY prompt" remediation, so a webhook
+// denial misled the AI client into telling the operator to approve a
+// nonexistent prompt. The fix moved remediation onto the
+// stepUpAuthenticator interface; this test pins the channel-aware
+// branching by wiring a recording stub with the webhook remediator.
+func TestChokepoint_WebhookDenialMentionsWebhookRemediation(t *testing.T) {
+	setupToolTest(t)
+
+	rec := &recordingStepUp{
+		deny:    true,
+		denyErr: errStepUpDenied,
+		// Borrow the real webhook authenticator's remediation text so the
+		// test exercises the same string operators would see in
+		// production — drift between the two would break this test.
+		remediator: (&webhookStepUp{}).remediation,
+	}
+	cs := connectToolTestServer(t, Options{stepUp: rec})
+
+	result := callTool(t, cs, "users_delete", map[string]any{
+		"identifier": "aabbccddee112233aabbcc01",
+		"execute":    true,
+	})
+	if !result.IsError {
+		t.Fatal("expected destructive call to be blocked when step-up denies; got success")
+	}
+	text := getResultText(t, result)
+
+	// Webhook denial must NOT mention TTY/Touch ID — that's the bug.
+	if strings.Contains(text, "approve the Touch ID or TTY prompt") {
+		t.Errorf("webhook denial should not mention TTY/Touch ID prompt: %q", text)
+	}
+	// And it MUST mention the webhook config knob so the AI client can
+	// guide the operator to the right remediation.
+	if !strings.Contains(text, "mcp.approval_webhook_url") &&
+		!strings.Contains(text, "mcp.approval_timeout") {
+		t.Errorf("webhook denial should reference webhook config keys: %q", text)
+	}
+}
+
+func TestChokepoint_WebhookUnavailableMentionsWebhookRemediation(t *testing.T) {
+	setupToolTest(t)
+
+	rec := &recordingStepUp{
+		deny:       true,
+		denyErr:    errStepUpUnavailable,
+		remediator: (&webhookStepUp{}).remediation,
+	}
+	cs := connectToolTestServer(t, Options{stepUp: rec})
+
+	result := callTool(t, cs, "users_delete", map[string]any{
+		"identifier": "aabbccddee112233aabbcc01",
+		"execute":    true,
+	})
+	if !result.IsError {
+		t.Fatal("expected destructive call to be blocked when step-up unavailable; got success")
+	}
+	text := getResultText(t, result)
+
+	// Unavailable on the webhook path must point at the URL / receiver,
+	// not the Touch-ID-capable-Mac environment hint.
+	if strings.Contains(text, "Touch-ID-capable Mac") {
+		t.Errorf("webhook unavailable should not suggest a Touch-ID-capable Mac: %q", text)
+	}
+	if !strings.Contains(text, "mcp.approval_webhook_url") {
+		t.Errorf("webhook unavailable should name the webhook URL config: %q", text)
 	}
 }
 

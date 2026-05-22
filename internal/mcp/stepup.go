@@ -72,9 +72,17 @@ func destructiveTarget(args any) string {
 //
 // The chokepoint in addTypedTool calls authorize() once per destructive
 // tool invocation (any tool argument carrying Execute: true). A non-nil
-// error blocks the underlying API call.
+// error blocks the underlying API call, and the chokepoint asks the
+// same authenticator for a channel-appropriate remediation hint via
+// remediation(). Putting the hint on the authenticator (rather than
+// hardcoding TTY/Touch ID text in the chokepoint) keeps the AI-facing
+// error message accurate when alternate channels (webhook, future
+// authenticators) handle the denial — Bugbot caught the regression on
+// PR #34 where webhook denials surfaced "approve the Touch ID or TTY
+// prompt" remediation that didn't apply.
 type stepUpAuthenticator interface {
 	authorize(ctx context.Context, toolName, target string) error
+	remediation(err error) string
 }
 
 // noopStepUp permits every operation. Used when the feature is disabled
@@ -82,6 +90,24 @@ type stepUpAuthenticator interface {
 type noopStepUp struct{}
 
 func (noopStepUp) authorize(context.Context, string, string) error { return nil }
+func (noopStepUp) remediation(error) string                        { return "" }
+
+// ttyTouchIDRemediation is the shared follow-up text for the TTY and
+// Touch ID authenticators. They share it because the "auto" resolution
+// happens at runtime — by the time the chokepoint formats an error, we
+// can't easily tell the operator which of the two answered, and the
+// mitigations overlap anyway. Webhook gets its own (see
+// webhookStepUp.remediation).
+func ttyTouchIDRemediation(err error) string {
+	switch {
+	case errors.Is(err, errStepUpDenied):
+		return "the operator must approve the Touch ID or TTY prompt on retry to proceed."
+	case errors.Is(err, errStepUpUnavailable):
+		return "the operator's environment cannot present a challenge — run jc on a Touch-ID-capable Mac, switch to --transport=http on a real terminal, or unset mcp.require_step_up_for_destructive."
+	default:
+		return "see the jc server logs for details."
+	}
+}
 
 // errStepUpDenied indicates the operator declined the prompt. Distinct
 // from infrastructure errors so the audit log can record the difference.
@@ -122,6 +148,8 @@ func newTTYStepUp(apiKey string) *ttyStepUp {
 		expectLen: 6,
 	}
 }
+
+func (t *ttyStepUp) remediation(err error) string { return ttyTouchIDRemediation(err) }
 
 func (t *ttyStepUp) authorize(ctx context.Context, toolName, target string) error {
 	// Serialize prompts: concurrent destructive ops would interleave on

@@ -154,6 +154,8 @@ func newTouchIDStepUpIfSupported() stepUpAuthenticator {
 	return newTouchIDStepUp()
 }
 
+func (t *touchIDStepUp) remediation(err error) string { return ttyTouchIDRemediation(err) }
+
 func (t *touchIDStepUp) authorize(_ context.Context, toolName, target string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
