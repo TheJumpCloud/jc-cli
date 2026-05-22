@@ -48,7 +48,7 @@ func connectTestServer(t *testing.T, opts Options) (*Server, *mcp.ClientSession)
 		opts.AuditLogPath = filepath.Join(t.TempDir(), "audit.log")
 	}
 
-	server := NewServer(opts)
+	server := MustNewServer(opts)
 
 	// Create in-memory transport pair.
 	st, ct := mcp.NewInMemoryTransports()
@@ -83,7 +83,7 @@ func TestNewServer_Defaults(t *testing.T) {
 	opts := Options{
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	s := NewServer(opts)
+	s := MustNewServer(opts)
 	if s.mcpServer == nil {
 		t.Fatal("expected mcpServer to be initialized")
 	}
@@ -101,7 +101,7 @@ func TestNewServer_CustomRateLimit(t *testing.T) {
 		RateLimit:    120,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	s := NewServer(opts)
+	s := MustNewServer(opts)
 	if s.limiter.maxPerMin != 120 {
 		t.Errorf("expected rate limit 120, got %d", s.limiter.maxPerMin)
 	}
@@ -113,7 +113,7 @@ func TestNewServer_ReadOnly(t *testing.T) {
 		ReadOnly:     true,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	s := NewServer(opts)
+	s := MustNewServer(opts)
 	if !s.readOnly {
 		t.Error("expected readOnly to be true")
 	}
@@ -905,7 +905,7 @@ func TestNewServer_AuditDisabledNoFile(t *testing.T) {
 	setupTest(t)
 	auditPath := filepath.Join(t.TempDir(), "should-not-exist", "audit.log")
 
-	_ = NewServer(Options{
+	_ = MustNewServer(Options{
 		AuditEnabled: false,
 		AuditLogPath: "", // no explicit path + disabled = no file
 	})
@@ -919,7 +919,7 @@ func TestNewServer_AuditEnabledByExplicitPath(t *testing.T) {
 	setupTest(t)
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
 
-	s := NewServer(Options{
+	s := MustNewServer(Options{
 		AuditEnabled: false,        // disabled...
 		AuditLogPath: auditPath,    // ...but explicit path wins
 	})
@@ -1201,7 +1201,7 @@ func TestMCP_ReadOnlyEquivalentToBlockMutations(t *testing.T) {
 
 func TestMCP_ListToolNames(t *testing.T) {
 	setupTest(t)
-	server := NewServer(Options{
+	server := MustNewServer(Options{
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	})
 
@@ -1231,7 +1231,7 @@ func TestMCP_ListToolNames(t *testing.T) {
 
 func TestMCP_ListToolNames_WithFilter(t *testing.T) {
 	setupTest(t)
-	server := NewServer(Options{
+	server := MustNewServer(Options{
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 		AllowedTools: []string{"jc_ping"},
 	})

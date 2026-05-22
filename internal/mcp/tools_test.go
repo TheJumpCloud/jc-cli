@@ -91,7 +91,7 @@ func connectToolTestServer(t *testing.T, opts Options) *mcp.ClientSession {
 		opts.AuditLogPath = filepath.Join(t.TempDir(), "audit.log")
 	}
 
-	server := NewServer(opts)
+	server := MustNewServer(opts)
 	st, ct := mcp.NewInMemoryTransports()
 
 	ctx := context.Background()

@@ -36,6 +36,19 @@ func (r *recordingStepUp) authorize(_ context.Context, toolName, target string) 
 	return nil
 }
 
+// mustStepUp wraps newStepUp for tests that don't exercise the
+// fallible webhook path. Keeps the common factory tests readable —
+// every other authenticator (TTY, Touch ID, noop) is infallible at
+// construction, so the error check is pure noise there.
+func mustStepUp(t *testing.T, cfg stepUpConfig) stepUpAuthenticator {
+	t.Helper()
+	a, err := newStepUp(cfg)
+	if err != nil {
+		t.Fatalf("newStepUp(%+v) = err %v, want nil", cfg, err)
+	}
+	return a
+}
+
 // stepUpFixture builds a ttyStepUp wired to in-memory I/O and with the
 // TTY check skipped, so we can drive the prompt deterministically.
 func stepUpFixture(apiKey, response string) (*ttyStepUp, *bytes.Buffer) {
@@ -57,7 +70,10 @@ func TestNoopStepUp_AlwaysAllows(t *testing.T) {
 }
 
 func TestNewStepUp_DisabledReturnsNoop(t *testing.T) {
-	a := newStepUp(false, "anything", "")
+	a, err := newStepUp(stepUpConfig{Required: false, APIKey: "anything"})
+	if err != nil {
+		t.Fatalf("newStepUp(disabled) err = %v, want nil", err)
+	}
 	if _, ok := a.(noopStepUp); !ok {
 		t.Errorf("newStepUp(false) = %T, want noopStepUp", a)
 	}
@@ -68,7 +84,10 @@ func TestNewStepUp_TTYPrefForcesTTY(t *testing.T) {
 	// that would otherwise pick a stronger authenticator. This is the
 	// operator escape hatch when Touch ID is unwanted (CI runner, shared
 	// session, headless box with a TTY).
-	a := newStepUp(true, "key12345678", "tty")
+	a, err := newStepUp(stepUpConfig{Required: true, APIKey: "key12345678", AuthenticatorPref: "tty"})
+	if err != nil {
+		t.Fatalf("newStepUp(tty) err = %v, want nil", err)
+	}
 	if _, ok := a.(*ttyStepUp); !ok {
 		t.Errorf("newStepUp(true, _, \"tty\") = %T, want *ttyStepUp", a)
 	}

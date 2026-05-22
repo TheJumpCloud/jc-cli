@@ -69,8 +69,25 @@ type Options struct {
 	// challenge. Empty or "auto" picks the strongest available channel
 	// (Touch ID on darwin, TTY everywhere else). "tty" forces the API
 	// key last-N prompt; "touchid" pins the biometric path with TTY as
-	// runtime fallback if biometrics are unavailable.
+	// runtime fallback if biometrics are unavailable. "webhook" routes
+	// the approval out-of-band to ApprovalWebhookURL (KLA-413).
 	StepUpAuthenticator string
+	// ApprovalWebhookURL is the operator-configured destination for
+	// out-of-band approval requests when StepUpAuthenticator is
+	// "webhook". The MCP server POSTs the redacted op envelope here and
+	// blocks on the verdict callback. Required when authenticator is
+	// "webhook"; ignored otherwise.
+	ApprovalWebhookURL string
+	// ApprovalCallbackAddr is the loopback listen address for inbound
+	// verdicts from the receiver. Empty defaults to "127.0.0.1:0" so
+	// the kernel picks an ephemeral port. Ignored unless the webhook
+	// authenticator is selected.
+	ApprovalCallbackAddr string
+	// ApprovalTimeout is how long the webhook authenticator waits for
+	// a verdict before failing closed (timeout = deny). Zero defaults
+	// to 5 minutes. Ignored unless the webhook authenticator is
+	// selected.
+	ApprovalTimeout time.Duration
 	// stepUp injects a custom authenticator. Reserved for tests within
 	// the mcp package; production callers configure step-up via
 	// RequireStepUp + StepUpAPIKey.
@@ -92,8 +109,14 @@ type Options struct {
 // nowFunc is overridable for tests.
 var nowFunc = time.Now
 
-// NewServer creates a new MCP server with the given options.
-func NewServer(opts Options) *Server {
+// NewServer creates a new MCP server with the given options. Returns an
+// error only when a step-up authenticator that's fallible at
+// construction time (currently: webhook) fails to start — for example
+// because the operator left ApprovalWebhookURL empty or the loopback
+// listener can't bind. Callers that want to keep the existing
+// always-succeeds shape (tests, prior callers) can use
+// MustNewServer instead.
+func NewServer(opts Options) (*Server, error) {
 	if opts.RateLimit <= 0 {
 		opts.RateLimit = 60
 	}
@@ -137,7 +160,19 @@ func NewServer(opts Options) *Server {
 
 	stepUp := opts.stepUp
 	if stepUp == nil {
-		stepUp = newStepUp(opts.RequireStepUp, opts.StepUpAPIKey, opts.StepUpAuthenticator)
+		su, err := newStepUp(stepUpConfig{
+			Required:            opts.RequireStepUp,
+			APIKey:              opts.StepUpAPIKey,
+			AuthenticatorPref:   opts.StepUpAuthenticator,
+			Profile:             opts.SigningProfile,
+			WebhookURL:          opts.ApprovalWebhookURL,
+			WebhookCallbackAddr: opts.ApprovalCallbackAddr,
+			WebhookTimeout:      opts.ApprovalTimeout,
+		})
+		if err != nil {
+			return nil, err
+		}
+		stepUp = su
 	}
 
 	signer := opts.signer
@@ -163,19 +198,51 @@ func NewServer(opts Options) *Server {
 	s.registerResources()
 	s.registerPrompts()
 
+	return s, nil
+}
+
+// MustNewServer is the construction-error-elides variant for test code
+// and call sites that don't configure the fallible authenticators. Panics
+// on error; production callers should use NewServer and surface the
+// error to the operator with a clear "fix your config" message.
+func MustNewServer(opts Options) *Server {
+	s, err := NewServer(opts)
+	if err != nil {
+		panic(fmt.Sprintf("mcp.NewServer: %v", err))
+	}
 	return s
+}
+
+// stepUpCloser is satisfied by step-up authenticators that own resources
+// the Server needs to release on shutdown (the webhook authenticator's
+// loopback HTTP listener is the only one today). The Server defers Close
+// on every transport entry point so the listener is gone before the
+// process exits.
+type stepUpCloser interface {
+	Close() error
+}
+
+// shutdownStepUp closes the step-up authenticator if it owns resources.
+// No-op when the authenticator is noop/TTY/Touch ID, since those have
+// nothing to release.
+func (s *Server) shutdownStepUp() {
+	if c, ok := s.stepUp.(stepUpCloser); ok {
+		_ = c.Close()
+	}
 }
 
 // Run starts the MCP server on stdio transport. It blocks until the client
 // disconnects or the context is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.auditLog.close()
+	defer s.shutdownStepUp()
 	return s.mcpServer.Run(ctx, &mcp.StdioTransport{})
 }
 
 // RunWithTransport starts the MCP server with a custom transport (for testing).
 func (s *Server) RunWithTransport(ctx context.Context, t mcp.Transport) error {
 	defer s.auditLog.close()
+	defer s.shutdownStepUp()
 	return s.mcpServer.Run(ctx, t)
 }
 
@@ -223,6 +290,7 @@ func buildHTTPServer(cfg SSEConfig, handler http.Handler) *http.Server {
 // context is cancelled or the server encounters a fatal error.
 func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
 	defer s.auditLog.close()
+	defer s.shutdownStepUp()
 
 	handler := mcp.NewSSEHandler(func(r *http.Request) *mcp.Server {
 		return s.mcpServer
@@ -287,6 +355,7 @@ func (s *Server) RunSSE(ctx context.Context, cfg SSEConfig) error {
 // This transport is required for Claude Desktop custom connectors and MCP Apps rendering.
 func (s *Server) RunStreamableHTTP(ctx context.Context, cfg SSEConfig) error {
 	defer s.auditLog.close()
+	defer s.shutdownStepUp()
 
 	opts := &mcp.StreamableHTTPOptions{
 		// Disable DNS rebinding protection so tunneled requests (e.g. cloudflared)

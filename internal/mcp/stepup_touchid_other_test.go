@@ -17,9 +17,9 @@ func TestNewTouchIDStepUpIfSupported_NonDarwinReturnsNil(t *testing.T) {
 }
 
 func TestNewStepUp_AutoFallsBackToTTYOnNonDarwin(t *testing.T) {
-	a := newStepUp(true, "key12345678", "auto")
+	a := mustStepUp(t, stepUpConfig{Required: true, APIKey: "key12345678", AuthenticatorPref: "auto"})
 	if _, ok := a.(*ttyStepUp); !ok {
-		t.Errorf("newStepUp(true, _, \"auto\") = %T on non-darwin, want *ttyStepUp", a)
+		t.Errorf("newStepUp(auto) = %T on non-darwin, want *ttyStepUp", a)
 	}
 }
 
@@ -28,9 +28,9 @@ func TestNewStepUp_TouchIDPrefFallsBackToTTYOnNonDarwin(t *testing.T) {
 	// back to TTY (rather than noop) preserves the "challenge before
 	// destructive" guarantee for operators who run in HTTP transport
 	// with a controlling terminal.
-	a := newStepUp(true, "key12345678", "touchid")
+	a := mustStepUp(t, stepUpConfig{Required: true, APIKey: "key12345678", AuthenticatorPref: "touchid"})
 	if _, ok := a.(*ttyStepUp); !ok {
-		t.Errorf("newStepUp(true, _, \"touchid\") = %T on non-darwin, want *ttyStepUp", a)
+		t.Errorf("newStepUp(touchid) = %T on non-darwin, want *ttyStepUp", a)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -186,6 +187,7 @@ const (
 	stepUpAuthAuto    = "auto"
 	stepUpAuthTTY     = "tty"
 	stepUpAuthTouchID = "touchid"
+	stepUpAuthWebhook = "webhook"
 )
 
 // StepUpReachesOperatorOnStdio reports whether the resolved step-up
@@ -195,7 +197,10 @@ const (
 // actually usable. On a darwin host without Touch ID (Mac mini, Mac
 // Pro, VM) we'd fall back to TTY, which can't reach an stdio-bound
 // operator. The probe (touchIDAvailable) is what makes the check
-// honest in that case.
+// honest in that case. The webhook authenticator is also
+// transport-independent — the operator approves through an
+// out-of-band channel — so it satisfies the same "reaches operator
+// over stdio" property.
 //
 // Called from cmd/mcp.go to decide whether to print the "TTY prompts
 // cannot reach the operator" startup warning.
@@ -203,9 +208,26 @@ func StepUpReachesOperatorOnStdio(authPref string) bool {
 	switch authPref {
 	case "", stepUpAuthAuto, stepUpAuthTouchID:
 		return touchIDAvailable()
+	case stepUpAuthWebhook:
+		return true
 	default:
 		return false
 	}
+}
+
+// stepUpConfig bundles every input newStepUp needs to pick + construct
+// the right authenticator. Existed informally as separate parameters
+// pre-KLA-413; promoted to a struct here because the webhook path needs
+// a handful of new knobs (URL, callback addr, timeout, profile) that
+// would otherwise bloat the call signature.
+type stepUpConfig struct {
+	Required             bool
+	APIKey               string
+	AuthenticatorPref    string
+	Profile              string
+	WebhookURL           string
+	WebhookCallbackAddr  string
+	WebhookTimeout       time.Duration
 }
 
 // newStepUp returns the authenticator a Server should use given the
@@ -214,28 +236,43 @@ func StepUpReachesOperatorOnStdio(authPref string) bool {
 // or "auto", we ask the platform-tagged hook newTouchIDStepUpIfSupported
 // first and fall back to TTY if it's nil (non-darwin builds, or darwin
 // without Touch ID hardware).
-func newStepUp(required bool, apiKey, authenticatorPref string) stepUpAuthenticator {
-	if !required {
-		return noopStepUp{}
+//
+// The webhook path can fail at construction time (missing URL, listener
+// bind failure) — those produce a non-nil error so the operator sees
+// the misconfiguration at server start rather than as a runtime
+// "step-up unavailable" deny on the first destructive call.
+func newStepUp(cfg stepUpConfig) (stepUpAuthenticator, error) {
+	if !cfg.Required {
+		return noopStepUp{}, nil
 	}
-	switch authenticatorPref {
+	switch cfg.AuthenticatorPref {
 	case stepUpAuthTTY:
-		return newTTYStepUp(apiKey)
+		return newTTYStepUp(cfg.APIKey), nil
 	case stepUpAuthTouchID:
 		if tid := newTouchIDStepUpIfSupported(); tid != nil {
-			return tid
+			return tid, nil
 		}
 		// Operator pinned touchid but the platform can't supply it —
 		// fall back to TTY rather than booting noop, so the chokepoint
 		// still presents *some* challenge. The stdio-transport warning
 		// in cmd/mcp.go covers the case where TTY itself is unreachable.
-		return newTTYStepUp(apiKey)
+		return newTTYStepUp(cfg.APIKey), nil
+	case stepUpAuthWebhook:
+		// Webhook is an explicit operator choice — surface the
+		// configuration error rather than silently falling back to TTY
+		// (which the operator may have explicitly rejected for not
+		// supporting dual control).
+		w, err := newWebhookStepUp(cfg.WebhookURL, cfg.WebhookCallbackAddr, cfg.WebhookTimeout, cfg.Profile)
+		if err != nil {
+			return nil, fmt.Errorf("webhook step-up: %w", err)
+		}
+		return w, nil
 	default:
 		// Empty pref or "auto" or any unrecognized value — prefer the
 		// strongest channel the platform offers.
 		if tid := newTouchIDStepUpIfSupported(); tid != nil {
-			return tid
+			return tid, nil
 		}
-		return newTTYStepUp(apiKey)
+		return newTTYStepUp(cfg.APIKey), nil
 	}
 }

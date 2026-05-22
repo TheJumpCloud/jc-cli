@@ -200,12 +200,15 @@ devices_get, groups_add_member).`,
 }
 
 func runMcpTools(cmd *cobra.Command, readOnly bool) error {
-	server := mcp.NewServer(mcp.Options{
+	server, err := mcp.NewServer(mcp.Options{
 		RateLimit:    60,
 		ReadOnly:     readOnly,
 		AllowedTools: config.MCPAllowedTools(),
 		BlockedTools: config.MCPBlockedTools(),
 	})
+	if err != nil {
+		return fmt.Errorf("creating MCP server: %w", err)
+	}
 
 	tools := server.ListToolNames()
 	for _, name := range tools {
@@ -272,18 +275,24 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 	// even on servers that never run recipes.
 	mcp.RecipeDispatcher = recipe.NewDispatcher(newRootCmdForRecipeStep)
 
-	server := mcp.NewServer(mcp.Options{
-		RateLimit:           rateLimit,
-		ReadOnly:            readOnly,
-		AuditEnabled:        config.MCPAuditLog(),
-		AllowedTools:        config.MCPAllowedTools(),
-		BlockedTools:        config.MCPBlockedTools(),
-		RequireStepUp:       requireStepUp,
-		StepUpAPIKey:        stepUpAPIKey,
-		StepUpAuthenticator: stepUpAuth,
-		SignDestructiveOps:  signDestructiveOps,
-		SigningProfile:      config.ActiveProfile(),
+	server, err := mcp.NewServer(mcp.Options{
+		RateLimit:            rateLimit,
+		ReadOnly:             readOnly,
+		AuditEnabled:         config.MCPAuditLog(),
+		AllowedTools:         config.MCPAllowedTools(),
+		BlockedTools:         config.MCPBlockedTools(),
+		RequireStepUp:        requireStepUp,
+		StepUpAPIKey:         stepUpAPIKey,
+		StepUpAuthenticator:  stepUpAuth,
+		ApprovalWebhookURL:   config.MCPApprovalWebhookURL(),
+		ApprovalCallbackAddr: config.MCPApprovalCallbackAddr(),
+		ApprovalTimeout:      config.MCPApprovalTimeout(),
+		SignDestructiveOps:   signDestructiveOps,
+		SigningProfile:       config.ActiveProfile(),
 	})
+	if err != nil {
+		return fmt.Errorf("starting MCP server: %w", err)
+	}
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.
 	ctx, cancel := context.WithCancel(context.Background())

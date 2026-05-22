@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/klaassen-consulting/jc/internal/keychain"
 	"github.com/spf13/viper"
@@ -481,9 +482,33 @@ func MCPRequireStepUp() bool {
 // preference. Recognized values: "auto" (default — pick the strongest
 // channel the platform offers; Touch ID on darwin, TTY elsewhere),
 // "tty" (force the API-key last-N prompt), "touchid" (pin biometric
-// path, fall back to TTY if biometrics are unavailable).
+// path, fall back to TTY if biometrics are unavailable), "webhook"
+// (out-of-band dual-control approval; see MCPApprovalWebhookURL).
 func MCPStepUpAuthenticator() string {
 	return viper.GetString("mcp.step_up_authenticator")
+}
+
+// MCPApprovalWebhookURL returns the destination URL the webhook
+// step-up authenticator POSTs approval envelopes to. Required when
+// MCPStepUpAuthenticator() is "webhook"; ignored otherwise.
+func MCPApprovalWebhookURL() string {
+	return viper.GetString("mcp.approval_webhook_url")
+}
+
+// MCPApprovalCallbackAddr returns the loopback listen address for
+// inbound approval verdicts. Empty defaults to "127.0.0.1:0" so the
+// kernel picks an ephemeral port. Pin to a specific port only when a
+// receiver outside this host needs to reach it through a tunnel.
+func MCPApprovalCallbackAddr() string {
+	return viper.GetString("mcp.approval_callback_addr")
+}
+
+// MCPApprovalTimeout returns the per-request deadline for the webhook
+// step-up authenticator. Zero defaults to 5 minutes (the spec default
+// in KLA-413). Timeout = deny — fail closed so a missed approval never
+// silently grants the call.
+func MCPApprovalTimeout() time.Duration {
+	return viper.GetDuration("mcp.approval_timeout")
 }
 
 // MCPSignDestructiveOps returns true if every successful destructive MCP
