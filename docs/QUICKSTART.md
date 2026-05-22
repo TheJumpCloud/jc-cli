@@ -146,6 +146,8 @@ jc recipe run onboard-user \
 jc recipe run onboard-user --plan          # Preview only
 ```
 
+Author recipes from the TUI without leaving your terminal: `jc tui` → Recipes → press **`n`** for a new recipe (opens a starter YAML in `$EDITOR`) or **`e`** to edit the highlighted recipe. Built-in recipes prompt to save a user copy first. On save, jc re-parses and validates the file; invalid recipes stay on disk so your work is never lost. `$VISUAL` is honored ahead of `$EDITOR`; falls back to `vi` (or `notepad` on Windows).
+
 ### MCP Server (for AI Assistants)
 
 Add to Claude Desktop config (`claude_desktop_config.json`):
