@@ -35,7 +35,7 @@ func startSSEServer(t *testing.T, cfg SSEConfig) (*Server, string) {
 		RateLimit:    60,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	server := NewServer(opts)
+	server := MustNewServer(opts)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -429,7 +429,7 @@ func TestSSE_GracefulShutdown(t *testing.T) {
 		RateLimit:    60,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	server := NewServer(opts)
+	server := MustNewServer(opts)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -474,7 +474,7 @@ func TestSSE_ReadOnlyMode(t *testing.T) {
 		ReadOnly:     true,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	}
-	server := NewServer(opts)
+	server := MustNewServer(opts)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -608,7 +608,7 @@ func startHTTPStreamServer(t *testing.T, cfg SSEConfig) (*Server, string) {
 		cfg.Addr = ":0"
 	}
 
-	server := NewServer(Options{
+	server := MustNewServer(Options{
 		RateLimit:    60,
 		AuditLogPath: filepath.Join(t.TempDir(), "audit.log"),
 	})

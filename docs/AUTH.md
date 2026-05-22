@@ -161,7 +161,7 @@ A connected MCP client controls the `execute: true` bit, so by itself it is not 
 ```yaml
 mcp:
   require_step_up_for_destructive: true
-  step_up_authenticator: auto            # auto | tty | touchid
+  step_up_authenticator: auto            # auto | tty | touchid | webhook
 ```
 
 Or per-invocation:
@@ -170,26 +170,83 @@ Or per-invocation:
 jc mcp serve --require-step-up --step-up-authenticator=auto
 ```
 
-When enabled, the chokepoint in `internal/mcp/stepup.go` blocks every tool call whose input carries `Execute: true` until the configured authenticator approves it. Three authenticators are available:
+When enabled, the chokepoint in `internal/mcp/stepup.go` blocks every tool call whose input carries `Execute: true` until the configured authenticator approves it. Four authenticators are available:
 
 | Authenticator | Platform | Channel | Stdio transport |
 |---|---|---|---|
 | `touchid` | macOS with Touch ID hardware | OS biometric modal (`LocalAuthentication.framework`) | ✅ Reaches the operator regardless of stdin |
 | `tty` | All | Prompt on the controlling terminal for the last 6 chars of the API key | ❌ Cannot reach the operator (stdin is the JSON-RPC stream) |
+| `webhook` | All | Out-of-band approval (Slack bot, internal app, anything HTTP) — see [Webhook step-up](#webhook-step-up-out-of-band-approval) | ✅ Approval happens on a separate channel from the MCP transport |
 | `auto` (default) | All | Touch ID where available, TTY otherwise | ✅ on Macs with Touch ID; ❌ elsewhere |
 
 The factory probes `LAContext.canEvaluatePolicy` at startup, so a Mac without Touch ID hardware (Mac mini, Mac Pro, VM) — or one whose biometrics are locked out — quietly falls back to the TTY authenticator instead of resolving to a `touchid` instance that would later fail every destructive op closed. The startup warning about stdio reachability honors that probe too, so you'll see it on a hardware-less Mac.
 
 A denied or unanswered prompt fails the underlying API call closed with `step-up auth required but no challenge channel is available` or `operator denied step-up auth challenge`. Pair this with `mcp.sign_destructive_ops` for an in-the-loop pause *and* a tamper-evident signed audit trail.
 
+### Webhook step-up (out-of-band approval)
+
+For compliance frameworks that require **dual control** — two distinct humans involved in every destructive op — or for stdio deployments where neither TTY nor Touch ID can reach the operator (Linux Claude Desktop, headless services, locked-down Macs), pick `step_up_authenticator: webhook`. The chokepoint then POSTs a redacted op envelope to an operator-configured receiver (a Slack bot, an internal admin app, anything that speaks HTTP) and blocks until the receiver POSTs a verdict back.
+
+```yaml
+mcp:
+  require_step_up_for_destructive: true
+  step_up_authenticator: webhook
+  approval_webhook_url: https://approvals.example.com/jc-mcp
+  approval_timeout: 5m                   # default 5m; timeout = deny
+  approval_callback_addr: 127.0.0.1:0    # default ephemeral loopback
+```
+
+#### Wire-level contract
+
+**Outbound envelope** (POST from `jc` to `approval_webhook_url`):
+
+```json
+{
+  "tool": "users_delete",
+  "target": "alice",
+  "args_redacted": null,
+  "timestamp": "2026-05-22T14:18:00Z",
+  "nonce": "<base64-32-bytes>",
+  "token": "<base64url-HMAC-of-canonical-envelope>",
+  "callback_url": "http://127.0.0.1:53291/approval/<token>",
+  "profile": "default"
+}
+```
+
+`tool` and `target` are the only identifying fields the human approver typically needs. `args_redacted` is reserved for a future ticket that plumbs the redacted parameters through the chokepoint (today it's `null`; the field exists so receivers can speculatively render it). Sensitive values (passwords, shared secrets, tokens) are stripped before they ever leave the process.
+
+**Inbound verdict** (POST from the receiver to `callback_url`):
+
+```json
+{
+  "decision": "approve",                 // or "deny" — anything else is treated as deny
+  "approver": "alice@example.com",       // advisory; recorded but not used as gate
+  "reason": "ticket TC-1234 approved"    // optional, human-readable
+}
+```
+
+The receiver simply POSTs to the URL `jc` provided in `callback_url`. No additional auth header is required because the URL embeds an HMAC-bound single-use token (see below).
+
+#### Security model
+
+- **The webhook URL is operator-configured and assumed trustworthy enough to present the envelope to a designated approver.** `jc` does not (and cannot) verify that the receiver actually shows the request to a human — that's the operator's responsibility when they pick the destination.
+- **The callback listener binds to loopback by default.** The token-bearing callback URL is meant to be reached from the same host (a co-located approver helper) or via the operator's own tunnel. If you need an off-host receiver, pin `approval_callback_addr` and front it with TLS + auth at the tunnel layer.
+- **Tokens are HMAC-SHA256 over the canonical envelope** keyed by a per-process 32-byte secret. A token leaked from request A cannot approve request B: the handler re-derives the expected token from the stored canonical bytes and compares in constant time. A leaked token also can't be re-used after delivery, because the pending entry is deleted before the verdict channel is read.
+- **Single-use, single-fire:** the verdict channel has capacity 1 and the pending entry is deleted on consumption. A double-POST against the same token finds an empty map and returns 404.
+- **Sensitive params never leave the host:** the same redaction pass used by the Ed25519 signer (`internal/mcp/server.go`'s `redactParams`) strips `password`, `shared_secret`, `api_key`, `token`, and other well-known secret fields. Today's envelope omits args entirely; the redaction policy is in place for when a future ticket extends the interface to carry them.
+- **Fail closed on every error path:** missing webhook URL, listener bind failure, malformed envelope JSON, POST timeout, receiver non-2xx, callback timeout, context cancellation, malformed verdict body, forged token, replayed token — every one returns either `errStepUpUnavailable` (infrastructure) or `errStepUpDenied` (operator decision / timeout). There is no path that returns `nil` without a fresh "approve" verdict that the handler successfully validated against a live pending request.
+- **`approval_timeout = deny`** per spec. A silent timeout that allowed the call would be the worst of both worlds: the operator thinks they have dual control while the gate flaps open under load.
+
+Reference receivers (a Slack approver bot, a generic webhook + signed-receipt helper) are tracked separately; `jc` ships the server-side contract only.
+
 ### Limitations & known gaps
 
 - **The `execute: true` bit is agent-controlled** until step-up auth is enabled. A connected MCP client (Claude Desktop, Claude Code, a custom agent) can flip it itself; there is no human-in-the-loop unless `mcp.require_step_up_for_destructive: true` is set.
-- **Step-up over stdio without Touch ID has no channel.** On Linux/Windows, on Macs without Touch ID hardware, or when `step_up_authenticator: tty` is pinned, an stdio-transport server fails destructive ops closed with `step-up unavailable` because the operator has no terminal to answer on. Use `--transport http` with a real terminal, or run on a Touch-ID-capable Mac with the default `auto` authenticator.
+- **Step-up over stdio without Touch ID or webhook has no channel.** On Linux/Windows, on Macs without Touch ID hardware, or when `step_up_authenticator: tty` is pinned, an stdio-transport server fails destructive ops closed with `step-up unavailable` because the operator has no terminal to answer on. Use `--transport http` with a real terminal, run on a Touch-ID-capable Mac with the default `auto` authenticator, or set `step_up_authenticator: webhook` to route approvals out-of-band (see [Webhook step-up](#webhook-step-up-out-of-band-approval)).
 - **TTY step-up is a weak challenge.** Anyone holding the API key can answer the prompt. Its value is in catching an autonomous agent that flipped `execute: true` without the operator noticing, not in cryptographic binding. Touch ID provides a stronger binding because biometric approval cannot be replayed by holding a credential.
 - **No per-operator identity in the audit trail.** The audit log records *what tool was called and with what parameters*, but not *who flipped `execute: true`*. Real per-user audit identity needs OAuth Device Flow, tracked in [KLA-414](https://linear.app/klaassenconsulting/issue/KLA-414) (currently platform-blocked).
 
-Parent ticket: [KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408). Phase 1 TTY (PR #23) and Phase 2 Ed25519 signing (PR #25) and Touch ID (KLA-412) are shipped; Phase 3 out-of-band approval is [KLA-413](https://linear.app/klaassenconsulting/issue/KLA-413). Until KLA-413 ships, the operational mitigation for non-macOS stdio deployments is to run jc as MCP server in `--read-only` mode (or with a `mcp.blocked_tools` list) by default.
+Parent ticket: [KLA-408](https://linear.app/klaassenconsulting/issue/KLA-408). All three phases are shipped: Phase 1 TTY (PR #23), Phase 2 Ed25519 signing (PR #25) + Touch ID (KLA-412), Phase 3 out-of-band approval ([KLA-413](https://linear.app/klaassenconsulting/issue/KLA-413)). For non-macOS stdio deployments where TTY can't reach the operator, the webhook authenticator is the recommended channel; for compliance-driven dual-control on any platform it's the only authenticator that involves a second human.
 
 ## MCP server trust model
 
@@ -341,7 +398,7 @@ This is detection, not prevention: a successful credential exfiltration still pr
 | **Laptop is online, operator is at the keyboard** | TTY confirmation, `--plan`, `--read-only` MCP mode, keychain storage | — |
 | **Laptop is stolen with screen unlocked** | Credentials are in the keychain, not on disk; the OS lock screen is the boundary | jc itself does not require re-auth on resume |
 | **API key exfiltrated** | Validated keys hit the org's normal API rate limits and audit log on JumpCloud; `mcp.sign_destructive_ops` produces a tamper-evident local trail | jc has no key-rotation reminder; signed manifests detect rather than prevent |
-| **Compromised MCP agent prompt** | Read-only mode, tool allow/block lists, rate limiting, the `execute: true` gate, optional step-up (TTY or Touch ID), optional signed-manifest audit trail | The agent controls `execute: true` unless step-up is enabled; signing is post-hoc detection, not prevention |
+| **Compromised MCP agent prompt** | Read-only mode, tool allow/block lists, rate limiting, the `execute: true` gate, optional step-up (TTY, Touch ID, or out-of-band webhook), optional signed-manifest audit trail | The agent controls `execute: true` unless step-up is enabled; signing is post-hoc detection, not prevention |
 | **MCP server exposed via tunnel without `--require-auth`** | Loopback default + explicit warning when binding non-loopback without TLS | Once exposed, anyone reaching the URL has full credential privilege |
 | **Plaintext config used (`--allow-plaintext`)** | Mode-`0600` config file in a `0700` dir | jc cannot prevent backups, sync clients, or `cat ~/.config/jc/config.yaml` from leaking it |
 
@@ -349,7 +406,6 @@ This is detection, not prevention: a successful credential exfiltration still pr
 
 Active backlog tickets that close gaps called out in this document:
 
-- **[KLA-413](https://linear.app/klaassenconsulting/issue/KLA-413) — Out-of-band approval for MCP destructive ops.** Webhook-based dual-control for "delete in production" workflows. Complements step-up by adding a second person on the approval path.
 - **[KLA-414](https://linear.app/klaassenconsulting/issue/KLA-414) — OAuth Device Flow.** Per-operator audit identity once JumpCloud exposes `/oauth2/device`. Currently platform-blocked.
 
 ## Quick reference

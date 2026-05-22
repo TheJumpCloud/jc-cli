@@ -22,7 +22,7 @@ func TestNewTouchIDStepUpIfSupported_TracksHardware(t *testing.T) {
 }
 
 func TestNewStepUp_AutoOnDarwin(t *testing.T) {
-	a := newStepUp(true, "key12345678", "auto")
+	a := mustStepUp(t, stepUpConfig{Required: true, APIKey: "key12345678", AuthenticatorPref: "auto"})
 	assertPlatformAuthenticator(t, a, "auto")
 }
 
@@ -30,7 +30,7 @@ func TestNewStepUp_EmptyPrefOnDarwin(t *testing.T) {
 	// Empty pref must follow the same "strongest available" rule as
 	// "auto" so a fresh install without explicit config still gets the
 	// best channel the host can offer.
-	a := newStepUp(true, "key12345678", "")
+	a := mustStepUp(t, stepUpConfig{Required: true, APIKey: "key12345678"})
 	assertPlatformAuthenticator(t, a, "")
 }
 
@@ -38,7 +38,7 @@ func TestNewStepUp_TouchIDPrefOnDarwin(t *testing.T) {
 	// Pinned "touchid" should resolve to *touchIDStepUp when biometrics
 	// are usable, and fall back to *ttyStepUp when they aren't, so the
 	// chokepoint still has *some* challenge to present.
-	a := newStepUp(true, "key12345678", "touchid")
+	a := mustStepUp(t, stepUpConfig{Required: true, APIKey: "key12345678", AuthenticatorPref: "touchid"})
 	assertPlatformAuthenticator(t, a, "touchid")
 }
 
@@ -67,6 +67,20 @@ func TestStepUpReachesOperatorOnStdio_DarwinTracksHardware(t *testing.T) {
 		if got != want {
 			t.Errorf("StepUpReachesOperatorOnStdio(%q) = %v on darwin (biometrics=%v), want %v",
 				pref, got, want, want)
+		}
+	}
+}
+
+// On darwin, the auto / touchid / empty paths only need the API key
+// when biometric hardware is missing (the runtime fallback to TTY).
+// Stays in lockstep with newStepUp's resolution logic.
+func TestStepUpNeedsAPIKey_DarwinTracksHardware(t *testing.T) {
+	for _, pref := range []string{"", "auto", "touchid"} {
+		got := StepUpNeedsAPIKey(pref)
+		want := !touchIDAvailable()
+		if got != want {
+			t.Errorf("StepUpNeedsAPIKey(%q) = %v on darwin (biometrics=%v), want %v",
+				pref, got, touchIDAvailable(), want)
 		}
 	}
 }

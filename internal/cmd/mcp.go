@@ -200,12 +200,15 @@ devices_get, groups_add_member).`,
 }
 
 func runMcpTools(cmd *cobra.Command, readOnly bool) error {
-	server := mcp.NewServer(mcp.Options{
+	server, err := mcp.NewServer(mcp.Options{
 		RateLimit:    60,
 		ReadOnly:     readOnly,
 		AllowedTools: config.MCPAllowedTools(),
 		BlockedTools: config.MCPBlockedTools(),
 	})
+	if err != nil {
+		return fmt.Errorf("creating MCP server: %w", err)
+	}
 
 	tools := server.ListToolNames()
 	for _, name := range tools {
@@ -251,16 +254,18 @@ func applyProfileRole(activeProfile string, profileReadOnly, flagChanged, readOn
 }
 
 func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int, corsOrigin, tlsCert, tlsKey string, requireAuth, requireStepUp bool, stepUpAuth string, signDestructiveOps bool) error {
-	// Step-up auth needs an API key to derive the challenge answer. Gate
-	// the read on the explicit opt-in flag and fail-fast at startup if
-	// it's missing — matches the --require-auth pattern below so an
-	// operator who turns step-up on without a credential gets a clear
-	// startup error instead of silent runtime denials.
+	// Step-up auth's API key dependency is authenticator-specific: only
+	// the TTY authenticator (and the auto / touchid paths that fall back
+	// to TTY when biometric hardware is missing) actually derives the
+	// challenge answer from it. Webhook + real Touch ID never read it.
+	// Bugbot caught the unconditional read on PR #34 — the old guard
+	// failed webhook operators with a misleading "to derive the
+	// challenge answer" error that didn't apply to their channel.
 	var stepUpAPIKey string
-	if requireStepUp {
+	if requireStepUp && mcp.StepUpNeedsAPIKey(stepUpAuth) {
 		stepUpAPIKey = config.APIKey()
 		if stepUpAPIKey == "" {
-			return fmt.Errorf("--require-step-up needs an API key to derive the challenge answer. Run 'jc auth login' or set JC_API_KEY, or drop --require-step-up")
+			return fmt.Errorf("--require-step-up with the TTY step-up channel needs an API key to derive the challenge answer. Run 'jc auth login' or set JC_API_KEY, pick --step-up-authenticator=touchid (macOS Touch ID) or =webhook (out-of-band approval), or drop --require-step-up")
 		}
 	}
 
@@ -272,18 +277,24 @@ func runMcpServe(rateLimit int, readOnly bool, transport, addr string, port int,
 	// even on servers that never run recipes.
 	mcp.RecipeDispatcher = recipe.NewDispatcher(newRootCmdForRecipeStep)
 
-	server := mcp.NewServer(mcp.Options{
-		RateLimit:           rateLimit,
-		ReadOnly:            readOnly,
-		AuditEnabled:        config.MCPAuditLog(),
-		AllowedTools:        config.MCPAllowedTools(),
-		BlockedTools:        config.MCPBlockedTools(),
-		RequireStepUp:       requireStepUp,
-		StepUpAPIKey:        stepUpAPIKey,
-		StepUpAuthenticator: stepUpAuth,
-		SignDestructiveOps:  signDestructiveOps,
-		SigningProfile:      config.ActiveProfile(),
+	server, err := mcp.NewServer(mcp.Options{
+		RateLimit:            rateLimit,
+		ReadOnly:             readOnly,
+		AuditEnabled:         config.MCPAuditLog(),
+		AllowedTools:         config.MCPAllowedTools(),
+		BlockedTools:         config.MCPBlockedTools(),
+		RequireStepUp:        requireStepUp,
+		StepUpAPIKey:         stepUpAPIKey,
+		StepUpAuthenticator:  stepUpAuth,
+		ApprovalWebhookURL:   config.MCPApprovalWebhookURL(),
+		ApprovalCallbackAddr: config.MCPApprovalCallbackAddr(),
+		ApprovalTimeout:      config.MCPApprovalTimeout(),
+		SignDestructiveOps:   signDestructiveOps,
+		SigningProfile:       config.ActiveProfile(),
 	})
+	if err != nil {
+		return fmt.Errorf("starting MCP server: %w", err)
+	}
 
 	// Handle graceful shutdown on Ctrl+C / SIGTERM.
 	ctx, cancel := context.WithCancel(context.Background())
