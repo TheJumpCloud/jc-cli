@@ -221,11 +221,15 @@ func saveBuiltinAsUserCopy(r *recipe.Recipe) (string, error) {
 		return "", fmt.Errorf("creating recipes dir: %w", err)
 	}
 	path := uniquePath(filepath.Join(dir, slugForFilename(r.Name)+".yaml"))
-	yaml, err := recipe.MarshalYAML(r)
+	// Don't name this `yaml` — that shadows the package-level import
+	// of go.yaml.in/yaml/v3 used by validateEditedFile, and anyone
+	// later adding a yaml.Unmarshal call in this function would get a
+	// confusing "yaml is not a package" compile error.
+	body, err := recipe.MarshalYAML(r)
 	if err != nil {
 		return "", fmt.Errorf("marshaling builtin recipe: %w", err)
 	}
-	if err := os.WriteFile(path, yaml, 0o600); err != nil {
+	if err := os.WriteFile(path, body, 0o600); err != nil {
 		return "", fmt.Errorf("writing user copy: %w", err)
 	}
 	return path, nil
