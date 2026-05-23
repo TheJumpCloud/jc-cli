@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/klaassen-consulting/jc/internal/recipe"
+	"go.yaml.in/yaml/v3"
 )
 
 // editorFinishedMsg is delivered after $EDITOR returns. path is the file
@@ -67,10 +68,15 @@ func resolveEditor() string {
 	if editorOverride != "" {
 		return editorOverride
 	}
-	if v := os.Getenv("VISUAL"); v != "" {
+	// TrimSpace on the env-var values: a whitespace-only $VISUAL (e.g.
+	// "  ") used to pass the empty check, then strings.Fields would
+	// return an empty slice in execEditor and fields[0] panicked. Treat
+	// whitespace-only the same as unset so we fall through to the
+	// platform default.
+	if v := strings.TrimSpace(os.Getenv("VISUAL")); v != "" {
 		return v
 	}
-	if v := os.Getenv("EDITOR"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("EDITOR")); v != "" {
 		return v
 	}
 	if runtime.GOOS == "windows" {
@@ -88,6 +94,15 @@ var execEditor = func(path string) tea.Cmd {
 	// "wait" flag to block; we honor whatever the user put in $EDITOR
 	// verbatim by splitting on whitespace — same convention git uses.
 	fields := strings.Fields(editor)
+	if len(fields) == 0 {
+		// resolveEditor's TrimSpace + platform default should make this
+		// unreachable, but belt-and-suspenders: surface an editorFinishedMsg
+		// with err set so handleEditorFinished produces a sensible flash
+		// instead of panicking the bubbletea program.
+		return func() tea.Msg {
+			return editorFinishedMsg{path: path, err: fmt.Errorf("no editor configured ($VISUAL/$EDITOR empty)")}
+		}
+	}
 	cmd := exec.Command(fields[0], append(fields[1:], path)...)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return editorFinishedMsg{path: path, err: err}
@@ -220,9 +235,19 @@ func saveBuiltinAsUserCopy(r *recipe.Recipe) (string, error) {
 // returned. Returns a user-facing message — empty string when valid.
 // Doesn't delete the file on invalid YAML; the operator's work is
 // preserved on disk so they can re-open and fix it.
+//
+// Why this doesn't call recipe.ParseFile: that helper folds yaml
+// unmarshal + Validate() into a single error, so a structural failure
+// (no steps, unnamed step) would surface here as the YAML-parse branch
+// — Bugbot flagged the mislabel on the first version. Splitting the
+// two steps keeps the message accurate.
 func validateEditedFile(path string) string {
-	r, err := recipe.ParseFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
+		return fmt.Sprintf("Could not read %s: %v", filepath.Base(path), err)
+	}
+	var r recipe.Recipe
+	if err := yaml.Unmarshal(data, &r); err != nil {
 		return fmt.Sprintf("Saved %s but YAML parse failed: %v", filepath.Base(path), err)
 	}
 	if err := r.Validate(); err != nil {

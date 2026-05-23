@@ -393,6 +393,120 @@ func TestRecipeListScreen_EditorFinishedSurfacesValidationError(t *testing.T) {
 	}
 }
 
+// Bugbot finding on PR #35: validateEditedFile used recipe.ParseFile
+// which already calls Validate() internally, so a parseable-but-invalid
+// recipe (no steps, unnamed step, ...) surfaced as the YAML-parse
+// branch instead of the validate branch. Pin the distinction by hand
+// so we don't regress.
+func TestValidateEditedFile_ClassifiesParseVsValidateDistinctly(t *testing.T) {
+	dir := t.TempDir()
+
+	// Malformed YAML: 'name: : :' is a syntax error → parse branch.
+	bad := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(bad, []byte("name: : :\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parseMsg := validateEditedFile(bad)
+	if !strings.Contains(parseMsg, "YAML parse failed") {
+		t.Errorf("malformed YAML should hit the parse branch; got %q", parseMsg)
+	}
+	if strings.Contains(parseMsg, "recipe is invalid") {
+		t.Errorf("malformed YAML must NOT label as 'recipe is invalid'; got %q", parseMsg)
+	}
+
+	// Valid YAML but no steps → structural failure → validate branch.
+	noSteps := filepath.Join(dir, "no-steps.yaml")
+	if err := os.WriteFile(noSteps, []byte("name: thing\nsteps: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	validateMsg := validateEditedFile(noSteps)
+	if !strings.Contains(validateMsg, "recipe is invalid") {
+		t.Errorf("no-steps YAML should hit the validate branch; got %q", validateMsg)
+	}
+	if strings.Contains(validateMsg, "YAML parse failed") {
+		t.Errorf("structurally-invalid YAML must NOT label as parse failure; got %q", validateMsg)
+	}
+
+	// Valid YAML, named recipe, but the step itself is invalid (missing
+	// command) → validate branch as well.
+	noCmd := filepath.Join(dir, "no-cmd.yaml")
+	if err := os.WriteFile(noCmd, []byte("name: t\nsteps:\n  - name: s\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stepMsg := validateEditedFile(noCmd)
+	if !strings.Contains(stepMsg, "recipe is invalid") {
+		t.Errorf("missing-command step should hit the validate branch; got %q", stepMsg)
+	}
+}
+
+// Bugbot finding on PR #35: TextInputActive ignored confirm-prompt
+// state, so pressing 'q' while the builtin-edit prompt was up quit
+// the entire TUI instead of dismissing the prompt.
+func TestRecipeListScreen_TextInputActiveCoversConfirmPrompt(t *testing.T) {
+	withTempRecipesDir(t)
+	all := sampleRecipes()
+	withRecipeLoaders(t, all, all)
+	withFakeEditor(t, nil)
+
+	s := NewRecipeListScreen()
+	s.Init()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	if s.TextInputActive() {
+		t.Fatal("TextInputActive should be false in idle browse mode")
+	}
+
+	// Trigger the builtin-edit confirm prompt.
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if s.confirmPrompt == "" {
+		t.Fatal("e on builtin should set confirm prompt (test setup precondition)")
+	}
+	if !s.TextInputActive() {
+		t.Error("TextInputActive must return true while confirm prompt is visible so global 'q' is suppressed")
+	}
+
+	// Dismiss with anything-but-y.
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if s.TextInputActive() {
+		t.Error("TextInputActive should return false after the prompt is dismissed")
+	}
+}
+
+// Bugbot finding on PR #35: execEditor used fields[0] without
+// checking len(fields), so a whitespace-only $VISUAL/$EDITOR caused
+// an index panic.
+func TestResolveEditor_WhitespaceOnlyTreatedAsUnset(t *testing.T) {
+	t.Setenv("VISUAL", "   ")
+	t.Setenv("EDITOR", "\t \n")
+	got := resolveEditor()
+	if got != "vi" && got != "notepad" {
+		t.Errorf("whitespace-only $VISUAL/$EDITOR should fall through to platform default; got %q", got)
+	}
+}
+
+func TestExecEditor_EmptyResolutionSurfacesError(t *testing.T) {
+	// Force the resolver to return whitespace (which strings.Fields
+	// will reduce to an empty slice). The defensive len check in
+	// execEditor must produce a friendly error-bearing
+	// editorFinishedMsg rather than panicking.
+	origOverride := editorOverride
+	editorOverride = " "
+	t.Cleanup(func() { editorOverride = origOverride })
+
+	cmd := execEditor("/tmp/whatever.yaml")
+	if cmd == nil {
+		t.Fatal("execEditor with empty editor should still produce a tea.Cmd")
+	}
+	msg := cmd()
+	finished, ok := msg.(editorFinishedMsg)
+	if !ok {
+		t.Fatalf("expected editorFinishedMsg, got %T", msg)
+	}
+	if finished.err == nil {
+		t.Error("editorFinishedMsg.err should describe the empty-editor failure")
+	}
+}
+
 func TestResolveEditor_VisualBeatsEditor(t *testing.T) {
 	t.Setenv("VISUAL", "code --wait")
 	t.Setenv("EDITOR", "vi")

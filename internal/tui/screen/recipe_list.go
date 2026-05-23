@@ -59,7 +59,17 @@ func NewRecipeListScreen() *RecipeListScreen {
 
 func (s *RecipeListScreen) Title() string { return "Recipes" }
 
-func (s *RecipeListScreen) TextInputActive() bool { return s.filtering }
+// TextInputActive includes both filter mode and the confirm prompt:
+// the app uses this to decide whether to swallow single-key globals
+// like 'q' (quit) before the screen sees them. Filter mode obviously
+// needs that suppression; the confirm prompt does too, because 'q'
+// while the prompt is up should dismiss the prompt (via the default
+// branch in updateConfirmMode) rather than quit the whole TUI.
+// Bugbot caught the regression on PR #35 — the original commit only
+// returned s.filtering and confirm-mode 'q' quit the app.
+func (s *RecipeListScreen) TextInputActive() bool {
+	return s.filtering || s.confirmPrompt != ""
+}
 
 func (s *RecipeListScreen) Init() tea.Cmd {
 	s.loadRecipes()
