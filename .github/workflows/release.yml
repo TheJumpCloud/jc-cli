@@ -112,8 +112,14 @@ jobs:
               return;
             }
 
-            const tag = `v${next}`;
-            core.info(`Latest semver tag: v${latest}`);
+            // No `v` prefix on the tag: the TheJumpCloud org has a
+            // ruleset "Version Tag Protections" that forbids creating
+            // refs matching refs/tags/v* (and refs/tags/proto/v*),
+            // which the GITHUB_TOKEN can't bypass. Existing release
+            // tags (1.15.0, 1.16.0) already use the no-prefix
+            // convention, so we match it.
+            const tag = String(next);
+            core.info(`Latest semver tag: ${latest}`);
             core.info(`Next version: ${tag}`);
             core.setOutput('VERSION', tag);
 
