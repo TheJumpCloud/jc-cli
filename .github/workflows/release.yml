@@ -39,7 +39,7 @@ jobs:
     steps:
       - name: Parse PR labels
         id: labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const valid = ['major', 'minor', 'patch', 'no version'];
@@ -78,7 +78,7 @@ jobs:
 
       - name: Compute next version
         id: bump
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           RELEASE_TYPE: ${{ needs.Check-PR-Labels.outputs.RELEASE_TYPE }}
         with:
