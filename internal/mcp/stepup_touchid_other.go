@@ -1,9 +1,12 @@
-//go:build !darwin
+//go:build !darwin || !cgo
 
 package mcp
 
 // touchIDAvailable is the platform stub matching the darwin probe. Non-
-// darwin builds have no biometric stack to consult, so it's always false.
+// darwin builds have no biometric stack to consult; darwin builds
+// without cgo (cross-compiled binaries shipped from a non-darwin CI
+// runner) can't link against LocalAuthentication.framework either. Both
+// paths fall through to TTY, so the stub returns false.
 func touchIDAvailable() bool {
 	return false
 }
