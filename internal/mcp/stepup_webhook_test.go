@@ -125,6 +125,62 @@ func TestWebhookStepUp_RemediationIsChannelAware(t *testing.T) {
 	}
 }
 
+// KLA-420: when an operator enables --require-step-up
+// --step-up-authenticator=webhook without also enabling signing
+// (mcp.sign_destructive_ops), the webhook envelope's profile field
+// must still carry the active profile name. Pre-fix, server.go wired
+// Profile = opts.SigningProfile directly with no fallback, so
+// webhook-only setups emitted `"profile": ""` to receivers.
+func TestNewServer_WebhookProfileFallsBackToActiveProfile(t *testing.T) {
+	setupTest(t)
+
+	s := MustNewServer(Options{
+		RequireStepUp:        true,
+		StepUpAuthenticator:  "webhook",
+		ApprovalWebhookURL:   "http://127.0.0.1:1/notused",
+		ApprovalCallbackAddr: "127.0.0.1:0",
+		ApprovalTimeout:      1 * time.Second,
+		// SigningProfile intentionally left empty — that's the bug:
+		// pre-fix this would propagate `profile: ""` into the webhook.
+	})
+	t.Cleanup(s.shutdownStepUp)
+
+	w, ok := s.stepUp.(*webhookStepUp)
+	if !ok {
+		t.Fatalf("expected *webhookStepUp, got %T", s.stepUp)
+	}
+	// setupTest configures active_profile=default; resolution must pick
+	// that up rather than leaving the field empty.
+	if w.profile != "default" {
+		t.Errorf("webhookStepUp.profile = %q, want %q (active profile fallback)", w.profile, "default")
+	}
+}
+
+// Companion: an explicit SigningProfile must still flow through
+// unchanged. The fallback only kicks in when the explicit value is
+// empty.
+func TestNewServer_WebhookProfileHonorsExplicitSigningProfile(t *testing.T) {
+	setupTest(t)
+
+	s := MustNewServer(Options{
+		RequireStepUp:        true,
+		StepUpAuthenticator:  "webhook",
+		ApprovalWebhookURL:   "http://127.0.0.1:1/notused",
+		ApprovalCallbackAddr: "127.0.0.1:0",
+		ApprovalTimeout:      1 * time.Second,
+		SigningProfile:       "staging",
+	})
+	t.Cleanup(s.shutdownStepUp)
+
+	w, ok := s.stepUp.(*webhookStepUp)
+	if !ok {
+		t.Fatalf("expected *webhookStepUp, got %T", s.stepUp)
+	}
+	if w.profile != "staging" {
+		t.Errorf("webhookStepUp.profile = %q, want %q (explicit SigningProfile)", w.profile, "staging")
+	}
+}
+
 func TestNewWebhookStepUp_RejectsEmptyURL(t *testing.T) {
 	_, err := newWebhookStepUp("", "", 0, "default")
 	if err == nil {
