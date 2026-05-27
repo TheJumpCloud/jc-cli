@@ -12,7 +12,6 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 //go:embed apps_html/device.html
@@ -488,49 +487,22 @@ func connectivityBucket(lastContact string, now time.Time) string {
 }
 
 // registerDeviceView wires the device_view MCP App: typed tool + ui://
-// resource. Mirrors registerUserView; lives outside appSpecs because
-// the tool takes typed input.
+// resource. Mirrors registerUserView; lives outside appSpecs because the
+// tool takes typed input.
 func (s *Server) registerDeviceView() {
-	meta := mcp.Meta{
-		"ui":             map[string]any{"resourceUri": deviceViewResourceURI},
-		"ui/resourceUri": deviceViewResourceURI,
-	}
-	addToolWithMetaTyped(s, "device_view",
-		"Show an interactive JumpCloud device inventory view: header (hostname, OS+version, serial, last contact, agent version), "+
-			"status badges (online/stale/offline, FDE, MDM), group memberships, applied policies, a system-insights snapshot "+
-			"(uptime, logged-in users, disks), and recent Directory Insights events for the device. "+
-			"Required input: device (hostname, displayName, or 24-char hex ID). "+
+	registerTypedAppTool(s, typedAppSpec[deviceViewArgs]{
+		Name: "device_view",
+		Description: "Show an interactive JumpCloud device inventory view: header (hostname, OS+version, serial, last contact, agent version), " +
+			"status badges (online/stale/offline, FDE, MDM), group memberships, applied policies, a system-insights snapshot " +
+			"(uptime, logged-in users, disks), and recent Directory Insights events for the device. " +
+			"Required input: device (hostname, displayName, or 24-char hex ID). " +
 			"Renders as a rich inventory panel in MCP App-capable hosts; returns the same data as JSON when rendering isn't supported.",
-		meta,
-		func(ctx context.Context, req *mcp.CallToolRequest, args deviceViewArgs) (*mcp.CallToolResult, any, error) {
-			data, err := fetchDeviceViewData(ctx, args)
-			if err != nil {
-				return errorResult(fmt.Sprintf("device_view: %v", err)), nil, nil
-			}
-			res, err := jsonResult(data)
-			if err != nil {
-				return errorResult(err.Error()), nil, nil
-			}
-			return res, nil, nil
+		ResourceURI:         deviceViewResourceURI,
+		ResourceName:        "Device Inventory App",
+		ResourceDescription: "Interactive JumpCloud device inventory (status, groups, policies, system insights, recent events)",
+		HTML:                deviceHTML,
+		Handler: func(ctx context.Context, args deviceViewArgs) (any, error) {
+			return fetchDeviceViewData(ctx, args)
 		},
-	)
-
-	rendered := renderAppHTML(deviceHTML)
-	s.mcpServer.AddResource(
-		&mcp.Resource{
-			URI:         deviceViewResourceURI,
-			Name:        "Device Inventory App",
-			Description: "Interactive JumpCloud device inventory (status, groups, policies, system insights, recent events)",
-			MIMEType:    mcpAppMIMEType,
-		},
-		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			return &mcp.ReadResourceResult{
-				Contents: []*mcp.ResourceContents{{
-					URI:      deviceViewResourceURI,
-					MIMEType: mcpAppMIMEType,
-					Text:     rendered,
-				}},
-			}, nil
-		},
-	)
+	})
 }
