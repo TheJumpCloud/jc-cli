@@ -12,7 +12,6 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 //go:embed apps_html/user.html
@@ -317,45 +316,20 @@ func previewSSHKey(pub string) string {
 }
 
 // registerUserView wires the user_view MCP App: typed tool + ui:// resource.
-// Lives outside appSpecs because it takes input args.
+// Lives outside appSpecs because the tool takes typed input; uses
+// registerTypedAppTool to share the wrap-fetch / errorResult / jsonResult
+// + resource-handler boilerplate with the other typed apps.
 func (s *Server) registerUserView() {
-	meta := mcp.Meta{
-		"ui":             map[string]any{"resourceUri": userViewResourceURI},
-		"ui/resourceUri": userViewResourceURI,
-	}
-	addToolWithMetaTyped(s, "user_view",
-		"Show an interactive JumpCloud user profile: header (username, email, status badges), MFA enrollment, group memberships, SSH keys, and recent auth events. "+
+	registerTypedAppTool(s, typedAppSpec[userViewArgs]{
+		Name: "user_view",
+		Description: "Show an interactive JumpCloud user profile: header (username, email, status badges), MFA enrollment, group memberships, SSH keys, and recent auth events. " +
 			"Required input: user (username, email, or ID). Renders as a rich profile in MCP App-capable hosts; returns the same data as JSON when rendering isn't supported.",
-		meta,
-		func(ctx context.Context, req *mcp.CallToolRequest, args userViewArgs) (*mcp.CallToolResult, any, error) {
-			data, err := fetchUserViewData(ctx, args)
-			if err != nil {
-				return errorResult(fmt.Sprintf("user_view: %v", err)), nil, nil
-			}
-			res, err := jsonResult(data)
-			if err != nil {
-				return errorResult(err.Error()), nil, nil
-			}
-			return res, nil, nil
+		ResourceURI:         userViewResourceURI,
+		ResourceName:        "User Profile App",
+		ResourceDescription: "Interactive JumpCloud user profile (groups, SSH keys, MFA, recent events)",
+		HTML:                userHTML,
+		Handler: func(ctx context.Context, args userViewArgs) (any, error) {
+			return fetchUserViewData(ctx, args)
 		},
-	)
-
-	rendered := renderAppHTML(userHTML)
-	s.mcpServer.AddResource(
-		&mcp.Resource{
-			URI:         userViewResourceURI,
-			Name:        "User Profile App",
-			Description: "Interactive JumpCloud user profile (groups, SSH keys, MFA, recent events)",
-			MIMEType:    mcpAppMIMEType,
-		},
-		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			return &mcp.ReadResourceResult{
-				Contents: []*mcp.ResourceContents{{
-					URI:      userViewResourceURI,
-					MIMEType: mcpAppMIMEType,
-					Text:     rendered,
-				}},
-			}, nil
-		},
-	)
+	})
 }
