@@ -130,7 +130,13 @@ Examples:
 					flagAPIKeySet = f.Changed
 				}
 				if f := root.PersistentFlags().Lookup("org"); f != nil {
-					flagOrgSet = f.Changed
+					// Match root's PersistentPreRunE: --org takes effect
+					// ONLY when its value is non-empty. An empty --org=
+					// (literal empty assignment or `--org "$UNSET_VAR"`)
+					// leaves the active profile unchanged even though
+					// .Changed reports true. Bugbot flagged the
+					// .Changed-only check as a lying source attribution.
+					flagOrgSet = f.Changed && strings.TrimSpace(viper.GetString("org")) != ""
 				}
 			}
 			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout, flagAPIKeySet, flagOrgSet)

@@ -96,6 +96,37 @@ profiles:
 	}
 }
 
+// Bugbot finding #12 (Medium) on PR #42: compound of #10. The fix to
+// #10 used flag.Changed to detect --org, but Changed is true even for
+// `--org=` (empty value). Root's PersistentPreRunE actually checks
+// viper.GetString("org") != "" before OverrideActiveProfile. With
+// empty --org, the profile is unchanged but doctor reported
+// "source: --org flag" — a lie. The caller in newDoctorCmd now does
+// the empty-value check at the flag-set decision point.
+//
+// This test exercises the contract by constructing the
+// "flag-set-but-value-empty" condition at the collectProfile boundary:
+// passing flagOrgSet=false simulates the caller's correct decision.
+// We assert collectProfile then falls through to env/config rather
+// than claiming the flag.
+func TestCollectProfile_EmptyOrgFlagFallsThrough(t *testing.T) {
+	withTempConfig(t, `
+active_profile: from-config
+profiles:
+  from-config:
+    api_key: ""
+`)
+	t.Setenv("JC_PROFILE", "")
+	_ = viper.BindEnv("active_profile", "JC_PROFILE")
+
+	// Caller in newDoctorCmd should pass false when --org=  (empty).
+	// Here we exercise the resulting behavior.
+	p := collectProfile(false)
+	if p.Source == "--org flag" {
+		t.Errorf("profile.source = %q, want 'config (or default)' (empty --org must NOT attribute to flag)", p.Source)
+	}
+}
+
 // Bugbot finding #10 (Medium) on PR #42: root's PersistentPreRunE
 // calls config.OverrideActiveProfile when --org is set, but my
 // collectProfile only knew about JC_PROFILE env / config /
