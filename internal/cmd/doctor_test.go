@@ -84,7 +84,7 @@ profiles:
 	// Refresh viper's env-bound view.
 	_ = viper.BindEnv("active_profile", "JC_PROFILE")
 
-	p := collectProfile()
+	p := collectProfile(false) // --org flag not set
 	if p.Active != "staging" {
 		t.Errorf("profile.active = %q, want 'staging' (env override)", p.Active)
 	}
@@ -93,6 +93,30 @@ profiles:
 	}
 	if len(p.Available) != 2 {
 		t.Errorf("profile.available = %v, want [from-config, staging]", p.Available)
+	}
+}
+
+// Bugbot finding #10 (Medium) on PR #42: root's PersistentPreRunE
+// calls config.OverrideActiveProfile when --org is set, but my
+// collectProfile only knew about JC_PROFILE env / config /
+// "default". An operator running `jc doctor --org staging` saw the
+// right ActiveProfile but a misleading source attribution.
+func TestCollectProfile_OrgFlagOverridesAll(t *testing.T) {
+	withTempConfig(t, `
+active_profile: from-config
+profiles:
+  from-config:
+    api_key: ""
+  staging:
+    api_key: ""
+`)
+	// Both env and config also set, to prove the flag wins.
+	t.Setenv("JC_PROFILE", "from-env")
+	_ = viper.BindEnv("active_profile", "JC_PROFILE")
+
+	p := collectProfile(true) // --org flag IS set
+	if p.Source != "--org flag" {
+		t.Errorf("profile.source = %q, want '--org flag' (flag must beat env + config)", p.Source)
 	}
 }
 
@@ -542,6 +566,37 @@ org_id: top-level-org-7777
 	}
 }
 
+// Bugbot finding #11 (Medium) on PR #42: when the parent context's
+// deadline fires before --probe-timeout, the error message blamed
+// --probe-timeout regardless. Operators would raise the wrong flag.
+// Fix: peek at parentCtx.Err() in the timeout branch.
+func TestRunAPIProbe_ParentContextDeadlineBlamedCorrectly(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    api_key: "test-key-xxxx"
+`)
+	// Parent context expires immediately. Our probe-timeout is far
+	// larger, so the parent fires first.
+	parentCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	time.Sleep(5 * time.Millisecond) // ensure parent has fired
+
+	probe := runAPIProbe(parentCtx, 30*time.Second)
+
+	if probe.Status != "timeout" {
+		t.Errorf("Status = %q, want 'timeout'", probe.Status)
+	}
+	// The error must blame the parent context, NOT --probe-timeout.
+	if !strings.Contains(probe.Error, "parent context") {
+		t.Errorf("Error = %q, want it to blame the parent context, not --probe-timeout", probe.Error)
+	}
+	if strings.Contains(probe.Error, "increase --probe-timeout") {
+		t.Errorf("Error suggested raising --probe-timeout when the parent deadline was the real cause: %q", probe.Error)
+	}
+}
+
 func TestClassifyProbeError_ContextDeadline(t *testing.T) {
 	p := classifyProbeError(context.DeadlineExceeded)
 	if p.Status != "timeout" {
@@ -621,7 +676,7 @@ func TestClassifyProbeError_OAuthInsufficientScope(t *testing.T) {
 // downgrading.
 func TestPrintDoctorYAML_RoundTrip(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
-	rep := collectDoctorReport(context.Background(), false, 0, false)
+	rep := collectDoctorReport(context.Background(), false, 0, false, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorYAML(&buf, rep); err != nil {
@@ -642,7 +697,7 @@ func TestPrintDoctorYAML_RoundTrip(t *testing.T) {
 
 func TestPrintDoctorJSON_RoundTrip(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
-	rep := collectDoctorReport(context.Background(), false, 0, false)
+	rep := collectDoctorReport(context.Background(), false, 0, false, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorJSON(&buf, rep); err != nil {
@@ -660,7 +715,7 @@ func TestPrintDoctorJSON_RoundTrip(t *testing.T) {
 
 func TestPrintDoctorText_IncludesAllSections(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
-	rep := collectDoctorReport(context.Background(), false, 0, false)
+	rep := collectDoctorReport(context.Background(), false, 0, false, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorText(&buf, rep); err != nil {
@@ -693,7 +748,7 @@ ask:
   api_key: "ASK-SECRET-ALSO-NOT-12345"
 `)
 
-	rep := collectDoctorReport(context.Background(), false, 0, false)
+	rep := collectDoctorReport(context.Background(), false, 0, false, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorText(&buf, rep); err != nil {

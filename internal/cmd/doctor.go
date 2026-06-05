@@ -124,12 +124,16 @@ Examples:
 			// defined on the root command (PersistentFlag). cobra walks
 			// up the tree to find it, so this works from a subcommand.
 			flagAPIKeySet := false
+			flagOrgSet := false
 			if root := cmd.Root(); root != nil {
 				if f := root.PersistentFlags().Lookup("api-key"); f != nil {
 					flagAPIKeySet = f.Changed
 				}
+				if f := root.PersistentFlags().Lookup("org"); f != nil {
+					flagOrgSet = f.Changed
+				}
 			}
-			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout, flagAPIKeySet)
+			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout, flagAPIKeySet, flagOrgSet)
 
 			// Respect --output json explicitly OR the global --output flag /
 			// JC_OUTPUT env / config default. Hierarchical (json, yaml) and
@@ -171,10 +175,10 @@ Examples:
 // flagAPIKeySet must come from the caller (it's the root command's
 // --api-key Changed bit) so collectAuth can correctly attribute the
 // resolved value to the flag vs JC_API_KEY env when both are set.
-func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration, flagAPIKeySet bool) doctorReport {
+func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration, flagAPIKeySet, flagOrgSet bool) doctorReport {
 	rep := doctorReport{
 		Build:   collectBuild(),
-		Profile: collectProfile(),
+		Profile: collectProfile(flagOrgSet),
 		Config:  collectConfig(),
 		Auth:    collectAuth(flagAPIKeySet),
 		API:     collectAPI(),
@@ -195,10 +199,20 @@ func collectBuild() buildSection {
 	}
 }
 
-func collectProfile() profileSection {
+func collectProfile(flagOrgSet bool) profileSection {
 	active := config.ActiveProfile()
 	source := "config"
+	// Precedence mirror to root.go's PersistentPreRunE:
+	//   1. --org flag → config.OverrideActiveProfile(org)
+	//   2. JC_PROFILE env (viper BindEnv → active_profile)
+	//   3. config file active_profile
+	//   4. "default" fallback
+	// Bugbot caught the original ordering — `jc doctor --org staging`
+	// showed `source: config (or default)` while ActiveProfile() returned
+	// "staging", so the report lied about how the profile was selected.
 	switch {
+	case flagOrgSet:
+		source = "--org flag"
 	case os.Getenv("JC_PROFILE") != "":
 		source = "JC_PROFILE env"
 	case active == "default":
@@ -465,11 +479,11 @@ func collectMCP() mcpSection {
 //
 // Never returns a non-nil error to the caller; failures are encoded
 // in the report so JSON consumers always get a parseable response.
-func runAPIProbe(ctx context.Context, timeout time.Duration) *apiProbe {
+func runAPIProbe(parentCtx context.Context, timeout time.Duration) *apiProbe {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -510,10 +524,19 @@ func runAPIProbe(ctx context.Context, timeout time.Duration) *apiProbe {
 		return probe
 	case <-ctx.Done():
 		latency := time.Since(start)
+		// Distinguish "my --probe-timeout fired" from "the parent
+		// context fired" (global --timeout, signal cancel, etc.).
+		// Pre-fix, the error always blamed --probe-timeout — Bugbot
+		// flagged that operators would raise the wrong flag while the
+		// global deadline still applied.
+		errMsg := fmt.Sprintf("probe deadline (%s) exceeded; OAuth token-fetch or upstream HTTP may not honor the context — increase --probe-timeout or use --no-probe", timeout)
+		if parentCtx.Err() != nil {
+			errMsg = fmt.Sprintf("parent context deadline expired before --probe-timeout (%s); raise the global --timeout or use --no-probe", timeout)
+		}
 		return &apiProbe{
 			Status:    "timeout",
 			LatencyMS: latency.Milliseconds(),
-			Error:     fmt.Sprintf("probe deadline (%s) exceeded; OAuth token-fetch or upstream HTTP may not honor the context — increase --probe-timeout or use --no-probe", timeout),
+			Error:     errMsg,
 		}
 	}
 }
