@@ -158,13 +158,24 @@ func NewServer(opts Options) (*Server, error) {
 		al = &auditLogger{} // no-op: enc is nil, log() returns early
 	}
 
+	// Resolve the profile once for both consumers (step-up + signer).
+	// SigningProfile is the explicit opt-in; empty means "use the active
+	// profile." Pre-KLA-420 this fallback lived only in the signer block,
+	// so a webhook-only setup (no signing) emitted `"profile": ""` in
+	// every outbound envelope. Receivers keying on profile (Slack bot
+	// routing rules, audit dashboards) saw empty strings.
+	profile := opts.SigningProfile
+	if profile == "" {
+		profile = config.ActiveProfile()
+	}
+
 	stepUp := opts.stepUp
 	if stepUp == nil {
 		su, err := newStepUp(stepUpConfig{
 			Required:            opts.RequireStepUp,
 			APIKey:              opts.StepUpAPIKey,
 			AuthenticatorPref:   opts.StepUpAuthenticator,
-			Profile:             opts.SigningProfile,
+			Profile:             profile,
 			WebhookURL:          opts.ApprovalWebhookURL,
 			WebhookCallbackAddr: opts.ApprovalCallbackAddr,
 			WebhookTimeout:      opts.ApprovalTimeout,
@@ -177,10 +188,6 @@ func NewServer(opts Options) (*Server, error) {
 
 	signer := opts.signer
 	if signer == nil {
-		profile := opts.SigningProfile
-		if profile == "" {
-			profile = config.ActiveProfile()
-		}
 		signer = newSigner(opts.SignDestructiveOps, profile)
 	}
 
