@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/klaassen-consulting/jc/internal/api"
 )
 
 // withTempConfig writes a config file into a tmp dir and points
@@ -117,12 +118,53 @@ profiles:
 	t.Setenv("JC_API_KEY", "from-env-9999")
 	_ = viper.BindEnv("api_key", "JC_API_KEY")
 
-	a := collectAuth()
+	a := collectAuth(false) // flag not set
 	if a.Source != "JC_API_KEY env" {
 		t.Errorf("auth.source = %q, want 'JC_API_KEY env'", a.Source)
 	}
 	if a.Fingerprint != "****9999" {
 		t.Errorf("auth.fingerprint = %q, want '****9999'", a.Fingerprint)
+	}
+}
+
+// Bugbot finding (Low) on PR #42: when both --api-key flag and
+// JC_API_KEY env are set to the *same value*, the original code
+// misattributed to env because it compared resolved == env. Cobra
+// flag precedence treats flag as the override; honor that.
+func TestCollectAuth_FlagBeatsEnvEvenWhenEqual(t *testing.T) {
+	withTempConfig(t, "active_profile: default\n")
+	t.Setenv("JC_API_KEY", "same-value-1234")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(true) // flag IS set
+	if a.Source != "--api-key flag" {
+		t.Errorf("auth.source = %q, want '--api-key flag' when flag is set (even if env matches)", a.Source)
+	}
+}
+
+// Bugbot finding (Medium) on PR #42: service_account profiles don't
+// carry an api_key — they use OAuth client credentials. The original
+// code reported "(unset)" which scared operators into thinking auth
+// was broken when actually the probe and every other jc command
+// worked fine.
+func TestCollectAuth_ServiceAccountReportsOAuth(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "test-client-id"
+    client_secret: "test-secret"
+`)
+	t.Setenv("JC_API_KEY", "")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	if a.Method != "service_account" {
+		t.Errorf("auth.method = %q, want 'service_account'", a.Method)
+	}
+	if a.Source != "service_account (OAuth)" {
+		t.Errorf("auth.source = %q, want 'service_account (OAuth)' (not '(unset)')", a.Source)
 	}
 }
 
@@ -133,11 +175,10 @@ profiles:
   default:
     api_key: "keychain://jc/default"
 `)
-	// No JC_API_KEY env.
 	t.Setenv("JC_API_KEY", "")
 	_ = viper.BindEnv("api_key", "JC_API_KEY")
 
-	a := collectAuth()
+	a := collectAuth(false)
 	if !strings.HasPrefix(a.Source, "keychain") {
 		t.Errorf("auth.source = %q, want 'keychain (...)' prefix", a.Source)
 	}
@@ -158,7 +199,7 @@ profiles:
 	t.Setenv("JC_API_KEY", "")
 	_ = viper.BindEnv("api_key", "JC_API_KEY")
 
-	a := collectAuth()
+	a := collectAuth(false)
 	if a.Source != "profile config (plaintext)" {
 		t.Errorf("auth.source = %q, want 'profile config (plaintext)'", a.Source)
 	}
@@ -177,7 +218,7 @@ profiles:
 	t.Setenv("JC_API_KEY", "")
 	_ = viper.BindEnv("api_key", "JC_API_KEY")
 
-	a := collectAuth()
+	a := collectAuth(false)
 	if a.Source != "(unset)" {
 		t.Errorf("auth.source = %q, want '(unset)'", a.Source)
 	}
@@ -208,63 +249,61 @@ ask:
 	}
 }
 
-func TestRunAPIProbe_OK(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer ts.Close()
+// runAPIProbe now routes through api.NewV2Client (rather than a
+// hand-rolled HTTP request) so it correctly exercises whichever auth
+// method the active profile uses. We test the error-classification
+// layer directly via classifyProbeError so we don't need to mock the
+// entire HTTP client; the end-to-end "real client makes a real call"
+// path is covered by the api package's own tests.
 
-	withTempConfig(t, `
-active_profile: default
-profiles:
-  default:
-    api_key: "test-1234"
-`)
-
-	probe := runAPIProbe(context.Background(), ts.URL, 2*time.Second)
-	if probe == nil {
-		t.Fatal("probe is nil")
+func TestClassifyProbeError_Success(t *testing.T) {
+	p := classifyProbeError(nil)
+	if p.Status != "ok" {
+		t.Errorf("Status = %q, want 'ok'", p.Status)
 	}
-	if probe.Status != "ok" {
-		t.Errorf("probe.status = %q, want 'ok' (HTTP 200)", probe.Status)
-	}
-	if probe.StatusCode != 200 {
-		t.Errorf("probe.status_code = %d, want 200", probe.StatusCode)
-	}
-	if probe.LatencyMS < 0 {
-		t.Errorf("probe.latency_ms = %d, want non-negative", probe.LatencyMS)
+	if p.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want 200", p.StatusCode)
 	}
 }
 
-func TestRunAPIProbe_AuthFailed(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer ts.Close()
-
-	withTempConfig(t, "")
-	probe := runAPIProbe(context.Background(), ts.URL, 2*time.Second)
-	if probe.Status != "auth_failed" {
-		t.Errorf("probe.status = %q, want 'auth_failed' (HTTP 401)", probe.Status)
+func TestClassifyProbeError_AuthFailed(t *testing.T) {
+	cases := []int{http.StatusUnauthorized, http.StatusForbidden}
+	for _, code := range cases {
+		err := &api.APIError{StatusCode: code, Message: "denied", Endpoint: "/usergroups"}
+		p := classifyProbeError(err)
+		if p.Status != "auth_failed" {
+			t.Errorf("HTTP %d → status = %q, want 'auth_failed'", code, p.Status)
+		}
+		if p.StatusCode != code {
+			t.Errorf("HTTP %d → status_code = %d, want %d", code, p.StatusCode, code)
+		}
 	}
 }
 
-func TestRunAPIProbe_Unreachable(t *testing.T) {
-	withTempConfig(t, "")
-	// Pick a port no real server is listening on.
-	probe := runAPIProbe(context.Background(), "http://127.0.0.1:1", 500*time.Millisecond)
-	if probe.Status != "unreachable" {
-		t.Errorf("probe.status = %q, want 'unreachable'", probe.Status)
+func TestClassifyProbeError_OtherHTTP(t *testing.T) {
+	err := &api.APIError{StatusCode: 500, Message: "server error", Endpoint: "/usergroups"}
+	p := classifyProbeError(err)
+	if p.Status != "http_500" {
+		t.Errorf("Status = %q, want 'http_500'", p.Status)
 	}
-	if probe.Error == "" {
-		t.Error("probe.error should be populated on connection failure")
+}
+
+func TestClassifyProbeError_TransportFailure(t *testing.T) {
+	// Non-APIError → unreachable. A DNS-failure-style error fits the
+	// real shape: it's not an HTTP error, just a wrapped transport err.
+	err := fmt.Errorf("dial tcp: lookup failed: no such host")
+	p := classifyProbeError(err)
+	if p.Status != "unreachable" {
+		t.Errorf("Status = %q, want 'unreachable'", p.Status)
+	}
+	if p.Error == "" {
+		t.Error("Error should be populated on transport failure")
 	}
 }
 
 func TestPrintDoctorJSON_RoundTrip(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
-	rep := collectDoctorReport(context.Background(), false, 0)
+	rep := collectDoctorReport(context.Background(), false, 0, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorJSON(&buf, rep); err != nil {
@@ -282,7 +321,7 @@ func TestPrintDoctorJSON_RoundTrip(t *testing.T) {
 
 func TestPrintDoctorText_IncludesAllSections(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
-	rep := collectDoctorReport(context.Background(), false, 0)
+	rep := collectDoctorReport(context.Background(), false, 0, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorText(&buf, rep); err != nil {
@@ -315,7 +354,7 @@ ask:
   api_key: "ASK-SECRET-ALSO-NOT-12345"
 `)
 
-	rep := collectDoctorReport(context.Background(), false, 0)
+	rep := collectDoctorReport(context.Background(), false, 0, false)
 
 	var buf bytes.Buffer
 	if err := printDoctorText(&buf, rep); err != nil {

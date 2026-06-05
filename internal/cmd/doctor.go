@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -118,7 +119,16 @@ Examples:
   jc doctor --output json         # machine-readable for scripts / runbooks
   jc doctor --no-probe            # skip the HEAD request (offline triage)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout)
+			// Did the operator pass --api-key explicitly? The flag is
+			// defined on the root command (PersistentFlag). cobra walks
+			// up the tree to find it, so this works from a subcommand.
+			flagAPIKeySet := false
+			if root := cmd.Root(); root != nil {
+				if f := root.PersistentFlags().Lookup("api-key"); f != nil {
+					flagAPIKeySet = f.Changed
+				}
+			}
+			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout, flagAPIKeySet)
 
 			// Respect --output json explicitly OR the global --output flag /
 			// JC_OUTPUT env / config default. JSON is the script-friendly
@@ -139,20 +149,24 @@ Examples:
 }
 
 // collectDoctorReport assembles the full report. Pure data collection —
-// no I/O beyond the optional HEAD probe — so it's safe to call from
-// tests with probe disabled.
-func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration) doctorReport {
+// no I/O beyond the optional probe — so it's safe to call from tests
+// with probe disabled.
+//
+// flagAPIKeySet must come from the caller (it's the root command's
+// --api-key Changed bit) so collectAuth can correctly attribute the
+// resolved value to the flag vs JC_API_KEY env when both are set.
+func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration, flagAPIKeySet bool) doctorReport {
 	rep := doctorReport{
 		Build:   collectBuild(),
 		Profile: collectProfile(),
 		Config:  collectConfig(),
-		Auth:    collectAuth(),
+		Auth:    collectAuth(flagAPIKeySet),
 		API:     collectAPI(),
 		LLM:     collectLLM(),
 		MCP:     collectMCP(),
 	}
 	if probe {
-		rep.API.Probe = runAPIProbe(ctx, rep.API.V2BaseURL, timeout)
+		rep.API.Probe = runAPIProbe(ctx, timeout)
 	}
 	return rep
 }
@@ -215,10 +229,19 @@ func collectConfig() configSection {
 //   3. profile config (plaintext or keychain:// reference)
 //
 // (1) and (2) are indistinguishable at the viper level since they share
-// the binding. We disambiguate by peeking at the raw env. The flag
-// always wins over env, so if the env is set AND the active value
-// matches it, we attribute to env; otherwise to flag.
-func collectAuth() authSection {
+// the binding. We disambiguate by checking whether the binding was set
+// via flag — viper's IsSet on a binding name reports whether ANY non-
+// default source provided the value, so we additionally compare against
+// the raw env value: when the resolved value matches the env value
+// (and the env IS set), it's safe to call it env; otherwise it's the
+// flag, which has higher precedence in cobra/viper.
+//
+// Bugbot caught the original ordering, which misattributed a flag
+// override to env when the operator happened to set both to the same
+// string. The fix checks the flag-set bit first via cobra-provided
+// state plumbed in by the caller (we read the persistent flag
+// definition's Changed bit).
+func collectAuth(flagAPIKeySet bool) authSection {
 	as := authSection{Method: config.AuthMethod()}
 
 	envKey := os.Getenv("JC_API_KEY")
@@ -227,11 +250,21 @@ func collectAuth() authSection {
 	profileRaw := viper.GetString("profiles." + profile + ".api_key")
 
 	switch {
+	case flagAPIKeySet && flagOrEnv != "":
+		// Flag overrides env in cobra precedence. Reported as flag
+		// even when env happens to have the same value.
+		as.Source = "--api-key flag"
+		as.Fingerprint = fingerprint(flagOrEnv)
 	case flagOrEnv != "" && envKey != "" && flagOrEnv == envKey:
 		as.Source = "JC_API_KEY env"
 		as.Fingerprint = fingerprint(envKey)
 	case flagOrEnv != "":
-		as.Source = "--api-key flag"
+		// Active value differs from env (or env is unset) and the flag
+		// wasn't set — only path that fits is the profile config that
+		// viper auto-merged into the key. Fall through to profile branch
+		// below; we'd never get here in practice because the env path
+		// above would have matched. Belt-and-suspenders.
+		as.Source = "viper-resolved (config or env)"
 		as.Fingerprint = fingerprint(flagOrEnv)
 	case strings.HasPrefix(profileRaw, "keychain://"):
 		as.Source = fmt.Sprintf("keychain (%s)", strings.TrimPrefix(profileRaw, "keychain://"))
@@ -243,6 +276,11 @@ func collectAuth() authSection {
 	case profileRaw != "":
 		as.Source = "profile config (plaintext)"
 		as.Fingerprint = fingerprint(profileRaw)
+	case as.Method == "service_account":
+		// service_account profiles don't carry an api_key — they use
+		// OAuth client credentials. Don't report "(unset)" which would
+		// scare the operator into thinking auth is broken.
+		as.Source = "service_account (OAuth)"
 	default:
 		as.Source = "(unset)"
 	}
@@ -306,59 +344,74 @@ func collectMCP() mcpSection {
 	return ms
 }
 
-// runAPIProbe hits a known JumpCloud V2 endpoint with the resolved API
-// key and reports outcome. We use `GET /v2/usergroups?limit=1` — the
-// cheapest real V2 read JumpCloud offers; returns 200 when auth works,
-// 401/403 when the key is wrong, and a network error if the host is
-// unreachable. The status field distinguishes those three so the
-// operator can tell "DNS/TLS works but the key is wrong" from "the
-// host is unreachable" — that's the whole reason this command exists.
+// runAPIProbe hits a known JumpCloud V2 endpoint via the same client
+// jc uses for every other API call — so it exercises whichever auth
+// method the active profile is configured for (api_key OR
+// service_account OAuth). The status field distinguishes "ok" from
+// "auth_failed" from "unreachable" so the operator can tell "DNS/TLS
+// works but the key is wrong" from "the host is unreachable" — that's
+// the whole reason this command exists.
 //
-// We don't HEAD the API root because the JumpCloud edge returns 404
-// for HEAD on `/api/v2`; that would be indistinguishable from a real
-// outage. A 1-row GET is a few KB and works against a real handler.
+// We don't HEAD the API root: JumpCloud's edge returns 404 there,
+// indistinguishable from a real outage. `GET /v2/usergroups?limit=1`
+// is a few KB and hits a real handler.
+//
+// Bugbot on PR #42 caught the original hand-rolled HTTP probe which
+// only sent `x-api-key` — a valid service_account profile would
+// report `auth_failed` even though every other jc command worked.
+// Routing through api.NewV2Client fixes that without leaking the
+// client-construction error into our return shape.
 //
 // Never returns a non-nil error to the caller; failures are encoded
 // in the report so JSON consumers always get a parseable response.
-func runAPIProbe(ctx context.Context, baseURL string, timeout time.Duration) *apiProbe {
+func runAPIProbe(ctx context.Context, timeout time.Duration) *apiProbe {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	probeURL := strings.TrimRight(baseURL, "/") + "/usergroups?limit=1"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
-	if err != nil {
-		return &apiProbe{Status: "unreachable", Error: err.Error()}
-	}
-	if key := config.APIKey(); key != "" {
-		req.Header.Set("x-api-key", key)
-	}
-	req.Header.Set("Accept", "application/json")
-
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(req)
-	latency := time.Since(start)
-
-	probe := &apiProbe{LatencyMS: latency.Milliseconds()}
+	client, err := api.NewV2Client()
 	if err != nil {
-		probe.Status = "unreachable"
-		probe.Error = err.Error()
+		// No credentials configured. Distinct from "host is unreachable"
+		// — we know nothing about the host yet because we never asked.
+		return &apiProbe{
+			Status: "no_credentials",
+			Error:  err.Error(),
+		}
+	}
+
+	_, err = client.ListAll(ctx, "/usergroups", api.V2ListOptions{Limit: 1})
+	latency := time.Since(start)
+	probe := classifyProbeError(err)
+	probe.LatencyMS = latency.Milliseconds()
+	return probe
+}
+
+// classifyProbeError turns a (client.ListAll) result into the
+// status/status_code/error triple the report uses. Split from
+// runAPIProbe so tests can validate the error classification without
+// needing to mock the entire HTTP client.
+func classifyProbeError(err error) *apiProbe {
+	if err == nil {
+		return &apiProbe{Status: "ok", StatusCode: http.StatusOK}
+	}
+	// Unwrap to find an APIError if present. APIError carries the HTTP
+	// status code from the real response; transport errors (DNS,
+	// connection refused, timeout) won't.
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		probe := &apiProbe{StatusCode: apiErr.StatusCode}
+		switch {
+		case apiErr.StatusCode == http.StatusUnauthorized, apiErr.StatusCode == http.StatusForbidden:
+			probe.Status = "auth_failed"
+		default:
+			probe.Status = fmt.Sprintf("http_%d", apiErr.StatusCode)
+		}
 		return probe
 	}
-	defer resp.Body.Close()
-
-	probe.StatusCode = resp.StatusCode
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		probe.Status = "ok"
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		probe.Status = "auth_failed"
-	default:
-		probe.Status = fmt.Sprintf("http_%d", resp.StatusCode)
-	}
-	return probe
+	return &apiProbe{Status: "unreachable", Error: err.Error()}
 }
 
 // fingerprint masks all but the last 4 characters. Matches the
