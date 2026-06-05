@@ -204,3 +204,15 @@ jc users --help            # Resource subcommands
 jc users create --help     # Flag details for a specific command
 jc tui                     # Then press ? for TUI keybindings
 ```
+
+## Troubleshooting
+
+When an `jc` command fails with an auth or connectivity error, **start with `jc doctor`**. It runs without needing valid credentials and prints exactly what jc resolved at runtime:
+
+```bash
+jc doctor --output human       # grouped sections
+jc doctor                      # JSON (default, scripts/runbooks)
+jc doctor --no-probe           # offline triage; skip the API HEAD request
+```
+
+Reports: active profile + source (`JC_PROFILE` env vs config), config file path, API key source (`--api-key` flag / `JC_API_KEY` env / profile config / keychain), org ID, JumpCloud API reachability (`ok` / `auth_failed` / `unreachable` — distinguishes a wrong key from an unreachable host), the `jc ask` LLM provider/key, and the MCP step-up + signing config. Secrets are fingerprinted (last 4 chars only); raw values never appear in the output.

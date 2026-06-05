@@ -150,7 +150,7 @@ interface.`,
 	// Setup & Config
 	addToGroup(rootCmd, "config",
 		newSetupCmd(), newAuthCmd(), newAuditCmd(), newConfigCmd(),
-		newVersionCmd(), newCompletionCmd(), newTUICmd(),
+		newDoctorCmd(), newVersionCmd(), newCompletionCmd(), newTUICmd(),
 	)
 
 	// Persistent flags (global)
