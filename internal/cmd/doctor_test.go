@@ -569,12 +569,12 @@ profiles:
 	t.Setenv("JC_ORG_ID", "")
 	_ = viper.BindEnv("org_id", "JC_ORG_ID")
 
-	orgID, source := collectOrgID("default")
-	if orgID != "top-level-org-7777" {
-		t.Errorf("org_id = %q, want 'top-level-org-7777' (top-level beats profile, matching config.OrgID() precedence)", orgID)
+	a := collectAuth(false)
+	if a.OrgID != "top-level-org-7777" {
+		t.Errorf("OrgID = %q, want 'top-level-org-7777' (top-level beats profile, matching config.OrgID() precedence)", a.OrgID)
 	}
-	if source != "top-level config" {
-		t.Errorf("source = %q, want 'top-level config'", source)
+	if a.OrgIDSource != "top-level config" {
+		t.Errorf("OrgIDSource = %q, want 'top-level config'", a.OrgIDSource)
 	}
 }
 
@@ -588,12 +588,12 @@ org_id: top-level-org-7777
 	t.Setenv("JC_ORG_ID", "env-org-1111")
 	_ = viper.BindEnv("org_id", "JC_ORG_ID")
 
-	orgID, source := collectOrgID("default")
-	if orgID != "env-org-1111" {
-		t.Errorf("org_id = %q, want env value", orgID)
+	a := collectAuth(false)
+	if a.OrgID != "env-org-1111" {
+		t.Errorf("OrgID = %q, want env value", a.OrgID)
 	}
-	if source != "JC_ORG_ID env" {
-		t.Errorf("source = %q, want 'JC_ORG_ID env'", source)
+	if a.OrgIDSource != "JC_ORG_ID env" {
+		t.Errorf("OrgIDSource = %q, want 'JC_ORG_ID env'", a.OrgIDSource)
 	}
 }
 

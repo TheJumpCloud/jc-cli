@@ -276,29 +276,6 @@ func collectAuth(flagAPIKeySet bool) authSection {
 	}
 }
 
-// collectOrgID is preserved for tests that call it directly; it
-// delegates to api.ResolveActiveAuth for consistency. Future callers
-// should prefer ResolveActiveAuth directly.
-func collectOrgID(profile string) (string, string) {
-	// We can't easily call the unexported resolver, so we re-create
-	// the call. The api package has the canonical implementation; this
-	// is kept only for test compatibility and documents its provenance.
-	r := api.ResolveActiveAuth(api.Hint{})
-	if r.OrgID != "" {
-		return r.OrgID, r.OrgIDSource
-	}
-	if topLevel := viper.GetString("org_id"); topLevel != "" {
-		if os.Getenv("JC_ORG_ID") == topLevel {
-			return topLevel, "JC_ORG_ID env"
-		}
-		return topLevel, "top-level config"
-	}
-	if profileOrg := viper.GetString("profiles." + profile + ".org_id"); profileOrg != "" {
-		return profileOrg, "profile config"
-	}
-	return "", ""
-}
-
 func collectAPI() apiSection {
 	return apiSection{
 		V1BaseURL: api.BaseURL,
