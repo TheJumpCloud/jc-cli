@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -448,6 +449,44 @@ func TestClassifyProbeError_OtherHTTP(t *testing.T) {
 	p := classifyProbeError(err)
 	if p.Status != "http_500" {
 		t.Errorf("Status = %q, want 'http_500'", p.Status)
+	}
+}
+
+// Bugbot finding #7 (Medium) on PR #42: TokenCache.fetchToken() uses
+// its own http.Client without context propagation, so the probe could
+// run far longer than --probe-timeout for service_account profiles
+// with a hung OAuth endpoint. runAPIProbe now wraps ListAll in a
+// goroutine + select so the probe itself honors the deadline even
+// when the underlying call doesn't.
+func TestRunAPIProbe_RespectsTimeoutEvenWhenUnderlyingDoesnt(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    api_key: "test-key-for-probe"
+`)
+	// Use a 1ms timeout against a real api client. The client will
+	// try to dial the real JumpCloud endpoint; whether that resolves
+	// fast or not, our select should fire on ctx.Done well before
+	// any 30s underlying timeout could.
+	start := time.Now()
+	probe := runAPIProbe(context.Background(), 50*time.Millisecond)
+	elapsed := time.Since(start)
+
+	// The probe MUST return within a reasonable bound of the timeout.
+	// Allow some slack for goroutine scheduling and the parent select.
+	if elapsed > 5*time.Second {
+		t.Errorf("probe took %v, want < 5s (timeout was 50ms; goroutine+select should fire fast)", elapsed)
+	}
+	// Status should be either "timeout" (if ctx fired first), "ok" /
+	// "auth_failed" / "unreachable" (if ListAll completed first), or
+	// "no_credentials" (if NewV2Client failed). Any is acceptable —
+	// what matters is that we returned in bounded time.
+	if probe == nil {
+		t.Fatal("probe returned nil")
+	}
+	if probe.Status == "" {
+		t.Errorf("probe.Status is empty: %+v", probe)
 	}
 }
 

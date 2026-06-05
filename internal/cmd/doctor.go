@@ -468,11 +468,39 @@ func runAPIProbe(ctx context.Context, timeout time.Duration) *apiProbe {
 		}
 	}
 
-	_, err = client.ListAll(ctx, "/usergroups", api.V2ListOptions{Limit: 1})
-	latency := time.Since(start)
-	probe := classifyProbeError(err)
-	probe.LatencyMS = latency.Milliseconds()
-	return probe
+	// Run ListAll in a goroutine so the probe itself respects
+	// --probe-timeout even when the underlying call doesn't. Bugbot
+	// caught that for service_account profiles, the OAuth token-fetch
+	// hop uses TokenCache.fetchToken() which has its own 30s http.Client
+	// and doesn't honor the probe context — so a hung OAuth endpoint
+	// could make `jc doctor --probe-timeout 100ms` run 30+ seconds.
+	//
+	// The leaked goroutine dies with the process (jc doctor exits as
+	// soon as we print); we don't try to cancel the underlying HTTP call,
+	// just return early so the operator sees the timeout they asked for.
+	type result struct {
+		err error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		_, listErr := client.ListAll(ctx, "/usergroups", api.V2ListOptions{Limit: 1})
+		resultCh <- result{err: listErr}
+	}()
+
+	select {
+	case r := <-resultCh:
+		latency := time.Since(start)
+		probe := classifyProbeError(r.err)
+		probe.LatencyMS = latency.Milliseconds()
+		return probe
+	case <-ctx.Done():
+		latency := time.Since(start)
+		return &apiProbe{
+			Status:    "timeout",
+			LatencyMS: latency.Milliseconds(),
+			Error:     fmt.Sprintf("probe deadline (%s) exceeded; OAuth token-fetch or upstream HTTP may not honor the context — increase --probe-timeout or use --no-probe", timeout),
+		}
+	}
 }
 
 // classifyProbeError turns a (client.ListAll) result into the
