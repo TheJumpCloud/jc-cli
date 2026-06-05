@@ -243,10 +243,24 @@ func collectConfig() configSection {
 // definition's Changed bit).
 func collectAuth(flagAPIKeySet bool) authSection {
 	as := authSection{Method: config.AuthMethod()}
+	profile := config.ActiveProfile()
+
+	// Service-account profiles short-circuit: api.NewClient() honors
+	// AuthMethod() == "service_account" with valid client_id +
+	// client_secret BEFORE it ever consults the API key. Reporting
+	// "JC_API_KEY env" when the probe (and every other jc command)
+	// actually uses OAuth Bearer would be a lie — Bugbot caught this
+	// when JC_API_KEY happened to be set in the environment for a
+	// different profile or session.
+	if as.Method == "service_account" && config.ClientID() != "" && config.ClientSecret() != "" {
+		as.Source = "service_account (OAuth)"
+		as.Fingerprint = fingerprint(config.ClientID())
+		as.OrgID, as.OrgIDSource = collectOrgID(profile)
+		return as
+	}
 
 	envKey := os.Getenv("JC_API_KEY")
 	flagOrEnv := viper.GetString("api_key")
-	profile := config.ActiveProfile()
 	profileRaw := viper.GetString("profiles." + profile + ".api_key")
 
 	switch {
@@ -277,24 +291,29 @@ func collectAuth(flagAPIKeySet bool) authSection {
 		as.Source = "profile config (plaintext)"
 		as.Fingerprint = fingerprint(profileRaw)
 	case as.Method == "service_account":
-		// service_account profiles don't carry an api_key — they use
-		// OAuth client credentials. Don't report "(unset)" which would
-		// scare the operator into thinking auth is broken.
-		as.Source = "service_account (OAuth)"
+		// service_account profile without valid client creds — neither
+		// auth path will work. Surface it honestly so the operator
+		// knows to fix the client_id/client_secret.
+		as.Source = "service_account (no client credentials)"
 	default:
 		as.Source = "(unset)"
 	}
 
-	// Org ID source: env vs profile.
-	if envOrg := os.Getenv("JC_ORG_ID"); envOrg != "" {
-		as.OrgID = envOrg
-		as.OrgIDSource = "JC_ORG_ID env"
-	} else if profileOrg := viper.GetString("profiles." + profile + ".org_id"); profileOrg != "" {
-		as.OrgID = profileOrg
-		as.OrgIDSource = "profile config"
-	}
-
+	as.OrgID, as.OrgIDSource = collectOrgID(profile)
 	return as
+}
+
+// collectOrgID returns the resolved org ID + source (env vs profile).
+// Pulled out of collectAuth so the service-account short-circuit at
+// the top of that function still reports org ID consistently.
+func collectOrgID(profile string) (string, string) {
+	if envOrg := os.Getenv("JC_ORG_ID"); envOrg != "" {
+		return envOrg, "JC_ORG_ID env"
+	}
+	if profileOrg := viper.GetString("profiles." + profile + ".org_id"); profileOrg != "" {
+		return profileOrg, "profile config"
+	}
+	return "", ""
 }
 
 func collectAPI() apiSection {

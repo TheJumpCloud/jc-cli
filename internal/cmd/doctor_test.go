@@ -153,7 +153,7 @@ active_profile: default
 profiles:
   default:
     auth_method: service_account
-    client_id: "test-client-id"
+    client_id: "test-client-id-abcd"
     client_secret: "test-secret"
 `)
 	t.Setenv("JC_API_KEY", "")
@@ -165,6 +165,57 @@ profiles:
 	}
 	if a.Source != "service_account (OAuth)" {
 		t.Errorf("auth.source = %q, want 'service_account (OAuth)' (not '(unset)')", a.Source)
+	}
+	if a.Fingerprint != "****abcd" {
+		t.Errorf("auth.fingerprint = %q, want '****abcd' (client_id last 4)", a.Fingerprint)
+	}
+}
+
+// Bugbot finding #3 (Medium) on PR #42: when the active profile uses
+// service_account but JC_API_KEY *also* happens to be in the env (e.g.
+// left over from a different profile or session), the original code
+// reported "JC_API_KEY env" — but api.NewClient() short-circuits to
+// OAuth Bearer when AuthMethod() == service_account with valid client
+// creds, so the reported source didn't match what jc actually uses.
+// Fix: short-circuit collectAuth on service_account first.
+func TestCollectAuth_ServiceAccountWinsOverStrayEnvKey(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "test-client-id-1234"
+    client_secret: "test-secret"
+`)
+	t.Setenv("JC_API_KEY", "stray-env-key-from-elsewhere")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	if a.Source != "service_account (OAuth)" {
+		t.Errorf("auth.source = %q, want 'service_account (OAuth)' "+
+			"(stray JC_API_KEY env must not override service_account OAuth)", a.Source)
+	}
+	if a.Fingerprint == "****eere" { // last 4 of "elsewhere"
+		t.Errorf("auth.fingerprint = %q, leaked stray env key into report", a.Fingerprint)
+	}
+}
+
+// Companion: service_account without valid client credentials — the
+// operator has misconfigured the profile. Surface that explicitly so
+// they don't chase the wrong rabbit.
+func TestCollectAuth_ServiceAccountMissingClientCreds(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+`)
+	t.Setenv("JC_API_KEY", "")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	if a.Source != "service_account (no client credentials)" {
+		t.Errorf("auth.source = %q, want 'service_account (no client credentials)'", a.Source)
 	}
 }
 
