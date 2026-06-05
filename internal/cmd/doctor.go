@@ -281,46 +281,52 @@ func collectAuth(flagAPIKeySet bool) authSection {
 		// Peek at the raw client_secret to distinguish "not configured"
 		// from "keychain reference exists but resolution failed" —
 		// config.ClientSecret() resolves keychain refs transparently
-		// and returns "" on failure, losing that distinction. Bugbot
-		// flagged this on PR #42 because a keychain miss looked
-		// identical to a never-configured secret, and the operator
-		// got pointed at the wrong remediation.
+		// and returns "" on failure, losing that distinction.
 		clientID := config.ClientID()
 		clientSecretRaw := viper.GetString("profiles." + profile + ".client_secret")
 		clientSecret := config.ClientSecret()
 
+		oauthAvailable := clientID != "" && clientSecret != ""
 		keychainFailed := clientID != "" &&
 			strings.HasPrefix(clientSecretRaw, "keychain://") &&
 			clientSecret == ""
 
 		switch {
-		case clientID != "" && clientSecret != "":
+		case oauthAvailable:
 			// (1) Happy OAuth path.
 			as.Source = "service_account (OAuth)"
 			as.Fingerprint = fingerprint(clientID)
 			as.OrgID, as.OrgIDSource = collectOrgID(profile)
 			return as
-		case keychainFailed:
-			// (1a) OAuth configured but client_secret keychain is
-			// unreadable (locked, deleted, permission denied). Report
-			// the actual cause so the operator knows to fix the
-			// keychain rather than re-enter their client_secret.
+		case !hasAPIKey && keychainFailed:
+			// (4a) OAuth would be configured but the client_secret
+			// keychain is unreadable AND there's no api_key fallback.
+			// Report the actual cause so the operator fixes the
+			// keychain rather than re-entering their secret.
 			ref := strings.TrimPrefix(clientSecretRaw, "keychain://")
 			as.Source = fmt.Sprintf("service_account (client_secret keychain unavailable: %s)", ref)
 			as.Fingerprint = fingerprint(clientID)
 			as.OrgID, as.OrgIDSource = collectOrgID(profile)
 			return as
 		case !hasAPIKey:
-			// (4) Neither auth path will work.
+			// (4b) Neither auth path will work and no special cause to
+			// surface.
 			as.Source = "service_account (no client credentials)"
 			as.OrgID, as.OrgIDSource = collectOrgID(profile)
 			return as
 		default:
-			// (2) Silent fallback. Re-label method so the report
-			// doesn't claim OAuth while every other jc command uses
-			// x-api-key. The "fallback" tag tells the operator their
-			// service_account config is broken AND jc is using a key.
-			as.Method = "api_key (service_account fallback)"
+			// (2) Silent fallback to api_key. The earlier Bugbot
+			// finding flagged that reporting `method: service_account`
+			// with an x-api-key source was inconsistent; this branch
+			// re-labels method honestly. When the keychain miss caused
+			// the fallback, surface that in the method label too so
+			// the operator sees both that their service_account is
+			// broken AND why.
+			if keychainFailed {
+				as.Method = "api_key (service_account fallback, client_secret keychain unavailable)"
+			} else {
+				as.Method = "api_key (service_account fallback)"
+			}
 		}
 	}
 

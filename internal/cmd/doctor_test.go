@@ -256,6 +256,47 @@ profiles:
 	}
 }
 
+// Bugbot finding #6 (Medium) on PR #42: a service_account profile
+// with an unresolvable client_secret keychain ref AND an api_key
+// fallback (env / flag / profile) — api.NewClient() drops to the
+// api_key path, but my code (after the #5 fix) returned early on the
+// keychain-unavailable branch and reported method as service_account.
+// Auth section disagreed with the probe + every other jc command.
+// Fix: only return early on keychain failure when there's no api_key
+// fallback; otherwise re-label method to surface both the fallback
+// AND the keychain miss.
+func TestCollectAuth_ServiceAccountKeychainFailureFallsBackToAPIKey(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "test-client-id-aaaa"
+    client_secret: "keychain://jc/default-secret"
+    api_key: "fallback-key-bbbb"
+`)
+	t.Setenv("JC_API_KEY", "")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	// Method must announce both the fallback AND the keychain miss
+	// so the operator sees both facts in one line.
+	if !strings.Contains(a.Method, "api_key") {
+		t.Errorf("auth.method = %q, want 'api_key (...)' (service_account fell back to api_key)", a.Method)
+	}
+	if !strings.Contains(a.Method, "keychain unavailable") {
+		t.Errorf("auth.method = %q, want it to surface the keychain miss that caused the fallback", a.Method)
+	}
+	// Source should describe where the api_key came from (the fallback
+	// path's resolution), not the dead OAuth attempt.
+	if a.Source != "profile config (plaintext)" {
+		t.Errorf("auth.source = %q, want 'profile config (plaintext)' (the api_key fallback's source)", a.Source)
+	}
+	if a.Fingerprint != "****bbbb" {
+		t.Errorf("auth.fingerprint = %q, want '****bbbb' (the api_key fallback's last 4)", a.Fingerprint)
+	}
+}
+
 // Bugbot finding #4 (Medium) on PR #42: when AuthMethod is
 // service_account but client credentials are missing, api.NewClient()
 // silently falls through to the api_key resolution path. If an api_key
