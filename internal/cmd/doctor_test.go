@@ -200,9 +200,8 @@ profiles:
 	}
 }
 
-// Companion: service_account without valid client credentials — the
-// operator has misconfigured the profile. Surface that explicitly so
-// they don't chase the wrong rabbit.
+// Companion: service_account without valid client credentials AND
+// without any api_key fallback — neither auth path will work.
 func TestCollectAuth_ServiceAccountMissingClientCreds(t *testing.T) {
 	withTempConfig(t, `
 active_profile: default
@@ -216,6 +215,40 @@ profiles:
 	a := collectAuth(false)
 	if a.Source != "service_account (no client credentials)" {
 		t.Errorf("auth.source = %q, want 'service_account (no client credentials)'", a.Source)
+	}
+}
+
+// Bugbot finding #4 (Medium) on PR #42: when AuthMethod is
+// service_account but client credentials are missing, api.NewClient()
+// silently falls through to the api_key resolution path. If an api_key
+// is available (via flag/env/keychain/config), every other jc command
+// uses x-api-key auth — but the doctor was reporting `method:
+// service_account` with the api-key source, which was internally
+// inconsistent. Fix: re-label the method as `api_key (service_account
+// fallback)` so the operator sees both that their service_account
+// config is broken AND that jc is actually using an API key.
+func TestCollectAuth_ServiceAccountFallsBackToAPIKey(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    api_key: "fallback-key-9999"
+`)
+	t.Setenv("JC_API_KEY", "")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	if a.Method != "api_key (service_account fallback)" {
+		t.Errorf("auth.method = %q, want 'api_key (service_account fallback)'", a.Method)
+	}
+	// Source should still describe where the *api_key* came from —
+	// in this case, the profile config.
+	if a.Source != "profile config (plaintext)" {
+		t.Errorf("auth.source = %q, want 'profile config (plaintext)' (the api_key fallback's actual source)", a.Source)
+	}
+	if a.Fingerprint != "****9999" {
+		t.Errorf("auth.fingerprint = %q, want '****9999'", a.Fingerprint)
 	}
 }
 

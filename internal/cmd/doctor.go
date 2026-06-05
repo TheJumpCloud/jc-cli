@@ -261,23 +261,43 @@ func collectAuth(flagAPIKeySet bool) authSection {
 	as := authSection{Method: config.AuthMethod()}
 	profile := config.ActiveProfile()
 
-	// Service-account profiles short-circuit: api.NewClient() honors
-	// AuthMethod() == "service_account" with valid client_id +
-	// client_secret BEFORE it ever consults the API key. Reporting
-	// "JC_API_KEY env" when the probe (and every other jc command)
-	// actually uses OAuth Bearer would be a lie — Bugbot caught this
-	// when JC_API_KEY happened to be set in the environment for a
-	// different profile or session.
-	if as.Method == "service_account" && config.ClientID() != "" && config.ClientSecret() != "" {
-		as.Source = "service_account (OAuth)"
-		as.Fingerprint = fingerprint(config.ClientID())
-		as.OrgID, as.OrgIDSource = collectOrgID(profile)
-		return as
-	}
-
 	envKey := os.Getenv("JC_API_KEY")
 	flagOrEnv := viper.GetString("api_key")
 	profileRaw := viper.GetString("profiles." + profile + ".api_key")
+	hasAPIKey := flagOrEnv != "" || profileRaw != ""
+
+	// api.NewClient() resolution precedence (mirror it exactly so the
+	// doctor report matches what jc actually does):
+	//   1. AuthMethod == "service_account" AND client_id + client_secret
+	//      → OAuth Bearer.
+	//   2. AuthMethod == "service_account" AND creds missing AND an
+	//      api_key resolves → SILENT FALLBACK to api_key (Bugbot caught
+	//      this third-order case where reporting `method: service_account`
+	//      with an x-api-key source was internally inconsistent).
+	//   3. AuthMethod == "api_key" → resolve key from flag/env/keychain/
+	//      profile config.
+	//   4. Nothing configured → no auth.
+	if as.Method == "service_account" {
+		switch {
+		case config.ClientID() != "" && config.ClientSecret() != "":
+			// (1) Happy OAuth path.
+			as.Source = "service_account (OAuth)"
+			as.Fingerprint = fingerprint(config.ClientID())
+			as.OrgID, as.OrgIDSource = collectOrgID(profile)
+			return as
+		case !hasAPIKey:
+			// (4) Neither auth path will work.
+			as.Source = "service_account (no client credentials)"
+			as.OrgID, as.OrgIDSource = collectOrgID(profile)
+			return as
+		default:
+			// (2) Silent fallback. Re-label method so the report
+			// doesn't claim OAuth while every other jc command uses
+			// x-api-key. The "fallback" tag tells the operator their
+			// service_account config is broken AND jc is using a key.
+			as.Method = "api_key (service_account fallback)"
+		}
+	}
 
 	switch {
 	case flagAPIKeySet && flagOrEnv != "":
