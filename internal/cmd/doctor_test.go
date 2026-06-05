@@ -490,6 +490,40 @@ profiles:
 	}
 }
 
+// Bugbot finding #8 (Medium) on PR #42: when --probe-timeout fires
+// AND the upstream HTTP client honors the context, ListAll returns
+// context.DeadlineExceeded BEFORE runAPIProbe's select reaches
+// ctx.Done(). Pre-fix, classifyProbeError fell through to
+// "unreachable" — exactly the inverse of what the operator needs
+// (the well-behaved upstream got the worse classification).
+func TestClassifyProbeError_ContextDeadline(t *testing.T) {
+	p := classifyProbeError(context.DeadlineExceeded)
+	if p.Status != "timeout" {
+		t.Errorf("Status = %q, want 'timeout' (deadline must NOT be 'unreachable')", p.Status)
+	}
+}
+
+func TestClassifyProbeError_ContextCanceled(t *testing.T) {
+	// Ctrl-C / parent cancellation propagates as context.Canceled.
+	// Same triage need: the host isn't down, the operation was cut
+	// short. Reporting "unreachable" would mislead.
+	p := classifyProbeError(context.Canceled)
+	if p.Status != "timeout" {
+		t.Errorf("Status = %q, want 'timeout' (canceled must NOT be 'unreachable')", p.Status)
+	}
+}
+
+// Bigger contract: a deadline error WRAPPED in another error (real
+// http transports do this) must still classify as timeout. errors.Is
+// handles the unwrap; pin that we use it.
+func TestClassifyProbeError_WrappedDeadline(t *testing.T) {
+	wrapped := fmt.Errorf("Get \"https://example.com/api\": %w", context.DeadlineExceeded)
+	p := classifyProbeError(wrapped)
+	if p.Status != "timeout" {
+		t.Errorf("wrapped deadline → Status = %q, want 'timeout'", p.Status)
+	}
+}
+
 func TestClassifyProbeError_TransportFailure(t *testing.T) {
 	// Non-APIError → unreachable. A DNS-failure-style error fits the
 	// real shape: it's not an HTTP error, just a wrapped transport err.

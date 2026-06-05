@@ -524,6 +524,18 @@ func classifyProbeError(err error) *apiProbe {
 	if err == nil {
 		return &apiProbe{Status: "ok", StatusCode: http.StatusOK}
 	}
+	// 0. Context errors fast-path. When --probe-timeout fires AND the
+	//    upstream HTTP client honors the context, ListAll returns a
+	//    context-deadline error BEFORE runAPIProbe's select reaches
+	//    ctx.Done(). Classifying via APIError/OAuth markers would land
+	//    on "unreachable" — misleading triage away from "increase
+	//    --probe-timeout." Same idea catches context.Canceled (Ctrl-C,
+	//    parent cancellation) so the report says timeout instead of
+	//    pretending the host is down. Bugbot caught the inverse:
+	//    well-behaved upstream → my code mis-classified more often.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return &apiProbe{Status: "timeout", Error: err.Error()}
+	}
 	// 1. APIError carries the HTTP status code from a real response.
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) {
