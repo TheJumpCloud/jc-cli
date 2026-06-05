@@ -835,6 +835,31 @@ jc macos --limit 10
 
 ---
 
+## Diagnostics
+
+`jc doctor` is the no-auth diagnostic command. Run it first when any other `jc` command fails with an auth or connectivity error.
+
+```bash
+jc doctor --output human       # grouped human-readable sections
+jc doctor                      # JSON (script-friendly default)
+jc doctor --no-probe           # offline triage; skip the API HEAD request
+jc doctor --probe-timeout 2s   # tighter timeout for fast-fail
+```
+
+What it reports:
+
+- **Build** — version, Go runtime, OS/arch
+- **Profile** — active profile and where it came from (`JC_PROFILE` env vs config)
+- **Config** — resolved config file path + file/dir permissions
+- **Auth** — API key source (`--api-key` flag / `JC_API_KEY` env / profile config / keychain reference) with a `****abcd` fingerprint, plus org ID source
+- **API** — V1 and V2 base URLs, plus a probe that distinguishes `ok` / `auth_failed` / `unreachable` so you can tell "the key is wrong" from "the host is unreachable"
+- **LLM** — `jc ask` provider, model, API key source + fingerprint
+- **MCP** — step-up auth setting, signing setting, webhook URL, signing pubkey fingerprint
+
+Secrets are **never** printed in full — only the last 4 chars (`****abcd`), matching the TTY step-up convention. JSON output exits 0 even when probes fail so callers parse the result rather than the exit code.
+
+---
+
 ## Plan Mode & Safety
 
 ### Plan Mode
