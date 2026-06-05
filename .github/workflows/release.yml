@@ -131,13 +131,13 @@ jobs:
     if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
