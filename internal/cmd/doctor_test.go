@@ -496,6 +496,52 @@ profiles:
 // ctx.Done(). Pre-fix, classifyProbeError fell through to
 // "unreachable" — exactly the inverse of what the operator needs
 // (the well-behaved upstream got the worse classification).
+// Bugbot finding #9 (Low) on PR #42: the original collectOrgID read
+// only os.Getenv("JC_ORG_ID") and the profile org_id, missing the
+// top-level viper "org_id" key (which config.OrgID() honors first
+// and which captures both JC_ORG_ID env bindings AND a top-level
+// `org_id:` in config.yaml). Doctor lied when an operator set the
+// org ID at the top level.
+func TestCollectOrgID_TopLevelViperKey(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+org_id: top-level-org-7777
+profiles:
+  default:
+    api_key: ""
+    org_id: profile-org-9999
+`)
+	t.Setenv("JC_ORG_ID", "")
+	_ = viper.BindEnv("org_id", "JC_ORG_ID")
+
+	orgID, source := collectOrgID("default")
+	if orgID != "top-level-org-7777" {
+		t.Errorf("org_id = %q, want 'top-level-org-7777' (top-level beats profile, matching config.OrgID() precedence)", orgID)
+	}
+	if source != "top-level config" {
+		t.Errorf("source = %q, want 'top-level config'", source)
+	}
+}
+
+func TestCollectOrgID_EnvBeatsTopLevel(t *testing.T) {
+	// When JC_ORG_ID env is set, viper's BindEnv resolves "org_id" to
+	// the env value. Attribute it to env rather than top-level.
+	withTempConfig(t, `
+active_profile: default
+org_id: top-level-org-7777
+`)
+	t.Setenv("JC_ORG_ID", "env-org-1111")
+	_ = viper.BindEnv("org_id", "JC_ORG_ID")
+
+	orgID, source := collectOrgID("default")
+	if orgID != "env-org-1111" {
+		t.Errorf("org_id = %q, want env value", orgID)
+	}
+	if source != "JC_ORG_ID env" {
+		t.Errorf("source = %q, want 'JC_ORG_ID env'", source)
+	}
+}
+
 func TestClassifyProbeError_ContextDeadline(t *testing.T) {
 	p := classifyProbeError(context.DeadlineExceeded)
 	if p.Status != "timeout" {

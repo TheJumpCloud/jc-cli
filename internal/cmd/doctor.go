@@ -370,12 +370,27 @@ func collectAuth(flagAPIKeySet bool) authSection {
 	return as
 }
 
-// collectOrgID returns the resolved org ID + source (env vs profile).
-// Pulled out of collectAuth so the service-account short-circuit at
-// the top of that function still reports org ID consistently.
+// collectOrgID returns the resolved org ID + source. Mirrors
+// config.OrgID()'s precedence exactly:
+//
+//  1. viper "org_id" — picks up JC_ORG_ID env (via BindEnv), a
+//     top-level `org_id:` in config.yaml, or a flag bound to "org_id".
+//  2. profile config (profiles.<name>.org_id).
+//
+// Bugbot caught the original implementation reading os.Getenv("JC_ORG_ID")
+// directly, which missed the top-level config-file case — the doctor
+// would have reported no org ID while config.OrgID() (and every other
+// jc command) still resolved one.
 func collectOrgID(profile string) (string, string) {
-	if envOrg := os.Getenv("JC_ORG_ID"); envOrg != "" {
-		return envOrg, "JC_ORG_ID env"
+	if topLevel := viper.GetString("org_id"); topLevel != "" {
+		// Attribute to env when the env var matches the resolved value
+		// (most common case); fall back to a top-level-config attribution
+		// otherwise. Cannot distinguish flag vs config without a
+		// pflag.Changed peek, and there's no --org-id flag today.
+		if os.Getenv("JC_ORG_ID") == topLevel {
+			return topLevel, "JC_ORG_ID env"
+		}
+		return topLevel, "top-level config"
 	}
 	if profileOrg := viper.GetString("profiles." + profile + ".org_id"); profileOrg != "" {
 		return profileOrg, "profile config"
