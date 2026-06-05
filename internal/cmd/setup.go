@@ -283,7 +283,7 @@ func (wiz *setupWizard) authServiceAccount(profile string) (*api.Organization, e
 	// Obtain token.
 	fmt.Fprintf(wiz.w, "Obtaining bearer token...")
 	tc := api.NewTokenCache(clientID, clientSecret)
-	_, err = tc.Token()
+	_, err = tc.Token(wiz.cmd.Context())
 	if err != nil {
 		fmt.Fprintln(wiz.w)
 		return nil, fmt.Errorf("authentication failed: %w", err)

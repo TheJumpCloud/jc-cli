@@ -299,7 +299,7 @@ func TestDashboardTool_Filtering(t *testing.T) {
 func TestDashboardTool_PartialFailure(t *testing.T) {
 	setupToolTest(t)
 
-	origSleep := api.SetRetrySleepFn(func(time.Duration) {})
+	origSleep := api.SetRetrySleepFn(func(context.Context, time.Duration) error { return nil })
 	t.Cleanup(func() { api.SetRetrySleepFn(origSleep) })
 
 	origNow := nowFunc
@@ -376,7 +376,7 @@ func TestDashboardTool_PartialFailure(t *testing.T) {
 func TestDashboardTool_TotalFailure(t *testing.T) {
 	setupToolTest(t)
 
-	origSleep := api.SetRetrySleepFn(func(time.Duration) {})
+	origSleep := api.SetRetrySleepFn(func(context.Context, time.Duration) error { return nil })
 	t.Cleanup(func() { api.SetRetrySleepFn(origSleep) })
 
 	origNow := nowFunc

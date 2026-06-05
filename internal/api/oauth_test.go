@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -52,7 +53,7 @@ func TestTokenCache_FetchToken_Success(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("test-client-id", "test-client-secret")
-	token, err := tc.Token()
+	token, err := tc.Token(context.Background())
 	if err != nil {
 		t.Fatalf("Token() error: %v", err)
 	}
@@ -81,13 +82,13 @@ func TestTokenCache_CachesToken(t *testing.T) {
 	tc := NewTokenCache("client-id", "client-secret")
 
 	// First call should fetch.
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err != nil {
 		t.Fatalf("first Token() error: %v", err)
 	}
 
 	// Second call should use cache.
-	token, err := tc.Token()
+	token, err := tc.Token(context.Background())
 	if err != nil {
 		t.Fatalf("second Token() error: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestTokenCache_RefreshesExpiredToken(t *testing.T) {
 	tc := NewTokenCache("client-id", "client-secret")
 
 	// First call.
-	_, _ = tc.Token()
+	_, _ = tc.Token(context.Background())
 	if callCount != 1 {
 		t.Fatalf("expected 1 call after first Token(), got %d", callCount)
 	}
@@ -134,7 +135,7 @@ func TestTokenCache_RefreshesExpiredToken(t *testing.T) {
 	fakeNow = fakeNow.Add(3631 * time.Second)
 
 	// Should refresh.
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err != nil {
 		t.Fatalf("Token() error after expiry: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestTokenCache_InvalidCredentials(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("bad-id", "bad-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err == nil {
 		t.Fatal("expected error for invalid credentials")
 	}
@@ -176,7 +177,7 @@ func TestTokenCache_ForbiddenCredentials(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("client-id", "client-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err == nil {
 		t.Fatal("expected error for forbidden credentials")
 	}
@@ -197,7 +198,7 @@ func TestTokenCache_ServerError(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("client-id", "client-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err == nil {
 		t.Fatal("expected error for server error")
 	}
@@ -222,7 +223,7 @@ func TestTokenCache_EmptyAccessToken(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("client-id", "client-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err == nil {
 		t.Fatal("expected error for empty access token")
 	}
@@ -252,7 +253,7 @@ func TestTokenCache_DefaultExpiresIn(t *testing.T) {
 	defer func() { nowFunc = origNow }()
 
 	tc := NewTokenCache("client-id", "client-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err != nil {
 		t.Fatalf("Token() error: %v", err)
 	}
@@ -278,7 +279,7 @@ func TestTokenCache_ConnectionError(t *testing.T) {
 	defer func() { oauthTokenURL = orig }()
 
 	tc := NewTokenCache("client-id", "client-secret")
-	_, err := tc.Token()
+	_, err := tc.Token(context.Background())
 	if err == nil {
 		t.Fatal("expected error for connection failure")
 	}

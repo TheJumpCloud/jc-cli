@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"math"
 	"math/rand/v2"
@@ -16,13 +17,29 @@ const (
 	maxBackoff = 30 * time.Second
 )
 
-// retrySleepFn is the default sleep function for retry backoff.
-// Tests can override this to avoid real delays.
-var retrySleepFn = time.Sleep
+// retrySleepFn waits for d, or returns ctx.Err() if the context fires
+// first. Pre-KLA-448 this was a plain func(time.Duration) and a
+// caller's deadline couldn't cancel the backoff sleep — so a hung
+// server + retry loop kept running long past --probe-timeout.
+// Overridable for tests that want instant retries.
+var retrySleepFn = func(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
-// SetRetrySleepFn overrides the retry backoff sleep function.
-// Used by cross-package tests to disable delays. Returns the previous function.
-func SetRetrySleepFn(fn func(time.Duration)) func(time.Duration) {
+// SetRetrySleepFn overrides the retry backoff function.
+// Used by cross-package tests to disable real delays. Returns the
+// previous function so the caller can restore it on cleanup.
+func SetRetrySleepFn(fn func(context.Context, time.Duration) error) func(context.Context, time.Duration) error {
 	prev := retrySleepFn
 	retrySleepFn = fn
 	return prev
@@ -36,7 +53,7 @@ func SetRetrySleepFn(fn func(time.Duration)) func(time.Duration) {
 type retryTransport struct {
 	base       http.RoundTripper
 	maxRetries int
-	sleepFn    func(time.Duration) // overridable for testing
+	sleepFn    func(context.Context, time.Duration) error // overridable for testing
 }
 
 func newRetryTransport(base http.RoundTripper) *retryTransport {
@@ -62,7 +79,9 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// Connection-level error — retry.
 		if err != nil {
 			if attempt < t.maxRetries {
-				t.backoff(attempt)
+				if berr := t.backoff(req.Context(), attempt); berr != nil {
+					return nil, berr
+				}
 				continue
 			}
 			return nil, err
@@ -76,7 +95,9 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// Retryable status code — drain body and retry.
 		if attempt < t.maxRetries {
 			drainAndClose(resp)
-			t.backoff(attempt)
+			if berr := t.backoff(req.Context(), attempt); berr != nil {
+				return nil, berr
+			}
 			continue
 		}
 
@@ -87,16 +108,20 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// backoff sleeps for an exponentially increasing duration with jitter.
+// backoff waits for an exponentially increasing duration with jitter,
+// or returns ctx.Err() if the context fires first. KLA-448 — pre-fix
+// the wait was uninterruptible, so a caller's --probe-timeout could
+// not cancel a retry loop in progress.
+//
 // Formula: min(2^attempt * 1s + jitter, 30s)
-func (t *retryTransport) backoff(attempt int) {
+func (t *retryTransport) backoff(ctx context.Context, attempt int) error {
 	base := time.Duration(math.Pow(2, float64(attempt))) * time.Second
 	jitter := time.Duration(rand.Int64N(int64(time.Second)))
 	wait := base + jitter
 	if wait > maxBackoff {
 		wait = maxBackoff
 	}
-	t.sleepFn(wait)
+	return t.sleepFn(ctx, wait)
 }
 
 // isRetryableStatus returns true for HTTP status codes that should trigger a retry.

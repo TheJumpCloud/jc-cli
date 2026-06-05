@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
@@ -436,7 +437,7 @@ func TestLoggingTransport_VerboseLogsError(t *testing.T) {
 	defer resetViper()
 
 	origSleep := retrySleepFn
-	retrySleepFn = func(d time.Duration) {}
+	retrySleepFn = func(context.Context, time.Duration) error { return nil }
 	defer func() { retrySleepFn = origSleep }()
 
 	viper.Set("verbose", true)

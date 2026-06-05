@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -119,7 +120,7 @@ func TestValidateAPIKey_Forbidden(t *testing.T) {
 
 func TestValidateAPIKey_ServerError(t *testing.T) {
 	origSleep := retrySleepFn
-	retrySleepFn = func(d time.Duration) {} // no-op for fast tests
+	retrySleepFn = func(context.Context, time.Duration) error { return nil } // no-op for fast tests
 	defer func() { retrySleepFn = origSleep }()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +165,7 @@ func TestValidateAPIKey_EmptyResults(t *testing.T) {
 
 func TestValidateAPIKey_ConnectionError(t *testing.T) {
 	origSleep := retrySleepFn
-	retrySleepFn = func(d time.Duration) {} // no-op for fast tests
+	retrySleepFn = func(context.Context, time.Duration) error { return nil } // no-op for fast tests
 	defer func() { retrySleepFn = origSleep }()
 
 	// Use a non-existent URL to simulate connection failure.

@@ -267,7 +267,7 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 	existingSecret := config.ClientSecret()
 	if existingID != "" && existingSecret != "" {
 		tc := api.NewTokenCache(existingID, existingSecret)
-		if _, err := tc.Token(); err == nil {
+		if _, err := tc.Token(cmd.Context()); err == nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "Already authenticated as service account (profile: %s)\n", profile)
 			return nil
 		}
@@ -303,7 +303,7 @@ func runAuthLoginServiceAccount(cmd *cobra.Command, profileFlag string, input In
 	// Validate by obtaining a token.
 	fmt.Fprintf(cmd.ErrOrStderr(), "Obtaining bearer token...")
 	tc := api.NewTokenCache(clientID, clientSecret)
-	_, err = tc.Token()
+	_, err = tc.Token(cmd.Context())
 	if err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr())
 		return fmt.Errorf("authentication failed: %w", err)
@@ -423,7 +423,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 		if clientID != "" && clientSecret != "" {
 			tc := api.NewTokenCache(clientID, clientSecret)
-			_, tokenErr := tc.Token()
+			_, tokenErr := tc.Token(cmd.Context())
 			if tokenErr == nil {
 				status.Authenticated = true
 				status.ClientID = clientID
