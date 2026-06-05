@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/version"
 )
 
@@ -43,25 +42,22 @@ type Client struct {
 	TokenCache *TokenCache
 }
 
-// NewClient creates a new API client using the currently configured credentials.
-// For service accounts, it creates an OAuth bearer-token client.
-// For API key auth, it creates an x-api-key client.
-// Returns ErrNoAPIKey if no credentials are available.
+// NewClient creates a new API client using the currently configured
+// credentials. Decision tree shared with ResolveActiveAuth (which
+// also drives the operator-facing reporting in `jc doctor`) — the
+// single source of truth lives in auth_resolve.go.
+//
+// Returns ErrNoAPIKey when no usable credential resolves (no OAuth
+// client creds, no api_key, or only an unresolvable keychain reference).
 func NewClient() (*Client, error) {
-	if config.AuthMethod() == "service_account" {
-		clientID := config.ClientID()
-		clientSecret := config.ClientSecret()
-		if clientID != "" && clientSecret != "" {
-			tc := NewTokenCache(clientID, clientSecret)
-			return NewClientWithToken(tc), nil
-		}
+	r := ResolveActiveAuth(Hint{})
+	if tc := r.TokenCache(); tc != nil {
+		return NewClientWithToken(tc), nil
 	}
-
-	key := config.APIKey()
-	if key == "" {
-		return nil, ErrNoAPIKey
+	if key := r.APIKey(); key != "" {
+		return NewClientWithKey(key), nil
 	}
-	return NewClientWithKey(key), nil
+	return nil, ErrNoAPIKey
 }
 
 // NewClientWithKey creates a new API client with the given API key.

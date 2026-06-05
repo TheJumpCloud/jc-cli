@@ -19,7 +19,6 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/keychain"
 	"github.com/klaassen-consulting/jc/internal/version"
 )
 
@@ -258,155 +257,37 @@ func collectConfig() configSection {
 	return cs
 }
 
-// collectAuth honestly reports where the API key came from, BEFORE
-// resolving keychain references. Order matches config.APIKey():
-//   1. --api-key flag (viper's "api_key" key, set via PersistentFlag)
-//   2. JC_API_KEY env var (also bound to viper's "api_key" key)
-//   3. profile config (plaintext or keychain:// reference)
+// collectAuth is a thin presentation adapter over api.ResolveActiveAuth.
 //
-// (1) and (2) are indistinguishable at the viper level since they share
-// the binding. We disambiguate by checking whether the binding was set
-// via flag — viper's IsSet on a binding name reports whether ANY non-
-// default source provided the value, so we additionally compare against
-// the raw env value: when the resolved value matches the env value
-// (and the env IS set), it's safe to call it env; otherwise it's the
-// flag, which has higher precedence in cobra/viper.
-//
-// Bugbot caught the original ordering, which misattributed a flag
-// override to env when the operator happened to set both to the same
-// string. The fix checks the flag-set bit first via cobra-provided
-// state plumbed in by the caller (we read the persistent flag
-// definition's Changed bit).
+// Pre-KLA-447 this function held a hand-rolled mirror of NewClient()'s
+// precedence — Bugbot found 13 distinct edges across PR #42 where the
+// mirror drifted. The fix is structural: api.ResolveActiveAuth is now
+// the single source of truth; collectAuth copies its output into the
+// display struct. Future maintainers cannot reintroduce a drift here
+// because the precedence walking lives in one place.
 func collectAuth(flagAPIKeySet bool) authSection {
-	as := authSection{Method: config.AuthMethod()}
-	profile := config.ActiveProfile()
-
-	envKey := os.Getenv("JC_API_KEY")
-	flagOrEnv := viper.GetString("api_key")
-	profileRaw := viper.GetString("profiles." + profile + ".api_key")
-	hasAPIKey := flagOrEnv != "" || profileRaw != ""
-
-	// api.NewClient() resolution precedence (mirror it exactly so the
-	// doctor report matches what jc actually does):
-	//   1. AuthMethod == "service_account" AND client_id + client_secret
-	//      → OAuth Bearer.
-	//   2. AuthMethod == "service_account" AND creds missing AND an
-	//      api_key resolves → SILENT FALLBACK to api_key (Bugbot caught
-	//      this third-order case where reporting `method: service_account`
-	//      with an x-api-key source was internally inconsistent).
-	//   3. AuthMethod == "api_key" → resolve key from flag/env/keychain/
-	//      profile config.
-	//   4. Nothing configured → no auth.
-	if as.Method == "service_account" {
-		// Peek at the raw client_secret to distinguish "not configured"
-		// from "keychain reference exists but resolution failed" —
-		// config.ClientSecret() resolves keychain refs transparently
-		// and returns "" on failure, losing that distinction.
-		clientID := config.ClientID()
-		clientSecretRaw := viper.GetString("profiles." + profile + ".client_secret")
-		clientSecret := config.ClientSecret()
-
-		oauthAvailable := clientID != "" && clientSecret != ""
-		keychainFailed := clientID != "" &&
-			strings.HasPrefix(clientSecretRaw, "keychain://") &&
-			clientSecret == ""
-
-		switch {
-		case oauthAvailable:
-			// (1) Happy OAuth path.
-			as.Source = "service_account (OAuth)"
-			as.Fingerprint = fingerprint(clientID)
-			as.OrgID, as.OrgIDSource = collectOrgID(profile)
-			return as
-		case !hasAPIKey && keychainFailed:
-			// (4a) OAuth would be configured but the client_secret
-			// keychain is unreadable AND there's no api_key fallback.
-			// Report the actual cause so the operator fixes the
-			// keychain rather than re-entering their secret.
-			ref := strings.TrimPrefix(clientSecretRaw, "keychain://")
-			as.Source = fmt.Sprintf("service_account (client_secret keychain unavailable: %s)", ref)
-			as.Fingerprint = fingerprint(clientID)
-			as.OrgID, as.OrgIDSource = collectOrgID(profile)
-			return as
-		case !hasAPIKey:
-			// (4b) Neither auth path will work and no special cause to
-			// surface.
-			as.Source = "service_account (no client credentials)"
-			as.OrgID, as.OrgIDSource = collectOrgID(profile)
-			return as
-		default:
-			// (2) Silent fallback to api_key. The earlier Bugbot
-			// finding flagged that reporting `method: service_account`
-			// with an x-api-key source was inconsistent; this branch
-			// re-labels method honestly. When the keychain miss caused
-			// the fallback, surface that in the method label too so
-			// the operator sees both that their service_account is
-			// broken AND why.
-			if keychainFailed {
-				as.Method = "api_key (service_account fallback, client_secret keychain unavailable)"
-			} else {
-				as.Method = "api_key (service_account fallback)"
-			}
-		}
+	r := api.ResolveActiveAuth(api.Hint{APIKeyFlagChanged: flagAPIKeySet})
+	return authSection{
+		Method:      r.Method,
+		Source:      r.Source,
+		Fingerprint: r.Fingerprint,
+		OrgID:       r.OrgID,
+		OrgIDSource: r.OrgIDSource,
 	}
-
-	switch {
-	case flagAPIKeySet && flagOrEnv != "":
-		// Flag overrides env in cobra precedence. Reported as flag
-		// even when env happens to have the same value.
-		as.Source = "--api-key flag"
-		as.Fingerprint = fingerprint(flagOrEnv)
-	case flagOrEnv != "" && envKey != "" && flagOrEnv == envKey:
-		as.Source = "JC_API_KEY env"
-		as.Fingerprint = fingerprint(envKey)
-	case flagOrEnv != "":
-		// Active value differs from env (or env is unset) and the flag
-		// wasn't set — only path that fits is the profile config that
-		// viper auto-merged into the key. Fall through to profile branch
-		// below; we'd never get here in practice because the env path
-		// above would have matched. Belt-and-suspenders.
-		as.Source = "viper-resolved (config or env)"
-		as.Fingerprint = fingerprint(flagOrEnv)
-	case strings.HasPrefix(profileRaw, "keychain://"):
-		as.Source = fmt.Sprintf("keychain (%s)", strings.TrimPrefix(profileRaw, "keychain://"))
-		if resolved, err := keychain.Resolve(profileRaw); err == nil {
-			as.Fingerprint = fingerprint(resolved)
-		} else {
-			as.Fingerprint = "(keychain unavailable)"
-		}
-	case profileRaw != "":
-		as.Source = "profile config (plaintext)"
-		as.Fingerprint = fingerprint(profileRaw)
-	case as.Method == "service_account":
-		// service_account profile without valid client creds — neither
-		// auth path will work. Surface it honestly so the operator
-		// knows to fix the client_id/client_secret.
-		as.Source = "service_account (no client credentials)"
-	default:
-		as.Source = "(unset)"
-	}
-
-	as.OrgID, as.OrgIDSource = collectOrgID(profile)
-	return as
 }
 
-// collectOrgID returns the resolved org ID + source. Mirrors
-// config.OrgID()'s precedence exactly:
-//
-//  1. viper "org_id" — picks up JC_ORG_ID env (via BindEnv), a
-//     top-level `org_id:` in config.yaml, or a flag bound to "org_id".
-//  2. profile config (profiles.<name>.org_id).
-//
-// Bugbot caught the original implementation reading os.Getenv("JC_ORG_ID")
-// directly, which missed the top-level config-file case — the doctor
-// would have reported no org ID while config.OrgID() (and every other
-// jc command) still resolved one.
+// collectOrgID is preserved for tests that call it directly; it
+// delegates to api.ResolveActiveAuth for consistency. Future callers
+// should prefer ResolveActiveAuth directly.
 func collectOrgID(profile string) (string, string) {
+	// We can't easily call the unexported resolver, so we re-create
+	// the call. The api package has the canonical implementation; this
+	// is kept only for test compatibility and documents its provenance.
+	r := api.ResolveActiveAuth(api.Hint{})
+	if r.OrgID != "" {
+		return r.OrgID, r.OrgIDSource
+	}
 	if topLevel := viper.GetString("org_id"); topLevel != "" {
-		// Attribute to env when the env var matches the resolved value
-		// (most common case); fall back to a top-level-config attribution
-		// otherwise. Cannot distinguish flag vs config without a
-		// pflag.Changed peek, and there's no --org-id flag today.
 		if os.Getenv("JC_ORG_ID") == topLevel {
 			return topLevel, "JC_ORG_ID env"
 		}
