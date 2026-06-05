@@ -509,3 +509,33 @@ func TestAppSpecs_UniqueNamesAndURIs(t *testing.T) {
 		uris[spec.ResourceURI] = true
 	}
 }
+
+// KLA-419 introduced registerTypedAppTool to deduplicate the user_view /
+// device_view / insights_view registration boilerplate. The other
+// existing tests (TestUserView_HasUIMetadata,
+// TestUserViewResource_ServesHTMLWithInjection, and their device + insights
+// counterparts) cover the happy path through the helper end-to-end.
+//
+// This test pins the error-path contract: a typed app's errorResult must
+// prefix the message with the tool name. Pre-KLA-419 the insights_view
+// path used "fetching insights:" — drift-prone and inconsistent with
+// user_view / device_view. The helper now standardizes on
+// spec.Name + ": <err>" so AI clients can correlate the error back to
+// the calling tool.
+func TestRegisterTypedAppTool_ErrorMessagePrefixedWithToolName(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	// insights_view with an unparseable "last" shorthand reaches the
+	// handler (passes SDK input validation), then parseInsightsTime
+	// returns a "parsing last: ..." error. The wrapper must prefix it
+	// with "insights_view: ".
+	result := callTool(t, cs, "insights_view", map[string]any{"last": "garbage-duration"})
+	if !result.IsError {
+		t.Fatal("expected error for unparseable insights_view last; got success")
+	}
+	text := getResultText(t, result)
+	if !strings.HasPrefix(text, "insights_view:") {
+		t.Errorf("insights_view error should be prefixed with %q, got: %q", "insights_view:", text)
+	}
+}

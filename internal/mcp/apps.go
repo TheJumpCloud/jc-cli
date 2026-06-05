@@ -215,24 +215,83 @@ func (s *Server) registerAppTool(spec appSpec) {
 // common.js injected) at the ui:// URI with the MCP App MIME type. The final
 // HTML is precomputed once at registration.
 func (s *Server) registerAppResource(spec appSpec) {
-	html := renderAppHTML(spec.HTML)
+	registerUIResource(s, spec.ResourceURI, spec.ResourceName, spec.ResourceDescription, spec.HTML)
+}
+
+// registerUIResource serves an HTML body at a ui:// URI with the MCP App
+// MIME type. The HTML's appCommonMarker (if present) is replaced with
+// common.js once at registration so the per-request handler stays cheap.
+//
+// Factored out of registerAppResource so the typed-app path (see
+// registerTypedAppTool) can reuse it without recreating the appSpec
+// envelope. Pre-KLA-419 each typed app inlined the same 18 lines.
+func registerUIResource(s *Server, uri, name, description, htmlBody string) {
+	html := renderAppHTML(htmlBody)
 	s.mcpServer.AddResource(
 		&mcp.Resource{
-			URI:         spec.ResourceURI,
-			Name:        spec.ResourceName,
-			Description: spec.ResourceDescription,
+			URI:         uri,
+			Name:        name,
+			Description: description,
 			MIMEType:    mcpAppMIMEType,
 		},
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{
 				Contents: []*mcp.ResourceContents{{
-					URI:      spec.ResourceURI,
+					URI:      uri,
 					MIMEType: mcpAppMIMEType,
 					Text:     html,
 				}},
 			}, nil
 		},
 	)
+}
+
+// typedAppSpec mirrors appSpec for MCP Apps whose tool accepts typed
+// input parameters (e.g. user_view, device_view, insights_view). The
+// generic In type parameter is what the SDK uses to auto-derive the
+// tool's JSON input schema.
+//
+// Cannot live in a []typedAppSpec slice the way appSpecs does, because
+// each entry's In differs; instead, callers construct one literal per
+// register{Foo}View() entry point and pass it to registerTypedAppTool.
+type typedAppSpec[In any] struct {
+	Name                string
+	Description         string
+	ResourceURI         string
+	ResourceName        string
+	ResourceDescription string
+	HTML                string
+	// Handler returns the JSON-serializable payload pushed to the app as
+	// the initial tool result. The wrapper marshals it via jsonResult
+	// and surfaces errors via errorResult(spec.Name + ": <err>") so
+	// every typed app reports its tool name on failure.
+	Handler func(ctx context.Context, args In) (any, error)
+}
+
+// registerTypedAppTool is the typed-input counterpart to registerAppTool.
+// Each typed app shrinks from ~40 lines of inline registration to a
+// single typedAppSpec literal + this call. Future refactors of the
+// wrap-data-fetch / errorResult / jsonResult shape (e.g. swapping in a
+// wrapped-error pattern) become one site instead of one per app.
+func registerTypedAppTool[In any](s *Server, spec typedAppSpec[In]) {
+	meta := mcp.Meta{
+		"ui":             map[string]any{"resourceUri": spec.ResourceURI},
+		"ui/resourceUri": spec.ResourceURI, // legacy key for older hosts
+	}
+	addToolWithMetaTyped(s, spec.Name, spec.Description, meta,
+		func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error) {
+			data, err := spec.Handler(ctx, args)
+			if err != nil {
+				return errorResult(fmt.Sprintf("%s: %v", spec.Name, err)), nil, nil
+			}
+			res, err := jsonResult(data)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+	registerUIResource(s, spec.ResourceURI, spec.ResourceName, spec.ResourceDescription, spec.HTML)
 }
 
 // --- Dashboard data fetching and aggregation ---

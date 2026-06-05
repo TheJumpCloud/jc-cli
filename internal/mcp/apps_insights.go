@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 //go:embed apps_html/insights.html
@@ -83,48 +82,27 @@ type insightsUserCnt struct {
 }
 
 // registerInsightsView wires the insights_view MCP App: typed tool + ui://
-// resource. Lives outside appSpecs because it takes input args.
+// resource. Lives outside appSpecs because the tool takes typed input.
+//
+// Note: pre-KLA-419 the error path here was "fetching insights: <err>"
+// rather than "insights_view: <err>". The shared registerTypedAppTool
+// standardizes on the tool name for all typed apps so AI clients
+// receiving an error can correlate to the calling tool. Minor wording
+// change; no programmatic consumer should be matching on the prefix.
 func (s *Server) registerInsightsView() {
-	meta := mcp.Meta{
-		"ui":             map[string]any{"resourceUri": insightsResourceURI},
-		"ui/resourceUri": insightsResourceURI,
-	}
-	addToolWithMetaTyped(s, "insights_view",
-		"Directory Insights event explorer: stacked time-series chart by event type with top-users ranking and event preview. "+
-			"Parameters mirror `jc insights query` (service, event_type, last, start, end, user). "+
+	registerTypedAppTool(s, typedAppSpec[insightsViewArgs]{
+		Name: "insights_view",
+		Description: "Directory Insights event explorer: stacked time-series chart by event type with top-users ranking and event preview. " +
+			"Parameters mirror `jc insights query` (service, event_type, last, start, end, user). " +
 			"Renders as an interactive dashboard in MCP App-capable hosts.",
-		meta,
-		func(ctx context.Context, req *mcp.CallToolRequest, args insightsViewArgs) (*mcp.CallToolResult, any, error) {
-			data, err := fetchInsightsViewData(ctx, args)
-			if err != nil {
-				return errorResult(fmt.Sprintf("fetching insights: %v", err)), nil, nil
-			}
-			res, err := jsonResult(data)
-			if err != nil {
-				return errorResult(err.Error()), nil, nil
-			}
-			return res, nil, nil
+		ResourceURI:         insightsResourceURI,
+		ResourceName:        "Insights Explorer",
+		ResourceDescription: "Interactive Directory Insights time-series and top-users view",
+		HTML:                insightsHTML,
+		Handler: func(ctx context.Context, args insightsViewArgs) (any, error) {
+			return fetchInsightsViewData(ctx, args)
 		},
-	)
-
-	rendered := renderAppHTML(insightsHTML)
-	s.mcpServer.AddResource(
-		&mcp.Resource{
-			URI:         insightsResourceURI,
-			Name:        "Insights Explorer",
-			Description: "Interactive Directory Insights time-series and top-users view",
-			MIMEType:    mcpAppMIMEType,
-		},
-		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			return &mcp.ReadResourceResult{
-				Contents: []*mcp.ResourceContents{{
-					URI:      insightsResourceURI,
-					MIMEType: mcpAppMIMEType,
-					Text:     rendered,
-				}},
-			}, nil
-		},
-	)
+	})
 }
 
 // resolveInsightsWindow turns args into a concrete [start, end] pair in UTC,
