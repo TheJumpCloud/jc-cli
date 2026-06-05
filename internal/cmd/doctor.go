@@ -278,11 +278,36 @@ func collectAuth(flagAPIKeySet bool) authSection {
 	//      profile config.
 	//   4. Nothing configured → no auth.
 	if as.Method == "service_account" {
+		// Peek at the raw client_secret to distinguish "not configured"
+		// from "keychain reference exists but resolution failed" —
+		// config.ClientSecret() resolves keychain refs transparently
+		// and returns "" on failure, losing that distinction. Bugbot
+		// flagged this on PR #42 because a keychain miss looked
+		// identical to a never-configured secret, and the operator
+		// got pointed at the wrong remediation.
+		clientID := config.ClientID()
+		clientSecretRaw := viper.GetString("profiles." + profile + ".client_secret")
+		clientSecret := config.ClientSecret()
+
+		keychainFailed := clientID != "" &&
+			strings.HasPrefix(clientSecretRaw, "keychain://") &&
+			clientSecret == ""
+
 		switch {
-		case config.ClientID() != "" && config.ClientSecret() != "":
+		case clientID != "" && clientSecret != "":
 			// (1) Happy OAuth path.
 			as.Source = "service_account (OAuth)"
-			as.Fingerprint = fingerprint(config.ClientID())
+			as.Fingerprint = fingerprint(clientID)
+			as.OrgID, as.OrgIDSource = collectOrgID(profile)
+			return as
+		case keychainFailed:
+			// (1a) OAuth configured but client_secret keychain is
+			// unreadable (locked, deleted, permission denied). Report
+			// the actual cause so the operator knows to fix the
+			// keychain rather than re-enter their client_secret.
+			ref := strings.TrimPrefix(clientSecretRaw, "keychain://")
+			as.Source = fmt.Sprintf("service_account (client_secret keychain unavailable: %s)", ref)
+			as.Fingerprint = fingerprint(clientID)
 			as.OrgID, as.OrgIDSource = collectOrgID(profile)
 			return as
 		case !hasAPIKey:

@@ -218,6 +218,44 @@ profiles:
 	}
 }
 
+// Bugbot finding #5 (Medium) on PR #42: when client_secret is a
+// keychain:// reference but keychain resolution fails (locked,
+// deleted, permission denied), config.ClientSecret() returns "" and
+// my code falsely reported "no client credentials" — same status as
+// "never configured." The operator chasing a "missing credentials"
+// message would re-enter their client_secret instead of fixing the
+// keychain. Fix: peek at the raw config value to distinguish
+// keychain miss from never-configured.
+func TestCollectAuth_ServiceAccountKeychainSecretMissing(t *testing.T) {
+	withTempConfig(t, `
+active_profile: default
+profiles:
+  default:
+    auth_method: service_account
+    client_id: "test-client-id-9876"
+    client_secret: "keychain://jc/default-secret"
+`)
+	t.Setenv("JC_API_KEY", "")
+	_ = viper.BindEnv("api_key", "JC_API_KEY")
+
+	a := collectAuth(false)
+	// Expected: a status that names the keychain failure specifically
+	// — NOT "no client credentials" (which would point at the wrong
+	// remediation).
+	if !strings.Contains(a.Source, "keychain unavailable") {
+		t.Errorf("auth.source = %q, want a 'keychain unavailable' message", a.Source)
+	}
+	if strings.Contains(a.Source, "no client credentials") {
+		t.Errorf("auth.source = %q, keychain failure must NOT be reported as 'no client credentials'", a.Source)
+	}
+	// client_id is still good — fingerprint it so the operator can
+	// confirm the right service account is configured even when the
+	// secret is unreadable.
+	if a.Fingerprint != "****9876" {
+		t.Errorf("auth.fingerprint = %q, want '****9876' (client_id last 4)", a.Fingerprint)
+	}
+}
+
 // Bugbot finding #4 (Medium) on PR #42: when AuthMethod is
 // service_account but client credentials are missing, api.NewClient()
 // silently falls through to the api_key resolution path. If an api_key
