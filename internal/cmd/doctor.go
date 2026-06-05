@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/config"
@@ -131,13 +132,28 @@ Examples:
 			rep := collectDoctorReport(cmd.Context(), !noProbe, probeTimeout, flagAPIKeySet)
 
 			// Respect --output json explicitly OR the global --output flag /
-			// JC_OUTPUT env / config default. JSON is the script-friendly
-			// path; "text" is the human default.
-			output := config.Output()
-			if jsonOut || output == "json" {
-				return printDoctorJSON(cmd.OutOrStdout(), rep)
+			// JC_OUTPUT env / config default. Hierarchical (json, yaml) and
+			// human (text) formats are honored; tabular formats (table,
+			// csv, ndjson) don't fit a nested doctor report — Bugbot flagged
+			// silently downgrading those to text as a surprise, so we
+			// surface a stderr note when we do.
+			output := strings.ToLower(config.Output())
+			if jsonOut {
+				output = "json"
 			}
-			return printDoctorText(cmd.OutOrStdout(), rep)
+			switch output {
+			case "json":
+				return printDoctorJSON(cmd.OutOrStdout(), rep)
+			case "yaml":
+				return printDoctorYAML(cmd.OutOrStdout(), rep)
+			case "human", "text", "":
+				return printDoctorText(cmd.OutOrStdout(), rep)
+			default:
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"jc doctor: %q output not supported for a hierarchical report; rendering as human text\n",
+					output)
+				return printDoctorText(cmd.OutOrStdout(), rep)
+			}
 		},
 	}
 
@@ -412,13 +428,24 @@ func runAPIProbe(ctx context.Context, timeout time.Duration) *apiProbe {
 // status/status_code/error triple the report uses. Split from
 // runAPIProbe so tests can validate the error classification without
 // needing to mock the entire HTTP client.
+//
+// Three shapes of error matter:
+//
+//  1. *api.APIError — request reached JumpCloud and got a non-2xx
+//     response. Status code tells us auth_failed vs other.
+//  2. OAuth token-exchange failure — the bearer transport wraps an
+//     error containing one of the distinct phrases from
+//     internal/api/oauth.go (e.g. "invalid client credentials").
+//     Bugbot caught the original code mis-bucketing these as
+//     "unreachable" — operators with bad service-account creds saw a
+//     network-trouble suggestion instead of an auth one.
+//  3. Anything else (DNS failure, connection refused, timeout) —
+//     genuinely unreachable.
 func classifyProbeError(err error) *apiProbe {
 	if err == nil {
 		return &apiProbe{Status: "ok", StatusCode: http.StatusOK}
 	}
-	// Unwrap to find an APIError if present. APIError carries the HTTP
-	// status code from the real response; transport errors (DNS,
-	// connection refused, timeout) won't.
+	// 1. APIError carries the HTTP status code from a real response.
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) {
 		probe := &apiProbe{StatusCode: apiErr.StatusCode}
@@ -430,7 +457,29 @@ func classifyProbeError(err error) *apiProbe {
 		}
 		return probe
 	}
-	return &apiProbe{Status: "unreachable", Error: err.Error()}
+	// 2. OAuth token-exchange failures. The exact phrases come from
+	//    internal/api/oauth.go's fetchToken() error returns.
+	//    String-matching is brittle but the alternative (typed errors
+	//    in the api package) is out of scope for the doctor command.
+	//    If oauth.go ever refactors these wraps, tests fail loudly so
+	//    we catch the drift.
+	msg := err.Error()
+	for _, marker := range oauthAuthFailureMarkers {
+		if strings.Contains(msg, marker) {
+			return &apiProbe{Status: "auth_failed", Error: msg}
+		}
+	}
+	// 3. Anything else is a real transport problem.
+	return &apiProbe{Status: "unreachable", Error: msg}
+}
+
+// oauthAuthFailureMarkers are the substring signals that an error from
+// the bearer-token transport is an auth failure rather than a network
+// failure. Pulled from internal/api/oauth.go's fetchToken() error
+// returns. Keep this list in sync if those wrap strings change.
+var oauthAuthFailureMarkers = []string{
+	"invalid client credentials",         // 401 from token endpoint
+	"client credentials lack permission", // 403 from token endpoint
 }
 
 // fingerprint masks all but the last 4 characters. Matches the
@@ -451,6 +500,25 @@ func printDoctorJSON(w io.Writer, rep doctorReport) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(rep)
+}
+
+// printDoctorYAML round-trips through JSON so the YAML output uses
+// the same snake_case keys the JSON output does (otherwise yaml.v3
+// would lowercase the Go field names, giving us `goversion` instead
+// of `go_version`). Pure CPU; the data is small.
+func printDoctorYAML(w io.Writer, rep doctorReport) error {
+	jb, err := json.Marshal(rep)
+	if err != nil {
+		return err
+	}
+	var generic any
+	if err := json.Unmarshal(jb, &generic); err != nil {
+		return err
+	}
+	enc := yaml.NewEncoder(w)
+	enc.SetIndent(2)
+	defer enc.Close()
+	return enc.Encode(generic)
 }
 
 // printDoctorText renders the report as grouped human-readable

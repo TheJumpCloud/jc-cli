@@ -352,6 +352,63 @@ func TestClassifyProbeError_TransportFailure(t *testing.T) {
 	}
 }
 
+// Bugbot finding (Medium) on PR #42: service-account profiles that
+// fail at the OAuth token exchange surface their errors as plain
+// `error` strings — *api.APIError isn't involved because the failure
+// happens before the API call. Pre-fix those landed in the
+// "unreachable" bucket and operators saw network-trouble suggestions
+// instead of "check your client credentials." Pin the classification
+// against the exact phrases internal/api/oauth.go emits.
+func TestClassifyProbeError_OAuthInvalidClient(t *testing.T) {
+	// Shape matches what bearerAuthTransport returns when oauth.go's
+	// fetchToken hits HTTP 401:
+	//   "failed to obtain bearer token: invalid client credentials
+	//    (HTTP 401). Check your client ID and secret"
+	err := fmt.Errorf("failed to obtain bearer token: invalid client credentials (HTTP 401). Check your client ID and secret")
+	p := classifyProbeError(err)
+	if p.Status != "auth_failed" {
+		t.Errorf("Status = %q, want 'auth_failed' (OAuth 401 must NOT be unreachable)", p.Status)
+	}
+	if p.Error == "" {
+		t.Error("Error should carry the original OAuth message for the operator")
+	}
+}
+
+func TestClassifyProbeError_OAuthInsufficientScope(t *testing.T) {
+	err := fmt.Errorf("failed to obtain bearer token: client credentials lack permission (HTTP 403). Verify the service account scope")
+	p := classifyProbeError(err)
+	if p.Status != "auth_failed" {
+		t.Errorf("Status = %q, want 'auth_failed' (OAuth 403 must NOT be unreachable)", p.Status)
+	}
+}
+
+// Bugbot finding (Medium) on PR #42: only "json" was honored as a
+// global output format; "yaml" / "table" / "csv" / "ndjson" / "human"
+// all silently fell through to text. The fix renders YAML when asked,
+// renders text for "human"/"text"/empty, and surfaces a stderr note
+// when an unsupported format is requested rather than silently
+// downgrading.
+func TestPrintDoctorYAML_RoundTrip(t *testing.T) {
+	withTempConfig(t, "active_profile: default\n")
+	rep := collectDoctorReport(context.Background(), false, 0, false)
+
+	var buf bytes.Buffer
+	if err := printDoctorYAML(&buf, rep); err != nil {
+		t.Fatalf("printDoctorYAML: %v", err)
+	}
+	out := buf.String()
+	// YAML output must include the section keys and not be empty.
+	for _, key := range []string{"build:", "profile:", "config:", "auth:", "api:", "llm:", "mcp:"} {
+		if !strings.Contains(out, key) {
+			t.Errorf("YAML output missing %q:\n%s", key, out)
+		}
+	}
+	// Same load-bearing secret contract as the JSON/text formats.
+	if strings.Contains(out, "RAW-SECRET-DO-NOT-LEAK") {
+		t.Error("YAML output leaked a raw secret")
+	}
+}
+
 func TestPrintDoctorJSON_RoundTrip(t *testing.T) {
 	withTempConfig(t, "active_profile: default\n")
 	rep := collectDoctorReport(context.Background(), false, 0, false)
