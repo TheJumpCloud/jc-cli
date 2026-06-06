@@ -327,22 +327,20 @@ func collectMCP() mcpSection {
 // jc uses for every other API call — so it exercises whichever auth
 // method the active profile is configured for (api_key OR
 // service_account OAuth). The status field distinguishes "ok" from
-// "auth_failed" from "unreachable" so the operator can tell "DNS/TLS
-// works but the key is wrong" from "the host is unreachable" — that's
-// the whole reason this command exists.
+// "auth_failed" from "unreachable" from "timeout" so the operator can
+// tell "DNS/TLS works but the key is wrong" from "the host is
+// unreachable" — that's the whole reason this command exists.
 //
 // We don't HEAD the API root: JumpCloud's edge returns 404 there,
 // indistinguishable from a real outage. `GET /v2/usergroups?limit=1`
 // is a few KB and hits a real handler.
 //
-// Bugbot on PR #42 caught the original hand-rolled HTTP probe which
-// only sent `x-api-key` — a valid service_account profile would
-// report `auth_failed` even though every other jc command worked.
-// Routing through api.NewV2Client fixes that without leaking the
-// client-construction error into our return shape.
-//
-// Never returns a non-nil error to the caller; failures are encoded
-// in the report so JSON consumers always get a parseable response.
+// Post-KLA-448 simplification: the api package now propagates context
+// through the OAuth token-fetch + retry backoff, so a short
+// --probe-timeout cleanly cancels every layer. No more goroutine
+// wrapper — just call client.ListAll(ctx, ...) directly and trust
+// the context. classifyProbeError handles DeadlineExceeded /
+// Canceled → "timeout" classification.
 func runAPIProbe(parentCtx context.Context, timeout time.Duration) *apiProbe {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -361,48 +359,19 @@ func runAPIProbe(parentCtx context.Context, timeout time.Duration) *apiProbe {
 		}
 	}
 
-	// Run ListAll in a goroutine so the probe itself respects
-	// --probe-timeout even when the underlying call doesn't. Bugbot
-	// caught that for service_account profiles, the OAuth token-fetch
-	// hop uses TokenCache.fetchToken() which has its own 30s http.Client
-	// and doesn't honor the probe context — so a hung OAuth endpoint
-	// could make `jc doctor --probe-timeout 100ms` run 30+ seconds.
-	//
-	// The leaked goroutine dies with the process (jc doctor exits as
-	// soon as we print); we don't try to cancel the underlying HTTP call,
-	// just return early so the operator sees the timeout they asked for.
-	type result struct {
-		err error
-	}
-	resultCh := make(chan result, 1)
-	go func() {
-		_, listErr := client.ListAll(ctx, "/usergroups", api.V2ListOptions{Limit: 1})
-		resultCh <- result{err: listErr}
-	}()
+	_, err = client.ListAll(ctx, "/usergroups", api.V2ListOptions{Limit: 1})
+	latency := time.Since(start)
+	probe := classifyProbeError(err)
+	probe.LatencyMS = latency.Milliseconds()
 
-	select {
-	case r := <-resultCh:
-		latency := time.Since(start)
-		probe := classifyProbeError(r.err)
-		probe.LatencyMS = latency.Milliseconds()
-		return probe
-	case <-ctx.Done():
-		latency := time.Since(start)
-		// Distinguish "my --probe-timeout fired" from "the parent
-		// context fired" (global --timeout, signal cancel, etc.).
-		// Pre-fix, the error always blamed --probe-timeout — Bugbot
-		// flagged that operators would raise the wrong flag while the
-		// global deadline still applied.
-		errMsg := fmt.Sprintf("probe deadline (%s) exceeded; OAuth token-fetch or upstream HTTP may not honor the context — increase --probe-timeout or use --no-probe", timeout)
-		if parentCtx.Err() != nil {
-			errMsg = fmt.Sprintf("parent context deadline expired before --probe-timeout (%s); raise the global --timeout or use --no-probe", timeout)
-		}
-		return &apiProbe{
-			Status:    "timeout",
-			LatencyMS: latency.Milliseconds(),
-			Error:     errMsg,
-		}
+	// When the timeout classification fires AND the parent context
+	// fired first, point the operator at the global --timeout rather
+	// than --probe-timeout. (Bugbot PR #42 #11 — operator was being
+	// told to raise the wrong flag.)
+	if probe.Status == "timeout" && parentCtx.Err() != nil {
+		probe.Error = fmt.Sprintf("parent context deadline expired before --probe-timeout (%s); raise the global --timeout or use --no-probe", timeout)
 	}
+	return probe
 }
 
 // classifyProbeError turns a (client.ListAll) result into the

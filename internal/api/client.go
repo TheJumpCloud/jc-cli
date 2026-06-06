@@ -112,7 +112,11 @@ type bearerAuthTransport struct {
 }
 
 func (t *bearerAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	token, err := t.tokenCache.Token()
+	// Propagate the request context to the token fetch. KLA-448 — the
+	// previous implementation called Token() with no context, so a
+	// short --probe-timeout couldn't reach the OAuth endpoint and the
+	// caller waited through the http.Client's 30s default.
+	token, err := t.tokenCache.Token(req.Context())
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain bearer token: %w", err)
 	}

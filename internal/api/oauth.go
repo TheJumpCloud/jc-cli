@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -58,8 +59,19 @@ func NewTokenCache(clientID, clientSecret string) *TokenCache {
 	}
 }
 
-// Token returns a valid bearer token, refreshing if expired or not yet fetched.
-func (tc *TokenCache) Token() (string, error) {
+// Token returns a valid bearer token, refreshing if expired or not yet
+// fetched. The context is honored during a fetch — callers with a tight
+// deadline (e.g. `jc doctor --probe-timeout 100ms`) get a clean
+// context-error return instead of waiting through the http.Client's
+// 30s default timeout. KLA-448 closed the context-leak that forced
+// jc doctor to wrap its probe in a goroutine.
+func (tc *TokenCache) Token(ctx context.Context) (string, error) {
+	if ctx == nil {
+		// Defensive — http.NewRequestWithContext panics on nil. Cobra
+		// invariants give cmd.Context() != nil in production, but tests
+		// that construct commands without RunE can leave it nil.
+		ctx = context.Background()
+	}
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
@@ -69,7 +81,7 @@ func (tc *TokenCache) Token() (string, error) {
 	}
 
 	// Fetch a new token.
-	token, expiresIn, err := tc.fetchToken()
+	token, expiresIn, err := tc.fetchToken(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -86,13 +98,18 @@ func (tc *TokenCache) ExpiresAt() time.Time {
 	return tc.expiresAt
 }
 
-// fetchToken exchanges client credentials for a bearer token.
-func (tc *TokenCache) fetchToken() (string, int, error) {
+// fetchToken exchanges client credentials for a bearer token. The
+// context is propagated to the outbound HTTP request so a caller's
+// deadline / cancellation reaches the actual socket — pre-KLA-448
+// this used http.NewRequest (no context) and the request would run
+// to the http.Client's 30s timeout regardless of what the caller
+// asked for.
+func (tc *TokenCache) fetchToken(ctx context.Context) (string, int, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 	data.Set("scope", "api")
 
-	req, err := http.NewRequest("POST", oauthTokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", oauthTokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}

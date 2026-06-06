@@ -46,7 +46,7 @@ func TestRetryTransport_RetriesOnServerError(t *testing.T) {
 	defer ts.Close()
 
 	rt := newRetryTransport(http.DefaultTransport)
-	rt.sleepFn = func(d time.Duration) {} // no-op sleep for fast tests
+	rt.sleepFn = func(context.Context, time.Duration) error { return nil } // no-op sleep for fast tests
 
 	client := &http.Client{Transport: &authTransport{apiKey: "test", base: &loggingTransport{base: rt, apiKey: "test"}}}
 
@@ -78,7 +78,7 @@ func TestRetryTransport_RetriesOn429(t *testing.T) {
 	defer ts.Close()
 
 	rt := newRetryTransport(http.DefaultTransport)
-	rt.sleepFn = func(d time.Duration) {}
+	rt.sleepFn = func(context.Context, time.Duration) error { return nil }
 
 	client := &http.Client{Transport: rt}
 	resp, err := client.Get(ts.URL + "/test")
@@ -117,7 +117,7 @@ func TestRetryTransport_RetriesOnBadGateway(t *testing.T) {
 			defer ts.Close()
 
 			rt := newRetryTransport(http.DefaultTransport)
-			rt.sleepFn = func(d time.Duration) {}
+			rt.sleepFn = func(context.Context, time.Duration) error { return nil }
 
 			client := &http.Client{Transport: rt}
 			resp, err := client.Get(ts.URL + "/test")
@@ -152,7 +152,7 @@ func TestRetryTransport_NoRetryOn4xx(t *testing.T) {
 			defer ts.Close()
 
 			rt := newRetryTransport(http.DefaultTransport)
-			rt.sleepFn = func(d time.Duration) {}
+			rt.sleepFn = func(context.Context, time.Duration) error { return nil }
 
 			client := &http.Client{Transport: rt}
 			resp, err := client.Get(ts.URL + "/test")
@@ -178,7 +178,7 @@ func TestRetryTransport_MaxRetriesExceeded(t *testing.T) {
 	defer ts.Close()
 
 	rt := newRetryTransport(http.DefaultTransport)
-	rt.sleepFn = func(d time.Duration) {}
+	rt.sleepFn = func(context.Context, time.Duration) error { return nil }
 
 	client := &http.Client{Transport: rt}
 	resp, err := client.Get(ts.URL + "/test")
@@ -206,8 +206,9 @@ func TestRetryTransport_BackoffDurations(t *testing.T) {
 	defer ts.Close()
 
 	rt := newRetryTransport(http.DefaultTransport)
-	rt.sleepFn = func(d time.Duration) {
+	rt.sleepFn = func(_ context.Context, d time.Duration) error {
 		sleepDurations = append(sleepDurations, d)
+		return nil
 	}
 
 	client := &http.Client{Transport: rt}
@@ -245,7 +246,7 @@ func TestRetryTransport_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately.
 
 	rt := newRetryTransport(http.DefaultTransport)
-	rt.sleepFn = func(d time.Duration) {}
+	rt.sleepFn = func(context.Context, time.Duration) error { return nil }
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/test", nil)
 	_, err := rt.RoundTrip(req)
