@@ -80,6 +80,10 @@ var categories = []category{
 		Name:     "Setup",
 		Commands: []string{"jc auth", "jc config"},
 	},
+	{
+		Name:     "Diagnostics",
+		Commands: []string{"jc audit", "jc doctor"},
+	},
 }
 
 type enrichedCommand struct {

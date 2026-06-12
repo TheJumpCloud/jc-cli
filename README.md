@@ -516,6 +516,18 @@ jc setup                    # Walk through first-time configuration
 
 The wizard guides you through profile selection, authentication (API key or service account), organization ID, output format, color, and list limit. On re-run, existing settings are shown — press Enter to keep current values. Each step saves immediately, so partial completion (Ctrl-C) preserves progress.
 
+### Audit
+
+```bash
+jc audit                                  # All checks, grouped by category
+jc audit --category security              # Security checks only
+jc audit --severity high                  # High/critical findings only
+jc audit --output json                    # For skills + CI pipelines
+jc audit --exit-code --threshold high     # CI gate: non-zero on high+ findings
+```
+
+A composable cross-resource health check registry. Each finding carries a severity (`info` → `critical`), a `resource_ref` like `admin:alice@acme.com`, and a `remediation_hint` that names the exact `jc` command to fix it. Categories: `security`, `compliance`, `hygiene`, `identity`. Backs the `jc-security-audit` and `jc-compliance-check` skills. Full check reference: [docs/AUDIT.md](docs/AUDIT.md).
+
 ### Interactive TUI
 
 ```bash

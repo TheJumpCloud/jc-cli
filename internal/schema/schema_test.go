@@ -226,6 +226,10 @@ func TestBuildCommandManifest_FlagTypes(t *testing.T) {
 
 	validTypes := map[string]bool{
 		"string": true, "bool": true, "int": true, "string[]": true,
+		// duration: time.Duration flags (e.g. --probe-timeout 5s). Distinct
+		// from string so LLM consumers know to format as a Go duration
+		// literal rather than guessing units.
+		"duration": true,
 	}
 
 	for _, f := range m.GlobalFlags {
