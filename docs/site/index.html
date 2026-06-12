@@ -275,7 +275,33 @@ footer a { margin-right: 16px; }
     byCategory.set(cmd.category, arr);
   }
 
+  // Synthetic "Global flags" entry so flags like --plan / --output are
+  // searchable and discoverable from the sidebar. Treat it as its own
+  // top-of-sidebar reference section, separate from command categories.
+  const globalEntry = {
+    path: 'Global flags',
+    description: 'Flags accepted by every jc subcommand.',
+    long: 'These flags are accepted by every `jc` subcommand (e.g. `--plan` for safe previews, `-o json` for structured output, `--quiet` for exit-code-only). Per-command flags shown on each card stack on top of these.',
+    category: 'Reference',
+    flags: manifest.global_flags || [],
+  };
+
   const nav = document.getElementById('nav');
+  const refHeading = document.createElement('p');
+  refHeading.className = 'cat';
+  refHeading.textContent = 'Reference';
+  nav.appendChild(refHeading);
+  const refList = document.createElement('ul');
+  const refLi = document.createElement('li');
+  const refLink = document.createElement('a');
+  refLink.className = 'cmd-link';
+  refLink.href = '#' + slug(globalEntry.path);
+  refLink.textContent = globalEntry.path;
+  refLink.dataset.path = globalEntry.path;
+  refLi.appendChild(refLink);
+  refList.appendChild(refLi);
+  nav.appendChild(refList);
+
   for (const [cat, cmds] of byCategory) {
     if (cmds.length === 0) continue;
     const h = document.createElement('p');
@@ -297,6 +323,7 @@ footer a { margin-right: 16px; }
   }
 
   const cards = document.getElementById('cards');
+  cards.appendChild(renderCard(globalEntry));
   for (const cmd of manifest.commands) {
     cards.appendChild(renderCard(cmd));
   }
@@ -311,9 +338,15 @@ footer a { margin-right: 16px; }
       card.hidden = !hit;
       if (hit) shown++;
     }
+    // Use the card's haystack — same predicate as above — so the sidebar
+    // can't disagree with the card area. Pre-fix the sidebar tested only
+    // `dataset.path`, so a query like `mfa` (a subcommand on `jc users`)
+    // would show the card and hide its sidebar link, or vice versa.
     for (const link of nav.querySelectorAll('a.cmd-link')) {
-      const path = link.dataset.path.toLowerCase();
-      link.hidden = q && !path.includes(q);
+      const id = link.getAttribute('href').slice(1);
+      const card = document.getElementById(id);
+      const hit = !q || (card && card.dataset.haystack.includes(q));
+      link.hidden = !hit;
     }
     empty.hidden = shown > 0;
   });
@@ -387,9 +420,9 @@ footer a { margin-right: 16px; }
     }
 
     const haystack = [
-      cmd.path, cmd.description, cmd.category,
+      cmd.path, cmd.description, cmd.long || '', cmd.category,
       ...(cmd.subcommands || []),
-      ...(cmd.flags || []).flatMap(f => [f.name, f.description]),
+      ...(cmd.flags || []).flatMap(f => [f.name, f.description, f.shorthand || '', f.default || '']),
     ].join(' ').toLowerCase();
     card.dataset.haystack = haystack;
 
