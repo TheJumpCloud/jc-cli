@@ -162,10 +162,18 @@ func TestV2Client_ListAll_EmptyResults(t *testing.T) {
 }
 
 func TestV2Client_ListAll_ContextCancellation(t *testing.T) {
+	// Same happens-before sync as the V1 variant — see KLA-438.
+	firstReqServed := make(chan struct{})
+	cancelled := make(chan struct{})
+
 	var requestCount atomic.Int32
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
+		seq := requestCount.Add(1)
+
+		if seq > 1 {
+			<-cancelled
+		}
 
 		var items []map[string]any
 		for i := range 100 {
@@ -175,6 +183,10 @@ func TestV2Client_ListAll_ContextCancellation(t *testing.T) {
 		w.Header().Set("Link", nextURL)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(v2Response(items))
+
+		if seq == 1 {
+			close(firstReqServed)
+		}
 	}))
 	defer ts.Close()
 
@@ -182,12 +194,10 @@ func TestV2Client_ListAll_ContextCancellation(t *testing.T) {
 
 	c := newTestV2Client(ts.URL)
 
-	// Cancel after the first page.
 	go func() {
-		for requestCount.Load() < 1 {
-			// spin until first request completes
-		}
+		<-firstReqServed
 		cancel()
+		close(cancelled)
 	}()
 
 	_, err := c.ListAll(ctx, "/usergroups", V2ListOptions{})

@@ -211,11 +211,29 @@ func TestV1Client_ListAll_EmptyResults(t *testing.T) {
 }
 
 func TestV1Client_ListAll_ContextCancellation(t *testing.T) {
+	// Channel-based happens-before sync between the test goroutine
+	// (which cancels the context) and the test server (which serves
+	// the second page only after cancellation has fired). Pre-KLA-438
+	// this used a busy-spin + immediate cancel, which raced against
+	// pagination on slow CI: if the second request was issued before
+	// the cancel propagated, ListAll completed normally and the test
+	// saw err == nil.
+	firstReqServed := make(chan struct{})
+	cancelled := make(chan struct{})
+
 	var requestCount atomic.Int32
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
+		seq := requestCount.Add(1)
 		skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+
+		// For the second page onward, block until the test goroutine
+		// has cancelled the context. The HTTP client then sees a
+		// cancelled context before this response lands — happens-before
+		// is now strict, not racy.
+		if seq > 1 {
+			<-cancelled
+		}
 
 		var items []map[string]any
 		for i := range 100 {
@@ -224,6 +242,10 @@ func TestV1Client_ListAll_ContextCancellation(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(v1Response(items, 1000))
+
+		if seq == 1 {
+			close(firstReqServed)
+		}
 	}))
 	defer ts.Close()
 
@@ -231,12 +253,10 @@ func TestV1Client_ListAll_ContextCancellation(t *testing.T) {
 
 	c := newTestV1Client(ts.URL)
 
-	// Cancel after the first page.
 	go func() {
-		for requestCount.Load() < 1 {
-			// spin until first request completes
-		}
+		<-firstReqServed
 		cancel()
+		close(cancelled)
 	}()
 
 	_, err := c.ListAll(ctx, "/systemusers", ListOptions{PageSize: 100})
