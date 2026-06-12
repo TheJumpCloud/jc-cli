@@ -1,0 +1,56 @@
+name: Deploy site
+
+# Publishes the auto-generated jc CLI showcase site to GitHub Pages on
+# every merge to main. The site is regenerated from internal/schema in
+# the workflow itself (defense in depth — the verify-site CI gate on PRs
+# already keeps the committed docs/site/ in sync). This way Pages always
+# reflects what's actually shipping.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/site/**'
+      - 'cmd/sitegen/**'
+      - 'internal/schema/**'
+      - 'Makefile'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time. If a second merge lands while one is
+# deploying, the second waits — we want the latest deploy to win, not the
+# earliest. cancel-in-progress: false because actions/deploy-pages doesn't
+# tolerate mid-flight cancellation cleanly.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate site artifacts
+        run: make site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,33 @@
+name: Verify site
+
+# Catches stale docs/site/ artifacts on incoming PRs. If a contributor
+# touched internal/schema, cmd/sitegen, the Makefile site target, or
+# docs/site/ directly without running `make site`, this job fails and
+# tells them how to fix it. Complements the deploy-site workflow, which
+# regenerates at deploy time but only after merge.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/schema/**'
+      - 'cmd/sitegen/**'
+      - 'docs/site/**'
+      - 'Makefile'
+      - '.github/workflows/verify-site.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Verify docs/site/ is up to date
+        run: make verify-site

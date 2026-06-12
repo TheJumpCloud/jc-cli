@@ -6,6 +6,8 @@
 
 Single Go binary. Full API coverage (V1, V2, Directory Insights, Graph). Six output formats. Built-in MCP server for AI assistants. Interactive TUI browser with full CRUD. Recipe engine for multi-step workflows. Plan mode for safe mutation previews. Natural language interface via `jc ask`.
 
+**Browse the full command catalog:** [thejumpcloud.github.io/jc-cli](https://thejumpcloud.github.io/jc-cli/) — searchable reference for every command and flag, plus [`llms.txt`](https://thejumpcloud.github.io/jc-cli/llms.txt) / [`llms-full.txt`](https://thejumpcloud.github.io/jc-cli/llms-full.txt) for AI agents.
+
 ---
 
 ## Installation
@@ -912,7 +914,13 @@ make lint                     # Run go vet
 make install                  # Install to $GOPATH/bin
 make integration-test          # Full integration test (requires auth)
 make integration-test-readonly # Read-only probes only (no create/delete)
+make site                     # Regenerate docs/site/ from the schema manifest
+make verify-site              # Fail if docs/site/ drifted from the schema
 ```
+
+### Showcase site
+
+The public command catalog at [thejumpcloud.github.io/jc-cli](https://thejumpcloud.github.io/jc-cli/) is generated from `internal/schema/schema.go` (the same source the `jc schema` command uses). After adding or renaming a command, run `make site` and commit the regenerated files under `docs/site/`. The `verify-site` CI gate fails the PR if you forget.
 
 ### Shell Completion
 

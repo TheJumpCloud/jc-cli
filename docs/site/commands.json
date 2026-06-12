@@ -1,0 +1,1381 @@
+{
+  "name": "jc",
+  "description": "JumpCloud CLI — manage users, devices, groups, policies, commands, insights, and more",
+  "categories": [
+    "Identity \u0026 Access",
+    "Devices \u0026 MDM",
+    "Apps \u0026 SSO",
+    "Policies \u0026 Commands",
+    "Insights",
+    "Integrations",
+    "Org \u0026 Lifecycle",
+    "AI \u0026 Automation",
+    "Setup"
+  ],
+  "commands": [
+    {
+      "path": "jc auth",
+      "description": "Authentication commands",
+      "long": "Manage JumpCloud credentials and switch between organizations. The CLI supports two credential types: a static API key (read from `JC_API_KEY`, the config, or the system keychain), or an OAuth service account (client ID + secret), with automatic token refresh. Credentials can be stored as plaintext, in macOS Keychain / GNOME libsecret / Windows Credential Manager via a `keychain://` reference, or supplied per-invocation with `--api-key`. Multiple named profiles let MSPs and admins flip between orgs without re-authenticating (`jc auth switch \u003cprofile\u003e`), and `jc auth status` reveals the active profile, credential type, fingerprint, and source.",
+      "category": "Setup",
+      "subcommands": [
+        "login",
+        "logout",
+        "status",
+        "switch"
+      ]
+    },
+    {
+      "path": "jc config",
+      "description": "Configuration management",
+      "long": "View and update jc CLI configuration — default output format, color/pager behavior, TUI refresh interval, plan-mode safety toggles, cache TTLs, and dozens of other preferences. Settings live in `~/.config/jc/config.yaml` and can be overridden per-command via `JC_*` environment variables or flags (env \u003e flag \u003e config \u003e built-in default). Use `jc config view` for the full effective configuration including override sources, or `jc config set \u003ckey\u003e \u003cvalue\u003e` to persist a change.",
+      "category": "Setup",
+      "subcommands": [
+        "view",
+        "set"
+      ]
+    },
+    {
+      "path": "jc users",
+      "description": "Manage JumpCloud system users",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "search",
+        "lock",
+        "unlock",
+        "reset-mfa",
+        "reset-password",
+        "ssh-keys",
+        "ssh-key-add",
+        "ssh-key-delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list/search)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field, prefix - for descending (list/search)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "description": "Full-text search term (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc devices",
+      "description": "Manage JumpCloud devices (systems)",
+      "category": "Devices \u0026 MDM",
+      "subcommands": [
+        "list",
+        "get",
+        "update",
+        "delete",
+        "search",
+        "lock",
+        "restart",
+        "erase",
+        "fde-key"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field, prefix - for descending (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "confirm-erase",
+          "type": "bool",
+          "description": "Required safety flag for erase command"
+        }
+      ]
+    },
+    {
+      "path": "jc groups",
+      "description": "Manage user and device groups",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "user list",
+        "user get",
+        "user create",
+        "user update",
+        "user delete",
+        "device list",
+        "device get",
+        "device create",
+        "device update",
+        "device delete",
+        "add-member",
+        "remove-member"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc commands",
+      "description": "Manage JumpCloud commands",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "run",
+        "results",
+        "trigger"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Command type filter: linux, mac, windows (list)"
+        },
+        {
+          "name": "data",
+          "type": "string",
+          "description": "JSON payload for trigger"
+        }
+      ]
+    },
+    {
+      "path": "jc policies",
+      "description": "Manage JumpCloud policies",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "results"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc apps",
+      "description": "Manage SSO applications",
+      "category": "Apps \u0026 SSO",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "sso-type",
+          "type": "string",
+          "description": "SSO type (create, required)"
+        },
+        {
+          "name": "config",
+          "type": "string",
+          "description": "SSO-specific config as JSON (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc admins",
+      "description": "Manage JumpCloud administrators",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "Admin email address (create, required)"
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "description": "Admin role name (create/update)"
+        },
+        {
+          "name": "enable-mfa",
+          "type": "bool",
+          "description": "Enable multi-factor authentication (create/update)"
+        },
+        {
+          "name": "disable-mfa",
+          "type": "bool",
+          "description": "Disable multi-factor authentication (update)"
+        }
+      ]
+    },
+    {
+      "path": "jc insights",
+      "description": "Query Directory Insights audit events",
+      "category": "Insights",
+      "subcommands": [
+        "query",
+        "count",
+        "distinct",
+        "save",
+        "run",
+        "saved"
+      ],
+      "flags": [
+        {
+          "name": "service",
+          "type": "string",
+          "description": "Event service: sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager, all"
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "description": "Time range: 24h, 7d, 30d, 1m"
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "description": "Start time (RFC 3339 or YYYY-MM-DD)"
+        },
+        {
+          "name": "end",
+          "type": "string",
+          "description": "End time (RFC 3339 or YYYY-MM-DD)"
+        },
+        {
+          "name": "event-type",
+          "type": "string",
+          "description": "Filter by event type"
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum events to return"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field"
+        }
+      ]
+    },
+    {
+      "path": "jc auth-policies",
+      "description": "Manage authentication policies for conditional access",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "enable",
+        "disable",
+        "simulate",
+        "blast-radius"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "conditions",
+          "type": "string",
+          "description": "Conditions tree as raw JSON (create/update)"
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "description": "User name or ID (simulate)"
+        },
+        {
+          "name": "ip",
+          "type": "string",
+          "description": "Source IP address (simulate)"
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "description": "Device name or ID (simulate)"
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "description": "Country code (simulate)"
+        }
+      ]
+    },
+    {
+      "path": "jc iplists",
+      "description": "Manage IP lists for authentication policies",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "ips",
+          "type": "string",
+          "description": "Comma-separated IP entries (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc identity-providers",
+      "description": "Manage JumpCloud identity providers for SSO/OIDC federation",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum results (list)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Provider name (create/update)"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Provider type: OIDC, GOOGLE, OKTA, AZURE (create)"
+        },
+        {
+          "name": "client-id",
+          "type": "string",
+          "description": "OIDC client ID (create/update)"
+        },
+        {
+          "name": "client-secret",
+          "type": "string",
+          "description": "OIDC client secret (create/update)"
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "description": "OIDC issuer URL (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc saas-management",
+      "description": "Manage JumpCloud SaaS Management applications",
+      "category": "Apps \u0026 SSO",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "accounts",
+        "account-get",
+        "account-delete",
+        "usage",
+        "licenses",
+        "catalog-get"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "catalog-app-id",
+          "type": "string",
+          "description": "Catalog application ID (create)"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "App status: APPROVED, UNAPPROVED, IGNORED (create/update)"
+        },
+        {
+          "name": "access-restriction",
+          "type": "string",
+          "description": "Access restriction: DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING (create/update)"
+        },
+        {
+          "name": "account-id",
+          "type": "string",
+          "description": "Account ID (account-get/account-delete)"
+        },
+        {
+          "name": "day-count",
+          "type": "int",
+          "description": "Number of days of usage data (usage, default 30)"
+        }
+      ]
+    },
+    {
+      "path": "jc software",
+      "description": "Manage JumpCloud software apps",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "statuses",
+        "associations",
+        "reclaim-license"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "App display name (create/update)"
+        },
+        {
+          "name": "settings",
+          "type": "string",
+          "description": "Package settings as raw JSON (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc assets",
+      "description": "Manage JumpCloud assets (devices, accessories, locations)",
+      "category": "Integrations",
+      "subcommands": [
+        "devices",
+        "accessories",
+        "locations"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "field",
+          "type": "string[]",
+          "description": "Set field value as 'Label=Value' (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc ldap",
+      "description": "Manage JumpCloud LDAP servers",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "samba-domains",
+        "samba-domain-get",
+        "samba-domain-create",
+        "samba-domain-update",
+        "samba-domain-delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "LDAP server name (create/update) or samba domain workgroup name"
+        },
+        {
+          "name": "user-lockout-action",
+          "type": "string",
+          "description": "Action on user lockout (create/update)"
+        },
+        {
+          "name": "user-password-expiration-action",
+          "type": "string",
+          "description": "Action on password expiration (create/update)"
+        },
+        {
+          "name": "domain-id",
+          "type": "string",
+          "description": "Samba domain ID (samba-domain-get/update/delete)"
+        },
+        {
+          "name": "sid",
+          "type": "string",
+          "description": "Samba domain security identifier (samba-domain-create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc access-requests",
+      "description": "Manage JumpCloud temporary elevated device privilege requests",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "revoke"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "description": "User name or ID (create)"
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "description": "Device name or ID (create)"
+        },
+        {
+          "name": "expiry",
+          "type": "string",
+          "description": "Expiry time RFC 3339 (create/update)"
+        },
+        {
+          "name": "sudo",
+          "type": "bool",
+          "description": "Enable sudo access (create)"
+        },
+        {
+          "name": "sudo-nopasswd",
+          "type": "bool",
+          "description": "Enable passwordless sudo (create)"
+        },
+        {
+          "name": "remarks",
+          "type": "string",
+          "description": "Optional remarks (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc ad",
+      "description": "Manage JumpCloud Active Directory integrations",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "domain",
+          "type": "string",
+          "description": "AD domain name (create, required)"
+        },
+        {
+          "name": "use-case",
+          "type": "string",
+          "description": "Integration use case (create/update)"
+        },
+        {
+          "name": "groups-enabled",
+          "type": "bool",
+          "description": "Enable group sync (update)"
+        }
+      ]
+    },
+    {
+      "path": "jc org",
+      "description": "View and update JumpCloud organization information",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "list",
+        "get",
+        "settings",
+        "update"
+      ],
+      "flags": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Organization display name (update)"
+        },
+        {
+          "name": "settings-json",
+          "type": "string",
+          "description": "Raw JSON for complex settings fields (update)"
+        }
+      ]
+    },
+    {
+      "path": "jc system-insights",
+      "description": "Query osquery system insight tables",
+      "category": "Insights",
+      "subcommands": [
+        "list",
+        "tables"
+      ],
+      "flags": [
+        {
+          "name": "system-id",
+          "type": "string",
+          "description": "Filter by device hostname or ID"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions"
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field"
+        }
+      ]
+    },
+    {
+      "path": "jc radius",
+      "description": "Manage RADIUS servers",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "RADIUS server name (create/update)"
+        },
+        {
+          "name": "shared-secret",
+          "type": "string",
+          "description": "RADIUS shared secret (create, required)"
+        },
+        {
+          "name": "auth-port",
+          "type": "int",
+          "default": "1812",
+          "description": "Authentication port (create/update)"
+        },
+        {
+          "name": "accounting-port",
+          "type": "int",
+          "default": "1813",
+          "description": "Accounting port (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc policy-templates",
+      "description": "View policy templates",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "get"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc apple-mdm",
+      "description": "Manage Apple MDM configurations",
+      "category": "Devices \u0026 MDM",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "enrollment-profiles",
+        "devices"
+      ],
+      "flags": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "MDM configuration name (create/update)"
+        },
+        {
+          "name": "org-name",
+          "type": "string",
+          "description": "Organization name (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc policy-groups",
+      "description": "Manage policy groups",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Policy group name (create/update)"
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "description": "Policy group description (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc user-states",
+      "description": "Manage scheduled user state transitions",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "list",
+        "create",
+        "get",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "user",
+          "type": "string",
+          "description": "User name or ID (create, required)"
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "Target state: suspended or activated (create, required)"
+        },
+        {
+          "name": "start-date",
+          "type": "string",
+          "description": "Date for state change (create, required)"
+        },
+        {
+          "name": "end-date",
+          "type": "string",
+          "description": "Optional end date to revert (create)"
+        }
+      ]
+    },
+    {
+      "path": "jc gsuite",
+      "description": "Manage JumpCloud Google Workspace (G Suite) integrations",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "translation-rules",
+        "import-users"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc office365",
+      "description": "Manage JumpCloud Office 365 integrations",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "translation-rules",
+        "import-users"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc duo",
+      "description": "Manage JumpCloud Duo accounts and applications",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "delete",
+        "apps",
+        "app-get",
+        "app-create",
+        "app-delete"
+      ],
+      "flags": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Duo account name (create)"
+        },
+        {
+          "name": "app-id",
+          "type": "string",
+          "description": "Duo application ID (app-get, app-delete)"
+        },
+        {
+          "name": "api-host",
+          "type": "string",
+          "description": "Duo API host (app-create)"
+        }
+      ]
+    },
+    {
+      "path": "jc custom-emails",
+      "description": "Manage custom email templates",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "templates",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ],
+      "flags": [
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Custom email type (create, required)"
+        },
+        {
+          "name": "subject",
+          "type": "string",
+          "description": "Email subject line (create/update)"
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "description": "Email title (create/update)"
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "description": "Email body text (create/update)"
+        },
+        {
+          "name": "header",
+          "type": "string",
+          "description": "Email header text (create/update)"
+        },
+        {
+          "name": "button",
+          "type": "string",
+          "description": "Email button text (create/update)"
+        }
+      ]
+    },
+    {
+      "path": "jc app-templates",
+      "description": "View application templates",
+      "category": "Apps \u0026 SSO",
+      "subcommands": [
+        "list",
+        "get"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results (list)"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort field (list)"
+        }
+      ]
+    },
+    {
+      "path": "jc graph",
+      "description": "Manage JumpCloud resource associations",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "traverse",
+        "bind",
+        "unbind"
+      ],
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "description": "Source: type:identifier (e.g. user:jdoe)"
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "description": "Target type: user, system, user_group, system_group, application, policy, command"
+        }
+      ]
+    },
+    {
+      "path": "jc bulk",
+      "description": "Bulk operations from CSV files",
+      "category": "Org \u0026 Lifecycle",
+      "subcommands": [
+        "users"
+      ],
+      "flags": [
+        {
+          "name": "file",
+          "type": "string",
+          "description": "Path to CSV file"
+        }
+      ]
+    },
+    {
+      "path": "jc recipe",
+      "description": "Manage and run automation recipes",
+      "long": "Recipes turn JumpCloud workflows into declarative, version-controlled YAML files instead of one-off shell scripts. Each step is a `jc` invocation with template variables (`{{ .param.user }}`, `{{ .step.created_user.id }}`), conditional execution based on prior step outputs, and structured output capture that downstream steps can reference — so a single recipe can create a user, add them to groups, assign devices, send a welcome email, and bail out cleanly if any step fails or a precondition isn't met. The `--plan` flag walks every step without mutation, surfacing exactly what would change before you commit; `--param k=v` makes the same recipe reusable across users, orgs, or MSP customers. Built-ins ship for the workflows admins write over and over (onboarding, offboarding, MFA-reset campaigns, quarterly compliance audits); custom recipes live in `~/.config/jc/recipes/` and can be authored in `$EDITOR` via the TUI (`jc tui` → recipes → `n`). Recipes are also a first-class MCP primitive — agents can invoke `recipe.run` as a single tool call instead of orchestrating five separate ones, dramatically reducing the surface area for LLM missteps on multi-step changes.",
+      "category": "AI \u0026 Automation",
+      "subcommands": [
+        "list",
+        "show",
+        "run",
+        "validate",
+        "create",
+        "import",
+        "export"
+      ],
+      "flags": [
+        {
+          "name": "param",
+          "type": "string[]",
+          "description": "Recipe parameters as key=value (run)"
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "description": "Output file path (export)"
+        }
+      ]
+    },
+    {
+      "path": "jc mcp",
+      "description": "MCP server for AI agent integration",
+      "long": "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
+      "category": "AI \u0026 Automation",
+      "subcommands": [
+        "serve"
+      ],
+      "flags": [
+        {
+          "name": "rate-limit",
+          "type": "int",
+          "default": "60",
+          "description": "Maximum tool calls per minute"
+        },
+        {
+          "name": "read-only",
+          "type": "bool",
+          "description": "Disable all mutation tools"
+        }
+      ]
+    },
+    {
+      "path": "jc schema",
+      "description": "Machine-readable schema and command manifest",
+      "long": "Return machine-readable JSON for every JumpCloud resource type and the full CLI command tree. Designed for LLMs, IDE plugins, code generators, and the public showcase site itself — `jc schema resources` lists every resource with its API version and supported verbs, `jc schema \u003cresource\u003e` returns the typed field list, and `jc schema commands` returns the full command manifest (paths, subcommands, flags, descriptions). The schema is the single source of truth — this site, the MCP server, and `jc ask` all read from it.",
+      "category": "AI \u0026 Automation",
+      "subcommands": [
+        "resources",
+        "commands"
+      ]
+    },
+    {
+      "path": "jc ask",
+      "description": "Translate natural language queries into jc CLI commands",
+      "long": "Translate plain-English questions into runnable `jc` commands using the bundled schema manifest plus an LLM prompt template. Useful for one-off queries like *\"show me admins who haven't logged in for 90 days\"* without remembering exact `jc insights query` flag syntax, or for *\"suspend everyone in the contractors group\"* without hand-piping `jc groups user list` into a `for` loop. The translated command is always printed for review before execution, and pairs naturally with `--plan` to preview any mutation before committing.",
+      "category": "AI \u0026 Automation"
+    },
+    {
+      "path": "jc explain",
+      "description": "Explain what a command would do without executing",
+      "long": "Describe what a `jc` invocation would do — in plain English — without running it. Useful for sanity-checking LLM-generated commands before execution, understanding an unfamiliar invocation copied from a runbook, or onboarding new admins. The explanation covers the action type, target resource, affected scope (single object vs. batch), and a reversibility warning for destructive operations (`delete`, `lock`, `erase`).",
+      "category": "AI \u0026 Automation"
+    }
+  ],
+  "global_flags": [
+    {
+      "name": "output",
+      "shorthand": "o",
+      "type": "string",
+      "default": "json",
+      "description": "Output format: json, table, csv, human, yaml, ndjson"
+    },
+    {
+      "name": "table",
+      "shorthand": "t",
+      "type": "bool",
+      "description": "Shorthand for --output table"
+    },
+    {
+      "name": "verbose",
+      "shorthand": "v",
+      "type": "bool",
+      "description": "Enable verbose HTTP logging"
+    },
+    {
+      "name": "debug",
+      "type": "bool",
+      "description": "Enable debug logging"
+    },
+    {
+      "name": "quiet",
+      "shorthand": "q",
+      "type": "bool",
+      "description": "Suppress output, exit code only"
+    },
+    {
+      "name": "force",
+      "shorthand": "f",
+      "type": "bool",
+      "description": "Skip confirmation prompts"
+    },
+    {
+      "name": "plan",
+      "type": "bool",
+      "description": "Preview changes without executing"
+    },
+    {
+      "name": "ids",
+      "type": "bool",
+      "description": "Output one ID per line (for piping)"
+    },
+    {
+      "name": "fields",
+      "type": "string",
+      "description": "Comma-separated list of fields to include"
+    },
+    {
+      "name": "exclude",
+      "type": "string",
+      "description": "Comma-separated list of fields to exclude"
+    },
+    {
+      "name": "all",
+      "type": "bool",
+      "description": "Include all available fields in output"
+    },
+    {
+      "name": "org",
+      "type": "string",
+      "description": "Override active profile for this command"
+    },
+    {
+      "name": "api-key",
+      "type": "string",
+      "description": "Override API key for this command"
+    },
+    {
+      "name": "no-cache",
+      "type": "bool",
+      "description": "Bypass name-to-ID cache"
+    },
+    {
+      "name": "no-color",
+      "type": "bool",
+      "description": "Disable color output"
+    },
+    {
+      "name": "non-interactive",
+      "type": "bool",
+      "description": "Disable all interactive prompts"
+    }
+  ],
+  "resources": [
+    "access-requests",
+    "ad",
+    "admins",
+    "app-templates",
+    "apple-mdm",
+    "apps",
+    "assets",
+    "auth-policies",
+    "commands",
+    "custom-emails",
+    "devices",
+    "duo",
+    "groups",
+    "gsuite",
+    "identity-providers",
+    "insights",
+    "iplists",
+    "ldap",
+    "office365",
+    "org",
+    "policies",
+    "policy-groups",
+    "policy-templates",
+    "radius",
+    "saas-management",
+    "software",
+    "system-insights",
+    "user-states",
+    "users"
+  ]
+}

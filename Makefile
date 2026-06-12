@@ -5,7 +5,7 @@ BIN      := jc
 DIST     := dist
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release
+.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release site verify-site
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jc
@@ -64,3 +64,26 @@ integration-test: build
 
 integration-test-readonly: build
 	@JC=./$(BIN) ./scripts/integration-test.sh --skip-mutable
+
+# Regenerate docs/site/ artifacts (commands.json, llms.txt, llms-full.txt)
+# from the schema manifest. Run after touching internal/schema or any
+# command that should appear in the public catalog.
+site:
+	go run ./cmd/sitegen -out docs/site
+
+# CI gate: fail if docs/site/ is stale relative to the current schema.
+# Regenerates into a temp dir and diffs the three generated artifacts
+# against the committed copies. Catches "added a new command but forgot
+# to run make site."
+verify-site:
+	@tmp=$$(mktemp -d) && \
+		go run ./cmd/sitegen -out $$tmp >/dev/null && \
+		for f in commands.json llms.txt llms-full.txt; do \
+			diff -u docs/site/$$f $$tmp/$$f || { \
+				echo "verify-site: docs/site/$$f is stale — run 'make site' and commit"; \
+				rm -rf $$tmp; \
+				exit 1; \
+			}; \
+		done && \
+		rm -rf $$tmp && \
+		echo "verify-site: docs/site/ is up to date"
