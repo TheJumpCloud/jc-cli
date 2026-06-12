@@ -136,10 +136,23 @@ func runAuditHealth(cmd *cobra.Command, o auditHealthOpts) error {
 		return fmt.Errorf("rendering: %w", err)
 	}
 
-	if o.exitOnThresh && audit.AnyFindingAtLeast(results, threshold) {
-		return &ExitError{
-			Code: 1,
-			Err:  fmt.Errorf("audit found findings at or above threshold %q", threshold),
+	if o.exitOnThresh {
+		// A check that couldn't run is a degraded result, not a clean
+		// one — CI gating must treat it as failure or the gate is a lie
+		// the next time a sub-fetch flakes. Pre-fix, --exit-code only
+		// considered findings and would green-light a half-completed
+		// audit (Bugbot PR #47 review).
+		switch {
+		case audit.AnyFindingAtLeast(results, threshold):
+			return &ExitError{
+				Code: 1,
+				Err:  fmt.Errorf("audit found findings at or above threshold %q", threshold),
+			}
+		case audit.AnyCheckError(results):
+			return &ExitError{
+				Code: 1,
+				Err:  fmt.Errorf("audit completed with check errors — see [ERR] lines above; data may be incomplete"),
+			}
 		}
 	}
 	return nil
@@ -310,12 +323,19 @@ func severityGlyph(s audit.Severity) string {
 }
 
 func writeAuditHuman(w io.Writer, results []audit.CheckResult, warnings []string) error {
-	totalFindings := 0
+	totalFindings, totalErrors := 0, 0
 	for _, r := range results {
 		totalFindings += len(r.Findings)
+		if r.Error != "" {
+			totalErrors++
+		}
 	}
 
-	if totalFindings == 0 {
+	// Clean run = zero findings AND zero check errors. Pre-fix this
+	// only checked totalFindings, so a check that failed to run with
+	// no other findings looked like "OK — checks ran clean" (Bugbot
+	// PR #47 review).
+	if totalFindings == 0 && totalErrors == 0 {
 		fmt.Fprintf(w, "OK — %d checks ran clean, no findings.\n", len(results))
 		writeAuditWarnings(w, warnings)
 		return nil
@@ -345,9 +365,20 @@ func writeAuditHuman(w io.Writer, results []audit.CheckResult, warnings []string
 		}
 	}
 
-	fmt.Fprintf(w, "\n%d findings across %d checks.\n", totalFindings, len(results))
+	summary := fmt.Sprintf("\n%d findings across %d checks", totalFindings, len(results))
+	if totalErrors > 0 {
+		summary += fmt.Sprintf(" (%d check error%s)", totalErrors, plural(totalErrors))
+	}
+	fmt.Fprintln(w, summary+".")
 	writeAuditWarnings(w, warnings)
 	return nil
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func writeAuditWarnings(w io.Writer, warnings []string) {

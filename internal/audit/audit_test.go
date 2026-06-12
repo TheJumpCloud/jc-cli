@@ -121,6 +121,24 @@ func TestAnyFindingAtLeast(t *testing.T) {
 	}
 }
 
+func TestAnyCheckError(t *testing.T) {
+	// Regression guard for the Bugbot PR #47 finding: a check that
+	// errored is a degraded result, not a clean run. --exit-code must
+	// treat this distinctly from "no findings."
+	if AnyCheckError([]CheckResult{{Findings: nil}}) {
+		t.Error("clean result should not register as error")
+	}
+	if !AnyCheckError([]CheckResult{{Error: "admins fetch unavailable"}}) {
+		t.Error("errored check should be detected")
+	}
+	if !AnyCheckError([]CheckResult{
+		{Findings: []Finding{{Severity: SeverityLow}}},
+		{Error: "users fetch unavailable"},
+	}) {
+		t.Error("mixed result with one error should be detected")
+	}
+}
+
 func TestSortByCategoryAndSeverity(t *testing.T) {
 	results := []CheckResult{
 		{CheckID: "z", Category: CategoryHygiene, Findings: []Finding{{Severity: SeverityLow}}},

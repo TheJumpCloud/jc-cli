@@ -266,3 +266,17 @@ func AnyFindingAtLeast(results []CheckResult, threshold Severity) bool {
 	}
 	return false
 }
+
+// AnyCheckError returns true if any check failed to run (its Run
+// returned a non-nil error, typically because its required data wasn't
+// fetched). Distinct from findings — a degraded audit shouldn't look
+// like a clean one. Used alongside AnyFindingAtLeast for --exit-code
+// so a partial fetch can't silently green-light a CI gate.
+func AnyCheckError(results []CheckResult) bool {
+	for _, r := range results {
+		if r.Error != "" {
+			return true
+		}
+	}
+	return false
+}
