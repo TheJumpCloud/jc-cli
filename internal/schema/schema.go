@@ -43,9 +43,16 @@ type CommandManifest struct {
 }
 
 // CommandEntry describes a CLI command group with its subcommands and flags.
+//
+// Long is an optional multi-sentence elaboration shown on the showcase
+// site and in llms-full.txt. It's deliberately hand-curated rather than
+// pulled from Cobra's Long string — the audience here is "someone
+// browsing the public catalog," which wants more context than `jc <cmd>
+// --help` typically gives. Leave empty if Description is sufficient.
 type CommandEntry struct {
 	Path        string      `json:"path"`
 	Description string      `json:"description"`
+	Long        string      `json:"long,omitempty"`
 	Subcommands []string    `json:"subcommands,omitempty"`
 	Flags       []FlagEntry `json:"flags,omitempty"`
 }
@@ -711,11 +718,13 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc auth",
 				Description: "Authentication commands",
+				Long:        "Manage JumpCloud credentials and switch between organizations. The CLI supports two credential types: a static API key (read from `JC_API_KEY`, the config, or the system keychain), or an OAuth service account (client ID + secret), with automatic token refresh. Credentials can be stored as plaintext, in macOS Keychain / GNOME libsecret / Windows Credential Manager via a `keychain://` reference, or supplied per-invocation with `--api-key`. Multiple named profiles let MSPs and admins flip between orgs without re-authenticating (`jc auth switch <profile>`), and `jc auth status` reveals the active profile, credential type, fingerprint, and source.",
 				Subcommands: []string{"login", "logout", "status", "switch"},
 			},
 			{
 				Path:        "jc config",
 				Description: "Configuration management",
+				Long:        "View and update jc CLI configuration — default output format, color/pager behavior, TUI refresh interval, plan-mode safety toggles, cache TTLs, and dozens of other preferences. Settings live in `~/.config/jc/config.yaml` and can be overridden per-command via `JC_*` environment variables or flags (env > flag > config > built-in default). Use `jc config view` for the full effective configuration including override sources, or `jc config set <key> <value>` to persist a change.",
 				Subcommands: []string{"view", "set"},
 			},
 			{
@@ -1076,6 +1085,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc recipe",
 				Description: "Manage and run automation recipes",
+				Long:        "Recipes turn JumpCloud workflows into declarative, version-controlled YAML files instead of one-off shell scripts. Each step is a `jc` invocation with template variables (`{{ .param.user }}`, `{{ .step.created_user.id }}`), conditional execution based on prior step outputs, and structured output capture that downstream steps can reference — so a single recipe can create a user, add them to groups, assign devices, send a welcome email, and bail out cleanly if any step fails or a precondition isn't met. The `--plan` flag walks every step without mutation, surfacing exactly what would change before you commit; `--param k=v` makes the same recipe reusable across users, orgs, or MSP customers. Built-ins ship for the workflows admins write over and over (onboarding, offboarding, MFA-reset campaigns, quarterly compliance audits); custom recipes live in `~/.config/jc/recipes/` and can be authored in `$EDITOR` via the TUI (`jc tui` → recipes → `n`). Recipes are also a first-class MCP primitive — agents can invoke `recipe.run` as a single tool call instead of orchestrating five separate ones, dramatically reducing the surface area for LLM missteps on multi-step changes.",
 				Subcommands: []string{"list", "show", "run", "validate", "create", "import", "export"},
 				Flags: []FlagEntry{
 					{Name: "param", Type: "string[]", Description: "Recipe parameters as key=value (run)"},
@@ -1085,6 +1095,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc mcp",
 				Description: "MCP server for AI agent integration",
+				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
 				Subcommands: []string{"serve"},
 				Flags: []FlagEntry{
 					{Name: "rate-limit", Type: "int", Default: "60", Description: "Maximum tool calls per minute"},
@@ -1094,15 +1105,18 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc schema",
 				Description: "Machine-readable schema and command manifest",
+				Long:        "Return machine-readable JSON for every JumpCloud resource type and the full CLI command tree. Designed for LLMs, IDE plugins, code generators, and the public showcase site itself — `jc schema resources` lists every resource with its API version and supported verbs, `jc schema <resource>` returns the typed field list, and `jc schema commands` returns the full command manifest (paths, subcommands, flags, descriptions). The schema is the single source of truth — this site, the MCP server, and `jc ask` all read from it.",
 				Subcommands: []string{"resources", "commands"},
 			},
 			{
 				Path:        "jc ask",
 				Description: "Translate natural language queries into jc CLI commands",
+				Long:        "Translate plain-English questions into runnable `jc` commands using the bundled schema manifest plus an LLM prompt template. Useful for one-off queries like *\"show me admins who haven't logged in for 90 days\"* without remembering exact `jc insights query` flag syntax, or for *\"suspend everyone in the contractors group\"* without hand-piping `jc groups user list` into a `for` loop. The translated command is always printed for review before execution, and pairs naturally with `--plan` to preview any mutation before committing.",
 			},
 			{
 				Path:        "jc explain",
 				Description: "Explain what a command would do without executing",
+				Long:        "Describe what a `jc` invocation would do — in plain English — without running it. Useful for sanity-checking LLM-generated commands before execution, understanding an unfamiliar invocation copied from a runbook, or onboarding new admins. The explanation covers the action type, target resource, affected scope (single object vs. batch), and a reversibility warning for destructive operations (`delete`, `lock`, `erase`).",
 			},
 		},
 	}

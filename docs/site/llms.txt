@@ -1,0 +1,78 @@
+# jc
+
+> JumpCloud CLI — manage users, devices, groups, policies, commands, insights, and more
+
+The jc CLI is a Go-based command-line tool for JumpCloud — managing users, devices, groups, policies, applications, commands, insights, and more. It exposes every JumpCloud resource through a consistent verb-noun grammar with structured JSON output, an MCP server for AI agents, and a recipe system for declarative automation.
+
+## Command catalog
+
+### Identity & Access
+
+- `jc users` — Manage JumpCloud system users
+- `jc groups` — Manage user and device groups
+- `jc admins` — Manage JumpCloud administrators
+- `jc auth-policies` — Manage authentication policies for conditional access
+- `jc iplists` — Manage IP lists for authentication policies
+- `jc identity-providers` — Manage JumpCloud identity providers for SSO/OIDC federation
+
+### Devices & MDM
+
+- `jc devices` — Manage JumpCloud devices (systems)
+- `jc apple-mdm` — Manage Apple MDM configurations
+
+### Apps & SSO
+
+- `jc apps` — Manage SSO applications
+- `jc saas-management` — Manage JumpCloud SaaS Management applications
+- `jc app-templates` — View application templates
+
+### Policies & Commands
+
+- `jc commands` — Manage JumpCloud commands
+- `jc policies` — Manage JumpCloud policies
+- `jc policy-templates` — View policy templates
+- `jc policy-groups` — Manage policy groups
+
+### Insights
+
+- `jc insights` — Query Directory Insights audit events
+- `jc system-insights` — Query osquery system insight tables
+
+### Integrations
+
+- `jc software` — Manage JumpCloud software apps
+- `jc assets` — Manage JumpCloud assets (devices, accessories, locations)
+- `jc ldap` — Manage JumpCloud LDAP servers
+- `jc ad` — Manage JumpCloud Active Directory integrations
+- `jc radius` — Manage RADIUS servers
+- `jc gsuite` — Manage JumpCloud Google Workspace (G Suite) integrations
+- `jc office365` — Manage JumpCloud Office 365 integrations
+- `jc duo` — Manage JumpCloud Duo accounts and applications
+
+### Org & Lifecycle
+
+- `jc access-requests` — Manage JumpCloud temporary elevated device privilege requests
+- `jc org` — View and update JumpCloud organization information
+- `jc user-states` — Manage scheduled user state transitions
+- `jc custom-emails` — Manage custom email templates
+- `jc graph` — Manage JumpCloud resource associations
+- `jc bulk` — Bulk operations from CSV files
+
+### AI & Automation
+
+- `jc recipe` — Manage and run automation recipes
+- `jc mcp` — MCP server for AI agent integration
+- `jc schema` — Machine-readable schema and command manifest
+- `jc ask` — Translate natural language queries into jc CLI commands
+- `jc explain` — Explain what a command would do without executing
+
+### Setup
+
+- `jc auth` — Authentication commands
+- `jc config` — Configuration management
+
+## See also
+
+- [Full reference](llms-full.txt)
+- [Machine-readable manifest](commands.json)
+- [Source repository](https://github.com/TheJumpCloud/jc-cli)

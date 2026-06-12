@@ -1,0 +1,557 @@
+# jc — full reference
+
+> JumpCloud CLI — manage users, devices, groups, policies, commands, insights, and more
+
+## Global flags
+
+These flags work on every `jc` subcommand:
+
+- `--output`, `-o` `<string>` (default `json`) — Output format: json, table, csv, human, yaml, ndjson
+- `--table`, `-t` `<bool>` — Shorthand for --output table
+- `--verbose`, `-v` `<bool>` — Enable verbose HTTP logging
+- `--debug` `<bool>` — Enable debug logging
+- `--quiet`, `-q` `<bool>` — Suppress output, exit code only
+- `--force`, `-f` `<bool>` — Skip confirmation prompts
+- `--plan` `<bool>` — Preview changes without executing
+- `--ids` `<bool>` — Output one ID per line (for piping)
+- `--fields` `<string>` — Comma-separated list of fields to include
+- `--exclude` `<string>` — Comma-separated list of fields to exclude
+- `--all` `<bool>` — Include all available fields in output
+- `--org` `<string>` — Override active profile for this command
+- `--api-key` `<string>` — Override API key for this command
+- `--no-cache` `<bool>` — Bypass name-to-ID cache
+- `--no-color` `<bool>` — Disable color output
+- `--non-interactive` `<bool>` — Disable all interactive prompts
+
+## Commands
+
+### Identity & Access
+
+#### `jc users`
+
+Manage JumpCloud system users
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `search`, `lock`, `unlock`, `reset-mfa`, `reset-password`, `ssh-keys`, `ssh-key-add`, `ssh-key-delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list/search)
+- `--sort` `<string>` — Sort field, prefix - for descending (list/search)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--search` `<string>` — Full-text search term (list)
+
+#### `jc groups`
+
+Manage user and device groups
+
+**Subcommands:** `user list`, `user get`, `user create`, `user update`, `user delete`, `device list`, `device get`, `device create`, `device update`, `device delete`, `add-member`, `remove-member`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+
+#### `jc admins`
+
+Manage JumpCloud administrators
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--email` `<string>` — Admin email address (create, required)
+- `--role` `<string>` — Admin role name (create/update)
+- `--enable-mfa` `<bool>` — Enable multi-factor authentication (create/update)
+- `--disable-mfa` `<bool>` — Disable multi-factor authentication (update)
+
+#### `jc auth-policies`
+
+Manage authentication policies for conditional access
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `enable`, `disable`, `simulate`, `blast-radius`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--conditions` `<string>` — Conditions tree as raw JSON (create/update)
+- `--user` `<string>` — User name or ID (simulate)
+- `--ip` `<string>` — Source IP address (simulate)
+- `--device` `<string>` — Device name or ID (simulate)
+- `--location` `<string>` — Country code (simulate)
+
+#### `jc iplists`
+
+Manage IP lists for authentication policies
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--ips` `<string>` — Comma-separated IP entries (create/update)
+
+#### `jc identity-providers`
+
+Manage JumpCloud identity providers for SSO/OIDC federation
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum results (list)
+- `--name` `<string>` — Provider name (create/update)
+- `--type` `<string>` — Provider type: OIDC, GOOGLE, OKTA, AZURE (create)
+- `--client-id` `<string>` — OIDC client ID (create/update)
+- `--client-secret` `<string>` — OIDC client secret (create/update)
+- `--url` `<string>` — OIDC issuer URL (create/update)
+
+### Devices & MDM
+
+#### `jc devices`
+
+Manage JumpCloud devices (systems)
+
+**Subcommands:** `list`, `get`, `update`, `delete`, `search`, `lock`, `restart`, `erase`, `fde-key`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field, prefix - for descending (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--confirm-erase` `<bool>` — Required safety flag for erase command
+
+#### `jc apple-mdm`
+
+Manage Apple MDM configurations
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `enrollment-profiles`, `devices`
+
+**Flags:**
+
+- `--name` `<string>` — MDM configuration name (create/update)
+- `--org-name` `<string>` — Organization name (create/update)
+
+### Apps & SSO
+
+#### `jc apps`
+
+Manage SSO applications
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--sso-type` `<string>` — SSO type (create, required)
+- `--config` `<string>` — SSO-specific config as JSON (create/update)
+
+#### `jc saas-management`
+
+Manage JumpCloud SaaS Management applications
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `accounts`, `account-get`, `account-delete`, `usage`, `licenses`, `catalog-get`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--catalog-app-id` `<string>` — Catalog application ID (create)
+- `--status` `<string>` — App status: APPROVED, UNAPPROVED, IGNORED (create/update)
+- `--access-restriction` `<string>` — Access restriction: DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING (create/update)
+- `--account-id` `<string>` — Account ID (account-get/account-delete)
+- `--day-count` `<int>` — Number of days of usage data (usage, default 30)
+
+#### `jc app-templates`
+
+View application templates
+
+**Subcommands:** `list`, `get`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+
+### Policies & Commands
+
+#### `jc commands`
+
+Manage JumpCloud commands
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `run`, `results`, `trigger`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--type` `<string>` — Command type filter: linux, mac, windows (list)
+- `--data` `<string>` — JSON payload for trigger
+
+#### `jc policies`
+
+Manage JumpCloud policies
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `results`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+
+#### `jc policy-templates`
+
+View policy templates
+
+**Subcommands:** `list`, `get`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+
+#### `jc policy-groups`
+
+Manage policy groups
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--name` `<string>` — Policy group name (create/update)
+- `--description` `<string>` — Policy group description (create/update)
+
+### Insights
+
+#### `jc insights`
+
+Query Directory Insights audit events
+
+**Subcommands:** `query`, `count`, `distinct`, `save`, `run`, `saved`
+
+**Flags:**
+
+- `--service` `<string>` — Event service: sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager, all
+- `--last` `<string>` — Time range: 24h, 7d, 30d, 1m
+- `--start` `<string>` — Start time (RFC 3339 or YYYY-MM-DD)
+- `--end` `<string>` — End time (RFC 3339 or YYYY-MM-DD)
+- `--event-type` `<string>` — Filter by event type
+- `--limit` `<int>` — Maximum events to return
+- `--sort` `<string>` — Sort field
+
+#### `jc system-insights`
+
+Query osquery system insight tables
+
+**Subcommands:** `list`, `tables`
+
+**Flags:**
+
+- `--system-id` `<string>` — Filter by device hostname or ID
+- `--filter` `<string[]>` — Filter expressions
+- `--limit` `<int>` — Maximum number of results
+- `--sort` `<string>` — Sort field
+
+### Integrations
+
+#### `jc software`
+
+Manage JumpCloud software apps
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `statuses`, `associations`, `reclaim-license`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--name` `<string>` — App display name (create/update)
+- `--settings` `<string>` — Package settings as raw JSON (create/update)
+
+#### `jc assets`
+
+Manage JumpCloud assets (devices, accessories, locations)
+
+**Subcommands:** `devices`, `accessories`, `locations`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--field` `<string[]>` — Set field value as 'Label=Value' (create/update)
+
+#### `jc ldap`
+
+Manage JumpCloud LDAP servers
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `samba-domains`, `samba-domain-get`, `samba-domain-create`, `samba-domain-update`, `samba-domain-delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--name` `<string>` — LDAP server name (create/update) or samba domain workgroup name
+- `--user-lockout-action` `<string>` — Action on user lockout (create/update)
+- `--user-password-expiration-action` `<string>` — Action on password expiration (create/update)
+- `--domain-id` `<string>` — Samba domain ID (samba-domain-get/update/delete)
+- `--sid` `<string>` — Samba domain security identifier (samba-domain-create/update)
+
+#### `jc ad`
+
+Manage JumpCloud Active Directory integrations
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--domain` `<string>` — AD domain name (create, required)
+- `--use-case` `<string>` — Integration use case (create/update)
+- `--groups-enabled` `<bool>` — Enable group sync (update)
+
+#### `jc radius`
+
+Manage RADIUS servers
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--name` `<string>` — RADIUS server name (create/update)
+- `--shared-secret` `<string>` — RADIUS shared secret (create, required)
+- `--auth-port` `<int>` (default `1812`) — Authentication port (create/update)
+- `--accounting-port` `<int>` (default `1813`) — Accounting port (create/update)
+
+#### `jc gsuite`
+
+Manage JumpCloud Google Workspace (G Suite) integrations
+
+**Subcommands:** `list`, `get`, `translation-rules`, `import-users`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+
+#### `jc office365`
+
+Manage JumpCloud Office 365 integrations
+
+**Subcommands:** `list`, `get`, `translation-rules`, `import-users`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--sort` `<string>` — Sort field (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+
+#### `jc duo`
+
+Manage JumpCloud Duo accounts and applications
+
+**Subcommands:** `list`, `get`, `create`, `delete`, `apps`, `app-get`, `app-create`, `app-delete`
+
+**Flags:**
+
+- `--name` `<string>` — Duo account name (create)
+- `--app-id` `<string>` — Duo application ID (app-get, app-delete)
+- `--api-host` `<string>` — Duo API host (app-create)
+
+### Org & Lifecycle
+
+#### `jc access-requests`
+
+Manage JumpCloud temporary elevated device privilege requests
+
+**Subcommands:** `list`, `get`, `create`, `update`, `revoke`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results (list)
+- `--filter` `<string[]>` — Filter expressions (list)
+- `--user` `<string>` — User name or ID (create)
+- `--device` `<string>` — Device name or ID (create)
+- `--expiry` `<string>` — Expiry time RFC 3339 (create/update)
+- `--sudo` `<bool>` — Enable sudo access (create)
+- `--sudo-nopasswd` `<bool>` — Enable passwordless sudo (create)
+- `--remarks` `<string>` — Optional remarks (create/update)
+
+#### `jc org`
+
+View and update JumpCloud organization information
+
+**Subcommands:** `list`, `get`, `settings`, `update`
+
+**Flags:**
+
+- `--name` `<string>` — Organization display name (update)
+- `--settings-json` `<string>` — Raw JSON for complex settings fields (update)
+
+#### `jc user-states`
+
+Manage scheduled user state transitions
+
+**Subcommands:** `list`, `create`, `get`, `delete`
+
+**Flags:**
+
+- `--user` `<string>` — User name or ID (create, required)
+- `--state` `<string>` — Target state: suspended or activated (create, required)
+- `--start-date` `<string>` — Date for state change (create, required)
+- `--end-date` `<string>` — Optional end date to revert (create)
+
+#### `jc custom-emails`
+
+Manage custom email templates
+
+**Subcommands:** `templates`, `get`, `create`, `update`, `delete`
+
+**Flags:**
+
+- `--type` `<string>` — Custom email type (create, required)
+- `--subject` `<string>` — Email subject line (create/update)
+- `--title` `<string>` — Email title (create/update)
+- `--body` `<string>` — Email body text (create/update)
+- `--header` `<string>` — Email header text (create/update)
+- `--button` `<string>` — Email button text (create/update)
+
+#### `jc graph`
+
+Manage JumpCloud resource associations
+
+**Subcommands:** `traverse`, `bind`, `unbind`
+
+**Flags:**
+
+- `--from` `<string>` — Source: type:identifier (e.g. user:jdoe)
+- `--to` `<string>` — Target type: user, system, user_group, system_group, application, policy, command
+
+#### `jc bulk`
+
+Bulk operations from CSV files
+
+**Subcommands:** `users`
+
+**Flags:**
+
+- `--file` `<string>` — Path to CSV file
+
+### AI & Automation
+
+#### `jc recipe`
+
+Manage and run automation recipes
+
+Recipes turn JumpCloud workflows into declarative, version-controlled YAML files instead of one-off shell scripts. Each step is a `jc` invocation with template variables (`{{ .param.user }}`, `{{ .step.created_user.id }}`), conditional execution based on prior step outputs, and structured output capture that downstream steps can reference — so a single recipe can create a user, add them to groups, assign devices, send a welcome email, and bail out cleanly if any step fails or a precondition isn't met. The `--plan` flag walks every step without mutation, surfacing exactly what would change before you commit; `--param k=v` makes the same recipe reusable across users, orgs, or MSP customers. Built-ins ship for the workflows admins write over and over (onboarding, offboarding, MFA-reset campaigns, quarterly compliance audits); custom recipes live in `~/.config/jc/recipes/` and can be authored in `$EDITOR` via the TUI (`jc tui` → recipes → `n`). Recipes are also a first-class MCP primitive — agents can invoke `recipe.run` as a single tool call instead of orchestrating five separate ones, dramatically reducing the surface area for LLM missteps on multi-step changes.
+
+**Subcommands:** `list`, `show`, `run`, `validate`, `create`, `import`, `export`
+
+**Flags:**
+
+- `--param` `<string[]>` — Recipe parameters as key=value (run)
+- `--file` `<string>` — Output file path (export)
+
+#### `jc mcp`
+
+MCP server for AI agent integration
+
+Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.
+
+**Subcommands:** `serve`
+
+**Flags:**
+
+- `--rate-limit` `<int>` (default `60`) — Maximum tool calls per minute
+- `--read-only` `<bool>` — Disable all mutation tools
+
+#### `jc schema`
+
+Machine-readable schema and command manifest
+
+Return machine-readable JSON for every JumpCloud resource type and the full CLI command tree. Designed for LLMs, IDE plugins, code generators, and the public showcase site itself — `jc schema resources` lists every resource with its API version and supported verbs, `jc schema <resource>` returns the typed field list, and `jc schema commands` returns the full command manifest (paths, subcommands, flags, descriptions). The schema is the single source of truth — this site, the MCP server, and `jc ask` all read from it.
+
+**Subcommands:** `resources`, `commands`
+
+#### `jc ask`
+
+Translate natural language queries into jc CLI commands
+
+Translate plain-English questions into runnable `jc` commands using the bundled schema manifest plus an LLM prompt template. Useful for one-off queries like *"show me admins who haven't logged in for 90 days"* without remembering exact `jc insights query` flag syntax, or for *"suspend everyone in the contractors group"* without hand-piping `jc groups user list` into a `for` loop. The translated command is always printed for review before execution, and pairs naturally with `--plan` to preview any mutation before committing.
+
+#### `jc explain`
+
+Explain what a command would do without executing
+
+Describe what a `jc` invocation would do — in plain English — without running it. Useful for sanity-checking LLM-generated commands before execution, understanding an unfamiliar invocation copied from a runbook, or onboarding new admins. The explanation covers the action type, target resource, affected scope (single object vs. batch), and a reversibility warning for destructive operations (`delete`, `lock`, `erase`).
+
+### Setup
+
+#### `jc auth`
+
+Authentication commands
+
+Manage JumpCloud credentials and switch between organizations. The CLI supports two credential types: a static API key (read from `JC_API_KEY`, the config, or the system keychain), or an OAuth service account (client ID + secret), with automatic token refresh. Credentials can be stored as plaintext, in macOS Keychain / GNOME libsecret / Windows Credential Manager via a `keychain://` reference, or supplied per-invocation with `--api-key`. Multiple named profiles let MSPs and admins flip between orgs without re-authenticating (`jc auth switch <profile>`), and `jc auth status` reveals the active profile, credential type, fingerprint, and source.
+
+**Subcommands:** `login`, `logout`, `status`, `switch`
+
+#### `jc config`
+
+Configuration management
+
+View and update jc CLI configuration — default output format, color/pager behavior, TUI refresh interval, plan-mode safety toggles, cache TTLs, and dozens of other preferences. Settings live in `~/.config/jc/config.yaml` and can be overridden per-command via `JC_*` environment variables or flags (env > flag > config > built-in default). Use `jc config view` for the full effective configuration including override sources, or `jc config set <key> <value>` to persist a change.
+
+**Subcommands:** `view`, `set`
+
+## Resource types
+
+Every resource has a JSON schema available via `jc schema <resource>`:
+
+- `access-requests`
+- `ad`
+- `admins`
+- `app-templates`
+- `apple-mdm`
+- `apps`
+- `assets`
+- `auth-policies`
+- `commands`
+- `custom-emails`
+- `devices`
+- `duo`
+- `groups`
+- `gsuite`
+- `identity-providers`
+- `insights`
+- `iplists`
+- `ldap`
+- `office365`
+- `org`
+- `policies`
+- `policy-groups`
+- `policy-templates`
+- `radius`
+- `saas-management`
+- `software`
+- `system-insights`
+- `user-states`
+- `users`

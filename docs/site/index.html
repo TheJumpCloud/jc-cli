@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jc — JumpCloud CLI</title>
+<meta name="description" content="Browse every command, subcommand, and flag in the jc CLI for JumpCloud." />
+<link rel="alternate" type="application/json" title="Machine-readable manifest" href="commands.json" />
+<link rel="alternate" type="text/plain" title="llms.txt (short)" href="llms.txt" />
+<link rel="alternate" type="text/plain" title="llms.txt (full)" href="llms-full.txt" />
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-elev: #161b22;
+  --bg-elev-2: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.12);
+  --kbd: #21262d;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-elev: #f6f8fa;
+    --bg-elev-2: #ffffff;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-dim: #656d76;
+    --accent: #0969da;
+    --accent-soft: rgba(9, 105, 218, 0.08);
+    --kbd: #f6f8fa;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+code, kbd, pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+}
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+}
+
+.sidebar {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar h1 {
+  font-size: 18px;
+  margin: 0 20px 4px;
+  font-weight: 600;
+}
+.sidebar .tagline {
+  margin: 0 20px 24px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.sidebar .cat {
+  margin: 0;
+  padding: 8px 20px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.sidebar ul { list-style: none; margin: 0; padding: 0; }
+.sidebar a.cmd-link {
+  display: block;
+  padding: 4px 20px;
+  color: var(--text);
+  font-size: 13px;
+}
+.sidebar a.cmd-link:hover { background: var(--accent-soft); text-decoration: none; }
+.sidebar a.cmd-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  padding-left: 18px;
+}
+
+.main { padding: 32px 40px; max-width: 900px; }
+.search-bar {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  padding-bottom: 16px;
+  margin: -32px -40px 24px;
+  padding: 24px 40px 16px;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+.search-bar input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.search-bar input:focus { border-color: var(--accent); }
+.search-bar .hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.search-bar kbd {
+  background: var(--kbd);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.intro h2 { margin-top: 0; }
+.intro .links { margin-top: 12px; font-size: 13px; }
+.intro .links a { margin-right: 16px; }
+
+.cmd-card {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.cmd-card h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.cmd-card .cat-badge {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  vertical-align: middle;
+}
+.cmd-card p.desc { color: var(--text-dim); margin: 4px 0 12px; }
+.cmd-card p.long { margin: 0 0 16px; line-height: 1.6; }
+.cmd-card p.long code {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.cmd-card p.long em { color: var(--text-dim); font-style: italic; }
+.cmd-card h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin: 16px 0 8px;
+}
+.subs { display: flex; flex-wrap: wrap; gap: 6px; }
+.subs code {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+table.flags {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.flags th, table.flags td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+table.flags th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+table.flags code { color: var(--accent); }
+
+footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+footer a { margin-right: 16px; }
+.empty {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--text-dim);
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <h1>jc</h1>
+    <p class="tagline">JumpCloud CLI</p>
+    <nav id="nav"></nav>
+  </aside>
+  <main class="main">
+    <div class="search-bar">
+      <input id="search" type="search" placeholder="Filter commands by name, flag, or description…" autocomplete="off" />
+      <div class="hint">Type to filter · <kbd>⌘K</kbd> to focus · <kbd>Esc</kbd> to clear</div>
+    </div>
+    <div class="intro" id="intro">
+      <h2 id="title">jc CLI</h2>
+      <p id="desc"></p>
+      <div class="links">
+        <a href="commands.json">commands.json</a>
+        <a href="llms.txt">llms.txt</a>
+        <a href="llms-full.txt">llms-full.txt</a>
+        <a href="https://github.com/TheJumpCloud/jc-cli">GitHub</a>
+      </div>
+    </div>
+    <div id="cards"></div>
+    <div id="empty" class="empty" hidden>No commands match that filter.</div>
+    <footer>
+      <a href="https://github.com/TheJumpCloud/jc-cli">github.com/TheJumpCloud/jc-cli</a>
+      <span>Generated by <code>make site</code> from the canonical schema manifest.</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+(async function () {
+  const res = await fetch('commands.json');
+  if (!res.ok) {
+    document.getElementById('cards').innerHTML =
+      '<div class="empty">Failed to load commands.json — is the site served from the right directory?</div>';
+    return;
+  }
+  const manifest = await res.json();
+
+  document.getElementById('title').textContent = manifest.name + ' CLI';
+  document.getElementById('desc').textContent = manifest.description;
+
+  const byCategory = new Map();
+  for (const cat of manifest.categories) byCategory.set(cat, []);
+  for (const cmd of manifest.commands) {
+    const arr = byCategory.get(cmd.category) || [];
+    arr.push(cmd);
+    byCategory.set(cmd.category, arr);
+  }
+
+  const nav = document.getElementById('nav');
+  for (const [cat, cmds] of byCategory) {
+    if (cmds.length === 0) continue;
+    const h = document.createElement('p');
+    h.className = 'cat';
+    h.textContent = cat;
+    nav.appendChild(h);
+    const ul = document.createElement('ul');
+    for (const cmd of cmds) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'cmd-link';
+      a.href = '#' + slug(cmd.path);
+      a.textContent = cmd.path;
+      a.dataset.path = cmd.path;
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    nav.appendChild(ul);
+  }
+
+  const cards = document.getElementById('cards');
+  for (const cmd of manifest.commands) {
+    cards.appendChild(renderCard(cmd));
+  }
+
+  const search = document.getElementById('search');
+  const empty = document.getElementById('empty');
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    for (const card of cards.children) {
+      const hit = !q || card.dataset.haystack.includes(q);
+      card.hidden = !hit;
+      if (hit) shown++;
+    }
+    for (const link of nav.querySelectorAll('a.cmd-link')) {
+      const path = link.dataset.path.toLowerCase();
+      link.hidden = q && !path.includes(q);
+    }
+    empty.hidden = shown > 0;
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      search.focus();
+      search.select();
+    } else if (e.key === 'Escape' && document.activeElement === search) {
+      search.value = '';
+      search.dispatchEvent(new Event('input'));
+    }
+  });
+
+  const intersect = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const id = e.target.id;
+      for (const link of nav.querySelectorAll('a.cmd-link')) {
+        link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+      }
+    }
+  }, { rootMargin: '-30% 0px -65% 0px' });
+  for (const card of cards.children) intersect.observe(card);
+
+  function renderCard(cmd) {
+    const card = document.createElement('section');
+    card.className = 'cmd-card';
+    card.id = slug(cmd.path);
+
+    const h = document.createElement('h2');
+    h.textContent = cmd.path;
+    const badge = document.createElement('span');
+    badge.className = 'cat-badge';
+    badge.textContent = cmd.category;
+    h.appendChild(badge);
+    card.appendChild(h);
+
+    const p = document.createElement('p');
+    p.className = 'desc';
+    p.textContent = cmd.description;
+    card.appendChild(p);
+
+    if (cmd.long) {
+      const long = document.createElement('p');
+      long.className = 'long';
+      long.innerHTML = renderInlineMarkdown(cmd.long);
+      card.appendChild(long);
+    }
+
+    if (cmd.subcommands && cmd.subcommands.length) {
+      const h3 = document.createElement('h3');
+      h3.textContent = 'Subcommands';
+      card.appendChild(h3);
+      const subs = document.createElement('div');
+      subs.className = 'subs';
+      for (const s of cmd.subcommands) {
+        const code = document.createElement('code');
+        code.textContent = s;
+        subs.appendChild(code);
+      }
+      card.appendChild(subs);
+    }
+
+    if (cmd.flags && cmd.flags.length) {
+      const h3 = document.createElement('h3');
+      h3.textContent = 'Flags';
+      card.appendChild(h3);
+      card.appendChild(renderFlagsTable(cmd.flags));
+    }
+
+    const haystack = [
+      cmd.path, cmd.description, cmd.category,
+      ...(cmd.subcommands || []),
+      ...(cmd.flags || []).flatMap(f => [f.name, f.description]),
+    ].join(' ').toLowerCase();
+    card.dataset.haystack = haystack;
+
+    return card;
+  }
+
+  function renderFlagsTable(flags) {
+    const t = document.createElement('table');
+    t.className = 'flags';
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+    for (const col of ['Flag', 'Type', 'Default', 'Description']) {
+      const th = document.createElement('th');
+      th.textContent = col;
+      tr.appendChild(th);
+    }
+    thead.appendChild(tr);
+    t.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const f of flags) {
+      const tr = document.createElement('tr');
+      const tdFlag = document.createElement('td');
+      const code = document.createElement('code');
+      code.textContent = '--' + f.name + (f.shorthand ? ', -' + f.shorthand : '');
+      tdFlag.appendChild(code);
+      tr.appendChild(tdFlag);
+
+      const tdType = document.createElement('td');
+      tdType.textContent = f.type || '';
+      tr.appendChild(tdType);
+
+      const tdDef = document.createElement('td');
+      tdDef.textContent = f.default || '';
+      tr.appendChild(tdDef);
+
+      const tdDesc = document.createElement('td');
+      tdDesc.textContent = f.description || '';
+      tr.appendChild(tdDesc);
+
+      tbody.appendChild(tr);
+    }
+    t.appendChild(tbody);
+    return t;
+  }
+
+  function slug(s) {
+    return s.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+  }
+
+  // Render a deliberately tiny markdown subset for command Long strings:
+  // `code`, *italic*. HTML-escapes first to prevent injection from the JSON.
+  // Add more inline syntax here if a future schema entry needs it.
+  function renderInlineMarkdown(s) {
+    const escaped = s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return escaped
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  }
+})();
+</script>
+</body>
+</html>
