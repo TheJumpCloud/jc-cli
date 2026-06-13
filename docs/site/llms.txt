@@ -71,6 +71,11 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 - `jc auth` — Authentication commands
 - `jc config` — Configuration management
 
+### Diagnostics
+
+- `jc audit` — Run cross-resource health checks (security, compliance, hygiene, identity)
+- `jc doctor` — No-auth diagnostic — env, config, auth resolution, API connectivity
+
 ## See also
 
 - [Full reference](llms-full.txt)

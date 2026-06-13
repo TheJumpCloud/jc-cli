@@ -10,7 +10,8 @@
     "Integrations",
     "Org \u0026 Lifecycle",
     "AI \u0026 Automation",
-    "Setup"
+    "Setup",
+    "Diagnostics"
   ],
   "commands": [
     {
@@ -23,6 +24,57 @@
         "logout",
         "status",
         "switch"
+      ]
+    },
+    {
+      "path": "jc audit",
+      "description": "Run cross-resource health checks (security, compliance, hygiene, identity)",
+      "long": "A composable check registry that audits the entire org in one pass — admins without MFA, MFA adoption rate, FDE coverage, stale devices, disabled auth policies, suspicious admin lifecycle events, and more. Each finding is severity-tagged (info → critical), tagged with a `resource_ref` for downstream grouping, and ships with a `remediation_hint` that names the exact `jc` command to fix it. Use `--category security|compliance|hygiene|identity` to scope, `--severity high` to filter to actionable findings, and `--exit-code --threshold high` to gate CI pipelines. The same primitive powers the `jc-security-audit` and `jc-compliance-check` skills (which now interpret structured findings rather than scripting raw queries). Adding a new check is one Register call in `internal/audit/checks.go` — the registry, CLI surface, JSON shape, and skill prompts all update automatically.",
+      "category": "Diagnostics",
+      "subcommands": [
+        "verify"
+      ],
+      "flags": [
+        {
+          "name": "category",
+          "type": "string[]",
+          "description": "Restrict to one or more categories: security, compliance, hygiene, identity"
+        },
+        {
+          "name": "severity",
+          "type": "string",
+          "description": "Show only findings at or above this severity (info, low, medium, high, critical)"
+        },
+        {
+          "name": "threshold",
+          "type": "string",
+          "default": "high",
+          "description": "Severity threshold used by --exit-code"
+        },
+        {
+          "name": "exit-code",
+          "type": "bool",
+          "description": "Exit with code 1 if any finding meets or exceeds --threshold (for CI gating)"
+        }
+      ]
+    },
+    {
+      "path": "jc doctor",
+      "description": "No-auth diagnostic — env, config, auth resolution, API connectivity",
+      "long": "A pre-flight check for any environment where `jc` is about to run. Reports the active profile, credential source (flag / env / keychain / config), fingerprint of the resolved key, config file location, and runs a single read-only probe against the JumpCloud API to confirm the credentials actually authenticate. Works without auth (skips the API probe gracefully) so it's safe to run in a Dockerfile build step or fresh-clone sanity check. Useful as the first command in a runbook or on-call playbook — when something's wrong with `jc`, this is the fastest path to the cause.",
+      "category": "Diagnostics",
+      "flags": [
+        {
+          "name": "probe-timeout",
+          "type": "duration",
+          "default": "5s",
+          "description": "Timeout for the live API probe"
+        },
+        {
+          "name": "skip-probe",
+          "type": "bool",
+          "description": "Skip the live API probe (no network)"
+        }
       ]
     },
     {

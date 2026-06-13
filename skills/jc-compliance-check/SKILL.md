@@ -1,158 +1,115 @@
 ---
 name: jc-compliance-check
-description: Run a JumpCloud compliance check — MFA enforcement, device management, policy coverage, password policy, admin security using the jc CLI
+description: Run a JumpCloud compliance check — MFA adoption rate, admin MFA coverage, FDE coverage, password age, plus password-policy + admin-account inspection, using the jc CLI
 ---
 
 # JumpCloud Compliance Check
 
-Run a structured compliance check across a JumpCloud organization and produce a pass/warn/fail report.
+Produce a structured compliance report against the configured
+JumpCloud org. The numeric compliance ratios (MFA, FDE, password age,
+admin MFA coverage) come from `jc audit --category compliance`; the
+config-state checks (password policy, admin count) come from direct
+`jc org settings` / `jc admins list` inspection.
 
 ## Prerequisites
 
 - `jc` installed and authenticated (`jc auth status`)
+- Org-admin role for `jc org settings`
 
-## Compliance Checks
-
-### Check 1: MFA Enforcement
-
-**Goal:** All active users should have MFA enabled.
+## Step 1 — Run the built-in compliance audit
 
 ```bash
-# Total active users
-jc users list --filter "activated:eq:true" --query "length(@)"
-
-# Active users with MFA
-jc users list --filter "activated:eq:true" --query "length([?totp_enabled==\`true\`])"
-
-# Users missing MFA (the actionable list)
-jc users list --filter "activated:eq:true" --query "[?totp_enabled==\`false\`].{username:username,email:email}" -t
+jc audit --category compliance --output json
 ```
 
-| Threshold | Result |
-|-----------|--------|
-| 100% MFA | PASS |
-| 80-99% MFA | WARN |
-| < 80% MFA | FAIL |
+Returns structured findings for:
 
-### Check 2: Device Management
+- **mfa-adoption-rate** — % of active users with MFA. Severity scales:
+  <50% CRITICAL, <80% HIGH, <95% MEDIUM, ≥95% silent (no finding).
+- **admin-mfa-coverage** — % of admins with MFA. CRITICAL if <100%.
+- **fde-coverage** — % of managed macOS/Windows devices with full-disk
+  encryption active. <50% CRITICAL, <90% HIGH, otherwise MEDIUM.
+- **password-age** — count of active users with `password_date` older
+  than 90 days. Single MEDIUM finding (drop with `--severity high` if
+  your framework has moved off mandatory rotation per NIST SP 800-63B).
 
-**Goal:** All devices should be actively managed (contacted recently).
+Each finding carries a `detail` line you can render directly (it
+includes the percentages and counts).
 
-```bash
-# All devices
-jc devices list --query "length(@)"
+## Step 2 — Inspect password policy
 
-# Devices by OS
-jc devices list --query "[].os" | sort | uniq -c | sort -rn
-
-# Devices not contacted in 30+ days (likely unmanaged)
-jc devices list --all --query "[?lastContact < '$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ)'].{hostname:hostname,os:os,lastContact:lastContact}" -t
-```
-
-| Threshold | Result |
-|-----------|--------|
-| All contacted within 30 days | PASS |
-| > 90% contacted within 30 days | WARN |
-| < 90% contacted within 30 days | FAIL |
-
-### Check 3: Policy Coverage
-
-**Goal:** Key security policies should be applied to all devices.
+`jc audit` doesn't yet introspect the org-wide password policy; do
+this directly.
 
 ```bash
-jc policies list -t
-```
-
-For each critical policy (FileVault, screen lock, firewall, etc.):
-
-```bash
-jc policies results POLICY_NAME --query "[?status=='failed' || status=='pending'].{system:systemID,status:status}" -t
-```
-
-| Threshold | Result |
-|-----------|--------|
-| All devices applied | PASS |
-| Pending but no failures | WARN |
-| Any failures | FAIL |
-
-### Check 4: Password Policy
-
-**Goal:** Organization has a strong password policy configured.
-
-First, get the org ID:
-```bash
+# Get the active org ID (or pass via JC_ORG_ID env var)
 jc org list --ids
+
+# Inspect the policy
+jc org settings $ORG_ID --query "passwordPolicy"
 ```
 
-Then check password policy:
-```bash
-jc org settings THE_ORG_ID --query "passwordPolicy"
-```
+Check (PASS/WARN/FAIL per compliance framework you're targeting):
 
-Check for:
-- Minimum length >= 12
+- Minimum length ≥ 12 (PASS), ≥ 8 (WARN), < 8 (FAIL)
 - Complexity requirements enabled
-- Account lockout configured
+- Account lockout threshold configured
+- Password history depth ≥ 5
 
-### Check 5: Admin Account Security
-
-**Goal:** Minimal admin accounts, all with MFA.
-
-```bash
-jc admins list -t
-```
-
-Check:
-- Number of admins (fewer than 5 for small orgs, proportional for larger)
-- All admins should have `enableMultiFactor: true`
-- No inactive/unused admin accounts
-
-| Threshold | Result |
-|-----------|--------|
-| All admins have MFA, reasonable count | PASS |
-| Some admins missing MFA | WARN |
-| Many admins, no MFA enforcement | FAIL |
-
-### Check 6: Conditional Access Policies
-
-**Goal:** At least one conditional access policy is active.
+## Step 3 — Admin account inventory
 
 ```bash
-jc auth-policies list -t
+jc admins list --output json
 ```
 
-Check:
-- At least one policy exists and is enabled
-- Policies cover MFA requirements for sensitive access
-- IP-based restrictions are in place if applicable
+Beyond the MFA coverage `jc audit` already reports:
+
+- **Count** — fewer admins = smaller blast radius. Heuristic: <5 for
+  small orgs, scale with org size, no hard rule.
+- **Roles** — verify the spread of `roleName` matches your access
+  model (e.g. one "Administrator" + several "Manager" / "Read Only").
+- **Stale logins** — admins whose `lastLogin` is >90 days old; consider
+  rotating or deprovisioning.
+
+## Step 4 — Report
+
+Produce a layered PASS/WARN/FAIL table.
+
+```
+JumpCloud Compliance Report — ORG — DATE
+
+| # | Check                | Status | Detail                                  |
+|---|----------------------|--------|-----------------------------------------|
+| 1 | MFA adoption         | WARN   | 87 of 100 active users (87%) — target 95%+ |
+| 2 | Admin MFA coverage   | PASS   | 4 of 4 admins have MFA                  |
+| 3 | FDE coverage         | FAIL   | 3 of 10 macOS/Windows devices (30%)     |
+| 4 | Password age (>90d)  | WARN   | 12 active users overdue                 |
+| 5 | Password policy      | PASS   | Min 14 chars, complexity, lockout       |
+| 6 | Admin inventory      | PASS   | 4 admins, 0 stale logins                |
+
+Overall: 3 PASS, 2 WARN, 1 FAIL
+```
+
+For each WARN or FAIL: cite the remediation hint from the `jc audit`
+finding (or a direct `jc` command for the config-state checks).
+
+## CI gating
+
+For a deterministic compliance gate (e.g. quarterly cron, GitHub Action):
 
 ```bash
-jc iplists list -t
+jc audit --category compliance --exit-code --threshold high
 ```
 
-| Threshold | Result |
-|-----------|--------|
-| Active policies with MFA/IP restrictions | PASS |
-| Policies exist but some disabled | WARN |
-| No conditional access policies | FAIL |
+Non-zero exit when any compliance finding is at or above HIGH —
+suitable for blocking a release pipeline or paging on-call.
 
-## Report Format
+## Why this layout
 
-Produce a summary table:
-
-```
-JumpCloud Compliance Report — ORG_NAME — DATE
-
-| # | Check                    | Status | Detail                           |
-|---|--------------------------|--------|----------------------------------|
-| 1 | MFA Enforcement          | PASS   | 100% of 150 active users         |
-| 2 | Device Management        | WARN   | 3 of 200 devices stale (>30 days)|
-| 3 | Policy Coverage          | PASS   | FileVault 100%, Firewall 100%    |
-| 4 | Password Policy          | PASS   | Min 12 chars, complexity enabled |
-| 5 | Admin Security           | WARN   | 4 admins, 1 missing MFA          |
-| 6 | Conditional Access       | PASS   | 3 policies active, MFA required  |
-
-Overall: 4 PASS, 2 WARN, 0 FAIL
-```
-
-For each WARN or FAIL, include a specific recommendation with the jc command to fix it.
+Pre-2026.06 this skill scripted ~6 inline `jc users list` /
+`jc devices list` queries with bash-side filtering. `jc audit`
+consolidates the ratio math into structured findings with consistent
+severity language, so the skill now interprets rather than re-derives.
+The config-state checks (password policy, admin inventory) remain
+inline because they're org-settings introspection, not cross-resource
+aggregation.

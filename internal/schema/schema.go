@@ -722,6 +722,28 @@ func BuildCommandManifest() CommandManifest {
 				Subcommands: []string{"login", "logout", "status", "switch"},
 			},
 			{
+				Path:        "jc audit",
+				Description: "Run cross-resource health checks (security, compliance, hygiene, identity)",
+				Long:        "A composable check registry that audits the entire org in one pass — admins without MFA, MFA adoption rate, FDE coverage, stale devices, disabled auth policies, suspicious admin lifecycle events, and more. Each finding is severity-tagged (info → critical), tagged with a `resource_ref` for downstream grouping, and ships with a `remediation_hint` that names the exact `jc` command to fix it. Use `--category security|compliance|hygiene|identity` to scope, `--severity high` to filter to actionable findings, and `--exit-code --threshold high` to gate CI pipelines. The same primitive powers the `jc-security-audit` and `jc-compliance-check` skills (which now interpret structured findings rather than scripting raw queries). Adding a new check is one Register call in `internal/audit/checks.go` — the registry, CLI surface, JSON shape, and skill prompts all update automatically.",
+				Subcommands: []string{"verify"},
+				Flags: []FlagEntry{
+					{Name: "category", Type: "string[]", Description: "Restrict to one or more categories: security, compliance, hygiene, identity"},
+					{Name: "severity", Type: "string", Description: "Show only findings at or above this severity (info, low, medium, high, critical)"},
+					{Name: "threshold", Type: "string", Default: "high", Description: "Severity threshold used by --exit-code"},
+					{Name: "exit-code", Type: "bool", Description: "Exit with code 1 if any finding meets or exceeds --threshold (for CI gating)"},
+				},
+			},
+			{
+				Path:        "jc doctor",
+				Description: "No-auth diagnostic — env, config, auth resolution, API connectivity",
+				Long:        "A pre-flight check for any environment where `jc` is about to run. Reports the active profile, credential source (flag / env / keychain / config), fingerprint of the resolved key, config file location, and runs a single read-only probe against the JumpCloud API to confirm the credentials actually authenticate. Works without auth (skips the API probe gracefully) so it's safe to run in a Dockerfile build step or fresh-clone sanity check. Useful as the first command in a runbook or on-call playbook — when something's wrong with `jc`, this is the fastest path to the cause.",
+				Subcommands: []string{},
+				Flags: []FlagEntry{
+					{Name: "probe-timeout", Type: "duration", Default: "5s", Description: "Timeout for the live API probe"},
+					{Name: "skip-probe", Type: "bool", Description: "Skip the live API probe (no network)"},
+				},
+			},
+			{
 				Path:        "jc config",
 				Description: "Configuration management",
 				Long:        "View and update jc CLI configuration — default output format, color/pager behavior, TUI refresh interval, plan-mode safety toggles, cache TTLs, and dozens of other preferences. Settings live in `~/.config/jc/config.yaml` and can be overridden per-command via `JC_*` environment variables or flags (env > flag > config > built-in default). Use `jc config view` for the full effective configuration including override sources, or `jc config set <key> <value>` to persist a change.",

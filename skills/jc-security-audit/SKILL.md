@@ -1,116 +1,97 @@
 ---
 name: jc-security-audit
-description: Run a JumpCloud security audit — check MFA adoption, find inactive users, review auth failures, audit admins using the jc CLI
+description: Run a JumpCloud security audit — admins without MFA, users without MFA, suspended-not-locked accounts, IP list hygiene, plus auth-failure trends from Directory Insights, using the jc CLI
 ---
 
 # JumpCloud Security Audit
 
-Run a comprehensive security audit across a JumpCloud organization.
+Run a focused security audit across a JumpCloud organization. The bulk
+of the checks ride on `jc audit` (the built-in cross-resource audit
+registry); we layer Directory Insights queries on top for the runtime
+attack signal (failed authentications) that `jc audit` doesn't model.
 
 ## Prerequisites
 
 - `jc` installed and authenticated (`jc auth status`)
-- Insights access requires appropriate permissions
+- Insights access requires Directory Insights enabled on the org
 
-## Audit Steps
-
-### 1. MFA Adoption
-
-Find users without MFA enabled:
+## Step 1 — Run the built-in security audit
 
 ```bash
-jc users list --query "[?totp_enabled==\`false\`].{username:username,email:email,activated:activated}" -t
+jc audit --category security --category identity --output json
 ```
 
-Count total vs MFA-enabled:
-```bash
-jc users list --query "length([?totp_enabled==\`true\`])"
-jc users list --query "length(@)"
-```
+This returns structured findings: each one has `check_id`, `severity`
+(info/low/medium/high/critical), `resource_ref` (e.g. `admin:foo@bar`),
+`remediation_hint`, and `detail`. Group by `severity` and surface the
+critical ones first.
 
-Report the MFA adoption percentage. Flag any activated users without MFA as a risk.
+Categories included:
 
-### 2. Suspended and Locked Accounts
+- **security** — admins without MFA, active users without MFA,
+  suspended-but-not-locked users, IP lists with no entries
+- **identity** — admins created in the last 14 days (sanity check for
+  post-compromise persistence)
 
-```bash
-jc users list --filter "suspended:eq:true" -t
-jc users list --filter "account_locked:eq:true" -t
-```
+## Step 2 — Layer in auth-failure signal (Directory Insights)
 
-Review whether these accounts should be deleted or are appropriately locked.
-
-### 3. Failed Authentication Events (Last 24h)
+`jc audit` is a control-state audit; it doesn't see live traffic.
+Combine with Insights to spot active attacks:
 
 ```bash
-jc insights query --service sso --last 24h --event-type sso_auth_failed -t
+# Failed SSO authentications in the last 24 hours
+jc insights query --service sso --last 24h --event-type sso_auth_failed -o json
+
+# Volume comparison: total auth events vs failures
+jc insights count --service all --last 24h
+jc insights count --service sso --last 24h --event-type sso_auth_failed
 ```
 
-Look for:
-- Repeated failures from the same user (possible brute force)
-- Failures from unusual IPs
-- Failures at unusual times
+Flag:
+- Repeated failures from the same `initiated_by.email` → possible brute force
+- Failures from unfamiliar `client_ip` ranges → possible credential theft
+- Failure clusters at unusual times (off-hours, weekends)
 
-### 4. All Auth Events (Last 7 Days)
+## Step 3 — Report
 
-```bash
-jc insights count --service all --last 7d
-jc insights query --service all --last 7d --limit 20 -t
+Produce a layered report:
+
+1. **Findings from `jc audit`** — table with `severity | check_id |
+   resource_ref | detail | remediation_hint`. Order CRITICAL → HIGH →
+   MEDIUM → LOW → INFO.
+2. **Auth-failure signal** — counts, top offending IPs, top targeted
+   users from the Insights data.
+3. **Recommended actions** — for each finding, the exact `jc` command
+   from `remediation_hint`.
+
+### Example report shape
+
+```
+JumpCloud Security Audit — ORG — DATE
+
+Control-state findings (jc audit):
+| Severity | Check                  | Resource                 | Action |
+|----------|------------------------|--------------------------|--------|
+| CRITICAL | admins-without-mfa     | admin:alice@acme.com     | Enable MFA in Admin Portal |
+| HIGH     | users-without-mfa      | user:bob                 | jc auth-policies create … |
+| MEDIUM   | suspended-not-locked   | user:carol               | jc users lock carol |
+| LOW      | iplists-empty          | iplist:OfficeNAT         | jc iplists update OfficeNAT --ips … |
+
+Runtime signal (Directory Insights, last 24h):
+- Total auth events: 1,247
+- Failed SSO auths: 18 (1.4%)
+- Top offending IP: 185.220.101.42 (12 failures, all targeting alice@acme.com)
+- Recommendation: jc auth-policies create — block this IP range
 ```
 
-### 5. Admin Accounts
+## Why this layout
 
-```bash
-jc admins list -t
-```
+The pre-2026.06 version of this skill scripted ~10 individual `jc`
+queries inline. `jc audit` consolidates 8 of those into a single
+structured fetch with severity tagging, so the skill now:
 
-Check:
-- Number of admin accounts (fewer is better)
-- Whether all admins have MFA enabled
-- Any inactive or unnecessary admin accounts
-
-### 6. Auth Policy Coverage
-
-```bash
-jc auth-policies list -t
-```
-
-Review:
-- Are there conditional access policies in place?
-- Are any disabled that should be enabled?
-- Do policies require MFA for sensitive operations?
-
-### 7. Device Compliance
-
-```bash
-jc policies list -t
-```
-
-For key policies (e.g., FileVault, screen lock):
-```bash
-jc policies results POLICY_NAME -t
-```
-
-Check for devices with `failed` or `pending` status.
-
-### 8. IP Lists
-
-```bash
-jc iplists list -t
-```
-
-Verify that office/VPN IP ranges are configured for auth policies.
-
-## Report
-
-Summarize findings as:
-
-| Area | Status | Finding |
-|------|--------|---------|
-| MFA Adoption | PASS/WARN/FAIL | X% of users have MFA enabled |
-| Inactive Accounts | PASS/WARN | X suspended, Y locked |
-| Auth Failures (24h) | PASS/WARN/FAIL | X failed attempts |
-| Admin Accounts | PASS/WARN | X admins, MFA status |
-| Auth Policies | PASS/WARN | X policies active |
-| Device Compliance | PASS/WARN/FAIL | X devices non-compliant |
-
-Include specific recommendations for any WARN or FAIL items.
+- Spends most of its token budget on **interpretation** rather than
+  re-deriving findings from raw data
+- Gets new checks automatically when the audit registry grows
+- Produces consistent severity language with `jc-compliance-check` and
+  CI gates (`jc audit --exit-code --threshold high`)
