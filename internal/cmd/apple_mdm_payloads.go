@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -130,18 +131,20 @@ other on a device.`,
 				return err
 			}
 
-			var w io.Writer = cmd.OutOrStdout()
-			var closer io.Closer
+			// File-output path uses a temp-file + atomic rename so a
+			// mid-emit failure can never leave a truncated .mobileconfig
+			// on disk for a caller to accidentally upload. Pre-fix
+			// (Bugbot PR #50 review):
+			//   1. os.Create truncated the target up front, so an
+			//      emission error left a half-written file.
+			//   2. closer.Close() return value was discarded, so a
+			//      delayed flush failure could leave incomplete data
+			//      while the CLI reported "Wrote …" success.
 			if outputFile != "" {
-				f, err := os.Create(outputFile)
-				if err != nil {
-					return fmt.Errorf("creating output file: %w", err)
-				}
-				w = f
-				closer = f
+				return emitMobileconfigToFile(cmd, outputFile, payload, typed,
+					displayName, identifier, organization, removeLock)
 			}
-
-			err = apple_mdm.EmitMobileconfig(w,
+			return apple_mdm.EmitMobileconfig(cmd.OutOrStdout(),
 				apple_mdm.EnvelopeOpts{
 					DisplayName:       displayName,
 					Identifier:        identifier,
@@ -154,16 +157,6 @@ other on a device.`,
 					DisplayName: displayName,
 				}},
 			)
-			if closer != nil {
-				closer.Close()
-			}
-			if err != nil {
-				return fmt.Errorf("emitting mobileconfig: %w", err)
-			}
-			if outputFile != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s\n", outputFile)
-			}
-			return nil
 		},
 	}
 
@@ -183,6 +176,61 @@ other on a device.`,
 		"Prevent end users from removing the profile via System Settings (requires MDM unenroll)")
 
 	return cmd
+}
+
+// emitMobileconfigToFile writes the emitted plist to outputFile via a
+// temp-file + atomic rename so partial writes never reach the target
+// path. The temp file lives in the same directory as the target so
+// the rename stays on one filesystem and is atomic.
+//
+// On any failure (emit, close, rename) the temp file is removed and
+// the original target — if it existed — is left untouched.
+func emitMobileconfigToFile(cmd *cobra.Command, outputFile string,
+	payload apple_mdm.Payload, typed map[string]any,
+	displayName, identifier, organization string, removeLock bool) error {
+
+	dir := filepath.Dir(outputFile)
+	tmp, err := os.CreateTemp(dir, ".jc-mobileconfig-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file in %s: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	// On any error path we drop the temp file. Track success at the
+	// end so the defer doesn't unlink the final renamed file.
+	var succeeded bool
+	defer func() {
+		if !succeeded {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := apple_mdm.EmitMobileconfig(tmp,
+		apple_mdm.EnvelopeOpts{
+			DisplayName:       displayName,
+			Identifier:        identifier,
+			Organization:      organization,
+			RemovalDisallowed: removeLock,
+		},
+		[]apple_mdm.PayloadInstance{{
+			Schema:      payload,
+			Values:      typed,
+			DisplayName: displayName,
+		}},
+	); err != nil {
+		tmp.Close()
+		return fmt.Errorf("emitting mobileconfig: %w", err)
+	}
+	// Check the Close error — buffered writers and some filesystems
+	// surface flush failures here, not in earlier Write calls.
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, outputFile); err != nil {
+		return fmt.Errorf("finalizing %s: %w", outputFile, err)
+	}
+	succeeded = true
+	fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s\n", outputFile)
+	return nil
 }
 
 // resolvePayload is shared by `show` and `template` — resolve by ID
