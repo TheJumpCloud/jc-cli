@@ -157,15 +157,36 @@ func buildPayloadDict(p PayloadInstance) (map[string]any, error) {
 	}
 
 	// Schema-defined keys layer on top. Reject user attempts to
-	// shadow Payload* keys — Apple expects them owned by the
-	// configuration profile machinery.
+	// shadow the 5 magic Payload keys the emitter owns; everything
+	// else (including legitimate Apple keys with the Payload prefix
+	// like PayloadCertificateUUID on com.apple.wifi.managed) is the
+	// schema's territory and must pass through. Pre-fix the check was
+	// a strings.HasPrefix(k, "Payload") that blocked certificate-based
+	// and similar profiles from generating (Bugbot PR #50 review).
 	for k, v := range p.Values {
-		if strings.HasPrefix(k, "Payload") {
-			return nil, fmt.Errorf("user values may not set the reserved key %q; the emitter owns Payload* keys", k)
+		if reservedPayloadKey(k) {
+			return nil, fmt.Errorf("user values may not set the reserved key %q; the emitter owns it", k)
 		}
 		dict[k] = v
 	}
 	return dict, nil
+}
+
+// reservedPayloadKey returns true for the 5 magic Configuration-Profile
+// keys the emitter generates from the schema + envelope metadata. Any
+// other Apple-defined key with a "Payload" prefix (PayloadCertificateUUID,
+// PayloadCertificateAnchorUUID, etc.) is schema territory and must pass
+// through.
+func reservedPayloadKey(k string) bool {
+	switch k {
+	case "PayloadType",
+		"PayloadUUID",
+		"PayloadVersion",
+		"PayloadIdentifier",
+		"PayloadDisplayName":
+		return true
+	}
+	return false
 }
 
 // writePlistValue emits one value as plist XML, indented to the given
