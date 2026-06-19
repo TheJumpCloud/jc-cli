@@ -61,11 +61,11 @@ func (s *AppleMDMPayloadsShowScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
 		case "n":
-			// Hand off to the editor + create-policy flow.
-			// Stubbed in PR4 (KLA-453); will route to a `prompt for
-			// policy name` screen → $EDITOR handoff in a follow-up.
+			// Hand off to the multi-stage authoring screen: name →
+			// $EDITOR → validate → preview → create.
+			payload := s.payload
 			return s, func() tea.Msg {
-				return tui.FlashMsg{Text: "Editor handoff coming in the next milestone — use `jc apple-mdm payloads create-policy` from the CLI for now."}
+				return tui.PushScreenMsg{Screen: NewAppleMDMPayloadsAuthoringScreen(payload)}
 			}
 		}
 		var cmd tea.Cmd
