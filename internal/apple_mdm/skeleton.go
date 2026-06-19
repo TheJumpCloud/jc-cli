@@ -46,7 +46,7 @@ func EmitValuesSkeleton(p Payload) string {
 		fmt.Fprintln(&b, "# ─── Required keys ───")
 		fmt.Fprintln(&b)
 		for _, k := range required {
-			writeKeyEntry(&b, k, false /* commented */)
+			writeKeyEntry(&b, k, false /* commented */, 0)
 		}
 	} else {
 		fmt.Fprintln(&b, "# ─── Required keys ───")
@@ -58,48 +58,101 @@ func EmitValuesSkeleton(p Payload) string {
 		fmt.Fprintln(&b, "# ─── Optional keys ───")
 		fmt.Fprintln(&b)
 		for _, k := range optional {
-			writeKeyEntry(&b, k, true /* commented */)
+			writeKeyEntry(&b, k, true /* commented */, 0)
 		}
 	}
 	if len(other) > 0 {
 		fmt.Fprintln(&b, "# ─── Other (deprecated/conditional) keys ───")
 		fmt.Fprintln(&b)
 		for _, k := range other {
-			writeKeyEntry(&b, k, true)
+			writeKeyEntry(&b, k, true, 0)
 		}
 	}
 
 	return b.String()
 }
 
-// writeKeyEntry emits one comment block + the YAML entry (commented or
-// not) for a single payload key. The structure:
+// maxSkeletonDepth caps recursion into nested dictionaries/arrays.
+// Apple's schemas can nest 5+ levels deep (wifi.managed's
+// EAPClientConfiguration is the canonical example); beyond depth 3
+// the skeleton gets unwieldy fast and the operator is usually better
+// off either copying from `payloads show` or starting from a
+// ProfileCreator-generated .mobileconfig.
+const maxSkeletonDepth = 3
+
+// writeKeyEntry emits one annotated entry for a payload key. Structure:
 //
 //	# KeyName: type (presence, valuetype=..., enum{...}, range [..])
 //	#   First line of the description.
-//	# KeyName: <example>
+//	# KeyName: <example value>          ← uncommented if required
 //
-// Description is single-line so each entry stays compact. Operators
-// who want more context can run `jc apple-mdm payloads show <type>`
-// for the full reference.
-func writeKeyEntry(b *strings.Builder, k Key, commentOut bool) {
-	fmt.Fprintf(b, "# %s", k.Name)
-	if k.Type != "" {
-		fmt.Fprintf(b, ": %s", k.Type)
-	}
-	pieces := keyAffordances(k)
-	if len(pieces) > 0 {
-		fmt.Fprintf(b, " (%s)", strings.Join(pieces, ", "))
-	}
-	fmt.Fprintln(b)
-	if d := firstLineSkeleton(k.Content); d != "" {
-		fmt.Fprintf(b, "#   %s\n", d)
-	}
+// For `dictionary` and `array` types with declared Subkeys, the entry
+// recursively expands into a nested YAML block. Pre-fix every nested
+// dictionary collapsed to `{}` and the operator had to switch contexts
+// to learn the subkey schema; recursive expansion makes the schema
+// visible in the editor itself. depth is the current YAML indentation
+// level (each level = 2 spaces); the cap is enforced by maxSkeletonDepth.
+//
+// commentOut cascades from the parent: an ancestor that's commented out
+// forces all descendants to be commented out too, so the operator
+// always has consistent uncomment boundaries. To enable a previously
+// commented optional dict the operator uncomments the parent line +
+// each desired subkey value line.
+func writeKeyEntry(b *strings.Builder, k Key, commentOut bool, depth int) {
+	indent := strings.Repeat("  ", depth)
 	prefix := ""
 	if commentOut {
 		prefix = "# "
 	}
-	fmt.Fprintf(b, "%s%s: %s\n\n", prefix, k.Name, exampleValue(k))
+
+	// Documentation comment block — always commented out regardless of
+	// the commentOut flag, since it's docs not values.
+	fmt.Fprintf(b, "%s# %s", indent, k.Name)
+	if k.Type != "" {
+		fmt.Fprintf(b, ": %s", k.Type)
+	}
+	if pieces := keyAffordances(k); len(pieces) > 0 {
+		fmt.Fprintf(b, " (%s)", strings.Join(pieces, ", "))
+	}
+	fmt.Fprintln(b)
+	if d := firstLineSkeleton(k.Content); d != "" {
+		fmt.Fprintf(b, "%s#   %s\n", indent, d)
+	}
+
+	// Value line(s).
+	switch k.Type {
+	case "dictionary":
+		if len(k.Subkeys) > 0 && depth < maxSkeletonDepth {
+			fmt.Fprintf(b, "%s%s%s:\n", indent, prefix, k.Name)
+			for _, sk := range k.Subkeys {
+				skComment := commentOut || strings.ToLower(sk.Presence) != "required"
+				writeKeyEntry(b, sk, skComment, depth+1)
+			}
+		} else {
+			// No declared subkeys, or recursion capped. Fall back to
+			// an empty dict — the operator can fill in arbitrary
+			// values, which is the right call for MCX-style preference
+			// payloads where the dict is freeform.
+			fmt.Fprintf(b, "%s%s%s: {}\n\n", indent, prefix, k.Name)
+		}
+	case "array":
+		if len(k.Subkeys) > 0 && depth < maxSkeletonDepth {
+			// Array-of-typed-elements: render one example item, then
+			// instruct the operator to duplicate the block for more.
+			fmt.Fprintf(b, "%s%s%s:\n", indent, prefix, k.Name)
+			fmt.Fprintf(b, "%s%s  - # repeat this block for each entry\n", indent, prefix)
+			for _, sk := range k.Subkeys {
+				skComment := commentOut || strings.ToLower(sk.Presence) != "required"
+				// Array elements are indented one deeper than their
+				// parent + the "- " dash.
+				writeKeyEntry(b, sk, skComment, depth+2)
+			}
+		} else {
+			fmt.Fprintf(b, "%s%s%s: []\n\n", indent, prefix, k.Name)
+		}
+	default:
+		fmt.Fprintf(b, "%s%s%s: %s\n\n", indent, prefix, k.Name, exampleValue(k))
+	}
 }
 
 // keyAffordances builds the per-key parenthetical so an admin can see
