@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Hand-rolled plist XML emitter for the constrained Configuration
@@ -225,17 +226,27 @@ func writePlistValue(w io.Writer, v any, indent, typeHint string) error {
 
 // inferType maps a Go value back to its Apple plist type when the
 // schema declared "any" (or no explicit type, as inside nested
-// arrays/dicts).
+// arrays/dicts). Plist decoders (notably howett.net/plist used by
+// the edit flow) return integers as uint64 and dates as time.Time;
+// pre-fix (Bugbot PR #54 re-review) those landed in the default
+// branch and EmitMobileconfig failed with "unknown plist type" the
+// moment an edit merged a nested integer back into the rebuilt
+// mobileconfig.
 func inferType(v any) string {
 	switch v.(type) {
 	case string:
 		return "string"
 	case bool:
 		return "boolean"
-	case int, int32, int64:
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
 		return "integer"
 	case float32, float64:
 		return "real"
+	case time.Time:
+		return "date"
+	case []byte:
+		return "data"
 	case []any:
 		return "array"
 	case map[string]any:
@@ -259,10 +270,31 @@ func writeIntegerElem(w io.Writer, indent string, v any) error {
 	switch x := v.(type) {
 	case int:
 		n = int64(x)
+	case int8:
+		n = int64(x)
+	case int16:
+		n = int64(x)
 	case int32:
 		n = int64(x)
 	case int64:
 		n = x
+	case uint:
+		n = int64(x)
+	case uint8:
+		n = int64(x)
+	case uint16:
+		n = int64(x)
+	case uint32:
+		n = int64(x)
+	case uint64:
+		// howett.net/plist decodes <integer> as uint64. Apple's
+		// plist <integer> type is signed in practice, so a value
+		// over int64-max would be malformed anyway — surface the
+		// overflow instead of silently truncating.
+		if x > 1<<63-1 {
+			return fmt.Errorf("uint64 value %d overflows signed integer", x)
+		}
+		n = int64(x)
 	case float64:
 		// JSON-decoded numbers land as float64; accept whole values.
 		if x != float64(int64(x)) {
@@ -322,12 +354,17 @@ func writeDataElem(w io.Writer, indent string, v any) error {
 }
 
 func writeDateElem(w io.Writer, indent string, v any) error {
-	s, ok := v.(string)
-	if !ok {
-		return fmt.Errorf("date type expected (RFC3339 string), got %T", v)
+	switch x := v.(type) {
+	case string:
+		_, err := fmt.Fprintf(w, "%s<date>%s</date>", indent, x)
+		return err
+	case time.Time:
+		// Plist decoders (howett.net/plist) return <date> as
+		// time.Time; an edit-merge carrying a date subkey lands here.
+		_, err := fmt.Fprintf(w, "%s<date>%s</date>", indent, x.UTC().Format("2006-01-02T15:04:05Z"))
+		return err
 	}
-	_, err := fmt.Fprintf(w, "%s<date>%s</date>", indent, s)
-	return err
+	return fmt.Errorf("date type expected (RFC3339 string or time.Time), got %T", v)
 }
 
 func writeArrayElem(w io.Writer, indent string, v any) error {

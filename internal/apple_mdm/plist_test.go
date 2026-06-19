@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // withDeterministicUUIDs swaps the package-level newUUID for a
@@ -128,6 +129,111 @@ func TestWriteIntegerElem_RejectsNonWholeFloat(t *testing.T) {
 	err := writeIntegerElem(&buf, "", 1.5)
 	if err == nil {
 		t.Error("expected error for non-whole float")
+	}
+}
+
+func TestEmitMobileconfig_HandlesPlistDecodedIntegerTypes(t *testing.T) {
+	// Bugbot PR #54 re-review: howett.net/plist (used by the edit
+	// decode path) returns plist <integer> values as uint64. Pre-fix
+	// the emitter's writeIntegerElem only handled int/int32/int64
+	// and erred on uint64; merging a decoded integer into an
+	// edit-rebuilt mobileconfig failed before the operator ever saw
+	// preview.
+	withDeterministicUUIDs(t)
+	tests := []struct {
+		label string
+		v     any
+	}{
+		{"int", 42},
+		{"int8", int8(42)},
+		{"int16", int16(42)},
+		{"int32", int32(42)},
+		{"int64", int64(42)},
+		{"uint", uint(42)},
+		{"uint8", uint8(42)},
+		{"uint16", uint16(42)},
+		{"uint32", uint32(42)},
+		{"uint64", uint64(42)},
+		// Skip float64 in this matrix: when emission bypasses
+		// CoerceAndValidate (as it does for nested values inside a
+		// dict), inferType maps float64 to "real" and the value
+		// renders as <real>42</real> not <integer>. That's correct
+		// behavior — float64 isn't a plist-decode shape for integers
+		// anyway (howett.net/plist returns uint64). Coverage of the
+		// float64 path lives in TestWriteIntegerElem_RejectsNonWholeFloat
+		// which exercises writeIntegerElem directly.
+	}
+	for _, tc := range tests {
+		t.Run(tc.label, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := EmitMobileconfig(&buf, EnvelopeOpts{}, []PayloadInstance{{
+				Schema: Payload{Type: "x", Title: "Test", Keys: []Key{
+					{Name: "Count", Type: "integer"},
+				}},
+				Values: map[string]any{"Count": tc.v},
+			}})
+			if err != nil {
+				t.Fatalf("emit failed for %s: %v", tc.label, err)
+			}
+			if !strings.Contains(buf.String(), "<integer>42</integer>") {
+				t.Errorf("%s not emitted as <integer>42</integer>:\n%s", tc.label, buf.String())
+			}
+		})
+	}
+}
+
+func TestEmitMobileconfig_HandlesNestedDictWithPlistDecodedInts(t *testing.T) {
+	// The real-world hazard: edit merge keeps a dict whose subkeys
+	// are uint64. The dict goes straight to writeDictElem →
+	// writePlistValue → inferType → writeIntegerElem. Pre-fix the
+	// whole chain failed at the inferType step (no case for uint64).
+	withDeterministicUUIDs(t)
+	var buf bytes.Buffer
+	err := EmitMobileconfig(&buf, EnvelopeOpts{},
+		[]PayloadInstance{{
+			Schema: Payload{Type: "x", Keys: []Key{{Name: "Cfg", Type: "dictionary"}}},
+			Values: map[string]any{
+				"Cfg": map[string]any{
+					"DiskSleepTimer":    uint64(60),
+					"DisplaySleepTimer": uint64(120),
+				},
+			},
+		}})
+	if err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if !strings.Contains(buf.String(), "<integer>60</integer>") ||
+		!strings.Contains(buf.String(), "<integer>120</integer>") {
+		t.Errorf("nested uint64 not emitted:\n%s", buf.String())
+	}
+}
+
+func TestEmitMobileconfig_HandlesPlistDecodedDate(t *testing.T) {
+	// howett.net/plist decodes <date> to time.Time. Pre-fix the date
+	// element only accepted string RFC3339 and rejected time.Time.
+	withDeterministicUUIDs(t)
+	when := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	var buf bytes.Buffer
+	err := EmitMobileconfig(&buf, EnvelopeOpts{}, []PayloadInstance{{
+		Schema: Payload{Type: "x", Keys: []Key{{Name: "Expires", Type: "date"}}},
+		Values: map[string]any{"Expires": when},
+	}})
+	if err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if !strings.Contains(buf.String(), "<date>2026-06-19T12:00:00Z</date>") {
+		t.Errorf("time.Time not formatted as RFC3339 date:\n%s", buf.String())
+	}
+}
+
+func TestWriteIntegerElem_RejectsOverflowingUint64(t *testing.T) {
+	// Defensive guard — Apple's plist <integer> is signed in practice.
+	// A uint64 over int64-max would be malformed; surface the
+	// overflow rather than silently truncating.
+	var buf bytes.Buffer
+	err := writeIntegerElem(&buf, "", uint64(1<<63))
+	if err == nil {
+		t.Error("expected overflow error for uint64 > int64 max")
 	}
 }
 
