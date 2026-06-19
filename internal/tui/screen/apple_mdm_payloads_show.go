@@ -61,11 +61,13 @@ func (s *AppleMDMPayloadsShowScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
 		case "n":
-			// Hand off to the multi-stage authoring screen: name →
-			// $EDITOR → validate → preview → create.
+			// Default to the form-based authoring (KLA-454 v1).
+			// The form covers scalar keys (string/bool/int/real/
+			// rangelist); complex types render as disabled rows with a
+			// Ctrl-E affordance to drop into the $EDITOR flow.
 			payload := s.payload
 			return s, func() tea.Msg {
-				return tui.PushScreenMsg{Screen: NewAppleMDMPayloadsAuthoringScreen(payload)}
+				return tui.PushScreenMsg{Screen: NewAppleMDMPayloadsFormScreen(payload)}
 			}
 		}
 		var cmd tea.Cmd
