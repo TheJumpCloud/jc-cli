@@ -212,6 +212,70 @@ func TestFormScreen_RangeListCycle(t *testing.T) {
 	}
 }
 
+func TestFormScreen_SubmitClearsStaleErrors(t *testing.T) {
+	// Bugbot PR #53 review: after a failed submit + a corrective edit
+	// + a successful submit, the old per-field err strings used to
+	// linger on the view. Esc-from-preview back to the form then
+	// showed stale errors on fields that had since become valid.
+	p := apple_mdm.Payload{
+		Type: "com.example.test",
+		Keys: []apple_mdm.Key{
+			{Name: "N", Type: "integer", Range: &apple_mdm.Range{Min: 1, Max: 10}},
+		},
+	}
+	s := NewAppleMDMPayloadsFormScreen(p)
+	s.nameInput.SetValue("Test")
+	// First submit with bad value — error gets set.
+	s.advanceFocus(1)
+	s.fields[0].text.SetValue("100")
+	s.submit()
+	if s.fields[0].err == "" {
+		t.Fatal("expected initial range error")
+	}
+	if s.stage == mdmFormStagePreview {
+		t.Fatal("stage should not advance with bad value")
+	}
+	// Fix the value + submit again. The stale error must clear.
+	s.fields[0].text.SetValue("5")
+	s.submit()
+	if s.fields[0].err != "" {
+		t.Errorf("stale error not cleared: %q", s.fields[0].err)
+	}
+	if s.stage != mdmFormStagePreview {
+		t.Errorf("stage = %d, want preview after valid submit", s.stage)
+	}
+}
+
+func TestFormScreen_RequiredComplexKeysShowMarker(t *testing.T) {
+	// Bugbot PR #53 review: a required dictionary/array key landed in
+	// the "Complex types" section without the `*` required marker;
+	// operators couldn't tell that Ctrl-E was mandatory before
+	// submit could succeed. The marker must persist even when the
+	// field is rendered in the unsupported section.
+	p := apple_mdm.Payload{
+		Type: "com.example.test",
+		Keys: []apple_mdm.Key{
+			{Name: "RequiredDict", Type: "dictionary", Presence: "required"},
+			{Name: "OptionalDict", Type: "dictionary", Presence: "optional"},
+		},
+	}
+	s := NewAppleMDMPayloadsFormScreen(p)
+	view := s.View()
+	// Look for the section header — sanity check we're in the right
+	// branch.
+	if !strings.Contains(view, "Complex types") {
+		t.Fatal("expected complex-types section in view")
+	}
+	// The required complex key should carry the marker. We render `*`
+	// via style.Error which strips to bare `*` in ANSI-stripped form;
+	// pattern-match on "* RequiredDict" with arbitrary intermediate
+	// whitespace.
+	if !strings.Contains(view, "* RequiredDict") &&
+		!strings.Contains(view, "*  RequiredDict") {
+		t.Errorf("expected required marker before RequiredDict, view:\n%s", view)
+	}
+}
+
 func TestFormScreen_CtrlEEscapesToEditor(t *testing.T) {
 	p := apple_mdm.Payload{Type: "com.example.test"}
 	s := NewAppleMDMPayloadsFormScreen(p)

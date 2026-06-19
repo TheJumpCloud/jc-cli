@@ -388,6 +388,15 @@ func (s *AppleMDMPayloadsFormScreen) submit() (tea.Model, tea.Cmd) {
 	}
 	s.policyName = name
 
+	// Clear stale inline errors from any prior submit attempt before
+	// re-validating. Without this, Esc-from-preview back to the form
+	// can leave old errors visible on fields that have since become
+	// valid, suggesting the policy is still broken (Bugbot PR #53
+	// review).
+	for i := range s.fields {
+		s.fields[i].err = ""
+	}
+
 	// Per-field local validation first so we can flag the broken
 	// rows without involving CoerceAndValidate.
 	hasFieldErr := false
@@ -659,7 +668,14 @@ func (s *AppleMDMPayloadsFormScreen) viewEdit() string {
 	if len(unsupported) > 0 {
 		fmt.Fprintln(&b, style.SectionHeader.Render("Complex types — drop to $EDITOR (Ctrl-E) to set"))
 		for _, idx := range unsupported {
-			s.renderMDMFieldRow(&b, idx, false)
+			// Required-presence on a complex-type key must still
+			// surface the `*` marker so the operator sees Ctrl-E is
+			// not optional for this payload. Pre-fix the unsupported
+			// section dropped the required marker entirely and the
+			// operator was misled into thinking they could submit
+			// without dropping to the editor (Bugbot PR #53 review).
+			required := strings.ToLower(s.fields[idx].key.Presence) == "required"
+			s.renderMDMFieldRow(&b, idx, required)
 		}
 		fmt.Fprintln(&b)
 	}
