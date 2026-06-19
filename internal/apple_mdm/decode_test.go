@@ -107,6 +107,52 @@ func TestDecodeCustomMDMPolicy_SinglePayload(t *testing.T) {
 	}
 }
 
+func TestOSFamilyFromTemplateName(t *testing.T) {
+	// Bugbot PR #54 review: silently mapping every edit to darwin
+	// reassigned iOS-family policies on save. The mapping must lift
+	// the family suffix verbatim and reject malformed names.
+	tests := []struct {
+		in, want string
+	}{
+		{"custom_mdm_profile_darwin", "darwin"},
+		{"custom_mdm_profile_iphone", "iphone"},
+		{"custom_mdm_profile_tvos", "tvos"},
+		{"some_other_template", ""},
+		{"custom_mdm_profile_", ""}, // empty suffix → empty
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := OSFamilyFromTemplateName(tc.in); got != tc.want {
+			t.Errorf("OSFamilyFromTemplateName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestDecodeCustomMDMPolicy_CapturesTemplateName(t *testing.T) {
+	// Bugbot PR #54 finding #3: edit was always darwin because the
+	// decoded policy didn't carry the template family forward.
+	// Verify the decoder now does.
+	plistB64 := base64.StdEncoding.EncodeToString([]byte(firewallPlist))
+	rawJSON := `{
+		"id": "abc",
+		"name": "iOS test",
+		"template": {"id": "tid", "name": "custom_mdm_profile_iphone"},
+		"values": [
+			{"configFieldID":"pid","configFieldName":"payload","value":"` + plistB64 + `"}
+		]
+	}`
+	d, err := DecodeCustomMDMPolicy([]byte(rawJSON))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if d.TemplateName != "custom_mdm_profile_iphone" {
+		t.Errorf("TemplateName = %q", d.TemplateName)
+	}
+	if OSFamilyFromTemplateName(d.TemplateName) != "iphone" {
+		t.Errorf("OS family derivation broken: got %q", OSFamilyFromTemplateName(d.TemplateName))
+	}
+}
+
 func TestDecodeCustomMDMPolicy_MultiPayloadDetected(t *testing.T) {
 	multi := strings.Replace(firewallPlist,
 		"  <key>PayloadContent</key>\n  <array>\n    <dict>",

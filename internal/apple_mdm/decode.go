@@ -26,6 +26,13 @@ type DecodedPolicy struct {
 	// PolicyName is the JC-side policy name. Pre-populates the form's
 	// Name field on entry.
 	PolicyName string
+	// TemplateName is the JumpCloud template name attached to the
+	// policy (e.g. "custom_mdm_profile_darwin",
+	// "custom_mdm_profile_iphone"). Drives the OS family used at PUT
+	// time so an iOS-family policy doesn't get accidentally
+	// reassigned to the macOS template on edit (Bugbot PR #54
+	// review).
+	TemplateName string
 	// IsMulti is true when the underlying mobileconfig wraps more than
 	// one inner payload (CIS-style bundles). Editing those is out of
 	// scope for v1 — the TUI shows a "use the Admin Portal" message
@@ -80,8 +87,11 @@ func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
 	// through a typed shape keeps the parser tolerant of JC adding
 	// new fields to the policy response without churning this code.
 	var resp struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Template struct {
+			Name string `json:"name"`
+		} `json:"template"`
 		Values []struct {
 			ConfigFieldID   string `json:"configFieldID"`
 			ConfigFieldName string `json:"configFieldName"`
@@ -93,8 +103,9 @@ func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
 	}
 
 	d := DecodedPolicy{
-		PolicyID:   resp.ID,
-		PolicyName: resp.Name,
+		PolicyID:     resp.ID,
+		PolicyName:   resp.Name,
+		TemplateName: resp.Template.Name,
 	}
 
 	var plistBase64 string
@@ -169,6 +180,22 @@ func parsePlistEnvelope(data []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("plist root is empty")
 	}
 	return envelope, nil
+}
+
+// OSFamilyFromTemplateName extracts the JumpCloud OS family from a
+// custom_mdm_profile_<family> template name. Returns the family
+// suffix on success; empty string if the template name doesn't match
+// the expected prefix.
+//
+//	"custom_mdm_profile_darwin"  → "darwin"
+//	"custom_mdm_profile_iphone"  → "iphone"
+//	anything else                → ""
+func OSFamilyFromTemplateName(templateName string) string {
+	const prefix = "custom_mdm_profile_"
+	if len(templateName) <= len(prefix) || templateName[:len(prefix)] != prefix {
+		return ""
+	}
+	return templateName[len(prefix):]
 }
 
 // stripReservedPayloadKeys returns a shallow copy of inner with the

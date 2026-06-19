@@ -96,6 +96,71 @@ func TestNewAppleMDMPayloadsFormScreenForEdit_HandlesMissingValuesGracefully(t *
 	}
 }
 
+func TestNewAppleMDMPayloadsFormScreenForEdit_PreservesEnvelopeFlags(t *testing.T) {
+	// Bugbot PR #54 review caught three silent data-loss bugs:
+	// edit save always rewrote redispatch to true, dropped the
+	// removal lock, and resolved the macOS template family for any
+	// policy. Verify the form now captures all three from the
+	// decoded policy.
+	decoded := apple_mdm.DecodedPolicy{
+		PolicyID:          "abc",
+		PolicyName:        "iOS policy",
+		TemplateName:      "custom_mdm_profile_iphone",
+		Schema:            apple_mdm.Payload{Type: "com.apple.x"},
+		Redispatch:        false, // off — must be preserved
+		RemovalDisallowed: true,  // on — must be preserved
+	}
+	s := NewAppleMDMPayloadsFormScreenForEdit(decoded)
+	if s.editRedispatch != false {
+		t.Errorf("editRedispatch = %v, want false (preserved from decoded)", s.editRedispatch)
+	}
+	if !s.editRemovalDisallowed {
+		t.Errorf("editRemovalDisallowed = %v, want true (preserved from decoded)", s.editRemovalDisallowed)
+	}
+	if s.editOSFamily != "iphone" {
+		t.Errorf("editOSFamily = %q, want iphone (parsed from template name)", s.editOSFamily)
+	}
+}
+
+func TestNewAppleMDMPayloadsFormScreenForEdit_UnparseableTemplateFallsBackToDarwin(t *testing.T) {
+	// A weird template name (older policies, hand-rolled records)
+	// shouldn't break the edit; default to darwin since that's the
+	// dominant case.
+	decoded := apple_mdm.DecodedPolicy{
+		PolicyID:     "abc",
+		TemplateName: "weird-old-thing",
+		Schema:       apple_mdm.Payload{Type: "x"},
+	}
+	s := NewAppleMDMPayloadsFormScreenForEdit(decoded)
+	if s.editOSFamily != apple_mdm.OSFamilyDarwin {
+		t.Errorf("editOSFamily = %q, want fallback to darwin", s.editOSFamily)
+	}
+}
+
+func TestAppleMDMPoliciesListScreen_DrillingGuardsDoubleEnter(t *testing.T) {
+	// Bugbot PR #54 review: openSelected didn't check s.drilling, so
+	// repeated Enter taps queued multiple GET+decode goroutines that
+	// each fired PushScreenMsg on success.
+	s := NewAppleMDMPoliciesListScreen()
+	s.loading = false
+	s.all = []policyRow{{ID: "1", Name: "test", Template: "custom_mdm_profile_darwin"}}
+	s.applyFilter()
+	// First Enter starts a drill-in.
+	_, cmd1 := s.openSelected()
+	if cmd1 == nil {
+		t.Fatal("first Enter should produce a decode cmd")
+	}
+	if !s.drilling {
+		t.Fatal("drilling should be set after first Enter")
+	}
+	// Second Enter while drilling should return no cmd (no new
+	// goroutine).
+	_, cmd2 := s.openSelected()
+	if cmd2 != nil {
+		t.Error("second Enter should be a no-op while drilling")
+	}
+}
+
 func TestAppleMDMMultiPayloadGuardScreen_Renders(t *testing.T) {
 	d := apple_mdm.DecodedPolicy{
 		PolicyID:   "multi-id",

@@ -265,6 +265,14 @@ func (s *AppleMDMPoliciesListScreen) openSelected() (tea.Model, tea.Cmd) {
 	if s.cursor < 0 || s.cursor >= len(s.filtered) {
 		return s, nil
 	}
+	// Ignore Enter while a decode is already in flight. Pre-fix
+	// (Bugbot PR #54 review) repeated Enter presses stacked multiple
+	// GET+decode goroutines, each of which would PushScreenMsg on
+	// success — the operator would end up with several stacked edit
+	// screens from one drill-in.
+	if s.drilling {
+		return s, nil
+	}
 	row := s.filtered[s.cursor]
 	s.drilling = true
 	s.drillingError = ""

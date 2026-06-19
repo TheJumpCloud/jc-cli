@@ -41,8 +41,17 @@ type AppleMDMPayloadsFormScreen struct {
 	// detail-screen `n` flow; edit is set by
 	// NewAppleMDMPayloadsFormScreenForEdit when an existing policy
 	// is opened from the custom-MDM policy list screen.
-	mode          formMode
-	editPolicyID  string
+	mode         formMode
+	editPolicyID string
+	// Edit-mode envelope settings preserved verbatim from the
+	// decoded policy. Pre-fix (Bugbot PR #54 review) these were
+	// dropped on every edit: redispatch always got rewritten to true,
+	// RemovalDisallowed always got dropped from the envelope, and
+	// the JumpCloud template family always resolved to darwin even
+	// for iOS-family policies. Each was a silent data-loss bug.
+	editRedispatch        bool
+	editRemovalDisallowed bool
+	editOSFamily          string
 
 	mobileconfig []byte
 	preview      viewport.Model
@@ -453,9 +462,15 @@ func (s *AppleMDMPayloadsFormScreen) submit() (tea.Model, tea.Cmd) {
 		return s, nil
 	}
 
+	// Preserve the envelope's PayloadRemovalDisallowed in edit mode.
+	// Pre-fix (Bugbot PR #54 review) the rebuilt mobileconfig omitted
+	// the flag and JC silently downgraded the policy's removal lock.
+	envelopeOpts := apple_mdm.EnvelopeOpts{DisplayName: s.policyName}
+	if s.mode == formModeEdit {
+		envelopeOpts.RemovalDisallowed = s.editRemovalDisallowed
+	}
 	var buf bytes.Buffer
-	if err := apple_mdm.EmitMobileconfig(&buf,
-		apple_mdm.EnvelopeOpts{DisplayName: s.policyName},
+	if err := apple_mdm.EmitMobileconfig(&buf, envelopeOpts,
 		[]apple_mdm.PayloadInstance{{
 			Schema:      s.payload,
 			Values:      typed,
@@ -591,17 +606,27 @@ func (s *AppleMDMPayloadsFormScreen) createCmd() tea.Cmd {
 	policyName := s.policyName
 	mode := s.mode
 	editID := s.editPolicyID
+	// In edit mode the OS family rides from the decoded policy's
+	// template (pre-fix this always used darwin and an iOS edit got
+	// silently reassigned to the macOS template). In create mode v1
+	// only supports darwin; iOS support is tracked as KLA-450.
+	osFamily := apple_mdm.OSFamilyDarwin
+	redispatch := true
+	if mode == formModeEdit {
+		osFamily = s.editOSFamily
+		redispatch = s.editRedispatch
+	}
 	return func() tea.Msg {
 		client, err := newV2ClientForAuthoring()
 		if err != nil {
 			return applePolicyAuthorCreateMsg{err: fmt.Errorf("building v2 client: %w", err)}
 		}
 		ctx := context.Background()
-		tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, apple_mdm.OSFamilyDarwin)
+		tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, osFamily)
 		if err != nil {
 			return applePolicyAuthorCreateMsg{err: fmt.Errorf("resolving template: %w", err)}
 		}
-		body := apple_mdm.BuildCustomMDMPolicyBody(policyName, tmpl, mobileconfig, true)
+		body := apple_mdm.BuildCustomMDMPolicyBody(policyName, tmpl, mobileconfig, redispatch)
 		var raw []byte
 		if mode == formModeEdit {
 			// PUT /policies/{id} with the same body shape JumpCloud
@@ -633,6 +658,15 @@ func NewAppleMDMPayloadsFormScreenForEdit(decoded apple_mdm.DecodedPolicy) *Appl
 	s := NewAppleMDMPayloadsFormScreen(decoded.Schema)
 	s.mode = formModeEdit
 	s.editPolicyID = decoded.PolicyID
+	s.editRedispatch = decoded.Redispatch
+	s.editRemovalDisallowed = decoded.RemovalDisallowed
+	s.editOSFamily = apple_mdm.OSFamilyFromTemplateName(decoded.TemplateName)
+	if s.editOSFamily == "" {
+		// Fall back to darwin only if the policy's template was
+		// unparseable — saves the operator a hard failure on weird
+		// data while still defaulting to the most common case.
+		s.editOSFamily = apple_mdm.OSFamilyDarwin
+	}
 	s.nameInput.SetValue(decoded.PolicyName)
 	s.policyName = decoded.PolicyName
 
