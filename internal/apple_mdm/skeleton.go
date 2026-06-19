@@ -136,16 +136,37 @@ func writeKeyEntry(b *strings.Builder, k Key, commentOut bool, depth int) {
 			fmt.Fprintf(b, "%s%s%s: {}\n\n", indent, prefix, k.Name)
 		}
 	case "array":
+		// Apple's schema convention: an array's subkeys list contains
+		// a SINGLE entry describing the element type. If that element
+		// is a scalar the array is `[scalar, scalar, ...]`; if it's
+		// a dictionary the array is `[{field1, field2}, {field1, ...}]`.
+		// Pre-fix we emitted the element subkey's *name* as the
+		// element key (`- EAPType: 13` for scalar arrays, an extra
+		// `ApplicationsItem:` wrapper for dict arrays); the resulting
+		// plist shape was wrong and a device would reject it
+		// (Bugbot PR #52 re-review).
 		if len(k.Subkeys) > 0 && depth < maxSkeletonDepth {
-			// Array-of-typed-elements: render one example item, then
-			// instruct the operator to duplicate the block for more.
+			elem := k.Subkeys[0]
 			fmt.Fprintf(b, "%s%s%s:\n", indent, prefix, k.Name)
-			fmt.Fprintf(b, "%s%s  - # repeat this block for each entry\n", indent, prefix)
-			for _, sk := range k.Subkeys {
-				skComment := commentOut || strings.ToLower(sk.Presence) != "required"
-				// Array elements are indented one deeper than their
-				// parent + the "- " dash.
-				writeKeyEntry(b, sk, skComment, depth+2)
+			switch elem.Type {
+			case "dictionary":
+				// Dict elements: emit the dict's fields directly under
+				// the `- ` marker. Each field gets its own doc + value
+				// line. The `- ` itself lives on the first field's
+				// indent, but with our comment+indent flow it's
+				// cleanest to put it on its own header line.
+				fmt.Fprintf(b, "%s%s  - # repeat this block for each entry\n", indent, prefix)
+				for _, sub := range elem.Subkeys {
+					skComment := commentOut || strings.ToLower(sub.Presence) != "required"
+					writeKeyEntry(b, sub, skComment, depth+2)
+				}
+			default:
+				// Scalar element: one example value with a comment
+				// telling the operator the element shape.
+				docPieces := []string{elem.Type}
+				docPieces = append(docPieces, keyAffordances(elem)...)
+				fmt.Fprintf(b, "%s%s  # element type: %s\n", indent, prefix, strings.Join(docPieces, ", "))
+				fmt.Fprintf(b, "%s%s  - %s\n\n", indent, prefix, exampleValue(elem))
 			}
 		} else {
 			fmt.Fprintf(b, "%s%s%s: []\n\n", indent, prefix, k.Name)

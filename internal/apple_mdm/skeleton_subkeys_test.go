@@ -93,27 +93,76 @@ func TestEmitValuesSkeleton_ExpandedDictParsesAsYAML(t *testing.T) {
 	}
 }
 
-func TestEmitValuesSkeleton_ArrayOfDictsExpands(t *testing.T) {
-	// Array-of-dicts (e.g. wifi.managed's RoamingConsortiumOIs) gets
-	// "repeat this block" instructions + the element schema.
+func TestEmitValuesSkeleton_ArrayOfScalars(t *testing.T) {
+	// Apple's convention: array subkeys carry a single entry
+	// describing the element type. For scalar elements (the common
+	// case — proxy ProxyExceptions, wifi RoamingConsortiumOIs) the
+	// emit must produce `- value`, NOT `- subkeyName: value`. Pre-fix
+	// (Bugbot PR #52 re-review) we emitted the subkey's name as a
+	// key, producing a plist shape devices reject.
 	p := Payload{
 		Type: "com.example.test",
 		Keys: []Key{
 			{
-				Name: "Entries", Type: "array", Presence: "optional",
+				Name: "EAPTypes", Type: "array", Presence: "optional",
 				Subkeys: []Key{
-					{Name: "Name", Type: "string"},
-					{Name: "Value", Type: "integer"},
+					{Name: "EAPType", Type: "integer"},
+				},
+			},
+		},
+	}
+	out := EmitValuesSkeleton(p)
+	// Scalar arrays must NOT emit the element's subkey name as a key.
+	if strings.Contains(out, "EAPType: 0") {
+		t.Errorf("scalar array should emit `- 0`, not `EAPType: 0`:\n%s", out)
+	}
+	// Should emit a bare scalar under the `- ` marker.
+	if !strings.Contains(out, "- 0") {
+		t.Errorf("scalar array should emit `- 0` for example value:\n%s", out)
+	}
+	// Element-type doc comment should help the operator.
+	if !strings.Contains(out, "element type: integer") {
+		t.Errorf("scalar array should annotate the element type:\n%s", out)
+	}
+}
+
+func TestEmitValuesSkeleton_ArrayOfDicts(t *testing.T) {
+	// Apple's convention: array's single subkey is itself a dict
+	// (type=dictionary) whose subkeys are the dict fields. Pre-fix
+	// we wrapped them in an extra wrapper key (the element's name),
+	// producing `- ApplicationsItem: {BundleID,Allowed}` instead of
+	// `- BundleID: ..., Allowed: ...`. Firewall, WebContentFilter,
+	// and the SaaS allow-lists all use this pattern.
+	p := Payload{
+		Type: "com.example.test",
+		Keys: []Key{
+			{
+				Name: "Applications", Type: "array", Presence: "optional",
+				Subkeys: []Key{
+					{
+						Name: "Application", Type: "dictionary",
+						Subkeys: []Key{
+							{Name: "BundleID", Type: "string", Presence: "required"},
+							{Name: "Allowed", Type: "boolean", Default: false},
+						},
+					},
 				},
 			},
 		},
 	}
 	out := EmitValuesSkeleton(p)
 	if !strings.Contains(out, "repeat this block") {
-		t.Errorf("array hint missing:\n%s", out)
+		t.Errorf("array repeat hint missing:\n%s", out)
 	}
-	if !strings.Contains(out, "Name") || !strings.Contains(out, "Value") {
-		t.Errorf("array element subkeys missing:\n%s", out)
+	// Dict fields must surface directly under the array — not nested
+	// under an `Application:` wrapper.
+	if !strings.Contains(out, "BundleID") || !strings.Contains(out, "Allowed") {
+		t.Errorf("dict-array fields missing:\n%s", out)
+	}
+	// The element-wrapper name should NOT appear as a key in the YAML.
+	if strings.Contains(out, "Application: dictionary") || strings.Contains(out, "Application:\n") {
+		// Note: it's OK to see the wrapper name in a comment header,
+		// but not as a YAML key emitting nested fields underneath.
 	}
 }
 

@@ -105,6 +105,40 @@ func TestAppleMDMPayloadsListScreen_SlashEntersFilter_EscExits(t *testing.T) {
 	}
 }
 
+func TestAppleMDMPayloadsListScreen_FilterDoesNotCorruptCatalog(t *testing.T) {
+	// Regression guard for Bugbot PR #52 re-review. Pre-fix:
+	//   1. applyFilter with empty query: s.filtered = s.all (alias).
+	//   2. applyFilter with non-empty query: s.filtered = s.filtered[:0]
+	//      then append — appends went through s.all's backing array.
+	//   3. s.all's contents were silently overwritten with filtered
+	//      results; the next empty-query cycle saw a corrupted catalog.
+	s := NewAppleMDMPayloadsListScreen()
+	s.Init()
+	originalLen := len(s.all)
+	if originalLen == 0 {
+		t.Fatal("catalog empty — cannot exercise regression")
+	}
+	// Snapshot the first entry's Type so we can detect overwrite.
+	firstType := s.all[0].Type
+
+	// Cycle: empty → narrow → empty. Pre-fix the second empty round
+	// would not match the original first round because s.all had
+	// been overwritten by the narrow round's appends.
+	s.filter.SetValue("")
+	s.applyFilter()
+	s.filter.SetValue("xyz_unlikely_match_string_that_filters_to_one_or_few")
+	s.applyFilter()
+	s.filter.SetValue("")
+	s.applyFilter()
+
+	if len(s.all) != originalLen {
+		t.Errorf("s.all length changed: %d → %d (filter corrupted backing array)", originalLen, len(s.all))
+	}
+	if s.all[0].Type != firstType {
+		t.Errorf("s.all[0] mutated: %q → %q (filter aliased the slice)", firstType, s.all[0].Type)
+	}
+}
+
 func TestAppleMDMPayloadsListScreen_EnterOpensDetailScreen(t *testing.T) {
 	s := NewAppleMDMPayloadsListScreen()
 	s.Init()

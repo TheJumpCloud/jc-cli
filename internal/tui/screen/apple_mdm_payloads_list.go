@@ -72,12 +72,17 @@ func (s *AppleMDMPayloadsListScreen) loadCatalog() {
 
 func (s *AppleMDMPayloadsListScreen) applyFilter() {
 	q := strings.ToLower(strings.TrimSpace(s.filter.Value()))
+	// Always allocate a fresh slice for s.filtered. Pre-fix the
+	// empty-query branch aliased s.filtered to s.all, and the next
+	// non-empty filter's `s.filtered[:0]` + append silently
+	// overwrote s.all's contents — the operator saw a corrupt
+	// catalog after the first filter cycle (Bugbot PR #52 review).
 	if q == "" {
-		s.filtered = s.all
+		s.filtered = append([]apple_mdm.Payload(nil), s.all...)
 		s.clampCursor()
 		return
 	}
-	s.filtered = s.filtered[:0]
+	s.filtered = nil
 	for _, p := range s.all {
 		hay := strings.ToLower(p.Type + " " + p.Title + " " + p.Description)
 		if strings.Contains(hay, q) {

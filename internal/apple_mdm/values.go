@@ -207,6 +207,12 @@ func coerceOne(k Key, raw any) (any, error) {
 		switch x := raw.(type) {
 		case []any:
 			return x, nil
+		case nil:
+			// A YAML key with no value (`Foo:`) unmarshals to nil.
+			// For array-typed keys this happens when the operator
+			// uncomments the parent header but supplies no elements;
+			// treat as an empty array rather than rejecting outright.
+			return []any{}, nil
 		case string:
 			// Allow a JSON-encoded array as a fallback so the user
 			// can pass arrays via --values key='["a","b"]' if they
@@ -219,6 +225,15 @@ func coerceOne(k Key, raw any) (any, error) {
 		switch x := raw.(type) {
 		case map[string]any:
 			return x, nil
+		case nil:
+			// YAML mapping with no children (`Cfg:` followed only by
+			// comments) parses as nil. This is the common case after
+			// the TUI's editor flow: a required dict with only
+			// optional subkeys where the operator uncomments only the
+			// parent header. Pre-fix the dictionary check rejected
+			// nil and the required-presence check fired with a
+			// confusing error (Bugbot PR #52 re-review).
+			return map[string]any{}, nil
 		case string:
 			return parseJSONScalar(x, "dictionary")
 		}

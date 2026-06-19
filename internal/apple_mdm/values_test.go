@@ -130,6 +130,44 @@ func TestCoerceAndValidate_UnknownKeyErrors(t *testing.T) {
 	}
 }
 
+func TestCoerceAndValidate_NilDictionaryBecomesEmptyMap(t *testing.T) {
+	// Regression guard for Bugbot PR #52 re-review. The TUI editor's
+	// YAML skeleton emits `Cfg:` (no inline value) with subkeys
+	// commented out; YAML parsers unmarshal that header to nil rather
+	// than to an empty map. The dictionary coercer must accept nil
+	// and produce an empty map so the required-presence check sees
+	// the key as present.
+	p := Payload{Type: "x", Keys: []Key{{Name: "Cfg", Type: "dictionary", Presence: "required"}}}
+	got, err := CoerceAndValidate(p, map[string]any{"Cfg": nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfg, ok := got["Cfg"].(map[string]any)
+	if !ok {
+		t.Fatalf("Cfg = %T, want map[string]any", got["Cfg"])
+	}
+	if len(cfg) != 0 {
+		t.Errorf("expected empty map, got %v", cfg)
+	}
+}
+
+func TestCoerceAndValidate_NilArrayBecomesEmptySlice(t *testing.T) {
+	// Same Bugbot finding shape for arrays: `EAPTypes:` with no
+	// children unmarshals to nil; treat as empty array.
+	p := Payload{Type: "x", Keys: []Key{{Name: "EAPTypes", Type: "array"}}}
+	got, err := CoerceAndValidate(p, map[string]any{"EAPTypes": nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	arr, ok := got["EAPTypes"].([]any)
+	if !ok {
+		t.Fatalf("EAPTypes = %T, want []any", got["EAPTypes"])
+	}
+	if len(arr) != 0 {
+		t.Errorf("expected empty array, got %v", arr)
+	}
+}
+
 func TestMergeValues_CLIWinsOverFile(t *testing.T) {
 	file := map[string]any{"a": "from-file", "b": "file-only"}
 	cli := map[string]string{"a": "from-cli", "c": "cli-only"}
