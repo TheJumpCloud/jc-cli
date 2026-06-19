@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -39,7 +40,170 @@ it directly to JumpCloud (PR3).`,
 	}
 	cmd.AddCommand(newAppleMDMPayloadsListCmd())
 	cmd.AddCommand(newAppleMDMPayloadsShowCmd())
+	cmd.AddCommand(newAppleMDMPayloadsTemplateCmd())
 	return cmd
+}
+
+func newAppleMDMPayloadsTemplateCmd() *cobra.Command {
+	var (
+		valuePairs   []string
+		valuesFile   string
+		outputFile   string
+		displayName  string
+		identifier   string
+		organization string
+		removeLock   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "template <payloadtype-or-id>",
+		Short: "Emit a .mobileconfig from one Apple MDM payload schema",
+		Long: `Emit a valid Apple Configuration Profile (.mobileconfig XML) containing
+a single payload of the named type, with user-supplied values coerced
+and validated against Apple's schema.
+
+This is the offline shape: parse Apple's schema → emit plist → write to
+file or stdout. Pair with the upcoming ` + "`payloads create-policy`" + ` (PR3)
+to round-trip directly into a JumpCloud Custom MDM Configuration
+Profile policy.
+
+Value supply:
+
+  --values key=value (repeatable) for scalar keys; coercion infers the
+  right type from the schema (boolean→true/false, integer→int, etc.).
+
+  --values-file path.json for the full structured shape, including
+  nested dicts and arrays. The file is a flat JSON object keyed by
+  Apple payload key names. Useful for any non-trivial profile.
+
+Both can be combined — command-line --values overrides the file on
+collision (more specific by convention).
+
+The emitted profile carries auto-generated UUIDs and a 'jc.<uuid>'
+identifier by default so consecutive emissions never collide with each
+other on a device.`,
+		Example: `  # Minimal WiFi profile from CLI scalars
+  jc apple-mdm payloads template com.apple.wifi.managed \
+      --values SSID_STR=CorpWiFi \
+      --values AutoJoin=true \
+      --values EncryptionType=WPA2 \
+      --values HIDDEN_NETWORK=false \
+      --name "Corp WiFi"
+
+  # Complex profile from JSON file
+  cat <<EOF > wifi.json
+  { "SSID_STR": "CorpWiFi", "EncryptionType": "WPA3", "AutoJoin": true,
+    "ProxyType": "Auto", "QoSMarkingPolicy": { "QoSMarkingEnabled": true } }
+  EOF
+  jc apple-mdm payloads template com.apple.wifi.managed \
+      --values-file wifi.json -o corp-wifi.mobileconfig`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cat, err := apple_mdm.Default()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			payload, err := resolvePayload(cat, args[0])
+			if err != nil {
+				return err
+			}
+
+			fileValues := map[string]any{}
+			if valuesFile != "" {
+				b, err := os.ReadFile(valuesFile)
+				if err != nil {
+					return fmt.Errorf("reading --values-file: %w", err)
+				}
+				if err := json.Unmarshal(b, &fileValues); err != nil {
+					return fmt.Errorf("parsing --values-file: %w", err)
+				}
+			}
+
+			pairValues, err := apple_mdm.ParseValuePairs(valuePairs)
+			if err != nil {
+				return err
+			}
+			merged := apple_mdm.MergeValues(fileValues, pairValues)
+
+			typed, err := apple_mdm.CoerceAndValidate(payload, merged)
+			if err != nil {
+				return err
+			}
+
+			var w io.Writer = cmd.OutOrStdout()
+			var closer io.Closer
+			if outputFile != "" {
+				f, err := os.Create(outputFile)
+				if err != nil {
+					return fmt.Errorf("creating output file: %w", err)
+				}
+				w = f
+				closer = f
+			}
+
+			err = apple_mdm.EmitMobileconfig(w,
+				apple_mdm.EnvelopeOpts{
+					DisplayName:       displayName,
+					Identifier:        identifier,
+					Organization:      organization,
+					RemovalDisallowed: removeLock,
+				},
+				[]apple_mdm.PayloadInstance{{
+					Schema:      payload,
+					Values:      typed,
+					DisplayName: displayName,
+				}},
+			)
+			if closer != nil {
+				closer.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("emitting mobileconfig: %w", err)
+			}
+			if outputFile != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s\n", outputFile)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringSliceVar(&valuePairs, "values", nil,
+		"Set a scalar key (key=value, repeatable). Use --values-file for nested structures.")
+	cmd.Flags().StringVar(&valuesFile, "values-file", "",
+		"Path to a JSON file mapping Apple payload key names to values (supports nested dicts/arrays)")
+	cmd.Flags().StringVar(&outputFile, "output-file", "",
+		"Write the .mobileconfig to this path (default: stdout)")
+	cmd.Flags().StringVar(&displayName, "name", "",
+		"Profile display name (shown in System Settings → Profiles and used as the policy name in PR3)")
+	cmd.Flags().StringVar(&identifier, "identifier", "",
+		"Profile reverse-DNS identifier (default: auto-generated jc.<uuid>)")
+	cmd.Flags().StringVar(&organization, "organization", "",
+		"Profile organization name (optional metadata)")
+	cmd.Flags().BoolVar(&removeLock, "removal-disallowed", false,
+		"Prevent end users from removing the profile via System Settings (requires MDM unenroll)")
+
+	return cmd
+}
+
+// resolvePayload is shared by `show` and `template` — resolve by ID
+// first, then PayloadType; report all variants on ambiguity. Pulled
+// up so both subcommands stay in lockstep on lookup semantics.
+func resolvePayload(cat *apple_mdm.Catalog, ref string) (apple_mdm.Payload, error) {
+	if p, ok := cat.ByID(ref); ok {
+		return p, nil
+	}
+	variants := cat.VariantsOf(ref)
+	switch len(variants) {
+	case 0:
+		return apple_mdm.Payload{}, fmt.Errorf(
+			"no payload with ID or payloadtype %q in catalog (release %s)", ref, cat.Release)
+	case 1:
+		return variants[0], nil
+	default:
+		return apple_mdm.Payload{}, fmt.Errorf(
+			"payloadtype %q has %d variants — disambiguate with the catalog ID:\n  %s",
+			ref, len(variants), formatVariantList(variants))
+	}
 }
 
 // payloadsListRow is the per-row shape used for both human and JSON

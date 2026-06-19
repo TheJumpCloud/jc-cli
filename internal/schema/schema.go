@@ -1005,14 +1005,20 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc apple-mdm",
-				Description: "Manage Apple MDM configurations + browse Apple's MDM payload schemas",
-				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), AND browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `jc apple-mdm payloads list/show` work fully offline. Roadmap: `payloads template` will emit a starter mobileconfig from a chosen schema, and `payloads create-policy` will round-trip it directly to JumpCloud as a Custom MDM Configuration Profile policy. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults).",
+				Description: "Manage Apple MDM configurations + browse Apple's MDM payload schemas + emit mobileconfigs",
+				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand, and emit valid `.mobileconfig` files for any of the 125 vendored payloads via `payloads template`. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `payloads list/show/template` all work fully offline. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), then writes a `plutil -lint`-clean plist. Roadmap: `payloads create-policy` will round-trip directly to JumpCloud as a Custom MDM Configuration Profile policy (PR3). The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults).",
 				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices", "payloads"},
 				Flags: []FlagEntry{
-					{Name: "name", Type: "string", Description: "MDM configuration name (create/update)"},
+					{Name: "name", Type: "string", Description: "MDM configuration name (create/update; also profile display name in payloads template)"},
 					{Name: "org-name", Type: "string", Description: "Organization name (create/update)"},
 					{Name: "os", Type: "string", Description: "Filter payloads catalog by Apple platform (payloads list/show)"},
 					{Name: "search", Type: "string", Description: "Case-insensitive substring filter against payloadtype/title/description (payloads list)"},
+					{Name: "values", Type: "string[]", Description: "Set scalar payload key (key=value, repeatable; payloads template)"},
+					{Name: "values-file", Type: "string", Description: "JSON file mapping payload key names to values for nested shapes (payloads template)"},
+					{Name: "output-file", Type: "string", Description: "Write emitted .mobileconfig to this path (payloads template)"},
+					{Name: "identifier", Type: "string", Description: "Profile reverse-DNS identifier (payloads template; default auto-generated jc.<uuid>)"},
+					{Name: "organization", Type: "string", Description: "Profile organization metadata (payloads template)"},
+					{Name: "removal-disallowed", Type: "bool", Description: "Prevent end users from removing the profile via System Settings (payloads template)"},
 				},
 			},
 			{
