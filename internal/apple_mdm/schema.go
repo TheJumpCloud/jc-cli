@@ -137,8 +137,12 @@ type Key struct {
 	// numerically bounded.
 	Range *Range `json:"range,omitempty"`
 	// ValueType is a semantic refinement on Type (e.g. "email", "url",
-	// "hostname", "regex", "uuid"). Empty for keys without a
-	// semantic refinement.
+	// "hostname", "regex", "uuid"). Apple's meta-schema names this
+	// field `subtype` — we keep the Go name ValueType (more
+	// self-explanatory in the typed API) but the YAML tag must match
+	// the source. Pre-fix the rawKey tag was `valuetype:` and silently
+	// dropped every semantic refinement in the vendored schemas
+	// (Bugbot PR #49 review).
 	ValueType string `json:"value_type,omitempty"`
 	// SupportedOS is the per-key support matrix. Keys inherit from the
 	// parent Payload.SupportedOS; explicit entries here OVERRIDE the
@@ -201,7 +205,7 @@ type rawKey struct {
 	Content     string      `yaml:"content"`
 	RangeList   []any       `yaml:"rangelist"`
 	Range       *Range      `yaml:"range"`
-	ValueType   string      `yaml:"valuetype"`
+	ValueType   string      `yaml:"subtype"` // Apple's meta-schema field name
 	SupportedOS SupportedOS `yaml:"supportedOS"`
 	Subkeys     []rawKey    `yaml:"subkeys"`
 }
@@ -244,7 +248,7 @@ func normalizeKey(rk rawKey) Key {
 		Content:     rk.Content,
 		RangeList:   rk.RangeList,
 		Range:       rk.Range,
-		ValueType:   rk.ValueType,
+		ValueType:   unwrapType(rk.ValueType), // subtype shares the <wrapped> convention
 		SupportedOS: rk.SupportedOS,
 	}
 	if len(rk.Subkeys) > 0 {
