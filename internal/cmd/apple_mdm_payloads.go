@@ -114,6 +114,18 @@ shape) without making the POST.`,
 			if err != nil {
 				return err
 			}
+			// Validate that the chosen payload actually supports the
+			// chosen Apple platform. Pre-fix (Bugbot PR #51 re-review)
+			// the code only translated the platform name to a JC
+			// template family, never consulting the schema — so an
+			// iOS-only payload could be POSTed as a macOS Custom MDM
+			// policy and JumpCloud would happily accept what the
+			// device would later silently ignore.
+			if sup, ok := payload.SupportedOS[osFamily]; !ok || !sup.Available() {
+				return fmt.Errorf(
+					"payload %q does not declare support for %s (run `jc apple-mdm payloads show %s` to see which Apple platforms are supported)",
+					payload.Type, osFamily, payload.Type)
+			}
 
 			fileValues := map[string]any{}
 			if valuesFile != "" {
