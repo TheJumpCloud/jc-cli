@@ -397,8 +397,13 @@ func (s *AppleMDMPayloadsFormScreen) submit() (tea.Model, tea.Cmd) {
 		s.fields[i].err = ""
 	}
 
-	// Per-field local validation first so we can flag the broken
-	// rows without involving CoerceAndValidate.
+	// Run BOTH validation passes regardless of which one finds
+	// problems first. Pre-fix (Bugbot PR #53 re-review) the numeric
+	// pass returned early on any range error, so CoerceAndValidate
+	// never ran — the operator only saw the numeric problem while
+	// other invalid values silently blocked submission. The form
+	// path is fast enough that surfacing all errors at once is
+	// strictly a UX win.
 	hasFieldErr := false
 	for i := range s.fields {
 		f := &s.fields[i]
@@ -409,23 +414,24 @@ func (s *AppleMDMPayloadsFormScreen) submit() (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	if hasFieldErr {
-		return s, nil
-	}
 
 	values := s.collectValues()
 	typed, err := apple_mdm.CoerceAndValidate(s.payload, values)
 	if err != nil {
-		// CoerceAndValidate reports aggregated errors; surface the
-		// first one against any matching field for now. v2 of this
-		// screen should split the error string and attach lines to
-		// specific fields.
 		msg := err.Error()
 		for i := range s.fields {
+			// Don't overwrite a more specific numeric error with the
+			// catch-all schema error.
+			if s.fields[i].err != "" {
+				continue
+			}
 			if strings.Contains(msg, "key "+strconv.Quote(s.fields[i].key.Name)) {
 				s.fields[i].err = "Invalid value (see schema)"
 			}
 		}
+		hasFieldErr = true
+	}
+	if hasFieldErr {
 		return s, nil
 	}
 
