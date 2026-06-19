@@ -36,6 +36,14 @@ type AppleMDMPayloadsFormScreen struct {
 
 	stage formStage
 
+	// mode selects between create (POST /policies) and edit
+	// (PUT /policies/{editPolicyID}). create is the default for the
+	// detail-screen `n` flow; edit is set by
+	// NewAppleMDMPayloadsFormScreenForEdit when an existing policy
+	// is opened from the custom-MDM policy list screen.
+	mode          formMode
+	editPolicyID  string
+
 	mobileconfig []byte
 	preview      viewport.Model
 	previewReady bool
@@ -47,6 +55,16 @@ type AppleMDMPayloadsFormScreen struct {
 
 	width, height int
 }
+
+// formMode toggles the form between authoring a new policy and
+// editing an existing one. Affects only the submit path (POST vs PUT)
+// and the rendered "Creating…/Updating…" copy.
+type formMode int
+
+const (
+	formModeCreate formMode = iota
+	formModeEdit
+)
 
 type formStage int
 
@@ -571,6 +589,8 @@ func (s *AppleMDMPayloadsFormScreen) startCreate() (tea.Model, tea.Cmd) {
 func (s *AppleMDMPayloadsFormScreen) createCmd() tea.Cmd {
 	mobileconfig := s.mobileconfig
 	policyName := s.policyName
+	mode := s.mode
+	editID := s.editPolicyID
 	return func() tea.Msg {
 		client, err := newV2ClientForAuthoring()
 		if err != nil {
@@ -582,13 +602,68 @@ func (s *AppleMDMPayloadsFormScreen) createCmd() tea.Cmd {
 			return applePolicyAuthorCreateMsg{err: fmt.Errorf("resolving template: %w", err)}
 		}
 		body := apple_mdm.BuildCustomMDMPolicyBody(policyName, tmpl, mobileconfig, true)
-		raw, err := client.Create(ctx, "/policies", body)
+		var raw []byte
+		if mode == formModeEdit {
+			// PUT /policies/{id} with the same body shape JumpCloud
+			// produces server-side. Empirically the v2 client's
+			// Update method handles PUT and returns the updated
+			// resource JSON, matching the create path.
+			raw, err = client.Update(ctx, "/policies/"+editID, body)
+		} else {
+			raw, err = client.Create(ctx, "/policies", body)
+		}
 		if err != nil {
 			return applePolicyAuthorCreateMsg{err: err}
 		}
 		id, name := extractPolicyIDName(raw)
 		return applePolicyAuthorCreateMsg{policyID: id, policyName: name}
 	}
+}
+
+// NewAppleMDMPayloadsFormScreenForEdit returns a form screen
+// pre-populated from a DecodedPolicy. On submit the screen runs
+// PUT /policies/{policyID} instead of POST /policies — the same form
+// UX, just routed to the update endpoint.
+//
+// Pre-population walks Schema.Keys and looks up each field's current
+// value in decoded.Values. Types are coerced through fmt.Sprintf for
+// numeric fields because howett.net/plist decodes integers as uint64
+// and the form holds them as textinput strings.
+func NewAppleMDMPayloadsFormScreenForEdit(decoded apple_mdm.DecodedPolicy) *AppleMDMPayloadsFormScreen {
+	s := NewAppleMDMPayloadsFormScreen(decoded.Schema)
+	s.mode = formModeEdit
+	s.editPolicyID = decoded.PolicyID
+	s.nameInput.SetValue(decoded.PolicyName)
+	s.policyName = decoded.PolicyName
+
+	for i := range s.fields {
+		f := &s.fields[i]
+		v, ok := decoded.Values[f.key.Name]
+		if !ok {
+			continue
+		}
+		switch f.kind {
+		case mdmFieldKindString:
+			if str, ok := v.(string); ok {
+				f.text.SetValue(str)
+			}
+		case mdmFieldKindBool:
+			if b, ok := v.(bool); ok {
+				f.boolValue = b
+			}
+		case mdmFieldKindInteger, mdmFieldKindReal:
+			f.text.SetValue(fmt.Sprintf("%v", v))
+		case mdmFieldKindRangeList:
+			target := fmt.Sprintf("%v", v)
+			for j, opt := range f.options {
+				if opt == target {
+					f.selectedIdx = j
+					break
+				}
+			}
+		}
+	}
+	return s
 }
 
 func (s *AppleMDMPayloadsFormScreen) handleCreateFinished(msg applePolicyAuthorCreateMsg) (tea.Model, tea.Cmd) {
@@ -615,10 +690,18 @@ func (s *AppleMDMPayloadsFormScreen) View() string {
 				len(s.mobileconfig)))
 		return s.preview.View() + "\n" + hint
 	case mdmFormStageCreating:
-		return fmt.Sprintf("%s Creating JumpCloud policy %q…", s.spinner.View(), s.policyName)
+		verb := "Creating"
+		if s.mode == formModeEdit {
+			verb = "Updating"
+		}
+		return fmt.Sprintf("%s %s JumpCloud policy %q…", s.spinner.View(), verb, s.policyName)
 	case mdmFormStageSuccess:
 		var b strings.Builder
-		fmt.Fprintln(&b, style.Success.Render("Policy created."))
+		verb := "Policy created."
+		if s.mode == formModeEdit {
+			verb = "Policy updated."
+		}
+		fmt.Fprintln(&b, style.Success.Render(verb))
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "  ID:   "+s.policyID)
 		fmt.Fprintln(&b, "  Name: "+s.policyName)

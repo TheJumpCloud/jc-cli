@@ -69,8 +69,9 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// "groups" splits into 2 entries (+1), gsuite/office365 fold into cloud-directories (-2+1),
 	// "recipes" adds a virtual workflow entry (+1),
 	// "apple-mdm-payloads" adds a virtual device-management entry (+1),
+	// "apple-mdm-custom-policies" adds a second virtual device-management entry (+1),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -118,7 +119,7 @@ func TestRegistryByKey(t *testing.T) {
 	// "recipes" adds a virtual workflow entry (+1),
 	// "apple-mdm-payloads" adds a virtual device-management entry (+1),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}

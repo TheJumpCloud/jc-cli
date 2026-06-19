@@ -537,6 +537,17 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryDeviceMgmt,
 	})
 
+	// Apple MDM custom MDM policies: the edit counterpart to
+	// apple-mdm-payloads. Lists existing JumpCloud Custom MDM
+	// Configuration Profile policies; drilling in fetches + decodes
+	// the policy and either opens the form pre-populated (single-
+	// payload) or surfaces the multi-payload guard.
+	entries = append(entries, ResourceEntry{
+		Key:         "apple-mdm-custom-policies",
+		DisplayName: "Apple MDM custom MDM policies",
+		Category:    CategoryDeviceMgmt,
+	})
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 
