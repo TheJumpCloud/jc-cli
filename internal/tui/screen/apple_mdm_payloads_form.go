@@ -52,6 +52,13 @@ type AppleMDMPayloadsFormScreen struct {
 	editRedispatch        bool
 	editRemovalDisallowed bool
 	editOSFamily          string
+	// editOriginalValues snapshots the decoded inner-payload dict so
+	// keys the form doesn't manage (dictionary, array, date, data —
+	// the v1 mdmFieldKindUnsupported set) survive a save round-trip.
+	// Pre-fix (Bugbot PR #54 re-review) submit() only carried scalar
+	// form fields into the rebuilt mobileconfig; nested settings like
+	// wifi's EAPClientConfiguration vanished on edit.
+	editOriginalValues map[string]any
 
 	mobileconfig []byte
 	preview      viewport.Model
@@ -443,6 +450,22 @@ func (s *AppleMDMPayloadsFormScreen) submit() (tea.Model, tea.Cmd) {
 	}
 
 	values := s.collectValues()
+	// In edit mode, merge back any unsupported-type keys from the
+	// original decoded policy so they survive the round-trip. The
+	// form doesn't render dictionary / array / date / data fields,
+	// but the policy carried them; emitting without them would strip
+	// nested settings the operator never asked to remove (Bugbot
+	// PR #54 re-review).
+	if s.mode == formModeEdit {
+		for _, f := range s.fields {
+			if f.kind != mdmFieldKindUnsupported {
+				continue
+			}
+			if v, ok := s.editOriginalValues[f.key.Name]; ok {
+				values[f.key.Name] = v
+			}
+		}
+	}
 	typed, err := apple_mdm.CoerceAndValidate(s.payload, values)
 	if err != nil {
 		msg := err.Error()
@@ -660,6 +683,7 @@ func NewAppleMDMPayloadsFormScreenForEdit(decoded apple_mdm.DecodedPolicy) *Appl
 	s.editPolicyID = decoded.PolicyID
 	s.editRedispatch = decoded.Redispatch
 	s.editRemovalDisallowed = decoded.RemovalDisallowed
+	s.editOriginalValues = decoded.Values
 	s.editOSFamily = apple_mdm.OSFamilyFromTemplateName(decoded.TemplateName)
 	if s.editOSFamily == "" {
 		// Fall back to darwin only if the policy's template was

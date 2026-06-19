@@ -137,6 +137,56 @@ func TestNewAppleMDMPayloadsFormScreenForEdit_UnparseableTemplateFallsBackToDarw
 	}
 }
 
+func TestFormScreen_EditPreservesUnsupportedKeysFromOriginal(t *testing.T) {
+	// Bugbot PR #54 re-review: edit save only emitted scalar form
+	// fields; nested settings (dict, array, date, data) decoded from
+	// the original policy were silently dropped. A wifi edit would
+	// strip EAPClientConfiguration; an MCX edit would strip every
+	// bundle-keyed sub-preference.
+	//
+	// Verify that submitting an edit re-emits a mobileconfig that
+	// still contains the original nested values for fields the form
+	// can't render.
+	p := apple_mdm.Payload{
+		Type: "com.example.test",
+		Keys: []apple_mdm.Key{
+			{Name: "Flag", Type: "boolean", Default: false},
+			{Name: "NestedCfg", Type: "dictionary"}, // unsupported in form
+		},
+	}
+	decoded := apple_mdm.DecodedPolicy{
+		PolicyID:     "abc",
+		PolicyName:   "test",
+		TemplateName: "custom_mdm_profile_darwin",
+		Schema:       p,
+		Values: map[string]any{
+			"Flag":      true,
+			"NestedCfg": map[string]any{"InnerKey": "preserved"},
+		},
+	}
+	s := NewAppleMDMPayloadsFormScreenForEdit(decoded)
+	if s.editOriginalValues == nil {
+		t.Fatal("editOriginalValues should snapshot decoded.Values")
+	}
+	// Confirm the snapshot has the nested value.
+	if nested, ok := s.editOriginalValues["NestedCfg"].(map[string]any); !ok || nested["InnerKey"] != "preserved" {
+		t.Errorf("nested value not snapshotted: %v", s.editOriginalValues)
+	}
+
+	// Submit — should NOT drop NestedCfg.
+	_, _ = s.submit()
+	if s.stage != mdmFormStagePreview {
+		t.Fatalf("stage = %d, want preview after submit", s.stage)
+	}
+	// The emitted mobileconfig should contain the InnerKey marker.
+	if !strings.Contains(string(s.mobileconfig), "InnerKey") {
+		t.Errorf("mobileconfig dropped the unsupported NestedCfg key:\n%s", s.mobileconfig)
+	}
+	if !strings.Contains(string(s.mobileconfig), "preserved") {
+		t.Errorf("mobileconfig dropped the inner value:\n%s", s.mobileconfig)
+	}
+}
+
 func TestAppleMDMPoliciesListScreen_DrillingGuardsDoubleEnter(t *testing.T) {
 	// Bugbot PR #54 review: openSelected didn't check s.drilling, so
 	// repeated Enter taps queued multiple GET+decode goroutines that

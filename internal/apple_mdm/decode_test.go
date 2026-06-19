@@ -192,6 +192,59 @@ func TestDecodeCustomMDMPolicy_MissingPayloadValuesEntry(t *testing.T) {
 	}
 }
 
+func TestPickBestSchemaVariant_PrefersKeyOverlap(t *testing.T) {
+	// Bugbot PR #54 re-review: com.apple.MCX has 6 catalog variants
+	// (EnergySaver, FileVault2, TimeServer, WiFi, Accounts,
+	// Mobility) all sharing one PayloadType. Pre-fix the decoder
+	// used ByType (first-wins); a policy that targeted MCX(WiFi)
+	// could decode against the EnergySaver variant's schema, leading
+	// to wrong fields and dropped keys on save. The picker now uses
+	// inner-values' keys to disambiguate.
+	wifiVariant := Payload{
+		ID:   "com.apple.MCX(WiFi)",
+		Type: "com.apple.MCX",
+		Keys: []Key{
+			{Name: "WiFiPreferences", Type: "dictionary"},
+		},
+	}
+	energyVariant := Payload{
+		ID:   "com.apple.MCX(EnergySaver)",
+		Type: "com.apple.MCX",
+		Keys: []Key{
+			{Name: "com.apple.EnergySaver.desktop.ACPower", Type: "dictionary"},
+		},
+	}
+	variants := []Payload{energyVariant, wifiVariant}
+
+	// Inner values that look like a WiFi policy.
+	wifiValues := map[string]any{
+		"WiFiPreferences": map[string]any{"SSID": "Corp"},
+	}
+	got := pickBestSchemaVariant(variants, wifiValues)
+	if got.ID != "com.apple.MCX(WiFi)" {
+		t.Errorf("got %q, want com.apple.MCX(WiFi) (key-overlap should pick wifi variant)", got.ID)
+	}
+
+	// Inner values that look like an EnergySaver policy.
+	energyValues := map[string]any{
+		"com.apple.EnergySaver.desktop.ACPower": map[string]any{},
+	}
+	got = pickBestSchemaVariant(variants, energyValues)
+	if got.ID != "com.apple.MCX(EnergySaver)" {
+		t.Errorf("got %q, want com.apple.MCX(EnergySaver)", got.ID)
+	}
+}
+
+func TestPickBestSchemaVariant_HandlesEmptyAndSingle(t *testing.T) {
+	if got := pickBestSchemaVariant(nil, nil); got.Type != "" {
+		t.Error("empty variants should return zero Payload")
+	}
+	single := Payload{ID: "only", Type: "x"}
+	if got := pickBestSchemaVariant([]Payload{single}, nil); got.ID != "only" {
+		t.Error("single-variant slice should return the only entry")
+	}
+}
+
 func TestDecodeCustomMDMPolicy_HandlesOlderTemplateWithoutRedispatch(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte(firewallPlist))
 	rawJSON := `{

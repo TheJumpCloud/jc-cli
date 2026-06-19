@@ -157,12 +157,51 @@ func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
 	// Catalog lookup. Tolerant of empty PayloadType (the field can be
 	// absent on malformed but parseable plists) and of catalog misses
 	// (vendored release lags behind Apple's latest).
+	//
+	// For ambiguous PayloadTypes (com.apple.MCX is the canonical
+	// case — 6 catalog variants share that type for EnergySaver /
+	// FileVault2 / TimeServer / WiFi / Accounts / Mobility), pick
+	// the variant whose Keys best match the policy's actual inner
+	// values. Pre-fix (Bugbot PR #54 re-review) we used ByType which
+	// returns first-wins; an EnergySaver policy could decode against
+	// the WiFi variant's schema, leading to wrong field display in
+	// the form and dropped keys on save.
 	if cat, err := Default(); err == nil && d.PayloadType != "" {
-		if schema, ok := cat.ByType(d.PayloadType); ok {
-			d.Schema = schema
-		}
+		variants := cat.VariantsOf(d.PayloadType)
+		d.Schema = pickBestSchemaVariant(variants, d.Values)
 	}
 	return d, nil
+}
+
+// pickBestSchemaVariant returns the catalog variant whose Keys have
+// the largest name overlap with the policy's actual values. For
+// payload types with only one variant the choice is trivial; for
+// ambiguous ones (com.apple.MCX) the operator's edited keys are the
+// strongest hint we have at the right schema.
+func pickBestSchemaVariant(variants []Payload, values map[string]any) Payload {
+	switch len(variants) {
+	case 0:
+		return Payload{}
+	case 1:
+		return variants[0]
+	}
+	bestIdx, bestScore := 0, -1
+	for i, v := range variants {
+		keyNames := make(map[string]struct{}, len(v.Keys))
+		for _, k := range v.Keys {
+			keyNames[k.Name] = struct{}{}
+		}
+		score := 0
+		for k := range values {
+			if _, ok := keyNames[k]; ok {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore, bestIdx = score, i
+		}
+	}
+	return variants[bestIdx]
 }
 
 // parsePlistEnvelope unmarshals the XML plist into the loose
