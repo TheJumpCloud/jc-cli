@@ -953,7 +953,8 @@
     },
     {
       "path": "jc apple-mdm",
-      "description": "Manage Apple MDM configurations",
+      "description": "Manage Apple MDM configurations + browse Apple's MDM payload schemas",
+      "long": "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), AND browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `jc apple-mdm payloads list/show` work fully offline. Roadmap: `payloads template` will emit a starter mobileconfig from a chosen schema, and `payloads create-policy` will round-trip it directly to JumpCloud as a Custom MDM Configuration Profile policy. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults).",
       "category": "Devices \u0026 MDM",
       "subcommands": [
         "list",
@@ -962,7 +963,8 @@
         "update",
         "delete",
         "enrollment-profiles",
-        "devices"
+        "devices",
+        "payloads"
       ],
       "flags": [
         {
@@ -974,6 +976,16 @@
           "name": "org-name",
           "type": "string",
           "description": "Organization name (create/update)"
+        },
+        {
+          "name": "os",
+          "type": "string",
+          "description": "Filter payloads catalog by Apple platform (payloads list/show)"
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "description": "Case-insensitive substring filter against payloadtype/title/description (payloads list)"
         }
       ]
     },

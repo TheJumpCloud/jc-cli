@@ -528,6 +528,16 @@ jc audit --exit-code --threshold high     # CI gate: non-zero on high+ findings
 
 A composable cross-resource health check registry. Each finding carries a severity (`info` → `critical`), a `resource_ref` like `admin:alice@acme.com`, and a `remediation_hint` that names the exact `jc` command to fix it. Categories: `security`, `compliance`, `hygiene`, `identity`. Backs the `jc-security-audit` and `jc-compliance-check` skills. Full check reference: [docs/AUDIT.md](docs/AUDIT.md).
 
+### Apple MDM payloads catalog
+
+```bash
+jc apple-mdm payloads list                          # all 125 Apple Configuration Profile schemas
+jc apple-mdm payloads list --os macOS --search wifi # filter
+jc apple-mdm payloads show com.apple.wifi.managed   # full key reference for one payload
+```
+
+A browsable catalog of Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time — fully offline. Roadmap: `payloads template` will emit a starter `.mobileconfig` from a chosen schema, and `payloads create-policy` will round-trip it directly to JumpCloud as a Custom MDM Configuration Profile policy. See [KLA-449](https://linear.app/klaassenconsulting/issue/KLA-449) for the multi-PR plan.
+
 ### Interactive TUI
 
 ```bash

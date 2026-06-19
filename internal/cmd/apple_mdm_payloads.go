@@ -1,0 +1,410 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/spf13/cobra"
+
+	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/klaassen-consulting/jc/internal/output"
+)
+
+// applePlatforms is the curated list of Apple platform names the CLI
+// surfaces (must match the keys Apple uses in `supportedOS:`).
+// Kept canonical so `--os` validation and list-table headers stay in
+// sync — adding a future platform (e.g. xrOS-2) means adding it here.
+var applePlatforms = []string{"iOS", "macOS", "tvOS", "visionOS", "watchOS"}
+
+func newAppleMDMPayloadsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "payloads",
+		Short: "Browse Apple MDM Configuration Profile payload schemas",
+		Long: `Browse the vendored catalog of Apple Configuration Profile schemas
+(from github.com/apple/device-management). Use these schemas to discover
+which keys an Apple payload supports before turning it into a JumpCloud
+Custom MDM Configuration Profile policy.
+
+This subcommand tree is fully offline — the schemas are embedded in the
+binary at build time. Refresh on Apple's release cadence via the bumped
+vendor directory (` + "see internal/apple_mdm/schemas/<tag>/NOTICE.md" + `).
+
+Roadmap: ` + "`payloads template`" + ` will emit a starter mobileconfig from
+a chosen schema (PR2), and ` + "`payloads create-policy`" + ` will round-trip
+it directly to JumpCloud (PR3).`,
+	}
+	cmd.AddCommand(newAppleMDMPayloadsListCmd())
+	cmd.AddCommand(newAppleMDMPayloadsShowCmd())
+	return cmd
+}
+
+// payloadsListRow is the per-row shape used for both human and JSON
+// output of `payloads list`. Trimmed-down view of Payload so list
+// output isn't a wall of nested data.
+type payloadsListRow struct {
+	Type        string   `json:"type"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	SupportedOS []string `json:"supported_os"`
+}
+
+func newAppleMDMPayloadsListCmd() *cobra.Command {
+	var osFilter, searchFilter string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List Apple MDM payload schemas in the catalog",
+		Long: `List every Apple Configuration Profile schema in the embedded
+catalog. Filter by platform with --os (e.g. ` + "`--os macOS`" + `) and
+narrow by name with --search (case-insensitive substring against
+payloadtype, title, and description).`,
+		Example: `  jc apple-mdm payloads list
+  jc apple-mdm payloads list --os macOS
+  jc apple-mdm payloads list --os iOS --search wifi
+  jc apple-mdm payloads list --output json | jq '.[] | select(.supported_os | index("visionOS"))'`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if osFilter != "" && !knownPlatform(osFilter) {
+				return fmt.Errorf("unknown --os %q: want one of %s", osFilter, strings.Join(applePlatforms, ", "))
+			}
+			cat, err := apple_mdm.Default()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			matches := cat.Filter(apple_mdm.FilterOpts{OS: osFilter, Search: searchFilter})
+
+			rows := make([]payloadsListRow, 0, len(matches))
+			for _, p := range matches {
+				rows = append(rows, payloadsListRow{
+					Type:        p.Type,
+					Title:       p.Title,
+					Description: p.Description,
+					SupportedOS: availablePlatforms(p.SupportedOS),
+				})
+			}
+
+			return renderPayloadsList(cmd.OutOrStdout(), rows, cat.Len())
+		},
+	}
+	cmd.Flags().StringVar(&osFilter, "os", "", "Restrict to payloads supported on this platform: iOS, macOS, tvOS, visionOS, watchOS")
+	cmd.Flags().StringVar(&searchFilter, "search", "", "Case-insensitive substring filter against payloadtype, title, and description")
+	return cmd
+}
+
+func newAppleMDMPayloadsShowCmd() *cobra.Command {
+	var osFilter string
+
+	cmd := &cobra.Command{
+		Use:   "show <payloadtype>",
+		Short: "Show a single Apple MDM payload schema in detail",
+		Long: `Render one Apple Configuration Profile schema with all keys, types,
+defaults, value constraints, and platform availability.
+
+Required keys are listed first so the operator can see at a glance what
+must be supplied. Optional keys follow with their declared defaults.
+
+` + "`--os`" + ` narrows the per-key support matrix to one platform so the
+view isn't dominated by columns for platforms the operator doesn't
+care about.`,
+		Example: `  jc apple-mdm payloads show com.apple.wifi.managed
+  jc apple-mdm payloads show com.apple.wifi.managed --os macOS
+  jc apple-mdm payloads show com.apple.applicationaccess --output json | jq '.keys[] | select(.presence=="required")'`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if osFilter != "" && !knownPlatform(osFilter) {
+				return fmt.Errorf("unknown --os %q: want one of %s", osFilter, strings.Join(applePlatforms, ", "))
+			}
+			cat, err := apple_mdm.Default()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+
+			// Resolve in order: catalog ID (exact filename match,
+			// disambiguates MCX variants), then PayloadType (canonical
+			// identifier). If PayloadType is ambiguous (multiple
+			// variants share it), list the variants and surface the
+			// ID-based lookup as the disambiguator. The user-facing
+			// error is much more useful than silently returning a
+			// first-wins variant they didn't ask for.
+			id := args[0]
+			if payload, ok := cat.ByID(id); ok {
+				return renderPayloadShow(cmd.OutOrStdout(), payload, osFilter)
+			}
+			variants := cat.VariantsOf(id)
+			switch len(variants) {
+			case 0:
+				return fmt.Errorf("no payload with ID or payloadtype %q in catalog (release %s)", id, cat.Release)
+			case 1:
+				return renderPayloadShow(cmd.OutOrStdout(), variants[0], osFilter)
+			default:
+				return fmt.Errorf("payloadtype %q has %d variants — disambiguate with the catalog ID:\n  %s",
+					id, len(variants), formatVariantList(variants))
+			}
+		},
+	}
+	cmd.Flags().StringVar(&osFilter, "os", "", "Render the per-key support matrix only for this platform")
+	return cmd
+}
+
+// renderPayloadsList writes the list either as JSON (one array of rows)
+// or as a human-readable aligned table. NDJSON and CSV fall through to
+// JSON for now — the data is structured enough that downstream piping
+// works fine either way; tabular formats can be added if a real consumer
+// asks for them.
+func renderPayloadsList(w io.Writer, rows []payloadsListRow, total int) error {
+	opts := output.CurrentOptions()
+	if opts.Format == output.FormatJSON || opts.Format == output.FormatNDJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(rows)
+	}
+
+	if len(rows) == 0 {
+		fmt.Fprintln(w, "No payloads match.")
+		return nil
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TYPE\tTITLE\tPLATFORMS")
+	for _, r := range rows {
+		title := r.Title
+		if title == "" {
+			title = "—"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Type, title, strings.Join(r.SupportedOS, ","))
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "\n%d of %d payloads.\n", len(rows), total)
+	return nil
+}
+
+// renderPayloadShow writes one payload in detail. JSON path emits the
+// raw Payload struct verbatim — the schema is small enough that even a
+// large profile (e.g. com.apple.applicationaccess with ~200 keys) is
+// browseable. Human path groups by Presence ("required" first), aligns
+// columns, and renders nested subkeys with indentation.
+func renderPayloadShow(w io.Writer, p apple_mdm.Payload, osFilter string) error {
+	opts := output.CurrentOptions()
+	if opts.Format == output.FormatJSON || opts.Format == output.FormatNDJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(p)
+	}
+
+	fmt.Fprintf(w, "%s\n", p.Type)
+	if p.Title != "" {
+		fmt.Fprintf(w, "  %s\n", p.Title)
+	}
+	if p.Description != "" {
+		fmt.Fprintf(w, "\n%s\n", p.Description)
+	}
+
+	// Platform support matrix
+	fmt.Fprintln(w, "\n== Supported platforms ==")
+	platforms := platformOrder(p.SupportedOS, osFilter)
+	if len(platforms) == 0 {
+		fmt.Fprintln(w, "  (none declared)")
+	} else {
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "  PLATFORM\tINTRODUCED\tMULTIPLE\tDEVICECHANNEL\tUSERCHANNEL\tSUPERVISED\tREQUIRESDEP")
+		for _, name := range platforms {
+			s := p.SupportedOS[name]
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				name, defaultStr(s.Introduced, "—"),
+				ynBool(s.Multiple), ynBool(s.DeviceChannel), ynBool(s.UserChannel),
+				ynBool(s.Supervised), ynBool(s.RequiresDEP))
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+
+	// Keys, grouped by presence: required first, then optional, then anything else.
+	required, optional, other := groupKeysByPresence(p.Keys)
+	if len(required) > 0 {
+		fmt.Fprintln(w, "\n== Required keys ==")
+		writeKeyTable(w, required)
+	}
+	if len(optional) > 0 {
+		fmt.Fprintln(w, "\n== Optional keys ==")
+		writeKeyTable(w, optional)
+	}
+	if len(other) > 0 {
+		fmt.Fprintln(w, "\n== Other keys ==")
+		writeKeyTable(w, other)
+	}
+
+	return nil
+}
+
+func writeKeyTable(w io.Writer, keys []apple_mdm.Key) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "  KEY\tTYPE\tDEFAULT\tCONSTRAINTS\tDESCRIPTION")
+	for _, k := range keys {
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
+			k.Name,
+			defaultStr(k.Type, "—"),
+			formatDefault(k.Default),
+			formatConstraints(k),
+			firstLine(k.Content))
+	}
+	_ = tw.Flush()
+}
+
+// groupKeysByPresence buckets keys for the detail render. We rely on
+// Apple's "required"/"optional" strings verbatim; anything else lands
+// in `other` so future presence values ("conditional", "deprecated")
+// surface visibly instead of silently joining optional.
+func groupKeysByPresence(keys []apple_mdm.Key) (required, optional, other []apple_mdm.Key) {
+	for _, k := range keys {
+		switch strings.ToLower(k.Presence) {
+		case "required":
+			required = append(required, k)
+		case "optional", "":
+			optional = append(optional, k)
+		default:
+			other = append(other, k)
+		}
+	}
+	return
+}
+
+// platformOrder returns the platform names from p.SupportedOS sorted
+// in Apple's display order (matches applePlatforms). When osFilter is
+// set, returns just that platform if present.
+func platformOrder(s apple_mdm.SupportedOS, osFilter string) []string {
+	if osFilter != "" {
+		if _, ok := s[osFilter]; ok {
+			return []string{osFilter}
+		}
+		return nil
+	}
+	var out []string
+	for _, plat := range applePlatforms {
+		if _, ok := s[plat]; ok {
+			out = append(out, plat)
+		}
+	}
+	return out
+}
+
+// availablePlatforms returns the platforms where the payload is
+// available (Available() == true, i.e. introduced and not n/a). Used
+// for the list-row PLATFORMS column so unavailable entries don't
+// clutter the table.
+func availablePlatforms(s apple_mdm.SupportedOS) []string {
+	var out []string
+	for _, plat := range applePlatforms {
+		sup, ok := s[plat]
+		if !ok || !sup.Available() {
+			continue
+		}
+		out = append(out, plat)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func knownPlatform(p string) bool {
+	for _, plat := range applePlatforms {
+		if plat == p {
+			return true
+		}
+	}
+	return false
+}
+
+func ynBool(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+func defaultStr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}
+
+func formatDefault(v any) string {
+	if v == nil {
+		return "—"
+	}
+	switch x := v.(type) {
+	case string:
+		if x == "" {
+			return `""`
+		}
+		return x
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func formatConstraints(k apple_mdm.Key) string {
+	var parts []string
+	if k.ValueType != "" {
+		parts = append(parts, k.ValueType)
+	}
+	if k.Range != nil {
+		parts = append(parts, fmt.Sprintf("range [%v..%v]", k.Range.Min, k.Range.Max))
+	}
+	if len(k.RangeList) > 0 {
+		vals := make([]string, 0, len(k.RangeList))
+		for _, v := range k.RangeList {
+			vals = append(vals, fmt.Sprintf("%v", v))
+		}
+		parts = append(parts, "enum{"+strings.Join(vals, ",")+"}")
+	}
+	if len(k.Subkeys) > 0 {
+		parts = append(parts, fmt.Sprintf("nested(%d)", len(k.Subkeys)))
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, " · ")
+}
+
+// formatVariantList renders the disambiguation hint when multiple
+// schemas share a PayloadType (the MCX family). Each line shows the
+// catalog ID and Title so the operator can pick. Indented two spaces
+// to align with the parent error message.
+func formatVariantList(vs []apple_mdm.Payload) string {
+	var b strings.Builder
+	for i, v := range vs {
+		if i > 0 {
+			b.WriteString("\n  ")
+		}
+		title := v.Title
+		if title == "" {
+			title = "(no title)"
+		}
+		fmt.Fprintf(&b, "%-40s  %s", v.ID, title)
+	}
+	return b.String()
+}
+
+func firstLine(s string) string {
+	if s == "" {
+		return "—"
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 80 {
+		s = s[:77] + "..."
+	}
+	return s
+}

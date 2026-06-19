@@ -36,6 +36,7 @@ func newAppleMDMCmd() *cobra.Command {
 	cmd.AddCommand(newAppleMDMDeleteCmd())
 	cmd.AddCommand(newAppleMDMEnrollmentProfilesCmd())
 	cmd.AddCommand(newAppleMDMDevicesCmd())
+	cmd.AddCommand(newAppleMDMPayloadsCmd())
 
 	return cmd
 }
