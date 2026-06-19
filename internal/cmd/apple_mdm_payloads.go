@@ -94,12 +94,16 @@ shape) without making the POST.`,
 			if policyName == "" {
 				return fmt.Errorf("--name is required for the new JumpCloud policy")
 			}
-			if osFamily != apple_mdm.OSFamilyDarwin {
-				// v1 ships darwin only — confirmed wire format for
-				// custom_mdm_profile_darwin in the empirical gate.
-				// iOS/tvOS template names differ and aren't validated
-				// against a real tenant yet.
-				return fmt.Errorf("only --os macOS (template family %q) is supported in this release; iOS/tvOS coming in a follow-up", apple_mdm.OSFamilyDarwin)
+			// Translate the Apple platform name (what the rest of the
+			// catalog uses — "macOS"/"iOS"/etc.) into JumpCloud's
+			// template family name ("darwin"/"iphone"). Pre-fix the
+			// CLI accepted only the JumpCloud-side name verbatim,
+			// which conflicted with `payloads list/show --os macOS`
+			// and forced the operator to pass the cryptic --os darwin
+			// (Bugbot PR #51 review).
+			resolvedFamily, err := jcOSFamily(osFamily)
+			if err != nil {
+				return err
 			}
 
 			cat, err := apple_mdm.Default()
@@ -151,6 +155,23 @@ shape) without making the POST.`,
 				return fmt.Errorf("emitting mobileconfig: %w", err)
 			}
 
+			// Resolve the JumpCloud template up front (not gated on
+			// --plan) so a misconfigured tenant fails fast — pre-fix
+			// the resolution only ran in the live POST path, so
+			// --plan would happily print a "looks good" report while
+			// the actual create-policy invocation would fail at the
+			// template lookup (Bugbot PR #51 review). The two calls
+			// are cheap and read-only.
+			client, err := newV2Client()
+			if err != nil {
+				return fmt.Errorf("building v2 client: %w", err)
+			}
+			ctx := cmd.Context()
+			tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, resolvedFamily)
+			if err != nil {
+				return fmt.Errorf("resolving Custom MDM template: %w", err)
+			}
+
 			if viper.GetBool("plan") {
 				p := &plan.Plan{
 					Action:   "create",
@@ -158,7 +179,8 @@ shape) without making the POST.`,
 					Target:   policyName,
 					Effects: []string{
 						"Apple payloadtype: " + payload.Type,
-						"OS family: " + osFamily,
+						"JumpCloud template: " + tmpl.Name + " (" + tmpl.ID + ")",
+						"Apple platform: " + osFamily + " (family: " + resolvedFamily + ")",
 						"Mobileconfig bytes: " + fmt.Sprintf("%d", plistBuf.Len()),
 						"Re-apply on OS update: " + boolToYN(redispatch),
 						"Removal disallowed: " + boolToYN(removeLock),
@@ -166,17 +188,6 @@ shape) without making the POST.`,
 					Reversible: true,
 				}
 				return renderPlan(cmd, p)
-			}
-
-			client, err := newV2Client()
-			if err != nil {
-				return fmt.Errorf("building v2 client: %w", err)
-			}
-
-			ctx := cmd.Context()
-			tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, osFamily)
-			if err != nil {
-				return fmt.Errorf("resolving Custom MDM template: %w", err)
 			}
 
 			body := apple_mdm.BuildCustomMDMPolicyBody(policyName, tmpl, plistBuf.Bytes(), redispatch)
@@ -196,8 +207,8 @@ shape) without making the POST.`,
 		"Path to a JSON file mapping Apple payload key names to values (supports nested dicts/arrays)")
 	cmd.Flags().StringVar(&policyName, "name", "",
 		"JumpCloud policy name AND profile display name (required)")
-	cmd.Flags().StringVar(&osFamily, "os", apple_mdm.OSFamilyDarwin,
-		"JumpCloud template OS family: darwin (macOS). iOS (iphone) and tvOS planned for a follow-up.")
+	cmd.Flags().StringVar(&osFamily, "os", "macOS",
+		"Apple platform: macOS. iOS planned for KLA-450; tvOS/visionOS/watchOS are not supported by JumpCloud MDM.")
 	cmd.Flags().StringVar(&identifier, "identifier", "",
 		"Profile reverse-DNS identifier (default: auto-generated jc.<uuid>)")
 	cmd.Flags().StringVar(&organization, "organization", "",
@@ -216,6 +227,26 @@ func boolToYN(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// jcOSFamily maps Apple's platform name (macOS/iOS/etc., as used by
+// the catalog and the rest of the apple-mdm subcommand tree) to
+// JumpCloud's policy-template family name (darwin/iphone/etc.). v1
+// supports macOS only; everything else returns a clear error pointing
+// at the relevant follow-up ticket. Without this translation
+// `--os macOS` is rejected even though the rest of the CLI uses Apple's
+// naming exclusively.
+func jcOSFamily(applePlatform string) (string, error) {
+	switch applePlatform {
+	case "macOS", apple_mdm.OSFamilyDarwin:
+		return apple_mdm.OSFamilyDarwin, nil
+	case "iOS", apple_mdm.OSFamilyIOS:
+		return "", fmt.Errorf("--os %q: iOS support is tracked in KLA-450; not validated against a tenant yet", applePlatform)
+	case "tvOS", "visionOS", "watchOS":
+		return "", fmt.Errorf("--os %q: JumpCloud MDM does not manage this Apple platform", applePlatform)
+	default:
+		return "", fmt.Errorf("--os %q: unknown Apple platform; supported: macOS", applePlatform)
+	}
 }
 
 func newAppleMDMPayloadsTemplateCmd() *cobra.Command {
