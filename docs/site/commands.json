@@ -953,8 +953,8 @@
     },
     {
       "path": "jc apple-mdm",
-      "description": "Manage Apple MDM configurations + browse Apple's MDM payload schemas + emit mobileconfigs",
-      "long": "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand, and emit valid `.mobileconfig` files for any of the 125 vendored payloads via `payloads template`. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `payloads list/show/template` all work fully offline. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), then writes a `plutil -lint`-clean plist. Roadmap: `payloads create-policy` will round-trip directly to JumpCloud as a Custom MDM Configuration Profile policy (PR3). The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults).",
+      "description": "Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies",
+      "long": "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template`, and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults → optionally creates the policy).",
       "category": "Devices \u0026 MDM",
       "subcommands": [
         "list",
@@ -970,7 +970,7 @@
         {
           "name": "name",
           "type": "string",
-          "description": "MDM configuration name (create/update; also profile display name in payloads template)"
+          "description": "MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)"
         },
         {
           "name": "org-name",
@@ -980,7 +980,7 @@
         {
           "name": "os",
           "type": "string",
-          "description": "Filter payloads catalog by Apple platform (payloads list/show)"
+          "description": "Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin)"
         },
         {
           "name": "search",
@@ -990,12 +990,12 @@
         {
           "name": "values",
           "type": "string[]",
-          "description": "Set scalar payload key (key=value, repeatable; payloads template)"
+          "description": "Set scalar payload key (key=value, repeatable; payloads template / create-policy)"
         },
         {
           "name": "values-file",
           "type": "string",
-          "description": "JSON file mapping payload key names to values for nested shapes (payloads template)"
+          "description": "JSON file mapping payload key names to values for nested shapes (payloads template / create-policy)"
         },
         {
           "name": "output-file",
@@ -1005,17 +1005,23 @@
         {
           "name": "identifier",
           "type": "string",
-          "description": "Profile reverse-DNS identifier (payloads template; default auto-generated jc.\u003cuuid\u003e)"
+          "description": "Profile reverse-DNS identifier (default auto-generated jc.\u003cuuid\u003e)"
         },
         {
           "name": "organization",
           "type": "string",
-          "description": "Profile organization metadata (payloads template)"
+          "description": "Profile organization metadata"
         },
         {
           "name": "removal-disallowed",
           "type": "bool",
-          "description": "Prevent end users from removing the profile via System Settings (payloads template)"
+          "description": "Prevent end users from removing the profile via System Settings"
+        },
+        {
+          "name": "redispatch",
+          "type": "bool",
+          "default": "true",
+          "description": "Re-apply policy on every OS update (payloads create-policy; matches Admin Portal default)"
         }
       ]
     },

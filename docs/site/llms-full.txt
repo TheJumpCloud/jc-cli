@@ -130,24 +130,25 @@ Manage JumpCloud devices (systems)
 
 #### `jc apple-mdm`
 
-Manage Apple MDM configurations + browse Apple's MDM payload schemas + emit mobileconfigs
+Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies
 
-Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand, and emit valid `.mobileconfig` files for any of the 125 vendored payloads via `payloads template`. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `payloads list/show/template` all work fully offline. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), then writes a `plutil -lint`-clean plist. Roadmap: `payloads create-policy` will round-trip directly to JumpCloud as a Custom MDM Configuration Profile policy (PR3). The same primitive will back `jc ask` ("disable AirDrop on supervised iPads" → finds the right schema → fills defaults).
+Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template`, and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` ("disable AirDrop on supervised iPads" → finds the right schema → fills defaults → optionally creates the policy).
 
 **Subcommands:** `list`, `get`, `create`, `update`, `delete`, `enrollment-profiles`, `devices`, `payloads`
 
 **Flags:**
 
-- `--name` `<string>` — MDM configuration name (create/update; also profile display name in payloads template)
+- `--name` `<string>` — MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)
 - `--org-name` `<string>` — Organization name (create/update)
-- `--os` `<string>` — Filter payloads catalog by Apple platform (payloads list/show)
+- `--os` `<string>` — Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin)
 - `--search` `<string>` — Case-insensitive substring filter against payloadtype/title/description (payloads list)
-- `--values` `<string[]>` — Set scalar payload key (key=value, repeatable; payloads template)
-- `--values-file` `<string>` — JSON file mapping payload key names to values for nested shapes (payloads template)
+- `--values` `<string[]>` — Set scalar payload key (key=value, repeatable; payloads template / create-policy)
+- `--values-file` `<string>` — JSON file mapping payload key names to values for nested shapes (payloads template / create-policy)
 - `--output-file` `<string>` — Write emitted .mobileconfig to this path (payloads template)
-- `--identifier` `<string>` — Profile reverse-DNS identifier (payloads template; default auto-generated jc.<uuid>)
-- `--organization` `<string>` — Profile organization metadata (payloads template)
-- `--removal-disallowed` `<bool>` — Prevent end users from removing the profile via System Settings (payloads template)
+- `--identifier` `<string>` — Profile reverse-DNS identifier (default auto-generated jc.<uuid>)
+- `--organization` `<string>` — Profile organization metadata
+- `--removal-disallowed` `<bool>` — Prevent end users from removing the profile via System Settings
+- `--redispatch` `<bool>` (default `true`) — Re-apply policy on every OS update (payloads create-policy; matches Admin Portal default)
 
 ### Apps & SSO
 

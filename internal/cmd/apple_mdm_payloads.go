@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,9 +12,11 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
 // applePlatforms is the curated list of Apple platform names the CLI
@@ -42,7 +45,177 @@ it directly to JumpCloud (PR3).`,
 	cmd.AddCommand(newAppleMDMPayloadsListCmd())
 	cmd.AddCommand(newAppleMDMPayloadsShowCmd())
 	cmd.AddCommand(newAppleMDMPayloadsTemplateCmd())
+	cmd.AddCommand(newAppleMDMPayloadsCreatePolicyCmd())
 	return cmd
+}
+
+func newAppleMDMPayloadsCreatePolicyCmd() *cobra.Command {
+	var (
+		valuePairs   []string
+		valuesFile   string
+		policyName   string
+		osFamily     string
+		identifier   string
+		organization string
+		removeLock   bool
+		redispatch   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create-policy <payloadtype-or-id>",
+		Short: "Create a JumpCloud Custom MDM Configuration Profile policy from an Apple schema",
+		Long: `Build a .mobileconfig from the chosen Apple schema (same shape as
+` + "`payloads template`" + `) and POST it as a JumpCloud Custom MDM
+Configuration Profile policy. The Custom MDM policy template is
+resolved dynamically by name (` + "`custom_mdm_profile_<osfamily>`" + `) so
+this works on any tenant without hardcoded IDs.
+
+Workflow:
+
+  1. Resolve the JumpCloud template + its configField IDs from
+     /policytemplates (one filtered list call + one detail GET).
+  2. Build the .mobileconfig in-memory using the same emitter as
+     ` + "`payloads template`" + ` (values are coerced + validated against
+     Apple's schema).
+  3. Base64-encode the plist and assemble the wire body matching the
+     exact shape JumpCloud's Admin Portal produces.
+  4. POST /policies. Returns the new policy ID and name.
+
+` + "`--plan`" + ` mode previews every step (resolve, build, base64, body
+shape) without making the POST.`,
+		Example: `  jc apple-mdm payloads create-policy com.apple.wifi.managed \
+      --name "Corp WiFi (MDM)" \
+      --values SSID_STR=CorpWiFi --values AutoJoin=true --values EncryptionType=WPA2
+
+  jc apple-mdm payloads create-policy com.apple.security.firewall \
+      --name "Firewall — enforce" --values-file firewall.json --plan`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if policyName == "" {
+				return fmt.Errorf("--name is required for the new JumpCloud policy")
+			}
+			if osFamily != apple_mdm.OSFamilyDarwin {
+				// v1 ships darwin only — confirmed wire format for
+				// custom_mdm_profile_darwin in the empirical gate.
+				// iOS/tvOS template names differ and aren't validated
+				// against a real tenant yet.
+				return fmt.Errorf("only --os macOS (template family %q) is supported in this release; iOS/tvOS coming in a follow-up", apple_mdm.OSFamilyDarwin)
+			}
+
+			cat, err := apple_mdm.Default()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			payload, err := resolvePayload(cat, args[0])
+			if err != nil {
+				return err
+			}
+
+			fileValues := map[string]any{}
+			if valuesFile != "" {
+				b, err := os.ReadFile(valuesFile)
+				if err != nil {
+					return fmt.Errorf("reading --values-file: %w", err)
+				}
+				if err := json.Unmarshal(b, &fileValues); err != nil {
+					return fmt.Errorf("parsing --values-file: %w", err)
+				}
+			}
+			pairValues, err := apple_mdm.ParseValuePairs(valuePairs)
+			if err != nil {
+				return err
+			}
+			merged := apple_mdm.MergeValues(fileValues, pairValues)
+			typed, err := apple_mdm.CoerceAndValidate(payload, merged)
+			if err != nil {
+				return err
+			}
+
+			// Emit the mobileconfig to a buffer (not to disk — we
+			// only need the bytes for base64 + POST).
+			var plistBuf bytes.Buffer
+			err = apple_mdm.EmitMobileconfig(&plistBuf,
+				apple_mdm.EnvelopeOpts{
+					DisplayName:       policyName,
+					Identifier:        identifier,
+					Organization:      organization,
+					RemovalDisallowed: removeLock,
+				},
+				[]apple_mdm.PayloadInstance{{
+					Schema:      payload,
+					Values:      typed,
+					DisplayName: policyName,
+				}},
+			)
+			if err != nil {
+				return fmt.Errorf("emitting mobileconfig: %w", err)
+			}
+
+			if viper.GetBool("plan") {
+				p := &plan.Plan{
+					Action:   "create",
+					Resource: "JumpCloud Custom MDM Configuration Profile policy",
+					Target:   policyName,
+					Effects: []string{
+						"Apple payloadtype: " + payload.Type,
+						"OS family: " + osFamily,
+						"Mobileconfig bytes: " + fmt.Sprintf("%d", plistBuf.Len()),
+						"Re-apply on OS update: " + boolToYN(redispatch),
+						"Removal disallowed: " + boolToYN(removeLock),
+					},
+					Reversible: true,
+				}
+				return renderPlan(cmd, p)
+			}
+
+			client, err := newV2Client()
+			if err != nil {
+				return fmt.Errorf("building v2 client: %w", err)
+			}
+
+			ctx := cmd.Context()
+			tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, osFamily)
+			if err != nil {
+				return fmt.Errorf("resolving Custom MDM template: %w", err)
+			}
+
+			body := apple_mdm.BuildCustomMDMPolicyBody(policyName, tmpl, plistBuf.Bytes(), redispatch)
+			result, err := client.Create(ctx, "/policies", body)
+			if err != nil {
+				return fmt.Errorf("creating policy: %w", err)
+			}
+
+			opts := output.CurrentOptions()
+			return output.WriteSingle(cmd.OutOrStdout(), result, opts)
+		},
+	}
+
+	cmd.Flags().StringSliceVar(&valuePairs, "values", nil,
+		"Set a scalar key (key=value, repeatable). Use --values-file for nested structures.")
+	cmd.Flags().StringVar(&valuesFile, "values-file", "",
+		"Path to a JSON file mapping Apple payload key names to values (supports nested dicts/arrays)")
+	cmd.Flags().StringVar(&policyName, "name", "",
+		"JumpCloud policy name AND profile display name (required)")
+	cmd.Flags().StringVar(&osFamily, "os", apple_mdm.OSFamilyDarwin,
+		"JumpCloud template OS family: darwin (macOS). iOS (iphone) and tvOS planned for a follow-up.")
+	cmd.Flags().StringVar(&identifier, "identifier", "",
+		"Profile reverse-DNS identifier (default: auto-generated jc.<uuid>)")
+	cmd.Flags().StringVar(&organization, "organization", "",
+		"Profile organization name (optional metadata)")
+	cmd.Flags().BoolVar(&removeLock, "removal-disallowed", false,
+		"Prevent end users from removing the profile via System Settings (requires MDM unenroll)")
+	cmd.Flags().BoolVar(&redispatch, "redispatch", true,
+		"Re-apply policy on every OS update (matches JumpCloud's Admin Portal default)")
+	_ = cmd.MarkFlagRequired("name")
+
+	return cmd
+}
+
+func boolToYN(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 func newAppleMDMPayloadsTemplateCmd() *cobra.Command {

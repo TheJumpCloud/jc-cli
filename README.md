@@ -542,9 +542,15 @@ jc apple-mdm payloads template com.apple.wifi.managed \
 
 # Or supply nested structures via JSON:
 jc apple-mdm payloads template com.apple.wifi.managed --values-file wifi.json
+
+# End-to-end: emit + POST to JumpCloud as a Custom MDM Configuration Profile policy
+jc apple-mdm payloads create-policy com.apple.security.firewall \
+    --name "Firewall — enforce" --values EnableFirewall=true --values EnableStealthMode=true
+jc apple-mdm payloads create-policy com.apple.wifi.managed \
+    --name "Corp WiFi (MDM)" --values-file wifi.json --plan   # preview without POSTing
 ```
 
-A browsable catalog and offline `.mobileconfig` generator for Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), writing a `plutil -lint`-clean plist with auto-generated UUIDs and Apple's standard Configuration envelope. Roadmap: `payloads create-policy` will round-trip the generated profile directly to JumpCloud as a Custom MDM Configuration Profile policy (PR3). See [KLA-449](https://linear.app/klaassenconsulting/issue/KLA-449) for the multi-PR plan.
+A browsable catalog, offline `.mobileconfig` generator, AND end-to-end JumpCloud policy creator for Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), writing a `plutil -lint`-clean plist with auto-generated UUIDs and Apple's standard Configuration envelope. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family — no hardcoded IDs — so it works on any tenant. macOS (darwin) shipped; iOS / tvOS in a follow-up.
 
 ### Interactive TUI
 
