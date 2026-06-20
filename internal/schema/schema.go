@@ -1006,7 +1006,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc apple-mdm",
 				Description: "Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies",
-				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template`, and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults → optionally creates the policy).",
+				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template` (single-payload) or `payloads compose` (multi-payload bundles à la CIS Level 1), and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy` or `payloads compose --create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults → optionally creates the policy).",
 				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices", "payloads"},
 				Flags: []FlagEntry{
 					{Name: "name", Type: "string", Description: "MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)"},
@@ -1019,7 +1019,9 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "identifier", Type: "string", Description: "Profile reverse-DNS identifier (default auto-generated jc.<uuid>)"},
 					{Name: "organization", Type: "string", Description: "Profile organization metadata"},
 					{Name: "removal-disallowed", Type: "bool", Description: "Prevent end users from removing the profile via System Settings"},
-					{Name: "redispatch", Type: "bool", Default: "true", Description: "Re-apply policy on every OS update (payloads create-policy; matches Admin Portal default)"},
+					{Name: "redispatch", Type: "bool", Default: "true", Description: "Re-apply policy on every OS update (payloads create-policy / compose; matches Admin Portal default)"},
+					{Name: "config", Type: "string", Description: "Path to a YAML/JSON compose-profile config (payloads compose)"},
+					{Name: "create-policy", Type: "bool", Description: "POST the composed profile to JumpCloud as a Custom MDM Configuration Profile policy (payloads compose)"},
 				},
 			},
 			{

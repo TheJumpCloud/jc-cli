@@ -46,7 +46,212 @@ it directly to JumpCloud (PR3).`,
 	cmd.AddCommand(newAppleMDMPayloadsShowCmd())
 	cmd.AddCommand(newAppleMDMPayloadsTemplateCmd())
 	cmd.AddCommand(newAppleMDMPayloadsCreatePolicyCmd())
+	cmd.AddCommand(newAppleMDMPayloadsComposeCmd())
 	return cmd
+}
+
+func newAppleMDMPayloadsComposeCmd() *cobra.Command {
+	var (
+		configPath   string
+		outputFile   string
+		osFamily     string
+		createPolicy bool
+		redispatch   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "compose",
+		Short: "Compose a multi-payload .mobileconfig from a config file",
+		Long: `Build one Configuration profile that wraps N Apple payloads,
+described by a single YAML/JSON config file. Mirrors the workflow
+ProfileCreator-style tools use — version-control the config alongside
+your runbooks, regenerate the profile deterministically.
+
+The emitter, value validation, and JumpCloud round-trip are identical
+to the single-payload create-policy path. Per-payload values are
+schema-validated together; every error is reported in one pass so the
+operator can fix them all in one edit cycle.
+
+Use --create-policy to POST the result directly to JumpCloud as a
+Custom MDM Configuration Profile policy. --plan previews the body
+shape without making the POST.`,
+		Example: `  # Emit a 3-payload baseline profile to stdout
+  jc apple-mdm payloads compose --config corp-baseline.yaml
+
+  # Write to a file (atomic temp-then-rename, plutil-lint clean)
+  jc apple-mdm payloads compose --config corp-baseline.yaml \
+      --output-file corp-baseline.mobileconfig
+
+  # End-to-end: emit + POST to JumpCloud
+  jc apple-mdm payloads compose --config corp-baseline.yaml --create-policy
+
+  # Plan first to inspect the body shape
+  jc apple-mdm payloads compose --config corp-baseline.yaml --create-policy --plan`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if configPath == "" {
+				return fmt.Errorf("--config is required")
+			}
+			cfg, err := apple_mdm.LoadComposeConfig(configPath)
+			if err != nil {
+				return err
+			}
+			cat, err := apple_mdm.Default()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			instances, env, err := cfg.BuildPayloadInstances(cat)
+			if err != nil {
+				return err
+			}
+
+			// Two output paths:
+			//   1. --output-file: same atomic-write semantics as
+			//      `payloads template` so a mid-emit failure or
+			//      flush error can never leave a half-written
+			//      .mobileconfig on disk.
+			//   2. --create-policy: in-memory emit → POST. Same
+			//      shape as single-payload create-policy.
+			if createPolicy {
+				return runComposeCreatePolicy(cmd, env, instances, osFamily, redispatch)
+			}
+			if outputFile != "" {
+				return emitComposeToFile(cmd, outputFile, env, instances)
+			}
+			return apple_mdm.EmitMobileconfig(cmd.OutOrStdout(), env, instances)
+		},
+	}
+
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to a YAML/JSON compose-profile config (required)")
+	cmd.Flags().StringVar(&outputFile, "output-file", "",
+		"Write the .mobileconfig to this path (atomic temp+rename). Default: stdout.")
+	cmd.Flags().BoolVar(&createPolicy, "create-policy", false,
+		"POST the result to JumpCloud as a Custom MDM Configuration Profile policy")
+	cmd.Flags().StringVar(&osFamily, "os", "macOS",
+		"Apple platform for --create-policy template resolution (macOS or iOS)")
+	cmd.Flags().BoolVar(&redispatch, "redispatch", true,
+		"Re-apply policy on every OS update (matches JumpCloud's Admin Portal default; ignored when the template has no redispatch field)")
+	_ = cmd.MarkFlagRequired("config")
+
+	return cmd
+}
+
+// emitComposeToFile mirrors emitMobileconfigToFile in the template
+// command — atomic temp+rename so partial writes never reach the
+// target path. Factored separately because the compose path takes a
+// pre-built []PayloadInstance instead of a single payload + values.
+func emitComposeToFile(cmd *cobra.Command, outputFile string,
+	env apple_mdm.EnvelopeOpts, instances []apple_mdm.PayloadInstance) error {
+
+	dir := filepath.Dir(outputFile)
+	tmp, err := os.CreateTemp(dir, ".jc-mobileconfig-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file in %s: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	var succeeded bool
+	defer func() {
+		if !succeeded {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := apple_mdm.EmitMobileconfig(tmp, env, instances); err != nil {
+		tmp.Close()
+		return fmt.Errorf("emitting mobileconfig: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, outputFile); err != nil {
+		return fmt.Errorf("finalizing %s: %w", outputFile, err)
+	}
+	succeeded = true
+	fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s (%d payloads)\n", outputFile, len(instances))
+	return nil
+}
+
+// runComposeCreatePolicy handles the --create-policy path: emit the
+// mobileconfig in-memory, resolve the JumpCloud template for the chosen
+// OS family, and POST. Supports --plan for preview-without-POST,
+// matching create-policy.
+func runComposeCreatePolicy(cmd *cobra.Command,
+	env apple_mdm.EnvelopeOpts, instances []apple_mdm.PayloadInstance,
+	osFamily string, redispatch bool) error {
+
+	resolvedFamily, err := jcOSFamily(osFamily)
+	if err != nil {
+		return err
+	}
+
+	// Validate every inner payload supports the chosen Apple platform.
+	// Single-payload create-policy does this check before POSTing
+	// (Bugbot PR #51 re-review); compose was missing the equivalent
+	// (Bugbot PR #59 review). Without this an MSP could ship a
+	// macOS-targeted compose bundle that silently includes an
+	// iOS-only payload — JumpCloud accepts it; the device ignores
+	// it.
+	//
+	// Aggregate the errors across all unsupported payloads so the
+	// operator sees every offender in one pass.
+	appleSchemaPlatform := canonicalApplePlatform(osFamily)
+	var unsupported []string
+	for _, p := range instances {
+		sup, ok := p.Schema.SupportedOS[appleSchemaPlatform]
+		if !ok || !sup.Available() {
+			unsupported = append(unsupported, p.Schema.Type)
+		}
+	}
+	if len(unsupported) > 0 {
+		return fmt.Errorf(
+			"the following payload(s) do not declare support for %s: %s\n"+
+				"(run `jc apple-mdm payloads show <type>` for each to see which Apple platforms are supported)",
+			appleSchemaPlatform, strings.Join(unsupported, ", "))
+	}
+
+	var plistBuf bytes.Buffer
+	if err := apple_mdm.EmitMobileconfig(&plistBuf, env, instances); err != nil {
+		return fmt.Errorf("emitting mobileconfig: %w", err)
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return fmt.Errorf("building v2 client: %w", err)
+	}
+	ctx := cmd.Context()
+	tmpl, err := apple_mdm.ResolveCustomMDMTemplate(ctx, client, resolvedFamily)
+	if err != nil {
+		return fmt.Errorf("resolving Custom MDM template: %w", err)
+	}
+
+	if viper.GetBool("plan") {
+		payloadTypes := make([]string, 0, len(instances))
+		for _, p := range instances {
+			payloadTypes = append(payloadTypes, p.Schema.Type)
+		}
+		p := &plan.Plan{
+			Action:   "create",
+			Resource: "JumpCloud Custom MDM Configuration Profile policy (multi-payload)",
+			Target:   env.DisplayName,
+			Effects: []string{
+				"Apple payloadtypes (" + fmt.Sprintf("%d", len(instances)) + "): " + strings.Join(payloadTypes, ", "),
+				"JumpCloud template: " + tmpl.Name + " (" + tmpl.ID + ")",
+				"Apple platform: " + osFamily + " (family: " + resolvedFamily + ")",
+				"Mobileconfig bytes: " + fmt.Sprintf("%d", plistBuf.Len()),
+				"Re-apply on OS update: " + boolToYN(redispatch),
+				"Removal disallowed: " + boolToYN(env.RemovalDisallowed),
+			},
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	body := apple_mdm.BuildCustomMDMPolicyBody(env.DisplayName, tmpl, plistBuf.Bytes(), redispatch)
+	result, err := client.Create(ctx, "/policies", body)
+	if err != nil {
+		return fmt.Errorf("creating policy: %w", err)
+	}
+	opts := output.CurrentOptions()
+	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
 
 func newAppleMDMPayloadsCreatePolicyCmd() *cobra.Command {
