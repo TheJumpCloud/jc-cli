@@ -220,7 +220,7 @@ shape) without making the POST.`,
 	cmd.Flags().StringVar(&policyName, "name", "",
 		"JumpCloud policy name AND profile display name (required)")
 	cmd.Flags().StringVar(&osFamily, "os", "macOS",
-		"Apple platform: macOS. iOS planned for KLA-450; tvOS/visionOS/watchOS are not supported by JumpCloud MDM.")
+		"Apple platform: macOS or iOS. tvOS/visionOS/watchOS are not supported by JumpCloud MDM.")
 	cmd.Flags().StringVar(&identifier, "identifier", "",
 		"Profile reverse-DNS identifier (default: auto-generated jc.<uuid>)")
 	cmd.Flags().StringVar(&organization, "organization", "",
@@ -243,21 +243,27 @@ func boolToYN(b bool) string {
 
 // jcOSFamily maps Apple's platform name (macOS/iOS/etc., as used by
 // the catalog and the rest of the apple-mdm subcommand tree) to
-// JumpCloud's policy-template family name (darwin/ios/etc.). v1
-// supports macOS only; everything else returns a clear error pointing
-// at the relevant follow-up ticket. Without this translation
-// `--os macOS` is rejected even though the rest of the CLI uses Apple's
-// naming exclusively.
+// JumpCloud's policy-template family name (darwin/ios/etc.). macOS
+// and iOS are supported as of KLA-450; tvOS/visionOS/watchOS fail
+// clean because JumpCloud's MDM doesn't manage those platforms today.
+// Without this translation `--os macOS` would be rejected even though
+// the rest of the CLI uses Apple's naming exclusively.
+//
+// Note on iOS template shape (confirmed 2026-06-20 against the user's
+// tenant): the iOS Custom MDM template has ONLY a `payload` configField,
+// no `redispatchPolicy`. BuildCustomMDMPolicyBody already handles that
+// case — the redispatch values entry is conditionally omitted when
+// ResolvedTemplate.RedispatchFieldID is empty.
 func jcOSFamily(applePlatform string) (string, error) {
 	switch applePlatform {
 	case "macOS", apple_mdm.OSFamilyDarwin:
 		return apple_mdm.OSFamilyDarwin, nil
 	case "iOS", apple_mdm.OSFamilyIOS:
-		return "", fmt.Errorf("--os %q: iOS support is tracked in KLA-450; not validated against a tenant yet", applePlatform)
+		return apple_mdm.OSFamilyIOS, nil
 	case "tvOS", "visionOS", "watchOS":
 		return "", fmt.Errorf("--os %q: JumpCloud MDM does not manage this Apple platform", applePlatform)
 	default:
-		return "", fmt.Errorf("--os %q: unknown Apple platform; supported: macOS", applePlatform)
+		return "", fmt.Errorf("--os %q: unknown Apple platform; supported: macOS, iOS", applePlatform)
 	}
 }
 

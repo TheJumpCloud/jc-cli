@@ -980,7 +980,7 @@
         {
           "name": "os",
           "type": "string",
-          "description": "Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin)"
+          "description": "Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin/ios)"
         },
         {
           "name": "search",

@@ -140,7 +140,7 @@ Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed de
 
 - `--name` `<string>` — MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)
 - `--org-name` `<string>` — Organization name (create/update)
-- `--os` `<string>` — Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin)
+- `--os` `<string>` — Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin/ios)
 - `--search` `<string>` — Case-insensitive substring filter against payloadtype/title/description (payloads list)
 - `--values` `<string[]>` — Set scalar payload key (key=value, repeatable; payloads template / create-policy)
 - `--values-file` `<string>` — JSON file mapping payload key names to values for nested shapes (payloads template / create-policy)

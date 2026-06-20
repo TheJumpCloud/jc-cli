@@ -159,6 +159,57 @@ func TestResolveCustomMDMTemplate_NoTemplateErrors(t *testing.T) {
 	}
 }
 
+// TestResolveCustomMDMTemplate_IOSHasNoRedispatch is the KLA-450
+// empirical-gate guard. Confirmed live against the user's tenant on
+// 2026-06-20: the iOS Custom MDM template ships with ONLY a `payload`
+// configField — no `redispatchPolicy`. The resolver must succeed
+// without that field present, and BuildCustomMDMPolicyBody must
+// gracefully omit the redispatch values entry (covered by
+// TestBuildCustomMDMPolicyBody_OmitsRedispatchWhenFieldMissing above).
+// If JumpCloud ever adds redispatchPolicy to the iOS template this
+// test will still pass; the inverse — iOS template losing payload —
+// would already be caught by TestResolveCustomMDMTemplate_MissingPayloadFieldErrors.
+func TestResolveCustomMDMTemplate_IOSHasNoRedispatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/policytemplates" && r.URL.Query().Get("filter") == "name:eq:custom_mdm_profile_ios":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"id":"iostmpl","name":"custom_mdm_profile_ios"}]`))
+		case r.URL.Path == "/policytemplates/iostmpl":
+			w.Header().Set("Content-Type", "application/json")
+			// Matches the live tenant shape: only `payload`, no
+			// `redispatchPolicy`.
+			w.Write([]byte(`{
+                "id":"iostmpl",
+                "name":"custom_mdm_profile_ios",
+                "configFields":[
+                    {"id":"iospfid","name":"payload"}
+                ]
+            }`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	client := api.NewV2ClientWithKey("test-key")
+	client.BaseURL = srv.URL
+
+	tmpl, err := ResolveCustomMDMTemplate(context.Background(), client, OSFamilyIOS)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if tmpl.ID != "iostmpl" {
+		t.Errorf("template ID = %q", tmpl.ID)
+	}
+	if tmpl.PayloadFieldID != "iospfid" {
+		t.Errorf("payload field ID = %q", tmpl.PayloadFieldID)
+	}
+	if tmpl.RedispatchFieldID != "" {
+		t.Errorf("RedispatchFieldID should be empty for iOS template, got %q", tmpl.RedispatchFieldID)
+	}
+}
+
 // validateBodyShape parses a body assembled by BuildCustomMDMPolicyBody
 // and checks the values entries are well-formed JSON. Used as a
 // regression guard against any future field-ordering or shape changes.
