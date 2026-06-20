@@ -45,9 +45,14 @@ type CustomMDMTemplate struct {
 // are JumpCloud's naming, NOT Apple's — Apple says "macOS" while
 // JumpCloud's template names use "darwin", etc. Keep this curated so
 // adding visionOS later is one line plus a new template name.
+//
+// Confirmed against a real tenant (2026-06-20) by enumerating
+// `custom_mdm_profile_*` template names on existing policies; the iOS
+// family is `ios`, not `iphone` (KLA-450 ticket originally drafted
+// the wrong name).
 const (
 	OSFamilyDarwin = "darwin"
-	OSFamilyIOS    = "iphone"
+	OSFamilyIOS    = "ios"
 	OSFamilyTVOS   = "tvos"
 )
 

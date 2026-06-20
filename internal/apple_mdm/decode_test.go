@@ -114,8 +114,12 @@ func TestOSFamilyFromTemplateName(t *testing.T) {
 	tests := []struct {
 		in, want string
 	}{
+		// JumpCloud's confirmed template-name suffixes as of 2026-06-20:
+		// `darwin` and `ios` are live in the user's tenant; `tvos` is
+		// the presumed name for any future tvOS support (out of scope
+		// per KLA-450 since JumpCloud MDM doesn't manage tvOS today).
 		{"custom_mdm_profile_darwin", "darwin"},
-		{"custom_mdm_profile_iphone", "iphone"},
+		{"custom_mdm_profile_ios", "ios"},
 		{"custom_mdm_profile_tvos", "tvos"},
 		{"some_other_template", ""},
 		{"custom_mdm_profile_", ""}, // empty suffix → empty
@@ -136,7 +140,7 @@ func TestDecodeCustomMDMPolicy_CapturesTemplateName(t *testing.T) {
 	rawJSON := `{
 		"id": "abc",
 		"name": "iOS test",
-		"template": {"id": "tid", "name": "custom_mdm_profile_iphone"},
+		"template": {"id": "tid", "name": "custom_mdm_profile_ios"},
 		"values": [
 			{"configFieldID":"pid","configFieldName":"payload","value":"` + plistB64 + `"}
 		]
@@ -145,10 +149,10 @@ func TestDecodeCustomMDMPolicy_CapturesTemplateName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if d.TemplateName != "custom_mdm_profile_iphone" {
+	if d.TemplateName != "custom_mdm_profile_ios" {
 		t.Errorf("TemplateName = %q", d.TemplateName)
 	}
-	if OSFamilyFromTemplateName(d.TemplateName) != "iphone" {
+	if OSFamilyFromTemplateName(d.TemplateName) != "ios" {
 		t.Errorf("OS family derivation broken: got %q", OSFamilyFromTemplateName(d.TemplateName))
 	}
 }
