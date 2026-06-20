@@ -384,6 +384,14 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewRecipeListScreen()}
 		}
+	case "apple-mdm-payloads":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewAppleMDMPayloadsListScreen()}
+		}
+	case "apple-mdm-custom-policies":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewAppleMDMPoliciesListScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}

@@ -534,9 +534,23 @@ A composable cross-resource health check registry. Each finding carries a severi
 jc apple-mdm payloads list                          # all 125 Apple Configuration Profile schemas
 jc apple-mdm payloads list --os macOS --search wifi # filter
 jc apple-mdm payloads show com.apple.wifi.managed   # full key reference for one payload
+
+# Emit a valid .mobileconfig from any payload (offline, plutil -lint clean):
+jc apple-mdm payloads template com.apple.wifi.managed \
+    --values SSID_STR=CorpWiFi --values AutoJoin=true --values EncryptionType=WPA2 \
+    --name "Corp WiFi" --output-file corp-wifi.mobileconfig
+
+# Or supply nested structures via JSON:
+jc apple-mdm payloads template com.apple.wifi.managed --values-file wifi.json
+
+# End-to-end: emit + POST to JumpCloud as a Custom MDM Configuration Profile policy
+jc apple-mdm payloads create-policy com.apple.security.firewall \
+    --name "Firewall — enforce" --values EnableFirewall=true --values EnableStealthMode=true
+jc apple-mdm payloads create-policy com.apple.wifi.managed \
+    --name "Corp WiFi (MDM)" --values-file wifi.json --plan   # preview without POSTing
 ```
 
-A browsable catalog of Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time — fully offline. Roadmap: `payloads template` will emit a starter `.mobileconfig` from a chosen schema, and `payloads create-policy` will round-trip it directly to JumpCloud as a Custom MDM Configuration Profile policy. See [KLA-449](https://linear.app/klaassenconsulting/issue/KLA-449) for the multi-PR plan.
+A browsable catalog, offline `.mobileconfig` generator, AND end-to-end JumpCloud policy creator for Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), writing a `plutil -lint`-clean plist with auto-generated UUIDs and Apple's standard Configuration envelope. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family — no hardcoded IDs — so it works on any tenant. macOS (darwin) shipped; iOS / tvOS in a follow-up.
 
 ### Interactive TUI
 
