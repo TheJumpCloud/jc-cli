@@ -399,6 +399,123 @@ func TestAppleMDMPayloadsCreatePolicy_RefusesReadOnly(t *testing.T) {
 	}
 }
 
+// TestAppleMDMPayloadsSearch_NormalizesOSAlias guards Bugbot PR #60
+// finding 1: the search tool used to pass the raw `os` arg into
+// Catalog.Filter, which keys SupportedOS as `macOS`/`iOS`. Agents
+// passing the JC family alias (`ios`, `darwin`) — which we explicitly
+// accept everywhere else — would get an empty list.
+func TestAppleMDMPayloadsSearch_NormalizesOSAlias(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	// Lowercase `ios` MUST behave identically to canonical `iOS`.
+	canon := callTool(t, cs, "apple_mdm_payloads_search", map[string]any{"os": "iOS"})
+	alias := callTool(t, cs, "apple_mdm_payloads_search", map[string]any{"os": "ios"})
+
+	var a, b appleMDMPayloadsSearchResult
+	if err := json.Unmarshal([]byte(getResultText(t, canon)), &a); err != nil {
+		t.Fatalf("canon unmarshal: %v", err)
+	}
+	if err := json.Unmarshal([]byte(getResultText(t, alias)), &b); err != nil {
+		t.Fatalf("alias unmarshal: %v", err)
+	}
+	if a.Matched != b.Matched {
+		t.Errorf("alias mismatch: iOS matched=%d, ios matched=%d", a.Matched, b.Matched)
+	}
+	if b.Matched == 0 {
+		t.Error("ios alias matched 0 — normalization regression")
+	}
+
+	// Same for darwin → macOS.
+	canon = callTool(t, cs, "apple_mdm_payloads_search", map[string]any{"os": "macOS"})
+	alias = callTool(t, cs, "apple_mdm_payloads_search", map[string]any{"os": "darwin"})
+	if err := json.Unmarshal([]byte(getResultText(t, canon)), &a); err != nil {
+		t.Fatalf("canon unmarshal: %v", err)
+	}
+	if err := json.Unmarshal([]byte(getResultText(t, alias)), &b); err != nil {
+		t.Fatalf("alias unmarshal: %v", err)
+	}
+	if a.Matched != b.Matched {
+		t.Errorf("alias mismatch: macOS matched=%d, darwin matched=%d", a.Matched, b.Matched)
+	}
+}
+
+// TestAppleMDMPayloadsCreatePolicy_RequiresPolicyName guards Bugbot
+// PR #60 finding 3: `policy_name` is what JumpCloud stores as the
+// policy name on /policies — an empty value would create a nameless
+// policy in the tenant. The preflight check must surface this before
+// the API hit (and before any step-up prompt).
+func TestAppleMDMPayloadsCreatePolicy_RequiresPolicyName(t *testing.T) {
+	setupToolTest(t)
+	srv := startApplePolicyTemplateServer(t, nil)
+	overrideV2ClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	// Empty string is the failure mode the JSON-RPC layer doesn't
+	// catch — the field is *present*, just blank. The preflight has
+	// to surface the policy_name requirement before the JC POST fires.
+	res := callTool(t, cs, "apple_mdm_payloads_create_policy", map[string]any{
+		"payloadtype_or_id": "com.apple.security.firewall",
+		"values":            map[string]any{"EnableFirewall": true},
+		"policy_name":       "",
+		"os":                "macOS",
+	})
+	if !res.IsError {
+		t.Fatal("expected error when policy_name is empty")
+	}
+	if !strings.Contains(getResultText(t, res), "policy_name") {
+		t.Errorf("error should name the missing field: %s", getResultText(t, res))
+	}
+}
+
+// TestAddTypedToolWithPreFlight_RunsBeforeStepUp guards Bugbot PR #60
+// finding 2: the SupportedOS check used to live inside the handler,
+// AFTER the addTypedTool wrapper had already run step-up. With the
+// preFlight hook the check runs first; this test confirms the order
+// by wiring a counting step-up authenticator and asserting it never
+// fires when preFlight rejects the input.
+func TestAddTypedToolWithPreFlight_RunsBeforeStepUp(t *testing.T) {
+	setupToolTest(t)
+
+	// Drop in a step-up authenticator that records every authorize
+	// call. The default Options{} server uses noopStepUp, but we want
+	// the destructive path to actually challenge so order matters.
+	stepUp := &recordingStepUp{}
+	srv := startApplePolicyTemplateServer(t, nil)
+	overrideV2ClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{stepUp: stepUp})
+
+	// iOS-only payload as macOS — preFlight should reject before
+	// the gate fires.
+	res := callTool(t, cs, "apple_mdm_payloads_create_policy", map[string]any{
+		"payloadtype_or_id": "com.apple.cellular",
+		"policy_name":       "Should Refuse",
+		"os":                "macOS",
+		"execute":           true,
+	})
+	if !res.IsError {
+		t.Fatal("expected unsupported-OS error")
+	}
+	if gateCalls := stepUp.calls.Load(); gateCalls != 0 {
+		t.Errorf("step-up gate fired %d time(s); preFlight should have short-circuited", gateCalls)
+	}
+
+	// Now a valid call — gate must fire exactly once.
+	res = callTool(t, cs, "apple_mdm_payloads_create_policy", map[string]any{
+		"payloadtype_or_id": "com.apple.security.firewall",
+		"values":            map[string]any{"EnableFirewall": true},
+		"policy_name":       "Real Policy",
+		"os":                "macOS",
+		"execute":           true,
+	})
+	if res.IsError {
+		t.Fatalf("valid execute path errored: %s", getResultText(t, res))
+	}
+	if gateCalls := stepUp.calls.Load(); gateCalls != 1 {
+		t.Errorf("expected exactly 1 step-up call on the valid path; got %d", gateCalls)
+	}
+}
+
 // TestJCOSFamilyForMCP and TestCanonicalApplePlatformForMCP cover the
 // MCP-package twins of the CLI helpers. The CLI tests live in
 // apple_mdm_payloads_test.go; duplicating here keeps the MCP package

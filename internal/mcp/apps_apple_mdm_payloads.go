@@ -292,7 +292,13 @@ func (s *Server) registerAppleMDMPayloadsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("apple_mdm_payloads_search: loading catalog: %v", err)), nil, nil
 			}
-			matches := cat.Filter(apple_mdm.FilterOpts{OS: args.OS, Search: args.Search})
+			// Normalize OS alias to Apple's canonical name so agents
+			// passing the JC family (`ios`, `darwin`) or the Apple form
+			// (`iOS`, `macOS`) both hit. Without this, `os=ios` would
+			// return an empty list because SupportedOS keys on `iOS`.
+			// (Cursor Bugbot PR #60 catch.)
+			osFilter := canonicalApplePlatformForMCP(args.OS)
+			matches := cat.Filter(apple_mdm.FilterOpts{OS: osFilter, Search: args.Search})
 			summaries := make([]appleMDMPayloadSummary, 0, len(matches))
 			for _, p := range matches {
 				summaries = append(summaries, summarizePayload(p))
@@ -355,33 +361,60 @@ func (s *Server) registerAppleMDMPayloadsTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_payloads_create_policy",
+	addTypedToolWithPreFlight(s, "apple_mdm_payloads_create_policy",
 		"Create a JumpCloud Custom MDM Configuration Profile policy from one Apple payload. "+
 			"Without execute: true, returns the same preview shape as apple_mdm_payloads_template (validated values + mobileconfig) plus the resolved JumpCloud template ID/name; never calls the JC API. "+
 			"With execute: true, POSTs the policy to JumpCloud and returns the new policy ID. Execute: true routes through the step-up auth gate (Touch ID / TTY prompt) and the audit log, same as users_delete.",
-		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMPayloadsCreatePolicyInput) (*mcp.CallToolResult, any, error) {
+		// preFlight runs BEFORE the step-up auth gate. Any error we
+		// return here short-circuits the wrapper without prompting the
+		// operator — so a malformed call (missing policy_name, OS that
+		// doesn't manage the payload, payloadtype typo) doesn't waste a
+		// Touch ID approval. (Cursor Bugbot PR #60 catch.)
+		func(args appleMDMPayloadsCreatePolicyInput) error {
 			if s.readOnly && args.Execute {
-				return errorResult("server is in read-only mode; apple_mdm_payloads_create_policy with execute=true is not allowed"), nil, nil
+				return fmt.Errorf("server is in read-only mode; apple_mdm_payloads_create_policy with execute=true is not allowed")
 			}
-			// Validate up front so a misnamed payloadtype or invalid
-			// value surfaces before the template-resolution API hit.
-			payload, typed, plistBytes, err := validateAndEmit(args.PayloadTypeOrID, args.Values,
-				args.PolicyName, args.Identifier, args.Organization, args.RemovalDisallowed)
+			if args.PolicyName == "" {
+				return fmt.Errorf("apple_mdm_payloads_create_policy: 'policy_name' is required (used as the JumpCloud policy name + the inner-payload display name)")
+			}
+			payload, err := resolvePayloadForMCP(args.PayloadTypeOrID)
 			if err != nil {
-				return errorResult(fmt.Sprintf("apple_mdm_payloads_create_policy: %v", err)), nil, nil
+				return fmt.Errorf("apple_mdm_payloads_create_policy: %v", err)
 			}
-			// SupportedOS gate — same shape as the CLI compose fix
-			// from Bugbot PR #59. Refuse an iOS-only payload shipped
-			// as a macOS policy etc.
 			osFamily := args.OS
 			if osFamily == "" {
 				osFamily = "macOS"
 			}
 			schemaPlat := canonicalApplePlatformForMCP(osFamily)
 			if sup, ok := payload.SupportedOS[schemaPlat]; !ok || !sup.Available() {
-				return errorResult(fmt.Sprintf(
+				return fmt.Errorf(
 					"apple_mdm_payloads_create_policy: payload %q does not declare support for %s",
-					payload.Type, schemaPlat)), nil, nil
+					payload.Type, schemaPlat)
+			}
+			if _, err := jcOSFamilyForMCP(osFamily); err != nil {
+				return fmt.Errorf("apple_mdm_payloads_create_policy: %v", err)
+			}
+			// Per-key value validation. Pulled into preflight so a bad
+			// value also short-circuits the gate — same UX motivation
+			// as the SupportedOS check.
+			if _, err := apple_mdm.CoerceAndValidate(payload, args.Values); err != nil {
+				return fmt.Errorf("apple_mdm_payloads_create_policy: %v", err)
+			}
+			return nil
+		},
+		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMPayloadsCreatePolicyInput) (*mcp.CallToolResult, any, error) {
+			// Validate values + emit the mobileconfig. preFlight has
+			// already confirmed the payload exists and supports the OS,
+			// so the only error class still possible here is per-key
+			// validation (rangelist/presence/coercion).
+			payload, typed, plistBytes, err := validateAndEmit(args.PayloadTypeOrID, args.Values,
+				args.PolicyName, args.Identifier, args.Organization, args.RemovalDisallowed)
+			if err != nil {
+				return errorResult(fmt.Sprintf("apple_mdm_payloads_create_policy: %v", err)), nil, nil
+			}
+			osFamily := args.OS
+			if osFamily == "" {
+				osFamily = "macOS"
 			}
 			resolvedFamily, err := jcOSFamilyForMCP(osFamily)
 			if err != nil {

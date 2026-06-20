@@ -5348,6 +5348,89 @@ func addTypedTool[In any](s *Server, name, description string, handler func(ctx 
 	s.toolNames = append(s.toolNames, name)
 }
 
+// addTypedToolWithPreFlight is addTypedTool with an extra `preFlight`
+// callback that runs BEFORE the step-up auth gate. The intended use is
+// fast-fail input validation (missing required fields, semantic
+// mismatches the operator must fix) that the agent can correct without
+// the operator wasting a Touch ID / TTY / webhook approval on a call
+// that was going to error out anyway.
+//
+// Cursor Bugbot PR #60 caught the original gap: apple_mdm_payloads_
+// create_policy did its SupportedOS check inside the handler, AFTER
+// the wrapper had already prompted for step-up. With this hook the
+// same check runs at the top of the wrapper — if it returns an error,
+// the gate never fires.
+//
+// preFlight returns nil on success and a non-nil error message on
+// failure (the *mcp.CallToolResult is built here so the audit log path
+// is identical to the gate-failure path).
+func addTypedToolWithPreFlight[In any](s *Server, name, description string, preFlight func(In) error, handler func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error)) {
+	if !s.toolFilter.isAllowed(name) {
+		return
+	}
+
+	tool := &mcp.Tool{
+		Name:        name,
+		Description: description,
+	}
+
+	wrappedHandler := func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error) {
+		if err := s.limiter.allow(); err != nil {
+			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
+			return errorResult(err.Error()), nil, nil
+		}
+
+		// Pre-flight check — runs before the step-up gate so input
+		// errors don't cost the operator a Touch ID / TTY approval.
+		if preFlight != nil {
+			if err := preFlight(args); err != nil {
+				s.auditLog.log(name, req.Params.Arguments, false, err.Error())
+				return errorResult(err.Error()), nil, nil
+			}
+		}
+
+		if isExecutingDestructive(args) {
+			if err := s.stepUp.authorize(ctx, name, destructiveTarget(args)); err != nil {
+				msg := fmt.Sprintf(
+					"jc blocked %s: local step-up gate (mcp.require_step_up_for_destructive) — %v. "+
+						"This is a jc-side policy, not a JumpCloud requirement; %s",
+					name, err, s.stepUp.remediation(err),
+				)
+				s.auditLog.log(name, req.Params.Arguments, false, msg)
+				return errorResult(msg), nil, nil
+			}
+		}
+
+		result, out, err := handler(ctx, req, args)
+
+		toolFailed := err != nil || (result != nil && result.IsError)
+		if err != nil {
+			s.auditLog.log(name, req.Params.Arguments, false, err.Error())
+		} else if result != nil && result.IsError {
+			errMsg := "tool error"
+			if len(result.Content) > 0 {
+				if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+					errMsg = tc.Text
+				}
+			}
+			s.auditLog.log(name, req.Params.Arguments, false, errMsg)
+		} else {
+			s.auditLog.log(name, req.Params.Arguments, true, "")
+		}
+
+		if !toolFailed && isExecutingDestructive(args) {
+			if signErr := s.signer.sign(name, args); signErr != nil {
+				fmt.Fprintf(os.Stderr, "jc: warning: failed to sign destructive-op manifest for %s: %v\n", name, signErr)
+			}
+		}
+
+		return result, out, err
+	}
+
+	mcp.AddTool(s.mcpServer, tool, wrappedHandler)
+	s.toolNames = append(s.toolNames, name)
+}
+
 // textResult creates a simple text result.
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
