@@ -44,11 +44,16 @@ var commandClass = map[string]string{
 	"jc apple-mdm enrollment-profiles":     ClassReadOnly,
 	"jc apple-mdm get":                     ClassReadOnly,
 	"jc apple-mdm list":                    ClassReadOnly,
-	"jc apple-mdm payloads compose":        ClassInternal, // local mobileconfig emission
+	// payloads compose: --create-policy turns this into a JC POST
+	// (same wire shape as create-policy), so worst-case capability is
+	// mutating, not internal. Cursor Bugbot PR #62 catch.
+	"jc apple-mdm payloads compose":        ClassMutating,
 	"jc apple-mdm payloads create-policy":  ClassMutating, // POSTs a JC policy
 	"jc apple-mdm payloads list":           ClassReadOnly, // vendored catalog
 	"jc apple-mdm payloads show":           ClassReadOnly,
-	"jc apple-mdm payloads template":       ClassInternal, // local mobileconfig emission
+	// payloads template is offline-only — emits a .mobileconfig file
+	// and never touches the JC API.
+	"jc apple-mdm payloads template":       ClassInternal,
 	"jc apple-mdm update":                  ClassMutating,
 
 	// apps — JC software app records.

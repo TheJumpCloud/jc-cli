@@ -82,6 +82,22 @@ func TestClassificationMapValuesAreValid(t *testing.T) {
 	}
 }
 
+// TestComposeNotInternal is a regression guard for Cursor Bugbot PR #62:
+// `jc apple-mdm payloads compose` was originally classed as `internal`
+// because the default path is offline mobileconfig emission, but with
+// --create-policy it POSTs to JumpCloud — same wire shape as
+// `apple-mdm payloads create-policy`. Per the worst-case-capability
+// rule the class must be at least `mutating`. This test guards against
+// a future revert.
+func TestComposeNotInternal(t *testing.T) {
+	got := commandClass["jc apple-mdm payloads compose"]
+	if got == ClassInternal {
+		t.Errorf("jc apple-mdm payloads compose is classed %q, but --create-policy POSTs to JC. "+
+			"Per worst-case capability the class must be at least %q (see Bugbot PR #62).",
+			got, ClassMutating)
+	}
+}
+
 // TestApplyClassificationsAttachesAnnotation confirms the wiring from
 // commandClass → cobra.Command.Annotations actually fires. A canary
 // against a future refactor that builds the root tree without calling
