@@ -548,9 +548,15 @@ jc apple-mdm payloads create-policy com.apple.security.firewall \
     --name "Firewall — enforce" --values EnableFirewall=true --values EnableStealthMode=true
 jc apple-mdm payloads create-policy com.apple.wifi.managed \
     --name "Corp WiFi (MDM)" --values-file wifi.json --plan   # preview without POSTing
+
+# Multi-payload bundles (CIS-style profiles with N inner payloads)
+jc apple-mdm payloads compose --config corp-baseline.yaml             # emit to stdout
+jc apple-mdm payloads compose --config corp-baseline.yaml \
+    --output-file corp-baseline.mobileconfig                          # write to file (atomic)
+jc apple-mdm payloads compose --config corp-baseline.yaml --create-policy  # POST to JC
 ```
 
-A browsable catalog, offline `.mobileconfig` generator, AND end-to-end JumpCloud policy creator for Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), writing a `plutil -lint`-clean plist with auto-generated UUIDs and Apple's standard Configuration envelope. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family — no hardcoded IDs — so it works on any tenant. macOS (darwin) shipped; iOS / tvOS in a follow-up.
+A browsable catalog, offline `.mobileconfig` generator (single-payload via `template` and multi-payload bundles via `compose`), AND end-to-end JumpCloud policy creator for Apple's official MDM Configuration Profile schemas, vendored from [apple/device-management](https://github.com/apple/device-management) (MIT-licensed, pinned to `Release-v26.4`) and embedded in the binary at build time. The emitter coerces and validates user values against Apple's schema (range, rangelist, required-keys), writing a `plutil -lint`-clean plist with auto-generated UUIDs and Apple's standard Configuration envelope. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family — no hardcoded IDs — so it works on any tenant. Supports `--os macOS` and `--os iOS`; tvOS/visionOS/watchOS are not supported by JumpCloud MDM.
 
 ### Interactive TUI
 
