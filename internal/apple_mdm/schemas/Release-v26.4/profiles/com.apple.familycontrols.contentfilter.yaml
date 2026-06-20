@@ -1,0 +1,144 @@
+title: 'Parental Controls: Content Filter'
+description: The payload that configures the parental control web content filters.
+payload:
+  payloadtype: com.apple.familycontrols.contentfilter
+  supportedOS:
+    iOS:
+      introduced: n/a
+    macOS:
+      introduced: '10.7'
+      multiple: false
+      devicechannel: true
+      userchannel: true
+      supervised: false
+      requiresdep: false
+      userapprovedmdm: false
+      allowmanualinstall: true
+      userenrollment:
+        mode: forbidden
+    tvOS:
+      introduced: n/a
+    visionOS:
+      introduced: n/a
+    watchOS:
+      introduced: n/a
+  content: Parental controls web filter.
+payloadkeys:
+- key: restrictWeb
+  type: <boolean>
+  presence: required
+  content: If `true`, enables web content filters.
+- key: useContentFilter
+  type: <boolean>
+  presence: optional
+  default: false
+  content: If `true`, filters content automatically.
+- key: allowListEnabled
+  supportedOS:
+    macOS:
+      introduced: '15.2'
+  type: <boolean>
+  presence: optional
+  default: false
+  content: If `true`, enables web content filters.
+- key: whitelistEnabled
+  supportedOS:
+    macOS:
+      deprecated: '15.2'
+  type: <boolean>
+  presence: optional
+  default: false
+  content: Use `allowListEnabled` instead.
+- key: siteAllowList
+  supportedOS:
+    macOS:
+      introduced: '15.2'
+  type: <array>
+  presence: optional
+  content: |-
+    An array of sites that defines an allow list. If specified, this defines additional allowed sites besides those in the automated allow list and deny list, including disallowed adult sites.
+
+    This key is required if `allowListEnabled` is `true`.
+  subkeys:
+  - key: siteAllowListItem
+    type: <dictionary>
+    content: A dictionary defining a site for the allow list.
+    subkeys:
+    - key: address
+      type: <string>
+      presence: required
+      content: The site prefix, including the `http(s)` scheme.
+    - key: pageTitle
+      type: <string>
+      presence: optional
+      content: The site page title.
+- key: siteWhitelist
+  supportedOS:
+    macOS:
+      deprecated: '15.2'
+  type: <array>
+  presence: optional
+  content: Use `siteAllowList` instead.
+  subkeys:
+  - key: siteWhitelistItem
+    type: <dictionary>
+    content: A dictionary defining a site for the allow list.
+    subkeys:
+    - key: address
+      type: <string>
+      presence: required
+      content: The site prefix, including http(s) scheme.
+    - key: pageTitle
+      type: <string>
+      presence: optional
+      content: The site page title.
+- key: filterAllowList
+  supportedOS:
+    macOS:
+      introduced: '15.2'
+  type: <array>
+  presence: optional
+  content: The array of URLs that defines an allow list. When `restrictWeb` and `useContentFilter`
+    are enabled, only URLs in the allow list are available to the user.
+  subkeys:
+  - key: filterAllowListItem
+    type: <string>
+    presence: required
+    content: An allowed site.
+- key: filterWhitelist
+  supportedOS:
+    macOS:
+      deprecated: '15.2'
+  type: <array>
+  presence: optional
+  content: Use `filterAllowList` instead.
+  subkeys:
+  - key: filterWhitelistItem
+    type: <string>
+    presence: required
+    content: An allowed site.
+- key: filterDenyList
+  supportedOS:
+    macOS:
+      introduced: '15.2'
+  type: <array>
+  presence: optional
+  content: The array of URLs that defines a deny list. When `restrictWeb` and `useContentFilter`
+    are enabled, no URLs in the deny list are available to the user.
+  subkeys:
+  - key: filterDenyListItem
+    type: <string>
+    presence: required
+    content: A disallowed site.
+- key: filterBlacklist
+  supportedOS:
+    macOS:
+      deprecated: '15.2'
+  type: <array>
+  presence: optional
+  content: Use `filterDenyList` instead.
+  subkeys:
+  - key: filterBlacklistItem
+    type: <string>
+    presence: required
+    content: A disallowed site.

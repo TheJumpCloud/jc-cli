@@ -1005,11 +1005,14 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc apple-mdm",
-				Description: "Manage Apple MDM configurations",
-				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices"},
+				Description: "Manage Apple MDM configurations + browse Apple's MDM payload schemas",
+				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), AND browse Apple's official MDM Configuration Profile schema catalog via the `payloads` subcommand. The catalog is vendored from github.com/apple/device-management (MIT-licensed) and embedded at build time — `jc apple-mdm payloads list/show` work fully offline. Roadmap: `payloads template` will emit a starter mobileconfig from a chosen schema, and `payloads create-policy` will round-trip it directly to JumpCloud as a Custom MDM Configuration Profile policy. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults).",
+				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices", "payloads"},
 				Flags: []FlagEntry{
 					{Name: "name", Type: "string", Description: "MDM configuration name (create/update)"},
 					{Name: "org-name", Type: "string", Description: "Organization name (create/update)"},
+					{Name: "os", Type: "string", Description: "Filter payloads catalog by Apple platform (payloads list/show)"},
+					{Name: "search", Type: "string", Description: "Case-insensitive substring filter against payloadtype/title/description (payloads list)"},
 				},
 			},
 			{
