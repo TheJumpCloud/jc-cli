@@ -183,6 +183,31 @@ func runComposeCreatePolicy(cmd *cobra.Command,
 		return err
 	}
 
+	// Validate every inner payload supports the chosen Apple platform.
+	// Single-payload create-policy does this check before POSTing
+	// (Bugbot PR #51 re-review); compose was missing the equivalent
+	// (Bugbot PR #59 review). Without this an MSP could ship a
+	// macOS-targeted compose bundle that silently includes an
+	// iOS-only payload — JumpCloud accepts it; the device ignores
+	// it.
+	//
+	// Aggregate the errors across all unsupported payloads so the
+	// operator sees every offender in one pass.
+	appleSchemaPlatform := canonicalApplePlatform(osFamily)
+	var unsupported []string
+	for _, p := range instances {
+		sup, ok := p.Schema.SupportedOS[appleSchemaPlatform]
+		if !ok || !sup.Available() {
+			unsupported = append(unsupported, p.Schema.Type)
+		}
+	}
+	if len(unsupported) > 0 {
+		return fmt.Errorf(
+			"the following payload(s) do not declare support for %s: %s\n"+
+				"(run `jc apple-mdm payloads show <type>` for each to see which Apple platforms are supported)",
+			appleSchemaPlatform, strings.Join(unsupported, ", "))
+	}
+
 	var plistBuf bytes.Buffer
 	if err := apple_mdm.EmitMobileconfig(&plistBuf, env, instances); err != nil {
 		return fmt.Errorf("emitting mobileconfig: %w", err)
