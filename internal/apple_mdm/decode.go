@@ -28,7 +28,7 @@ type DecodedPolicy struct {
 	PolicyName string
 	// TemplateName is the JumpCloud template name attached to the
 	// policy (e.g. "custom_mdm_profile_darwin",
-	// "custom_mdm_profile_iphone"). Drives the OS family used at PUT
+	// "custom_mdm_profile_ios"). Drives the OS family used at PUT
 	// time so an iOS-family policy doesn't get accidentally
 	// reassigned to the macOS template on edit (Bugbot PR #54
 	// review).
@@ -227,7 +227,7 @@ func parsePlistEnvelope(data []byte) (map[string]any, error) {
 // the expected prefix.
 //
 //	"custom_mdm_profile_darwin"  → "darwin"
-//	"custom_mdm_profile_iphone"  → "iphone"
+//	"custom_mdm_profile_ios"     → "ios"
 //	anything else                → ""
 func OSFamilyFromTemplateName(templateName string) string {
 	const prefix = "custom_mdm_profile_"

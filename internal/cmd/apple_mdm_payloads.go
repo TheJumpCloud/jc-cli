@@ -96,7 +96,7 @@ shape) without making the POST.`,
 			}
 			// Translate the Apple platform name (what the rest of the
 			// catalog uses — "macOS"/"iOS"/etc.) into JumpCloud's
-			// template family name ("darwin"/"iphone"). Pre-fix the
+			// template family name ("darwin"/"ios"). Pre-fix the
 			// CLI accepted only the JumpCloud-side name verbatim,
 			// which conflicted with `payloads list/show --os macOS`
 			// and forced the operator to pass the cryptic --os darwin
@@ -243,7 +243,7 @@ func boolToYN(b bool) string {
 
 // jcOSFamily maps Apple's platform name (macOS/iOS/etc., as used by
 // the catalog and the rest of the apple-mdm subcommand tree) to
-// JumpCloud's policy-template family name (darwin/iphone/etc.). v1
+// JumpCloud's policy-template family name (darwin/ios/etc.). v1
 // supports macOS only; everything else returns a clear error pointing
 // at the relevant follow-up ticket. Without this translation
 // `--os macOS` is rejected even though the rest of the CLI uses Apple's

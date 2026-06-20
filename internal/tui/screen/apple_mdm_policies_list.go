@@ -18,7 +18,7 @@ import (
 
 // customMDMTemplateFamilyPrefix is the JumpCloud template-name
 // prefix we filter on. Matches `custom_mdm_profile_darwin`,
-// `custom_mdm_profile_iphone`, etc. — i.e. every Custom MDM
+// `custom_mdm_profile_ios`, etc. — i.e. every Custom MDM
 // Configuration Profile family JumpCloud might add.
 const customMDMTemplateFamilyPrefix = "custom_mdm_profile_"
 

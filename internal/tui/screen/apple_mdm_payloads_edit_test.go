@@ -105,7 +105,7 @@ func TestNewAppleMDMPayloadsFormScreenForEdit_PreservesEnvelopeFlags(t *testing.
 	decoded := apple_mdm.DecodedPolicy{
 		PolicyID:          "abc",
 		PolicyName:        "iOS policy",
-		TemplateName:      "custom_mdm_profile_iphone",
+		TemplateName:      "custom_mdm_profile_ios",
 		Schema:            apple_mdm.Payload{Type: "com.apple.x"},
 		Redispatch:        false, // off — must be preserved
 		RemovalDisallowed: true,  // on — must be preserved
@@ -117,8 +117,8 @@ func TestNewAppleMDMPayloadsFormScreenForEdit_PreservesEnvelopeFlags(t *testing.
 	if !s.editRemovalDisallowed {
 		t.Errorf("editRemovalDisallowed = %v, want true (preserved from decoded)", s.editRemovalDisallowed)
 	}
-	if s.editOSFamily != "iphone" {
-		t.Errorf("editOSFamily = %q, want iphone (parsed from template name)", s.editOSFamily)
+	if s.editOSFamily != "ios" {
+		t.Errorf("editOSFamily = %q, want ios (parsed from template name)", s.editOSFamily)
 	}
 }
 
@@ -238,7 +238,7 @@ func TestAppleMDMPoliciesListScreen_FilterByNameAndTemplate(t *testing.T) {
 	s.all = []policyRow{
 		{ID: "1", Name: "firewall enforce", Template: "custom_mdm_profile_darwin"},
 		{ID: "2", Name: "wifi corp", Template: "custom_mdm_profile_darwin"},
-		{ID: "3", Name: "iOS restrictions", Template: "custom_mdm_profile_iphone"},
+		{ID: "3", Name: "iOS restrictions", Template: "custom_mdm_profile_ios"},
 	}
 	s.loading = false
 	s.applyFilter()
@@ -250,10 +250,10 @@ func TestAppleMDMPoliciesListScreen_FilterByNameAndTemplate(t *testing.T) {
 	if len(s.filtered) != 1 || s.filtered[0].ID != "1" {
 		t.Errorf("filter 'fire' should narrow to firewall, got %v", s.filtered)
 	}
-	s.filter.SetValue("iphone")
+	s.filter.SetValue("_ios")
 	s.applyFilter()
 	if len(s.filtered) != 1 || s.filtered[0].ID != "3" {
-		t.Errorf("filter 'iphone' should match by template, got %v", s.filtered)
+		t.Errorf("filter '_ios' should match the iOS-template policy, got %v", s.filtered)
 	}
 	s.filter.SetValue("")
 	s.applyFilter()
