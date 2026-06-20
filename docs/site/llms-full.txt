@@ -488,7 +488,7 @@ Recipes turn JumpCloud workflows into declarative, version-controlled YAML files
 
 MCP server for AI agent integration
 
-Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.
+Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 205 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *"disable AirDrop on iPads"*, *"enforce FileVault on Macs"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call. Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including the Apple MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.
 
 **Subcommands:** `serve`
 

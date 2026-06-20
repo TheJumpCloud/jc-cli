@@ -382,6 +382,14 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"recipe_runner_view",
 		// Recipe catalog tool (paired with recipe_run + recipe_runner_view).
 		"recipe_list",
+		// Apple MDM payloads catalog (KLA-452): vendored Apple schema
+		// browser + JC Custom-MDM-Profile policy creator. The
+		// create_policy tool routes through the step-up auth gate
+		// (Execute bool field), same shape as recipe_run / users_delete.
+		"apple_mdm_payloads_search",
+		"apple_mdm_payloads_show",
+		"apple_mdm_payloads_template",
+		"apple_mdm_payloads_create_policy",
 	}
 
 	toolNames := make(map[string]bool)
@@ -396,8 +404,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 201 {
-		t.Errorf("expected 201 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 205 {
+		t.Errorf("expected 205 tools, got %d", len(result.Tools))
 	}
 }
 
