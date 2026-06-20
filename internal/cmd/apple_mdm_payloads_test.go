@@ -7,6 +7,37 @@ import (
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 )
 
+// TestCanonicalApplePlatform covers the normalization layer that
+// translates either Apple's platform name OR JumpCloud's family alias
+// to Apple's vendored-schema canonical name. Bugbot PR #57 review
+// caught that without this, `--os ios` would pass jcOSFamily but
+// then fail the SupportedOS lookup (Apple's schemas key on "iOS",
+// not "ios") with a misleading error.
+func TestCanonicalApplePlatform(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		// Apple's canonical names pass through.
+		{"macOS", "macOS"},
+		{"iOS", "iOS"},
+		// JC family aliases map to Apple's canonical.
+		{"darwin", "macOS"},
+		{"ios", "iOS"},
+		// Unknown / future platforms pass through so a lookup miss
+		// surfaces clearly instead of silently renaming.
+		{"tvOS", "tvOS"},
+		{"visionOS", "visionOS"},
+		{"watchOS", "watchOS"},
+		{"madeup", "madeup"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := canonicalApplePlatform(tc.in); got != tc.want {
+			t.Errorf("canonicalApplePlatform(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestJCOSFamily covers the Apple-platform → JumpCloud-template-family
 // translation. macOS and iOS are supported (KLA-450 landed iOS);
 // tvOS/visionOS/watchOS fail clean because JumpCloud's MDM doesn't
