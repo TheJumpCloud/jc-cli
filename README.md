@@ -688,6 +688,29 @@ jc recipe validate ./my-recipe.yaml # Validate syntax
 
 User-defined recipes with the same name as a built-in recipe override it.
 
+### Claude Code Skills Plugin
+
+jc-cli ships a set of conversational Claude Code skills as a self-hosted marketplace at the repo root. Install:
+
+```
+/plugin marketplace add TheJumpCloud/jc-cli
+/plugin install jc-cli-skills@jc-cli
+```
+
+That makes seven skills available as `/jc-cli-skills:<name>` slash commands:
+
+| Skill | What it does |
+|---|---|
+| `jc` | Generic JumpCloud Q&A + ad-hoc resource queries |
+| `jc-onboard-user` | New-user provisioning runbook (create, group memberships, device assignment, welcome email) |
+| `jc-offboard-user` | Offboarding runbook (suspend, lock, remove from groups, audit log capture) |
+| `jc-troubleshoot-auth` | Auth-failure investigation across SSO, RADIUS, LDAP, and policy denials |
+| `jc-security-audit` | Cross-resource security posture audit (admins-without-MFA, stale devices, FDE coverage, …) |
+| `jc-compliance-check` | Compliance posture against a chosen baseline |
+| `jc-create-recipe` | Interactive YAML recipe authoring with schema validation |
+
+Skills delegate every JumpCloud operation to the `jc` binary, so the LLM never issues raw API calls — same auth, same audit log, same `--plan` safety rails as a human at the terminal. The plugin only requires `jc` on `$PATH` and an authenticated profile (`jc auth login` followed by `jc doctor`). Skills are defined under [`skills/`](skills/); the marketplace manifest is at [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json).
+
 ### Explain
 
 Describe what a command would do without executing it or making API calls. Useful for reviewing LLM-generated commands before running them.
