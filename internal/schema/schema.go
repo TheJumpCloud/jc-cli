@@ -1011,7 +1011,7 @@ func BuildCommandManifest() CommandManifest {
 				Flags: []FlagEntry{
 					{Name: "name", Type: "string", Description: "MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)"},
 					{Name: "org-name", Type: "string", Description: "Organization name (create/update)"},
-					{Name: "os", Type: "string", Description: "Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin)"},
+					{Name: "os", Type: "string", Description: "Filter payloads catalog by Apple platform (payloads list/show); JC template OS family for payloads create-policy (darwin/ios)"},
 					{Name: "search", Type: "string", Description: "Case-insensitive substring filter against payloadtype/title/description (payloads list)"},
 					{Name: "values", Type: "string[]", Description: "Set scalar payload key (key=value, repeatable; payloads template / create-policy)"},
 					{Name: "values-file", Type: "string", Description: "JSON file mapping payload key names to values for nested shapes (payloads template / create-policy)"},
