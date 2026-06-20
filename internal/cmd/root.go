@@ -206,6 +206,10 @@ interface.`,
 	_ = viper.BindPFlag("query", rootCmd.PersistentFlags().Lookup("query"))
 	_ = viper.BindPFlag("brief", rootCmd.PersistentFlags().Lookup("brief"))
 
+	// Stamp every leaf with its jc:class annotation (KLA-444). Must run
+	// after the full command tree is built so walkLeaves sees everything.
+	applyClassifications(rootCmd)
+
 	return rootCmd
 }
 

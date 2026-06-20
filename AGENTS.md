@@ -149,6 +149,29 @@ jc recipe show <name>       # Show recipe steps
 | 10 | Plan mode (no changes made) |
 | 130 | Interrupted (Ctrl+C) |
 
+## Command annotations (jc:class)
+
+Every leaf command carries a single `jc:class` Cobra annotation declaring its
+mutation class. Four values exist:
+
+| Class | Meaning | Example |
+|---|---|---|
+| `read-only` | GETs only, never writes to the JC API | `jc users list`, `jc auth-policies blast-radius` |
+| `mutating` | Writes that are reversible or low-impact | `jc users create`, `jc groups add-member` |
+| `destructive` | Hard or impossible to reverse; classed by worst-case capability, so wrappers like `jc recipe run` / `jc bulk users` / `jc commands run` count even if a given invocation only reads | `jc users delete`, `jc devices erase`, `jc access-requests revoke` |
+| `internal` | Never touches the JC API (local file ops, credential mgmt, schema introspection) | `jc explain`, `jc audit verify`, `jc auth login` |
+
+The classification map lives at `internal/cmd/classifications.go`. A CI lint
+test (`TestEveryLeafIsClassified`) fails the build when a new leaf lands
+without an entry, and a sibling test refuses stale entries — so the map
+stays exact.
+
+Today the annotation is informational and lint-only. Follow-ups (tracked
+separately) will use it to drive MCP filtering by capability
+(`mcp.blocked_tools: ["tag:destructive"]`) and to deprecate the
+reflection-based destructive-op gate in `internal/mcp/`. The annotation
+is the single source of truth those callers will read.
+
 ## Tips for agents
 
 - Use `--brief` for token-efficient list output.
