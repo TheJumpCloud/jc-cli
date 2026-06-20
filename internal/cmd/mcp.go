@@ -21,6 +21,16 @@ func newMcpCmd() *cobra.Command {
 		Long: `Start an MCP server that exposes JumpCloud operations as tools and resources
 for AI assistants like Claude Desktop and Claude Code.
 
+205 tools cover the full JumpCloud surface plus a dedicated Apple MDM
+payloads catalog (apple_mdm_payloads_search / _show / _template /
+_create_policy). The catalog lets an agent map a natural-language MDM
+intent — "disable AirDrop on iPads", "enforce FileVault on Macs" — to
+one of Apple's vendored schemas (com.apple.applicationaccess,
+com.apple.security.firewall, …) and create a JumpCloud Custom MDM
+Configuration Profile from it in one tool call. The create_policy tool
+routes through the step-up auth gate (Touch ID / TTY / webhook) before
+any POST to JumpCloud.
+
 Configure in Claude Desktop:
   {
     "mcpServers": {

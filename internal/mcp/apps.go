@@ -174,6 +174,7 @@ func (s *Server) registerAppTools() {
 	s.registerInsightsView()
 	s.registerUserView()
 	s.registerDeviceView()
+	s.registerAppleMDMPayloadsTools()
 }
 
 // registerAppResources registers the ui:// resource half of every MCP App.
