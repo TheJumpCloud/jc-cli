@@ -525,6 +525,29 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryWorkflows,
 	})
 
+	// Apple MDM payloads: another virtual entry — the catalog is
+	// vendored offline (Release-v26.4 of github.com/apple/device-management,
+	// MIT-licensed) and embedded in the binary. Browse + drill into
+	// any of the 125 Configuration Profile schemas, then (in a
+	// follow-up) hand off to $EDITOR to author a JumpCloud Custom
+	// MDM Configuration Profile policy in one continuous session.
+	entries = append(entries, ResourceEntry{
+		Key:         "apple-mdm-payloads",
+		DisplayName: "Apple MDM payloads",
+		Category:    CategoryDeviceMgmt,
+	})
+
+	// Apple MDM custom MDM policies: the edit counterpart to
+	// apple-mdm-payloads. Lists existing JumpCloud Custom MDM
+	// Configuration Profile policies; drilling in fetches + decodes
+	// the policy and either opens the form pre-populated (single-
+	// payload) or surfaces the multi-payload guard.
+	entries = append(entries, ResourceEntry{
+		Key:         "apple-mdm-custom-policies",
+		DisplayName: "Apple MDM custom MDM policies",
+		Category:    CategoryDeviceMgmt,
+	})
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 

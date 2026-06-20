@@ -1,0 +1,322 @@
+package apple_mdm
+
+import (
+	"fmt"
+	"strings"
+)
+
+// EmitValuesSkeleton renders a YAML scaffold the operator edits to
+// populate a payload's user-supplied values. The output is annotated
+// per-key with type, presence, default, and constraints so the admin
+// doesn't have to flip between `jc apple-mdm payloads show` and the
+// editor.
+//
+// YAML (not JSON) so we can ship inline comments — the comment lines
+// carry all the per-key affordances that make this useful as an
+// authoring surface. The CoerceAndValidate path is type-agnostic
+// (map[string]any), so the consumer just yaml.Unmarshal before passing
+// the parsed values in.
+//
+// Required keys are uncommented with a placeholder; optional keys are
+// commented out so the operator opts in. The first key on screen is
+// always one the admin must set — they shouldn't have to scroll
+// hunting for required entries.
+func EmitValuesSkeleton(p Payload) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s", p.Type)
+	if p.Title != "" {
+		fmt.Fprintf(&b, " — %s", p.Title)
+	}
+	fmt.Fprintln(&b)
+	if p.Description != "" {
+		// Wrap long descriptions across multiple comment lines so the
+		// header doesn't blow past 100 columns in a typical editor.
+		for _, line := range wrap(p.Description, 88) {
+			fmt.Fprintf(&b, "# %s\n", line)
+		}
+	}
+	fmt.Fprintln(&b, "#")
+	fmt.Fprintln(&b, "# Required keys are uncommented below. Uncomment optional keys to set them.")
+	fmt.Fprintln(&b, "# Save and exit your editor when done; jc will validate and preview the profile.")
+	fmt.Fprintln(&b)
+
+	required, optional, other := groupKeysByPresenceSkeleton(p.Keys)
+
+	if len(required) > 0 {
+		fmt.Fprintln(&b, "# ─── Required keys ───")
+		fmt.Fprintln(&b)
+		for _, k := range required {
+			writeKeyEntry(&b, k, false /* commented */, 0)
+		}
+	} else {
+		fmt.Fprintln(&b, "# ─── Required keys ───")
+		fmt.Fprintln(&b, "# (this schema has no required keys)")
+		fmt.Fprintln(&b)
+	}
+
+	if len(optional) > 0 {
+		fmt.Fprintln(&b, "# ─── Optional keys ───")
+		fmt.Fprintln(&b)
+		for _, k := range optional {
+			writeKeyEntry(&b, k, true /* commented */, 0)
+		}
+	}
+	if len(other) > 0 {
+		fmt.Fprintln(&b, "# ─── Other (deprecated/conditional) keys ───")
+		fmt.Fprintln(&b)
+		for _, k := range other {
+			writeKeyEntry(&b, k, true, 0)
+		}
+	}
+
+	return b.String()
+}
+
+// maxSkeletonDepth caps recursion into nested dictionaries/arrays.
+// Apple's schemas can nest 5+ levels deep (wifi.managed's
+// EAPClientConfiguration is the canonical example); beyond depth 3
+// the skeleton gets unwieldy fast and the operator is usually better
+// off either copying from `payloads show` or starting from a
+// ProfileCreator-generated .mobileconfig.
+const maxSkeletonDepth = 3
+
+// writeKeyEntry emits one annotated entry for a payload key. Structure:
+//
+//	# KeyName: type (presence, valuetype=..., enum{...}, range [..])
+//	#   First line of the description.
+//	# KeyName: <example value>          ← uncommented if required
+//
+// For `dictionary` and `array` types with declared Subkeys, the entry
+// recursively expands into a nested YAML block. Pre-fix every nested
+// dictionary collapsed to `{}` and the operator had to switch contexts
+// to learn the subkey schema; recursive expansion makes the schema
+// visible in the editor itself. depth is the current YAML indentation
+// level (each level = 2 spaces); the cap is enforced by maxSkeletonDepth.
+//
+// commentOut cascades from the parent: an ancestor that's commented out
+// forces all descendants to be commented out too, so the operator
+// always has consistent uncomment boundaries. To enable a previously
+// commented optional dict the operator uncomments the parent line +
+// each desired subkey value line.
+func writeKeyEntry(b *strings.Builder, k Key, commentOut bool, depth int) {
+	indent := strings.Repeat("  ", depth)
+	prefix := ""
+	if commentOut {
+		prefix = "# "
+	}
+
+	// Documentation comment block — always commented out regardless of
+	// the commentOut flag, since it's docs not values.
+	fmt.Fprintf(b, "%s# %s", indent, k.Name)
+	if k.Type != "" {
+		fmt.Fprintf(b, ": %s", k.Type)
+	}
+	if pieces := keyAffordances(k); len(pieces) > 0 {
+		fmt.Fprintf(b, " (%s)", strings.Join(pieces, ", "))
+	}
+	fmt.Fprintln(b)
+	if d := firstLineSkeleton(k.Content); d != "" {
+		fmt.Fprintf(b, "%s#   %s\n", indent, d)
+	}
+
+	// Value line(s).
+	switch k.Type {
+	case "dictionary":
+		if len(k.Subkeys) > 0 && depth < maxSkeletonDepth {
+			fmt.Fprintf(b, "%s%s%s:\n", indent, prefix, k.Name)
+			for _, sk := range k.Subkeys {
+				skComment := commentOut || strings.ToLower(sk.Presence) != "required"
+				writeKeyEntry(b, sk, skComment, depth+1)
+			}
+		} else {
+			// No declared subkeys, or recursion capped. Fall back to
+			// an empty dict — the operator can fill in arbitrary
+			// values, which is the right call for MCX-style preference
+			// payloads where the dict is freeform.
+			fmt.Fprintf(b, "%s%s%s: {}\n\n", indent, prefix, k.Name)
+		}
+	case "array":
+		// Apple's schema convention: an array's subkeys list contains
+		// a SINGLE entry describing the element type. If that element
+		// is a scalar the array is `[scalar, scalar, ...]`; if it's
+		// a dictionary the array is `[{field1, field2}, {field1, ...}]`.
+		// Pre-fix we emitted the element subkey's *name* as the
+		// element key (`- EAPType: 13` for scalar arrays, an extra
+		// `ApplicationsItem:` wrapper for dict arrays); the resulting
+		// plist shape was wrong and a device would reject it
+		// (Bugbot PR #52 re-review).
+		if len(k.Subkeys) > 0 && depth < maxSkeletonDepth {
+			elem := k.Subkeys[0]
+			fmt.Fprintf(b, "%s%s%s:\n", indent, prefix, k.Name)
+			switch elem.Type {
+			case "dictionary":
+				// Dict elements: emit the dict's fields directly under
+				// the `- ` marker. Each field gets its own doc + value
+				// line. The `- ` itself lives on the first field's
+				// indent, but with our comment+indent flow it's
+				// cleanest to put it on its own header line.
+				fmt.Fprintf(b, "%s%s  - # repeat this block for each entry\n", indent, prefix)
+				for _, sub := range elem.Subkeys {
+					skComment := commentOut || strings.ToLower(sub.Presence) != "required"
+					writeKeyEntry(b, sub, skComment, depth+2)
+				}
+			default:
+				// Scalar element: one example value with a comment
+				// telling the operator the element shape.
+				docPieces := []string{elem.Type}
+				docPieces = append(docPieces, keyAffordances(elem)...)
+				fmt.Fprintf(b, "%s%s  # element type: %s\n", indent, prefix, strings.Join(docPieces, ", "))
+				fmt.Fprintf(b, "%s%s  - %s\n\n", indent, prefix, exampleValue(elem))
+			}
+		} else {
+			fmt.Fprintf(b, "%s%s%s: []\n\n", indent, prefix, k.Name)
+		}
+	default:
+		fmt.Fprintf(b, "%s%s%s: %s\n\n", indent, prefix, k.Name, exampleValue(k))
+	}
+}
+
+// keyAffordances builds the per-key parenthetical so an admin can see
+// type constraints inline. Order: presence (if not default), valuetype,
+// enum, range, default. Anything we can't render compactly is omitted.
+func keyAffordances(k Key) []string {
+	var pieces []string
+	if k.Presence != "" && strings.ToLower(k.Presence) != "optional" {
+		pieces = append(pieces, k.Presence)
+	}
+	if k.ValueType != "" {
+		pieces = append(pieces, "valuetype="+k.ValueType)
+	}
+	if len(k.RangeList) > 0 {
+		vals := make([]string, 0, len(k.RangeList))
+		for _, v := range k.RangeList {
+			vals = append(vals, fmt.Sprintf("%v", v))
+		}
+		pieces = append(pieces, "enum{"+strings.Join(vals, ",")+"}")
+	}
+	if k.Range != nil {
+		pieces = append(pieces, fmt.Sprintf("range [%v..%v]", k.Range.Min, k.Range.Max))
+	}
+	if k.Default != nil {
+		pieces = append(pieces, fmt.Sprintf("default=%v", k.Default))
+	}
+	return pieces
+}
+
+// exampleValue picks a placeholder value the operator can edit in
+// place. For booleans we use the default (or false), for strings ""
+// or the first rangelist entry. Numerics get 0 unless a range Min is
+// set. Arrays and dicts get an empty literal — the operator will
+// usually replace these wholesale.
+func exampleValue(k Key) string {
+	if k.Default != nil {
+		// Render the default as a YAML scalar.
+		switch d := k.Default.(type) {
+		case bool:
+			if d {
+				return "true"
+			}
+			return "false"
+		case string:
+			return yamlString(d)
+		default:
+			return fmt.Sprintf("%v", d)
+		}
+	}
+	switch k.Type {
+	case "boolean":
+		return "false"
+	case "string":
+		if len(k.RangeList) > 0 {
+			return yamlString(fmt.Sprintf("%v", k.RangeList[0]))
+		}
+		return `""`
+	case "integer":
+		if k.Range != nil && k.Range.Min != nil {
+			return fmt.Sprintf("%v", k.Range.Min)
+		}
+		return "0"
+	case "real":
+		return "0.0"
+	case "data":
+		return `""  # base64-encoded`
+	case "date":
+		return `""  # RFC 3339`
+	case "array":
+		return "[]"
+	case "dictionary":
+		return "{}"
+	default:
+		return `""`
+	}
+}
+
+// yamlString picks the lightest-weight YAML scalar form. Plain strings
+// (no special chars) go unquoted; everything else gets double-quoted
+// with the common backslash escapes.
+func yamlString(s string) string {
+	if s == "" {
+		return `""`
+	}
+	for _, r := range s {
+		if r == ':' || r == '#' || r == '\n' || r == '"' || r == '\'' || r == '\\' {
+			return fmt.Sprintf(`"%s"`, strings.ReplaceAll(s, `"`, `\"`))
+		}
+	}
+	return s
+}
+
+// firstLineSkeleton trims and single-lines a content string.
+func firstLineSkeleton(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 140 {
+		s = s[:137] + "..."
+	}
+	return s
+}
+
+// groupKeysByPresenceSkeleton mirrors the CLI's grouping so the
+// authoring view shows required first.
+func groupKeysByPresenceSkeleton(keys []Key) (required, optional, other []Key) {
+	for _, k := range keys {
+		switch strings.ToLower(k.Presence) {
+		case "required":
+			required = append(required, k)
+		case "optional", "":
+			optional = append(optional, k)
+		default:
+			other = append(other, k)
+		}
+	}
+	return
+}
+
+// wrap is a minimal word-wrap that splits on whitespace at column
+// boundaries. Used so the header description doesn't blow past
+// editor-comfortable column widths.
+func wrap(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	current := words[0]
+	for _, w := range words[1:] {
+		if len(current)+1+len(w) > width {
+			lines = append(lines, current)
+			current = w
+			continue
+		}
+		current += " " + w
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
