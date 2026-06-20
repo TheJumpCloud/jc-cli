@@ -121,10 +121,18 @@ shape) without making the POST.`,
 			// iOS-only payload could be POSTed as a macOS Custom MDM
 			// policy and JumpCloud would happily accept what the
 			// device would later silently ignore.
-			if sup, ok := payload.SupportedOS[osFamily]; !ok || !sup.Available() {
+			//
+			// Apple keys SupportedOS as "iOS" / "macOS"; the operator
+			// may have passed either Apple's name OR the JumpCloud
+			// family name (e.g. `--os ios`). Normalize before the
+			// lookup so `--os ios` doesn't fail the support check
+			// with a misleading "does not declare support for ios"
+			// error (Bugbot PR #57 review).
+			appleSchemaPlatform := canonicalApplePlatform(osFamily)
+			if sup, ok := payload.SupportedOS[appleSchemaPlatform]; !ok || !sup.Available() {
 				return fmt.Errorf(
 					"payload %q does not declare support for %s (run `jc apple-mdm payloads show %s` to see which Apple platforms are supported)",
-					payload.Type, osFamily, payload.Type)
+					payload.Type, appleSchemaPlatform, payload.Type)
 			}
 
 			fileValues := map[string]any{}
@@ -239,6 +247,23 @@ func boolToYN(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// canonicalApplePlatform normalizes the operator's --os value (which
+// may be Apple's name like "iOS"/"macOS" OR the JumpCloud family
+// alias like "ios"/"darwin") to the form Apple's vendored schemas key
+// on. The catalog uses "iOS", "macOS", "tvOS", "visionOS", "watchOS"
+// verbatim — pass anything else through unchanged so a future
+// platform pre-dating its CLI plumbing surfaces a clear lookup miss
+// instead of a silent rename.
+func canonicalApplePlatform(s string) string {
+	switch s {
+	case "macOS", apple_mdm.OSFamilyDarwin:
+		return "macOS"
+	case "iOS", apple_mdm.OSFamilyIOS:
+		return "iOS"
+	}
+	return s
 }
 
 // jcOSFamily maps Apple's platform name (macOS/iOS/etc., as used by
