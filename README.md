@@ -1026,6 +1026,14 @@ internal/
 
 ---
 
+## A note on JumpCloud's OpenAPI `operationId`s
+
+`jc` calls the JumpCloud REST API by **URL path + HTTP method** (e.g. `GET /api/v2/systemgroups`). It does not depend on OpenAPI `operationId` values, so the standardized-`operationId` work currently rolling out for JumpCloud's API docs does not change anything in the CLI.
+
+If you build your own tooling on top of the JumpCloud APIs that *does* key off `operationId` (Postman codegen, custom SDKs, workflow DSLs that mirror docs specs), JumpCloud is publishing a machine-readable `operation-id-mapping.yaml` sidecar alongside each aggregate spec when the new layout becomes the default on the public docs. The mapping is `legacy_operation_id → standardized_operation_id` and is intended to make the cutover mechanical. The legacy IDs continue to work until cutover.
+
+---
+
 ## License
 
 This project is a Community Software Tool initially developed by JumpCloud. It is offered as an open source project under the MIT License "as is" without warranty of any kind. JumpCloud does not commit to maintaining, updating, or providing support for this project. Please use the [GitHub issue tracker](https://github.com/TheJumpCloud/jc-cli/issues) for any issues.
