@@ -325,8 +325,13 @@ var commandClass = map[string]string{
 	// version — prints build info.
 	"jc version": ClassInternal,
 
-	// windows-mdm — both create JC policies (POST /policies);
-	// reversible via policy delete.
+	// windows-mdm — create-policy leaves POST /policies (reversible
+	// via policy delete); the csp catalog verbs never touch the JC
+	// API (local cache + a one-time download from Microsoft).
+	"jc windows-mdm csp list":               ClassInternal,
+	"jc windows-mdm csp show":               ClassInternal,
+	"jc windows-mdm csp template":           ClassInternal,
+	"jc windows-mdm csp update":             ClassInternal,
 	"jc windows-mdm oma-uri create-policy":  ClassMutating,
 	"jc windows-mdm registry create-policy": ClassMutating,
 }

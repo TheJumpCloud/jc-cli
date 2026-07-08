@@ -97,10 +97,11 @@ func toRegistryKeys(in []windowsMDMRegistryKey) []windows_mdm.RegistryKey {
 
 // ── registration ───────────────────────────────────────────────────
 
-// registerWindowsMDMTools wires both Windows custom-policy tools onto
-// the server. Both are Execute-gated with preflight validation, per
-// the KLA-452 addTypedToolWithPreFlight pattern.
+// registerWindowsMDMTools wires the Windows MDM app: the two
+// Execute-gated create tools below (KLA-459) plus the three read-only
+// Policy CSP catalog tools (KLA-460, apps_windows_mdm_csp.go).
 func (s *Server) registerWindowsMDMTools() {
+	s.registerWindowsMDMCSPTools()
 	addTypedToolWithPreFlight(s, "windows_mdm_oma_uri_create_policy",
 		"Create a JumpCloud 'Custom MDM (OMA-URI)' policy for Windows devices from one or more Policy CSP settings (OMA-URI path + format + value). "+
 			"Use for Windows settings JumpCloud has no built-in policy for — the Windows analog of apple_mdm_payloads_create_policy, minus the catalog (supply OMA-URI paths from Microsoft's Policy CSP reference). "+
