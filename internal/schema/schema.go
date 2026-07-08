@@ -1040,7 +1040,7 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "scope", Type: "string", Description: "Restrict to device- or user-scoped settings (csp list)"},
 					{Name: "exclude-admx", Type: "bool", Description: "Drop ADMX-backed settings (csp list)"},
 					{Name: "output-file", Type: "string", Description: "Write the settings-file JSON to this path (csp template)"},
-					{Name: "force", Type: "bool", Description: "Delete the cached snapshot and re-download (csp update)"},
+					{Name: "refresh", Type: "bool", Description: "Delete the cached snapshot and re-download (csp update)"},
 				},
 			},
 			{

@@ -172,7 +172,7 @@ The Windows MDM workbench: discover, author, and create custom Windows policies.
 - `--scope` `<string>` — Restrict to device- or user-scoped settings (csp list)
 - `--exclude-admx` `<bool>` — Drop ADMX-backed settings (csp list)
 - `--output-file` `<string>` — Write the settings-file JSON to this path (csp template)
-- `--force` `<bool>` — Delete the cached snapshot and re-download (csp update)
+- `--refresh` `<bool>` — Delete the cached snapshot and re-download (csp update)
 
 ### Apps & SSO
 

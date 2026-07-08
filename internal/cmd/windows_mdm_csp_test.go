@@ -88,6 +88,16 @@ func TestCSPListShowTemplate_OfflineOverFixture(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "csp list --search") {
 		t.Errorf("show miss should suggest a search, got %v", err)
 	}
+
+	// Zero matches in JSON must render [] not null — the documented
+	// jq pipeline depends on it (CodeRabbit PR #65 review).
+	out, _, err = runCSP(t, "windows-mdm", "csp", "list", "--search", "zzz-no-match", "-o", "json")
+	if err != nil {
+		t.Fatalf("csp list zero-match: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("zero-match JSON should be [], got %q", strings.TrimSpace(out))
+	}
 }
 
 func TestCSPTemplate_FeedsCreatePolicy(t *testing.T) {

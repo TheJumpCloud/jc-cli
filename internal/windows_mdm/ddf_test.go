@@ -182,6 +182,58 @@ func TestEnsureSnapshot_PrePlacedZipFailsChecksum(t *testing.T) {
 	}
 }
 
+// TestDefaultCatalog_RetriesAfterTransientFailure guards the
+// CodeRabbit PR #65 catch: a failed load must NOT be memoized. A
+// long-lived MCP server whose first fetch hits a network blip has to
+// recover on the next tool call, not stay broken until restart.
+func TestDefaultCatalog_RetriesAfterTransientFailure(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", root)
+	defaultCatalogMu.Lock()
+	defaultCatalog = nil // isolate from other tests in this binary
+	defaultCatalogMu.Unlock()
+
+	// First call: a corrupt pre-placed zip fails SHA verification.
+	dir := CacheDir()
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+".zip", []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DefaultCatalog(t.Context(), nil); err == nil {
+		t.Fatal("expected first call to fail on the corrupt zip")
+	}
+
+	// Operator fixes the cache (here: a valid extracted snapshot).
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(filepath.Join("testdata", "Sample_AreaDDF.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Sample_AreaDDF.xml"), fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, snapshotMarker), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second call must retry and succeed — no permanently cached error.
+	cat, err := DefaultCatalog(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("second call should retry after transient failure: %v", err)
+	}
+	if cat.Len() == 0 {
+		t.Error("retried catalog is empty")
+	}
+
+	defaultCatalogMu.Lock()
+	defaultCatalog = nil // don't leak fixture catalog to other tests
+	defaultCatalogMu.Unlock()
+}
+
 func TestEnsureSnapshot_MarkerShortCircuits(t *testing.T) {
 	// A dir carrying the completion marker must be used as-is with no
 	// zip and no network.

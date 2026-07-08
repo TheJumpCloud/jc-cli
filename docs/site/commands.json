@@ -1097,7 +1097,7 @@
           "description": "Write the settings-file JSON to this path (csp template)"
         },
         {
-          "name": "force",
+          "name": "refresh",
           "type": "bool",
           "description": "Delete the cached snapshot and re-download (csp update)"
         }

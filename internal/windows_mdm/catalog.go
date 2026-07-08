@@ -231,24 +231,32 @@ type Catalog struct {
 }
 
 var (
-	defaultCatalog     *Catalog
-	defaultCatalogErr  error
-	defaultCatalogOnce sync.Once
+	defaultCatalogMu sync.Mutex
+	defaultCatalog   *Catalog
 )
 
 // DefaultCatalog loads the catalog from the standard cache location,
-// fetching the snapshot first if needed. Cached for the process
-// lifetime. progress may be nil.
+// fetching the snapshot first if needed. A successful load is cached
+// for the process lifetime; a FAILED load is NOT — a transient
+// download error (network blip, HTTP 5xx) must not permanently brick
+// the csp tools in a long-lived MCP server, so the next call retries
+// (CodeRabbit PR #65 review). progress may be nil.
 func DefaultCatalog(ctx context.Context, progress func(string)) (*Catalog, error) {
-	defaultCatalogOnce.Do(func() {
-		dir, err := EnsureSnapshot(ctx, "", progress)
-		if err != nil {
-			defaultCatalogErr = err
-			return
-		}
-		defaultCatalog, defaultCatalogErr = LoadCatalog(dir)
-	})
-	return defaultCatalog, defaultCatalogErr
+	defaultCatalogMu.Lock()
+	defer defaultCatalogMu.Unlock()
+	if defaultCatalog != nil {
+		return defaultCatalog, nil
+	}
+	dir, err := EnsureSnapshot(ctx, "", progress)
+	if err != nil {
+		return nil, err
+	}
+	cat, err := LoadCatalog(dir)
+	if err != nil {
+		return nil, err
+	}
+	defaultCatalog = cat
+	return defaultCatalog, nil
 }
 
 // LoadCatalog parses every *_AreaDDF.xml in dir into an indexed

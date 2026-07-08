@@ -182,21 +182,21 @@ template is device-scoped, so user-scoped URIs may not apply.`,
 }
 
 func newWindowsMDMCSPUpdateCmd() *cobra.Command {
-	var force bool
+	var refresh bool
 
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Fetch (or re-verify) the pinned Policy CSP snapshot",
 		Long: `Download the pinned Microsoft DDF v2 snapshot into the local cache
 so csp list/show/template work offline afterwards. Verifies the
-SHA-256 pin. No-op when the snapshot is already cached; --force
+SHA-256 pin. No-op when the snapshot is already cached; --refresh
 deletes the cache and re-downloads.
 
 The snapshot is pinned per jc release (` + windows_mdm.SnapshotName + `) —
 newer Microsoft drops arrive via a jc upgrade, not this command.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := windows_mdm.CacheDir()
-			if force {
+			if refresh {
 				if err := os.RemoveAll(dir); err != nil {
 					return err
 				}
@@ -217,7 +217,11 @@ newer Microsoft drops arrive via a jc upgrade, not this command.`,
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "Delete the cached snapshot and re-download")
+	// Named --refresh, not --force: jc already has a repo-wide
+	// persistent --force/-f meaning "skip confirmation prompts"; a
+	// local flag with the same name would shadow it with different
+	// semantics (CodeRabbit PR #65 review).
+	cmd.Flags().BoolVar(&refresh, "refresh", false, "Delete the cached snapshot and re-download")
 	return cmd
 }
 
@@ -226,6 +230,12 @@ newer Microsoft drops arrive via a jc upgrade, not this command.`,
 func renderCSPList(w io.Writer, settings []windows_mdm.Setting, total int) error {
 	opts := output.CurrentOptions()
 	if opts.Format == output.FormatJSON || opts.Format == output.FormatNDJSON {
+		if settings == nil {
+			// Filter returns a nil slice on zero matches, which
+			// encodes as `null` — jq pipelines expect `[]`
+			// (CodeRabbit PR #65 review).
+			settings = []windows_mdm.Setting{}
+		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(settings)
