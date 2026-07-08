@@ -149,11 +149,19 @@ func NormalizeAndValidateKeys(keys []RegistryKey) ([]RegistryKey, error) {
 			problems = append(problems, fmt.Sprintf(
 				"%s: type %q is not valid; use one of %s", label, k.RegType, strings.Join(RegistryRegTypes(), ", ")))
 		}
+		// DWORD is 32-bit, QWORD 64-bit — a 64-bit check on DWORD would
+		// pass values like 10000000000 that truncate or fail on-device,
+		// the exact failure mode this validation exists to catch
+		// (CodeRabbit PR #64 review).
 		if k.Data == "" {
 			problems = append(problems, label+": data is required")
-		} else if ok && (regType == "DWORD" || regType == "QWORD") {
+		} else if ok && regType == "DWORD" {
+			if _, err := strconv.ParseUint(k.Data, 10, 32); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: data %q is not a valid unsigned 32-bit integer (type=DWORD)", label, k.Data))
+			}
+		} else if ok && regType == "QWORD" {
 			if _, err := strconv.ParseUint(k.Data, 10, 64); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data %q is not an unsigned integer (type=%s)", label, k.Data, regType))
+				problems = append(problems, fmt.Sprintf("%s: data %q is not a valid unsigned 64-bit integer (type=QWORD)", label, k.Data))
 			}
 		}
 		out[i] = RegistryKey{Location: k.Location, ValueName: k.ValueName, RegType: regType, Data: k.Data}

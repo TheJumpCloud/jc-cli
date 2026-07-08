@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,8 +41,10 @@ func startWindowsPolicyTemplateServer(t *testing.T, onCreate func(body []byte)) 
 				"configFields":[{"id":"regfid","name":"customRegTable"}]
 			}`))
 		case r.URL.Path == "/api/v2/policies" && r.Method == "POST":
-			body := make([]byte, r.ContentLength)
-			_, _ = r.Body.Read(body)
+			// io.ReadAll, not a single Read — one Read call isn't
+			// guaranteed to fill the buffer, silently truncating the
+			// capture (CodeRabbit PR #64 review).
+			body, _ := io.ReadAll(r.Body)
 			if onCreate != nil {
 				onCreate(body)
 			}

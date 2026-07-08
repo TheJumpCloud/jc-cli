@@ -105,7 +105,7 @@ func (s *Server) registerWindowsMDMTools() {
 		"Create a JumpCloud 'Custom MDM (OMA-URI)' policy for Windows devices from one or more Policy CSP settings (OMA-URI path + format + value). "+
 			"Use for Windows settings JumpCloud has no built-in policy for — the Windows analog of apple_mdm_payloads_create_policy, minus the catalog (supply OMA-URI paths from Microsoft's Policy CSP reference). "+
 			"Formats: "+strings.Join(windows_mdm.OMAURIFormats(), ", ")+". Device-scoped only. "+
-			"Without execute: true, returns a preview (normalized settings + resolved JC template) and never calls the JumpCloud API. "+
+			"Without execute: true, returns a preview (normalized settings + resolved JC template); this reads the tenant's policy templates but never POSTs/creates anything. "+
 			"With execute: true, POSTs the policy and returns the new policy ID via the step-up auth gate and audit log.",
 		// preFlight runs BEFORE the step-up auth gate — a malformed
 		// call (bad format enum, missing uri, empty policy_name) fails
@@ -176,7 +176,7 @@ func (s *Server) registerWindowsMDMTools() {
 		"Create a JumpCloud 'Advanced: Custom Registry Keys' policy for Windows devices from one or more HKLM registry rows. "+
 			"Every row lands under HKEY_LOCAL_MACHINE (the hive is implied — never include it in location). JumpCloud recommends SOFTWARE\\Policies\\... locations. "+
 			"Types: "+strings.Join(windows_mdm.RegistryRegTypes(), ", ")+". Device-scoped only. "+
-			"Without execute: true, returns a preview (normalized keys + resolved JC template) and never calls the JumpCloud API. "+
+			"Without execute: true, returns a preview (normalized keys + resolved JC template); this reads the tenant's policy templates but never POSTs/creates anything. "+
 			"With execute: true, POSTs the policy and returns the new policy ID via the step-up auth gate and audit log.",
 		func(args windowsMDMRegistryCreatePolicyInput) error {
 			if s.readOnly && args.Execute {

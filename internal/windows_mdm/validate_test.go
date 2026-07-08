@@ -108,13 +108,38 @@ func TestNormalizeAndValidateKeys_AggregatesAllProblems(t *testing.T) {
 		"key 4: name is required",
 		"key 5", `"BINARY" is not valid`,
 		"key 6: data is required",
-		"key 7", "not an unsigned integer",
+		"key 7", "not a valid unsigned 32-bit integer",
 		"key 8", "255-character limit",
 		"key 9", "99-character limit",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("aggregated error missing %q:\n%s", want, msg)
 		}
+	}
+}
+
+// TestNormalizeAndValidateKeys_DWORDIs32Bit guards the CodeRabbit
+// PR #64 catch: DWORD is a 32-bit registry type; validating it against
+// a 64-bit range would pass values that truncate or fail on-device.
+func TestNormalizeAndValidateKeys_DWORDIs32Bit(t *testing.T) {
+	// Max uint32 is fine for DWORD.
+	if _, err := NormalizeAndValidateKeys([]RegistryKey{
+		{Location: `SOFTWARE\Policies\X`, ValueName: "Max32", RegType: "DWORD", Data: "4294967295"},
+	}); err != nil {
+		t.Errorf("max uint32 should be valid DWORD data: %v", err)
+	}
+	// One past max uint32 must be rejected for DWORD...
+	_, err := NormalizeAndValidateKeys([]RegistryKey{
+		{Location: `SOFTWARE\Policies\X`, ValueName: "Over32", RegType: "DWORD", Data: "4294967296"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "32-bit") {
+		t.Errorf("expected 32-bit range error for DWORD overflow, got %v", err)
+	}
+	// ...but the same value is fine as QWORD.
+	if _, err := NormalizeAndValidateKeys([]RegistryKey{
+		{Location: `SOFTWARE\Policies\X`, ValueName: "OK64", RegType: "QWORD", Data: "4294967296"},
+	}); err != nil {
+		t.Errorf("uint64-range value should be valid QWORD data: %v", err)
 	}
 }
 

@@ -363,7 +363,7 @@ func (s *Server) registerAppleMDMPayloadsTools() {
 
 	addTypedToolWithPreFlight(s, "apple_mdm_payloads_create_policy",
 		"Create a JumpCloud Custom MDM Configuration Profile policy from one Apple payload. "+
-			"Without execute: true, returns the same preview shape as apple_mdm_payloads_template (validated values + mobileconfig) plus the resolved JumpCloud template ID/name; never calls the JC API. "+
+			"Without execute: true, returns the same preview shape as apple_mdm_payloads_template (validated values + mobileconfig) plus the resolved JumpCloud template ID/name; this reads the tenant's policy templates but never POSTs/creates anything. "+
 			"With execute: true, POSTs the policy to JumpCloud and returns the new policy ID. Execute: true routes through the step-up auth gate (Touch ID / TTY prompt) and the audit log, same as users_delete.",
 		// preFlight runs BEFORE the step-up auth gate. Any error we
 		// return here short-circuits the wrapper without prompting the
