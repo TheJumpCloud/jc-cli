@@ -19,6 +19,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 - `jc devices` — Manage JumpCloud devices (systems)
 - `jc apple-mdm` — Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies
+- `jc windows-mdm` — Create Windows custom MDM policies (OMA-URI and registry)
 
 ### Apps & SSO
 

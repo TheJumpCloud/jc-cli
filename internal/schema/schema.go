@@ -1025,6 +1025,19 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc windows-mdm",
+				Description: "Create Windows custom MDM policies (OMA-URI and registry)",
+				Long:        "Create JumpCloud custom policies for Windows devices from raw Policy CSP settings (`oma-uri create-policy`, each setting an OMA-URI path + format + value triple) or HKLM registry rows (`registry create-policy`) — the Windows analog of `jc apple-mdm payloads create-policy`, minus the catalog: both JumpCloud templates accept arbitrary entries, exactly like Intune's Custom OMA-URI profile. Values are validated up front (format/type enums with Admin Portal aliases, OMA-URI `./` path shape, hive-prefix rejection since HKEY_LOCAL_MACHINE is implied, numeric checks for int/DWORD/QWORD) with every problem aggregated into one pass. Templates (`custom_oma_uri_mdm_windows` / `custom_registry_keys_policy_windows`) are resolved dynamically by name — no hardcoded IDs — so a tenant without Windows MDM fails fast with an actionable error. Both policy shapes are device-scoped. Supports `--plan` for safe preview. OMA-URI paths come from Microsoft's Policy CSP reference; a built-in searchable CSP catalog is a planned follow-up.",
+				Subcommands: []string{"oma-uri", "registry"},
+				Flags: []FlagEntry{
+					{Name: "name", Type: "string", Description: "JumpCloud policy name (create-policy, required)"},
+					{Name: "setting", Type: "string[]", Description: "One OMA-URI setting as 'uri=...,format=...,value=...' (repeatable; oma-uri create-policy). Formats: int, chr, float, bool, xml, b64."},
+					{Name: "settings-file", Type: "string", Description: "JSON file with an array of {uri, format, value} objects (oma-uri create-policy)"},
+					{Name: "key", Type: "string[]", Description: "One registry row as 'location=...,name=...,type=...,data=...' (repeatable; registry create-policy). Types: DWORD, expandString, multiString, String, QWORD."},
+					{Name: "keys-file", Type: "string", Description: "JSON file with an array of {location, name, type, data} objects (registry create-policy)"},
+				},
+			},
+			{
 				Path:        "jc policy-groups",
 				Description: "Manage policy groups",
 				Subcommands: []string{"list", "get", "create", "update", "delete"},
@@ -1129,7 +1142,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc mcp",
 				Description: "MCP server for AI agent integration",
-				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 205 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call. Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including the Apple MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
+				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 207 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and Windows custom MDM tools (`windows_mdm_oma_uri_create_policy` / `windows_mdm_registry_create_policy`) that create OMA-URI (Policy CSP) and HKLM registry policies the same way. Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
 				Subcommands: []string{"serve"},
 				Flags: []FlagEntry{
 					{Name: "rate-limit", Type: "int", Default: "60", Description: "Maximum tool calls per minute"},
