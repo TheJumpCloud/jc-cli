@@ -98,6 +98,23 @@ func TestCSPListShowTemplate_OfflineOverFixture(t *testing.T) {
 	if strings.TrimSpace(out) != "[]" {
 		t.Errorf("zero-match JSON should be [], got %q", strings.TrimSpace(out))
 	}
+
+	// NDJSON is one record per line, not a wrapped array (CodeRabbit
+	// PR #65 review).
+	out, _, err = runCSP(t, "windows-mdm", "csp", "list", "--scope", "device", "-o", "ndjson")
+	if err != nil {
+		t.Fatalf("csp list ndjson: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 4 { // 4 device-scoped fixture settings
+		t.Fatalf("expected 4 NDJSON lines, got %d:\n%s", len(lines), out)
+	}
+	for _, line := range lines {
+		var one map[string]any
+		if err := json.Unmarshal([]byte(line), &one); err != nil {
+			t.Errorf("NDJSON line is not a standalone object: %v\n%s", err, line)
+		}
+	}
 }
 
 func TestCSPTemplate_FeedsCreatePolicy(t *testing.T) {

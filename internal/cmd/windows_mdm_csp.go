@@ -229,7 +229,19 @@ newer Microsoft drops arrive via a jc upgrade, not this command.`,
 
 func renderCSPList(w io.Writer, settings []windows_mdm.Setting, total int) error {
 	opts := output.CurrentOptions()
-	if opts.Format == output.FormatJSON || opts.Format == output.FormatNDJSON {
+	if opts.Format == output.FormatNDJSON {
+		// One record per line — line-oriented consumers can't take a
+		// wrapped array (CodeRabbit PR #65 review). Zero matches emit
+		// nothing, which is valid NDJSON.
+		enc := json.NewEncoder(w)
+		for _, s := range settings {
+			if err := enc.Encode(s); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if opts.Format == output.FormatJSON {
 		if settings == nil {
 			// Filter returns a nil slice on zero matches, which
 			// encodes as `null` — jq pipelines expect `[]`
