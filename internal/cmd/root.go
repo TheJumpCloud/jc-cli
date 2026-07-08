@@ -120,7 +120,7 @@ interface.`,
 
 	// Devices & MDM
 	addToGroup(rootCmd, "devices",
-		newDevicesCmd(), newAppleMDMCmd(), newSoftwareCmd(),
+		newDevicesCmd(), newAppleMDMCmd(), newWindowsMDMCmd(), newSoftwareCmd(),
 		newCommandsCmd(), newSystemInsightsCmd(), newAssetsCmd(),
 	)
 
@@ -358,7 +358,7 @@ var builtinCommands = map[string]bool{
 	"policies": true, "apps": true, "graph": true, "admins": true, "iplists": true, "auth-policies": true,
 	"software": true, "ldap": true, "ad": true, "org": true,
 	"system-insights": true, "radius": true, "policy-templates": true,
-	"policy-groups": true, "apple-mdm": true, "user-states": true,
+	"policy-groups": true, "apple-mdm": true, "windows-mdm": true, "user-states": true,
 	"assets": true, "identity-providers": true, "saas-management": true, "access-requests": true, "ar": true,
 	"gsuite": true, "office365": true, "duo": true, "custom-emails": true, "app-templates": true,
 	"bulk": true, "insights": true, "recipe": true, "mcp": true,

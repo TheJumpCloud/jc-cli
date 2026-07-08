@@ -324,4 +324,9 @@ var commandClass = map[string]string{
 
 	// version — prints build info.
 	"jc version": ClassInternal,
+
+	// windows-mdm — both create JC policies (POST /policies);
+	// reversible via policy delete.
+	"jc windows-mdm oma-uri create-policy":  ClassMutating,
+	"jc windows-mdm registry create-policy": ClassMutating,
 }

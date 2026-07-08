@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,8 +49,9 @@ func startApplePolicyTemplateServer(t *testing.T, onCreate func(body []byte)) *h
 				]
 			}`))
 		case r.URL.Path == "/api/v2/policies" && r.Method == "POST":
-			body := make([]byte, r.ContentLength)
-			_, _ = r.Body.Read(body)
+			// io.ReadAll, not a single Read — same latent truncation
+			// risk CodeRabbit flagged on the Windows twin (PR #64).
+			body, _ := io.ReadAll(r.Body)
 			if onCreate != nil {
 				onCreate(body)
 			}

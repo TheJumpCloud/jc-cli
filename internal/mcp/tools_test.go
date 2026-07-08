@@ -390,6 +390,12 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"apple_mdm_payloads_show",
 		"apple_mdm_payloads_template",
 		"apple_mdm_payloads_create_policy",
+
+		// Windows custom MDM policies (KLA-459): OMA-URI + registry
+		// passthrough. Both Execute-gated with preflight validation.
+		// The Policy CSP discovery catalog is the KLA-460 follow-up.
+		"windows_mdm_oma_uri_create_policy",
+		"windows_mdm_registry_create_policy",
 	}
 
 	toolNames := make(map[string]bool)
@@ -404,8 +410,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 205 {
-		t.Errorf("expected 205 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 207 {
+		t.Errorf("expected 207 tools, got %d", len(result.Tools))
 	}
 }
 
