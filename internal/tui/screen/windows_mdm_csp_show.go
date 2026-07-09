@@ -73,6 +73,15 @@ func (s *WindowsMDMCSPShowScreen) addToDraft() (tea.Model, tea.Cmd) {
 		s.noteIsErr = true
 		return s, nil
 	}
+	if s.setting.RequiresInstance {
+		// The draft form edits values, not URIs — an {instance}
+		// placeholder could never be substituted in-form and would be
+		// refused at create anyway. Route to the CLI where the uri is
+		// editable.
+		s.note = "This setting's URI contains {instance} (a dynamic node name). The TUI form can't substitute it — use `jc windows-mdm csp template` + edit the uri, then `oma-uri create-policy --settings-file`."
+		s.noteIsErr = true
+		return s, nil
+	}
 	if !s.draft.add(s.setting) {
 		s.note, s.noteIsErr = "Already in the draft.", false
 		return s, nil
@@ -99,6 +108,12 @@ func (s *WindowsMDMCSPShowScreen) View() string {
 	}
 	if st.MinOSBuild != "" {
 		fmt.Fprintln(&b, "  Min OS:   "+st.MinOSBuild)
+	}
+	if st.Kind == windows_mdm.KindStandaloneCSP {
+		fmt.Fprintln(&b, "  Kind:     standalone CSP")
+	}
+	if st.RequiresInstance {
+		fmt.Fprintln(&b, "  "+style.Error.Render("URI contains {instance} — substitute the real node name in the form before creating"))
 	}
 	if st.ADMXBacked {
 		fmt.Fprintln(&b, "  "+style.Error.Render("ADMX-backed — value must be ADMX-style XML; browse-only here"))

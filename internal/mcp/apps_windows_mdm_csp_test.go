@@ -22,14 +22,16 @@ func installFixtureSnapshotMCP(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	src, err := os.ReadFile(filepath.Join("..", "windows_mdm", "testdata", "Sample_AreaDDF.xml"))
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"Sample_AreaDDF.xml", "SampleCSP.xml"} {
+		src, err := os.ReadFile(filepath.Join("..", "windows_mdm", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), src, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Sample_AreaDDF.xml"), src, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".complete"), []byte("test\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".complete.v2"), []byte("test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -49,7 +51,8 @@ func TestWindowsMDMCSPSearch_FiltersAndTruncation(t *testing.T) {
 	if err := json.Unmarshal([]byte(getResultText(t, res)), &all); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if all.Total != 5 || all.Matched != 5 || all.Truncated {
+	// 5 policy-area + 3 standalone-CSP fixture settings (KLA-467).
+	if all.Total != 8 || all.Matched != 8 || all.Truncated {
 		t.Errorf("unfiltered result wrong: %+v", all)
 	}
 
@@ -83,7 +86,7 @@ func TestWindowsMDMCSPSearch_FiltersAndTruncation(t *testing.T) {
 	if err := json.Unmarshal([]byte(getResultText(t, res)), &capped); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if capped.Returned != 2 || !capped.Truncated || capped.Matched != 5 {
+	if capped.Returned != 2 || !capped.Truncated || capped.Matched != 8 {
 		t.Errorf("truncation flags wrong: %+v", capped)
 	}
 

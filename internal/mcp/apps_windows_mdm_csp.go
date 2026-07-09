@@ -26,6 +26,7 @@ type windowsMDMCSPSearchInput struct {
 	// description — the agent's natural-language-to-OMA-URI bridge.
 	Search      string `json:"search,omitempty" jsonschema:"Case-insensitive substring over area, name, URI, and description (e.g. 'screen capture', 'bitlocker')."`
 	Scope       string `json:"scope,omitempty" jsonschema:"Restrict to 'device' or 'user' scoped settings. JumpCloud's Custom MDM (OMA-URI) template is device-scoped."`
+	Kind        string `json:"kind,omitempty" jsonschema:"Restrict provenance: 'policy' (Policy CSP areas) or 'csp' (standalone CSPs like BitLocker CSP, Firewall CSP, VPNv2). Empty searches both."`
 	ExcludeADMX bool   `json:"exclude_admx,omitempty" jsonschema:"Drop ADMX-backed settings (their values need ADMX-style XML, not plain scalars)."`
 	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 50, max 200). The catalog holds ~3700 settings — narrow with area/search rather than raising the limit."`
 }
@@ -33,12 +34,16 @@ type windowsMDMCSPSearchInput struct {
 // windowsMDMCSPSettingSummary trims a Setting for search results so a
 // broad query doesn't blow the agent's context budget.
 type windowsMDMCSPSettingSummary struct {
-	Setting     string `json:"setting"` // "Area/Name" — the ref show/template take
-	URI         string `json:"uri"`
-	Format      string `json:"format"`
-	Scope       string `json:"scope"`
-	ADMXBacked  bool   `json:"admx_backed,omitempty"`
-	Description string `json:"description,omitempty"`
+	Setting string `json:"setting"` // "Area/Name" — the ref show/template take
+	URI     string `json:"uri"`
+	Format  string `json:"format"`
+	Scope   string `json:"scope"`
+	// Kind is "csp" for standalone-CSP settings (BitLocker CSP, …);
+	// empty for Policy CSP areas.
+	Kind             string `json:"kind,omitempty"`
+	RequiresInstance bool   `json:"requires_instance,omitempty"`
+	ADMXBacked       bool   `json:"admx_backed,omitempty"`
+	Description      string `json:"description,omitempty"`
 }
 
 type windowsMDMCSPSearchResult struct {
@@ -97,12 +102,15 @@ func (s *Server) registerWindowsMDMCSPTools() {
 			if args.Scope != "" && args.Scope != "device" && args.Scope != "user" {
 				return errorResult(fmt.Sprintf("windows_mdm_csp_search: scope %q: want device or user", args.Scope)), nil, nil
 			}
+			if args.Kind != "" && args.Kind != "policy" && args.Kind != windows_mdm.KindStandaloneCSP {
+				return errorResult(fmt.Sprintf("windows_mdm_csp_search: kind %q: want policy or csp", args.Kind)), nil, nil
+			}
 			cat, err := windows_mdm.DefaultCatalog(ctx, nil)
 			if err != nil {
 				return errorResult(fmt.Sprintf("windows_mdm_csp_search: loading catalog: %v", err)), nil, nil
 			}
 			matches := cat.Filter(windows_mdm.FilterOpts{
-				Area: args.Area, Search: args.Search, Scope: args.Scope, ExcludeADMX: args.ExcludeADMX,
+				Area: args.Area, Search: args.Search, Scope: args.Scope, Kind: args.Kind, ExcludeADMX: args.ExcludeADMX,
 			})
 			limit := args.Limit
 			if limit <= 0 {
@@ -118,12 +126,14 @@ func (s *Server) registerWindowsMDMCSPTools() {
 			summaries := make([]windowsMDMCSPSettingSummary, 0, len(returned))
 			for _, m := range returned {
 				summaries = append(summaries, windowsMDMCSPSettingSummary{
-					Setting:     m.Area + "/" + m.Name,
-					URI:         m.URI,
-					Format:      m.Format,
-					Scope:       m.Scope,
-					ADMXBacked:  m.ADMXBacked,
-					Description: m.Description,
+					Setting:          m.Area + "/" + m.Name,
+					URI:              m.URI,
+					Format:           m.Format,
+					Scope:            m.Scope,
+					Kind:             m.Kind,
+					RequiresInstance: m.RequiresInstance,
+					ADMXBacked:       m.ADMXBacked,
+					Description:      m.Description,
 				})
 			}
 			res, err := jsonResult(windowsMDMCSPSearchResult{
@@ -187,6 +197,10 @@ func (s *Server) registerWindowsMDMCSPTools() {
 				if setting.ADMXBacked {
 					out.Warnings = append(out.Warnings, fmt.Sprintf(
 						"%s is ADMX-backed — its value must be ADMX-style XML (<enabled/>, <disabled/>, or <enabled/><data .../>), not a plain scalar", ref))
+				}
+				if setting.RequiresInstance {
+					out.Warnings = append(out.Warnings, fmt.Sprintf(
+						"%s contains the {instance} placeholder — substitute the real node name in the uri before creating (the create tool refuses unsubstituted placeholders)", ref))
 				}
 				if setting.Scope == "user" {
 					out.Warnings = append(out.Warnings, fmt.Sprintf(

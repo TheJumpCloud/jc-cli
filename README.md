@@ -561,7 +561,7 @@ A browsable catalog, offline `.mobileconfig` generator (single-payload via `temp
 ### Windows custom MDM policies
 
 ```bash
-# Discover: browse Microsoft's Policy CSP catalog (~230 areas, ~3,700 settings)
+# Discover: browse Microsoft's Policy CSP catalog (~5,100 settings incl. standalone CSPs)
 jc windows-mdm csp list --search camera                  # natural-language → OMA-URI
 jc windows-mdm csp show Camera/AllowCamera               # format, allowed values, OS build
 jc windows-mdm csp template Camera/AllowCamera \
@@ -592,7 +592,7 @@ jc windows-mdm registry create-policy --name "Chrome baseline" --keys-file chrom
 
 Creates JumpCloud "Custom MDM (OMA-URI)" and "Advanced: Custom Registry Keys" policies for Windows devices — for settings JumpCloud has no built-in policy for, exactly like Intune's Custom OMA-URI profile. Values are validated up front (format/type enums, OMA-URI path shape, hive-prefix rejection, numeric checks for int/DWORD/QWORD) with every problem reported in one pass. Templates are resolved dynamically by name — no hardcoded IDs. Both policy shapes are device-scoped.
 
-The `csp` catalog covers every Policy CSP area including ADMX-backed settings (flagged — their values need ADMX-style XML). Catalog data is Microsoft's pinned DDF v2 snapshot, downloaded **on demand** from Microsoft's official URL (SHA-256-verified) into `~/.cache/jc/windows-mdm-ddf/` — never vendored into the binary, since Microsoft's download terms don't permit redistribution. Offline after the one-time fetch; air-gapped hosts can pre-place the zip in the cache dir. Standalone CSPs (BitLocker CSP, Firewall CSP, VPNv2) are not in the catalog, but their OMA-URIs work with `oma-uri create-policy` directly.
+The `csp` catalog covers every Policy CSP area **and** the standalone CSPs (BitLocker CSP, Firewall CSP, VPNv2, … — filter provenance with `--kind policy|csp`), ~5,100 settings total, including ADMX-backed ones (flagged — their values need ADMX-style XML). Settings under dynamic-named subtrees carry an `{instance}` placeholder; `create-policy` refuses unsubstituted placeholders. Catalog data is Microsoft's pinned DDF v2 snapshot, downloaded **on demand** from Microsoft's official URL (SHA-256-verified) into `~/.cache/jc/windows-mdm-ddf/` — never vendored into the binary, since Microsoft's download terms don't permit redistribution. Offline after the one-time fetch; air-gapped hosts can pre-place the zip in the cache dir.
 
 ### Interactive TUI
 
@@ -628,7 +628,7 @@ The grid is responsive — three columns at 120+ chars, two at 90-119, single-co
 - **Detail views** — associations tab with group membership, graph traversal, and related resources
 - **Directory Insights** — query by service, time range, and event type; drill into events; `x` for AI explanation
 - **Apple MDM** — browse the vendored payload catalog, author policies in a typed form (or `$EDITOR`), edit existing Custom MDM policies
-- **Windows MDM** — browse Microsoft's Policy CSP catalog (~3,700 settings, fetched on demand), add settings to a draft (`a`), author the OMA-URI policy with enum pick-lists and range validation, preview, create; a registry-key policy row editor; and a custom-policies list that decodes existing OMA-URI/registry policies back into the form for editing
+- **Windows MDM** — browse Microsoft's CSP catalog (~5,100 settings incl. standalone CSPs, fetched on demand), add settings to a draft (`a`), author the OMA-URI policy with enum pick-lists and range validation, preview, create; a registry-key policy row editor; and a custom-policies list that decodes existing OMA-URI/registry policies back into the form for editing
 - **CRUD** — `n` to create (schema-driven form), `E` to edit, `d` to delete (with confirmation)
 - **Form navigation** — `j`/`k` between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel; sensitive fields are masked
 - **Clipboard & export** — `c` to copy ID, `e` then `j`/`c`/`J` for JSON clipboard / CSV file / JSON file

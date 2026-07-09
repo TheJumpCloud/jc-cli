@@ -52,6 +52,16 @@ type Setting struct {
 	MinOSBuild string `json:"min_os_build,omitempty"`
 	// Deprecated marks nodes Microsoft no longer recommends setting.
 	Deprecated bool `json:"deprecated,omitempty"`
+	// Kind distinguishes provenance: "" for Policy CSP areas (the
+	// KLA-460 catalog), "csp" for standalone CSPs (BitLocker CSP,
+	// Firewall CSP, VPNv2, ... — KLA-467). Empty keeps the original
+	// JSON shape for policy-area settings.
+	Kind string `json:"kind,omitempty"`
+	// RequiresInstance marks settings under a dynamic-named subtree
+	// (DDF DynamicNodeNaming): the URI contains an {instance}
+	// placeholder the operator must replace with a real node name
+	// (an app name, a VPN profile name, ...) before use.
+	RequiresInstance bool `json:"requires_instance,omitempty"`
 }
 
 // AllowedValues is the normalized MSFT:AllowedValues constraint.
@@ -96,6 +106,9 @@ type ddfProperties struct {
 	Applicability *ddfApplicability `xml:"Applicability"`
 	AllowedValues *ddfAllowedValues `xml:"AllowedValues"`
 	Deprecated    *struct{}         `xml:"Deprecated"`
+	// DynamicNodeNaming marks a placeholder node whose real name is
+	// chosen at configuration time (empty <NodeName> in the DDF).
+	DynamicNodeNaming *struct{} `xml:"DynamicNodeNaming"`
 }
 
 // ddfFormat encodes DFFormat's child-element-is-the-format shape
@@ -184,32 +197,47 @@ func ParseAreaDDF(data []byte) ([]Setting, error) {
 		if strings.HasPrefix(root.Path, "./User") {
 			scope = "user"
 		}
-		base := root.Path + "/" + root.NodeName
-		walkDDF(root, base, base, root.NodeName, scope, &out)
+		// A few files ship the root Path with a trailing slash
+		// (SUPL.xml: "./Vendor/MSFT/") — normalize before joining or
+		// every URI beneath gets a "//" segment.
+		base := strings.TrimRight(root.Path, "/") + "/" + root.NodeName
+		walkDDF(root, base, base, root.NodeName, scope, false, &out)
 	}
 	return out, nil
 }
 
-func walkDDF(n ddfNode, uri, base, area, scope string, out *[]Setting) {
+func walkDDF(n ddfNode, uri, base, area, scope string, dynamic bool, out *[]Setting) {
 	for _, child := range n.Nodes {
-		childURI := uri + "/" + child.NodeName
+		name := child.NodeName
+		childDynamic := dynamic
+		if name == "" {
+			// Dynamic-named node (DDF DynamicNodeNaming ships an empty
+			// <NodeName>): the operator picks the real segment — an app
+			// name, a VPN profile name. Catalog it as an {instance}
+			// placeholder and flag the whole subtree, rather than
+			// emitting a broken "//" URI or dropping the settings.
+			name = "{instance}"
+			childDynamic = true
+		}
+		childURI := uri + "/" + name
 		if child.DFProperties.DFFormat.name() == "node" || len(child.Nodes) > 0 {
 			// Structural node — recurse. (Policy areas are almost
-			// always flat, but a few group settings one level deeper.)
-			walkDDF(child, childURI, base, area, scope, out)
+			// always flat; standalone CSPs nest much deeper.)
+			walkDDF(child, childURI, base, area, scope, childDynamic, out)
 			continue
 		}
 		s := Setting{
 			Area: area,
 			// Name is relative to the AREA root, not the immediate
 			// parent — nested areas yield "Group/Sub" names.
-			Name: strings.TrimPrefix(childURI, base+"/"),
-			URI:          childURI,
-			Scope:        scope,
-			Format:       child.DFProperties.DFFormat.name(),
-			Description:  strings.TrimSpace(child.DFProperties.Description),
-			DefaultValue: child.DFProperties.DefaultValue,
-			Deprecated:   child.DFProperties.Deprecated != nil,
+			Name:             strings.TrimPrefix(childURI, base+"/"),
+			URI:              childURI,
+			RequiresInstance: childDynamic,
+			Scope:            scope,
+			Format:           child.DFProperties.DFFormat.name(),
+			Description:      strings.TrimSpace(child.DFProperties.Description),
+			DefaultValue:     child.DFProperties.DefaultValue,
+			Deprecated:       child.DFProperties.Deprecated != nil,
 		}
 		if app := child.DFProperties.Applicability; app != nil {
 			// Backported features list multiple builds comma-separated

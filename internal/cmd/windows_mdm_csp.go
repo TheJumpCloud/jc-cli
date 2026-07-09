@@ -36,11 +36,12 @@ downloaded once from Microsoft's official URL (SHA-256-verified) into
 the local cache — run ` + "`csp update`" + ` to prefetch. Air-gapped hosts can
 place the zip at <cache>/` + windows_mdm.SnapshotName + `.zip manually.
 
-Covers all Policy CSP areas (~230, ~3700 settings) including
-ADMX-backed ones (flagged — their values need ADMX-style XML, not
-plain scalars). Standalone CSPs (BitLocker CSP, Firewall CSP, VPNv2)
-are NOT in this catalog; their OMA-URIs can still be used with
-` + "`oma-uri create-policy`" + ` directly.`,
+Covers all Policy CSP areas (~3,700 settings) AND the standalone CSPs
+(BitLocker CSP, Firewall CSP, VPNv2, ... — ~1,400 more), including
+ADMX-backed settings (flagged — their values need ADMX-style XML, not
+plain scalars). Settings under dynamic-named subtrees carry an
+{instance} placeholder to substitute before creating. Filter
+provenance with ` + "`--kind policy|csp`" + `.`,
 	}
 	cmd.AddCommand(newWindowsMDMCSPListCmd())
 	cmd.AddCommand(newWindowsMDMCSPShowCmd())
@@ -62,6 +63,7 @@ func newWindowsMDMCSPListCmd() *cobra.Command {
 		area        string
 		search      string
 		scope       string
+		kind        string
 		excludeADMX bool
 	)
 
@@ -76,12 +78,15 @@ func newWindowsMDMCSPListCmd() *cobra.Command {
 			if scope != "" && scope != "device" && scope != "user" {
 				return fmt.Errorf("--scope %q: want device or user", scope)
 			}
+			if kind != "" && kind != "policy" && kind != windows_mdm.KindStandaloneCSP {
+				return fmt.Errorf("--kind %q: want policy or csp", kind)
+			}
 			cat, err := windows_mdm.DefaultCatalog(cmd.Context(), cspProgress(cmd))
 			if err != nil {
 				return err
 			}
 			matches := cat.Filter(windows_mdm.FilterOpts{
-				Area: area, Search: search, Scope: scope, ExcludeADMX: excludeADMX,
+				Area: area, Search: search, Scope: scope, Kind: kind, ExcludeADMX: excludeADMX,
 			})
 			return renderCSPList(cmd.OutOrStdout(), matches, cat.Len())
 		},
@@ -89,6 +94,7 @@ func newWindowsMDMCSPListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&area, "area", "", "Restrict to one Policy CSP area (e.g. Camera, Update, ADMX_AppCompat)")
 	cmd.Flags().StringVar(&search, "search", "", "Case-insensitive substring filter over area, name, URI, and description")
 	cmd.Flags().StringVar(&scope, "scope", "", "Restrict to device- or user-scoped settings (JumpCloud's template is device-scoped)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Restrict provenance: policy (Policy CSP areas) or csp (standalone CSPs like BitLocker CSP, VPNv2)")
 	cmd.Flags().BoolVar(&excludeADMX, "exclude-admx", false, "Drop ADMX-backed settings (their values need ADMX-style XML)")
 	return cmd
 }
@@ -153,6 +159,10 @@ template is device-scoped, so user-scoped URIs may not apply.`,
 				if s.ADMXBacked {
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"Warning: %s is ADMX-backed — its value must be ADMX-style XML (<enabled/>, <disabled/>, or <enabled/><data .../>), not a plain scalar.\n", ref)
+				}
+				if s.RequiresInstance {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"Warning: %s contains the {instance} placeholder — edit the uri before creating (create-policy refuses unsubstituted placeholders).\n", ref)
 				}
 				if s.Scope == "user" {
 					fmt.Fprintf(cmd.ErrOrStderr(),
@@ -257,10 +267,14 @@ func renderCSPList(w io.Writer, settings []windows_mdm.Setting, total int) error
 		return nil
 	}
 	tw := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "SETTING\tFORMAT\tSCOPE\tADMX\tDESCRIPTION")
+	fmt.Fprintln(tw, "SETTING\tFORMAT\tSCOPE\tKIND\tADMX\tDESCRIPTION")
 	for _, s := range settings {
-		fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%s\t%s\n",
-			s.Area, s.Name, s.Format, s.Scope, boolToYN(s.ADMXBacked), truncateDesc(s.Description, 70))
+		kind := "policy"
+		if s.Kind == windows_mdm.KindStandaloneCSP {
+			kind = "csp"
+		}
+		fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.Area, s.Name, s.Format, s.Scope, kind, boolToYN(s.ADMXBacked), truncateDesc(s.Description, 70))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -285,6 +299,12 @@ func renderCSPShow(w io.Writer, s windows_mdm.Setting) error {
 	}
 	if s.MinOSBuild != "" {
 		fmt.Fprintf(w, "  Min OS:      %s\n", s.MinOSBuild)
+	}
+	if s.Kind == windows_mdm.KindStandaloneCSP {
+		fmt.Fprintf(w, "  Kind:        standalone CSP (not a Policy CSP area)\n")
+	}
+	if s.RequiresInstance {
+		fmt.Fprintf(w, "  Instance:    URI contains {instance} — substitute the real node name before creating\n")
 	}
 	if s.ADMXBacked {
 		fmt.Fprintf(w, "  ADMX-backed: yes (value must be ADMX-style XML, not a plain scalar)\n")
