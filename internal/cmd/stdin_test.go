@@ -160,7 +160,7 @@ func TestUsersDeleteStdin_DeleteMultiple(t *testing.T) {
 	}
 }
 
-func TestUsersDeleteStdin_EmptyStdinNoError(t *testing.T) {
+func TestUsersDeleteStdin_EmptyStdinError(t *testing.T) {
 	setupUsersTest(t)
 	ts := startUsersServer(t, sampleUsers())
 	defer ts.Close()
@@ -258,7 +258,7 @@ func TestDevicesDeleteStdin_DeleteMultiple(t *testing.T) {
 	}
 }
 
-func TestDevicesDeleteStdin_EmptyStdinNoError(t *testing.T) {
+func TestDevicesDeleteStdin_EmptyStdinError(t *testing.T) {
 	setupUsersTest(t)
 	ts := startDevicesServer(t, sampleDevices())
 	defer ts.Close()

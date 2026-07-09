@@ -183,3 +183,23 @@ func TestBatchFromFile_FailuresReportLineNumbers(t *testing.T) {
 		t.Errorf("failure should carry original line number:\n%s", errBuf.String())
 	}
 }
+
+// TestBatchErase_ConfirmEraseGatesPlanToo guards the CodeRabbit PR #72
+// catch: `devices erase --from-file x --plan` must demand
+// --confirm-erase just like single-item mode — the safety gate runs
+// before batch dispatch, not inside the per-row closure.
+func TestBatchErase_ConfirmEraseGatesPlanToo(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "devices.txt")
+	if err := os.WriteFile(file, []byte("aaa111aaa111aaa111aaa111\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := NewRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"devices", "erase", "--from-file", file, "--plan"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--confirm-erase") {
+		t.Errorf("batch erase --plan must require --confirm-erase: %v", err)
+	}
+}

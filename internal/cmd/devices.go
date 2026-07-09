@@ -442,13 +442,20 @@ WARNING: This will WIPE ALL DATA on the device. This action is irreversible.
 The --confirm-erase flag is REQUIRED as a safety measure.`,
 		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.DeviceConfig),
-		RunE: batchRunE("device", "erase", func(cmd *cobra.Command, identifier string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// The safety gate runs BEFORE batch dispatch so batch mode
+			// and batch --plan can't preview or execute an erase
+			// without it — same requirement as single-item mode
+			// (CodeRabbit PR #72 catch: the aggregated batch plan
+			// rendered before the per-row closure's gate ever ran).
 			confirmErase, _ := cmd.Flags().GetBool("confirm-erase")
 			if !confirmErase {
 				return fmt.Errorf("device erase is extremely destructive and irreversible. You must pass --confirm-erase to proceed")
 			}
-			return runDevicesMDMCommand(cmd, identifier, "erase")
-		}),
+			return batchRunE("device", "erase", func(cmd *cobra.Command, identifier string) error {
+				return runDevicesMDMCommand(cmd, identifier, "erase")
+			})(cmd, args)
+		},
 	}
 	cmd.Flags().Bool("confirm-erase", false, "Required safety flag to confirm device erase")
 	addBatchSourceFlags(cmd)
