@@ -508,6 +508,17 @@ jc bulk users --file new-hires.csv                # Execute (with confirmation)
 
 The `operation` column can be `create`, `update`, or `delete`. If omitted, defaults to `create`.
 
+Beyond users, the generalized bulk engine covers more resources, each with a validated CSV surface (unknown columns are errors — typos never get silently dropped), boolean coercion, per-row failure isolation with original line numbers, and `--plan` previews. Bulk execution requires `--force` or `--non-interactive`:
+
+```bash
+jc bulk user-groups --file groups.csv --plan      # columns: name, description, operation
+jc bulk device-groups --file groups.csv --force
+jc bulk devices --file devices.csv --force        # update/delete only; columns: hostname,
+                                                  #   displayname, allow*authentication bools
+jc bulk admins --file admins.csv --force          # columns: email, role, enable-mfa,
+                                                  #   firstname, lastname, operation
+```
+
 ### Setup Wizard
 
 ```bash

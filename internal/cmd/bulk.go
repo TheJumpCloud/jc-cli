@@ -33,6 +33,11 @@ func newBulkCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newBulkUsersCmd())
+	// Generalized CSV engine resources (KLA-466). Users stays on its
+	// original path until the engine proves parity.
+	for _, spec := range bulkResourceSpecs() {
+		cmd.AddCommand(newBulkResourceCmd(spec))
+	}
 
 	return cmd
 }
