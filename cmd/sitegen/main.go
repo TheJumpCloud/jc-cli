@@ -73,7 +73,7 @@ var categories = []category{
 	{
 		Name: "AI & Automation",
 		Commands: []string{
-			"jc recipe", "jc mcp", "jc ask", "jc explain", "jc schema",
+			"jc recipe", "jc multi", "jc mcp", "jc ask", "jc explain", "jc schema",
 		},
 	},
 	{

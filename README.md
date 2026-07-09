@@ -726,6 +726,30 @@ jc recipe validate ./my-recipe.yaml # Validate syntax
 
 User-defined recipes with the same name as a built-in recipe override it.
 
+### Multi-org fan-out
+
+Run one command across many configured profiles in parallel and merge the results — the MSP view of a fleet of orgs:
+
+```bash
+# Aggregate JSON report across all prod orgs: [{profile, status, data|error}, ...]
+jc multi --filter 'prod-*' -- policies list
+
+# Explicit profile list
+jc multi --profiles acme,globex,initech -- users list --filter 'mfa.configured:eq:false'
+
+# IDs prefixed with the profile for disambiguation
+jc multi --filter '*' -- users list --filter 'state:eq:SUSPENDED' --ids
+#   acme/66a1..., globex/59f2...
+
+# Table output concatenates per-profile sections
+jc multi --filter 'prod-*' -- devices list -t
+
+# Destructive fan-out requires an explicit extra gate
+jc multi --profiles staging-a,staging-b --allow-destructive -- users delete bot-account --force
+```
+
+Each profile runs the inner command as its own `jc` subprocess with `--org <profile>` — auth, caching, and output stay fully isolated per org. Failures are isolated per profile (one bad org never aborts the rest; `jc multi` exits non-zero if any failed). Safety is annotation-driven: destructive inner commands (per their `jc:class`) are refused without `--allow-destructive`, and `read_only`-role profiles are skipped for write commands. `--concurrency` caps parallelism (default: number of profiles, max 8).
+
 ### Claude Code Skills Plugin
 
 jc-cli ships a set of conversational Claude Code skills as a self-hosted marketplace at the repo root. Install:

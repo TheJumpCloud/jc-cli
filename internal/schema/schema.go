@@ -1146,6 +1146,18 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc multi",
+				Description: "Run a jc command across multiple profiles and merge the results",
+				Long:        "Fan one jc command out across multiple configured profiles in parallel and merge the output — the MSP view of a fleet of orgs. Select targets with `--profiles a,b,c` or a shell-style glob (`--filter 'prod-*'`, `--filter '*'` for every profile); each profile runs the inner command as its own jc subprocess with `--org <profile>`, keeping auth, caching, and output resolution fully isolated per org (concurrent in-process profile switching would race on shared config — the subprocess boundary is the safety mechanism, not an implementation shortcut). Output merges by the inner command's format: JSON aggregates into a `[{profile, status, data|error}]` report with per-profile failure isolation (one bad org never aborts the rest; jc multi exits non-zero if any failed), `--ids` lines are prefixed `<profile>/` for disambiguation, and table/human formats concatenate per-profile sections. Safety is annotation-driven: destructive inner commands (per their `jc:class`) are refused without `--allow-destructive` — unknown commands classify as destructive, not waved through — and profiles whose `auth_profile_role` is `read_only` are skipped for write commands and reported as skipped. `--concurrency` caps parallelism (default: number of profiles, capped at 8 to respect per-org rate limits).",
+				Subcommands: []string{},
+				Flags: []FlagEntry{
+					{Name: "profiles", Type: "string", Description: "Comma-separated profile names to fan out to"},
+					{Name: "filter", Type: "string", Description: "Shell-style glob over configured profile names (e.g. 'prod-*', '*')"},
+					{Name: "concurrency", Type: "int", Description: "Max parallel profiles (default: number of profiles, capped at 8)"},
+					{Name: "allow-destructive", Type: "bool", Description: "Permit fanning out a destructive inner command (per its jc:class annotation)"},
+				},
+			},
+			{
 				Path:        "jc mcp",
 				Description: "MCP server for AI agent integration",
 				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 210 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
