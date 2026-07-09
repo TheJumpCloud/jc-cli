@@ -400,6 +400,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewWindowsMDMRegistryFormScreen()}
 		}
+	case "windows-mdm-custom-policies":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewWindowsMDMPoliciesListScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}

@@ -34,6 +34,11 @@ type WindowsMDMRegistryFormScreen struct {
 
 	stage formStage
 
+	// mode selects between create (POST) and edit (PUT) — set by
+	// NewWindowsMDMRegistryFormScreenForEdit.
+	mode         formMode
+	editPolicyID string
+
 	preview      viewport.Model
 	previewReady bool
 	normalized   []windows_mdm.RegistryKey
@@ -88,7 +93,42 @@ func NewWindowsMDMRegistryFormScreen() *WindowsMDMRegistryFormScreen {
 	return s
 }
 
-func (s *WindowsMDMRegistryFormScreen) Title() string { return "Author: Windows registry policy" }
+// NewWindowsMDMRegistryFormScreenForEdit builds the row editor
+// pre-populated from a decoded Custom Registry Keys policy; submit
+// routes to PUT /policies/{id}.
+func NewWindowsMDMRegistryFormScreenForEdit(decoded windows_mdm.DecodedPolicy) *WindowsMDMRegistryFormScreen {
+	s := NewWindowsMDMRegistryFormScreen()
+	s.mode = formModeEdit
+	s.editPolicyID = decoded.PolicyID
+	s.nameInput.SetValue(decoded.PolicyName)
+	s.policyName = decoded.PolicyName
+
+	types := windows_mdm.RegistryRegTypes()
+	rows := make([]windowsRegistryRow, 0, len(decoded.Keys))
+	for _, k := range decoded.Keys {
+		r := newWindowsRegistryRow()
+		r.location.SetValue(k.Location)
+		r.name.SetValue(k.ValueName)
+		r.data.SetValue(k.Data)
+		for i, t := range types {
+			if strings.EqualFold(t, k.RegType) {
+				r.typeIdx = i
+				break
+			}
+		}
+		rows = append(rows, r)
+	}
+	s.rows = rows
+	s.refocus()
+	return s
+}
+
+func (s *WindowsMDMRegistryFormScreen) Title() string {
+	if s.mode == formModeEdit {
+		return "Edit: Windows registry policy"
+	}
+	return "Author: Windows registry policy"
+}
 
 // slotCount is the total number of focusable slots.
 func (s *WindowsMDMRegistryFormScreen) slotCount() int { return 1 + len(s.rows)*4 }
@@ -345,6 +385,8 @@ func (s *WindowsMDMRegistryFormScreen) submit() (tea.Model, tea.Cmd) {
 func (s *WindowsMDMRegistryFormScreen) createCmd() tea.Cmd {
 	policyName := s.policyName
 	keys := s.normalized
+	mode := s.mode
+	editID := s.editPolicyID
 	return func() tea.Msg {
 		client, err := newV2ClientForWindowsMDM()
 		if err != nil {
@@ -356,7 +398,12 @@ func (s *WindowsMDMRegistryFormScreen) createCmd() tea.Cmd {
 			return windowsMDMCreateMsg{err: fmt.Errorf("resolving template: %w", err)}
 		}
 		body := windows_mdm.BuildRegistryPolicyBody(policyName, tmpl, keys)
-		raw, err := client.Create(ctx, "/policies", body)
+		var raw []byte
+		if mode == formModeEdit {
+			raw, err = client.Update(ctx, "/policies/"+editID, body)
+		} else {
+			raw, err = client.Create(ctx, "/policies", body)
+		}
 		if err != nil {
 			return windowsMDMCreateMsg{err: err}
 		}
@@ -375,10 +422,18 @@ func (s *WindowsMDMRegistryFormScreen) View() string {
 		hint := style.Subtitle.Render("Preview · c to create policy · Esc back to form · j/k scroll")
 		return s.preview.View() + "\n" + hint
 	case mdmFormStageCreating:
-		return fmt.Sprintf("%s Creating JumpCloud policy %q…", s.spinner.View(), s.policyName)
+		verb := "Creating"
+		if s.mode == formModeEdit {
+			verb = "Updating"
+		}
+		return fmt.Sprintf("%s %s JumpCloud policy %q…", s.spinner.View(), verb, s.policyName)
 	case mdmFormStageSuccess:
 		var b strings.Builder
-		fmt.Fprintln(&b, style.Success.Render("Policy created."))
+		verb := "Policy created."
+		if s.mode == formModeEdit {
+			verb = "Policy updated."
+		}
+		fmt.Fprintln(&b, style.Success.Render(verb))
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "  ID:   "+s.policyID)
 		fmt.Fprintln(&b, "  Name: "+s.policyName)

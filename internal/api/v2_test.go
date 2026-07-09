@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1099,5 +1100,50 @@ func TestV2Client_ConcurrentGet(t *testing.T) {
 
 	for err := range errs {
 		t.Errorf("concurrent Get error: %v", err)
+	}
+}
+
+// TestV2Client_ListAll_SkipFallbackWithoutLinkHeaders guards the
+// KLA-464 live catch: /policies paginates only via limit/skip and
+// emits NO Link headers, so Link-only pagination silently truncated a
+// 100+-policy tenant to the first page (jc policies list AND the MDM
+// policy TUI screens). When a page comes back full and there is no
+// Link header, ListAll must continue with skip-based pagination until
+// a short page arrives.
+func TestV2Client_ListAll_SkipFallbackWithoutLinkHeaders(t *testing.T) {
+	// 2 full pages (DefaultV2PageSize each) + 1 short page, no Link
+	// headers anywhere.
+	total := DefaultV2PageSize*2 + 7
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		skip, _ := strconv.Atoi(r.URL.Query().Get("skip"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = DefaultV2PageSize
+		}
+		var page []map[string]any
+		for i := skip; i < skip+limit && i < total; i++ {
+			page = append(page, map[string]any{"id": strconv.Itoa(i)})
+		}
+		w.Write(v2Response(page))
+	}))
+	defer ts.Close()
+
+	c := newTestV2Client(ts.URL)
+	result, err := c.ListAll(context.Background(), "/policies", V2ListOptions{})
+	if err != nil {
+		t.Fatalf("ListAll error: %v", err)
+	}
+	if len(result.Data) != total {
+		t.Errorf("got %d results, want %d (skip fallback truncated)", len(result.Data), total)
+	}
+
+	// A user-specified Limit below one page must still short-circuit.
+	capped, err := c.ListAll(context.Background(), "/policies", V2ListOptions{Limit: 5})
+	if err != nil {
+		t.Fatalf("ListAll capped error: %v", err)
+	}
+	if len(capped.Data) != 5 {
+		t.Errorf("capped got %d, want 5", len(capped.Data))
 	}
 }
