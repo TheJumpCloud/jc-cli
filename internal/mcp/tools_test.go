@@ -1514,17 +1514,24 @@ func TestMCP_UsersCreate_MissingFields(t *testing.T) {
 	cs := connectToolTestServer(t, Options{})
 
 	// username and email are required (no omitempty in struct tag).
-	// MCP SDK validates required fields and returns an error at the transport level.
+	// The MCP SDK validates required fields; since go-sdk 1.6 the
+	// failure comes back as a TOOL RESULT error (isError + message)
+	// rather than a protocol-level error — better for agents, which
+	// see the validation detail as tool output they can react to.
 	ctx := context.Background()
-	_, err := cs.CallTool(ctx, &mcp.CallToolParams{
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "users_create",
 		Arguments: map[string]any{},
 	})
-	if err == nil {
-		t.Fatal("expected SDK validation error for missing required fields")
+	if err != nil {
+		t.Fatalf("validation failures should be tool results, not protocol errors: %v", err)
 	}
-	if !strings.Contains(err.Error(), "required") && !strings.Contains(err.Error(), "missing") {
-		t.Errorf("expected error about required/missing fields, got: %v", err)
+	if !result.IsError {
+		t.Fatal("expected isError result for missing required fields")
+	}
+	text := getResultText(t, result)
+	if !strings.Contains(text, "required") && !strings.Contains(text, "missing") {
+		t.Errorf("expected required/missing detail in the result, got: %s", text)
 	}
 }
 
