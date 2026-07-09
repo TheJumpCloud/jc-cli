@@ -62,6 +62,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 ### AI & Automation
 
 - `jc recipe` — Manage and run automation recipes
+- `jc multi` — Run a jc command across multiple profiles and merge the results
 - `jc mcp` — MCP server for AI agent integration
 - `jc schema` — Machine-readable schema and command manifest
 - `jc ask` — Translate natural language queries into jc CLI commands

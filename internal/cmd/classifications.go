@@ -217,6 +217,12 @@ var commandClass = map[string]string{
 	"jc mcp serve": ClassInternal, // runs the server; doesn't itself call JC
 	"jc mcp tools": ClassInternal, // lists registered tools
 
+	// multi — fans an arbitrary inner command across profiles; classed
+	// by worst-case capability (the inner command can be destructive),
+	// same rationale as recipe run / bulk. Its own --allow-destructive
+	// gate consults this map for the inner leaf.
+	"jc multi": ClassDestructive,
+
 	// office365 — O365 directory integration.
 	"jc office365 get":               ClassReadOnly,
 	"jc office365 import-users":      ClassMutating,

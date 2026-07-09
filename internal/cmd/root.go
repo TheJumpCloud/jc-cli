@@ -144,7 +144,7 @@ interface.`,
 	// AI & Automation
 	addToGroup(rootCmd, "ai",
 		newMcpCmd(), newAskCmd(), newExplainCmd(),
-		newRecipeCmd(), newBulkCmd(), newSchemaCmd(),
+		newRecipeCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
 	)
 
 	// Setup & Config
@@ -361,7 +361,7 @@ var builtinCommands = map[string]bool{
 	"policy-groups": true, "apple-mdm": true, "windows-mdm": true, "user-states": true,
 	"assets": true, "identity-providers": true, "saas-management": true, "access-requests": true, "ar": true,
 	"gsuite": true, "office365": true, "duo": true, "custom-emails": true, "app-templates": true,
-	"bulk": true, "insights": true, "recipe": true, "mcp": true,
+	"bulk": true, "insights": true, "recipe": true, "multi": true, "mcp": true,
 	"tui": true, "setup": true,
 	"schema": true, "explain": true, "ask": true, "help": true,
 	// Short aliases for resource commands.

@@ -506,6 +506,19 @@ Recipes turn JumpCloud workflows into declarative, version-controlled YAML files
 - `--param` `<string[]>` — Recipe parameters as key=value (run)
 - `--file` `<string>` — Output file path (export)
 
+#### `jc multi`
+
+Run a jc command across multiple profiles and merge the results
+
+Fan one jc command out across multiple configured profiles in parallel and merge the output — the MSP view of a fleet of orgs. Select targets with `--profiles a,b,c` or a shell-style glob (`--filter 'prod-*'`, `--filter '*'` for every profile); each profile runs the inner command as its own jc subprocess with `--org <profile>`, keeping auth, caching, and output resolution fully isolated per org (concurrent in-process profile switching would race on shared config — the subprocess boundary is the safety mechanism, not an implementation shortcut). Output merges by the inner command's format: JSON aggregates into a `[{profile, status, data|error}]` report with per-profile failure isolation (one bad org never aborts the rest; jc multi exits non-zero if any failed), `--ids` lines are prefixed `<profile>/` for disambiguation, and table/human formats concatenate per-profile sections. Safety is annotation-driven: destructive inner commands (per their `jc:class`) are refused without `--allow-destructive` — unknown commands classify as destructive, not waved through — and profiles whose `auth_profile_role` is `read_only` are skipped for write commands and reported as skipped. `--concurrency` caps parallelism (default: number of profiles, capped at 8 to respect per-org rate limits).
+
+**Flags:**
+
+- `--profiles` `<string>` — Comma-separated profile names to fan out to
+- `--filter` `<string>` — Shell-style glob over configured profile names (e.g. 'prod-*', '*')
+- `--concurrency` `<int>` — Max parallel profiles (default: number of profiles, capped at 8)
+- `--allow-destructive` `<bool>` — Permit fanning out a destructive inner command (per its jc:class annotation)
+
 #### `jc mcp`
 
 MCP server for AI agent integration
