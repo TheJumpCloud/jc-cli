@@ -1,0 +1,44 @@
+name: Test
+
+# The Go build/test gate for every PR. Before this workflow, no CI ran
+# `go test` at all — the suite (~350 tests incl. the classification,
+# schema-drift, and docs/solutions frontmatter lints) only ran on
+# contributors' machines, and every green checkmark on a PR came from
+# linting/labels/security scanning. Caught during the KLA-464 arc.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (race detector)
+        run: go test -race -count=1 ./...
+
+      - name: go build (all platforms compile)
+        run: |
+          GOOS=darwin  GOARCH=arm64 go build ./cmd/jc
+          GOOS=linux   GOARCH=amd64 go build ./cmd/jc
+          GOOS=windows GOARCH=amd64 go build ./cmd/jc
