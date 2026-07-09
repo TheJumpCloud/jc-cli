@@ -307,12 +307,11 @@ func newIdentityProvidersDeleteCmd() *cobra.Command {
 		Use:   "delete [name-or-id]",
 		Short: "Delete an identity provider",
 		Long:  "Delete a JumpCloud identity provider. This action is irreversible.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIdentityProvidersDelete(cmd, args[0])
-		},
+		RunE: batchRunE("identity provider", "delete", runIdentityProvidersDelete),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

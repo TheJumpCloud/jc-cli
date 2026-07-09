@@ -303,13 +303,12 @@ func newSaaSDeleteCmd() *cobra.Command {
 Accepts a catalog app ID or 24-character hex ID.
 Shows the application catalog ID before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSaaSDelete(cmd, args[0])
-		},
+		RunE: batchRunE("SaaS account", "delete", runSaaSDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

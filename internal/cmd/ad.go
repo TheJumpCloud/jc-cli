@@ -289,13 +289,12 @@ func newADDeleteCmd() *cobra.Command {
 Accepts an Active Directory domain or 24-character hex ID.
 Shows the AD domain before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.ActiveDirectoryConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runADDelete(cmd, args[0])
-		},
+		RunE: batchRunE("AD integration", "delete", runADDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

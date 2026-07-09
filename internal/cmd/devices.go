@@ -167,27 +167,18 @@ Shows the device's hostname, OS, and last contact date before prompting for
 confirmation. Use --force to skip the confirmation prompt.
 
 Stdin mode:
-  Use --stdin to read hostnames/IDs from stdin (one per line).
-  When stdin is piped, --stdin is implied automatically.
-  In stdin mode, --force is implied (no confirmation prompts).
+  Use --from-file <path> or --stdin to read hostnames/IDs (one per
+  line; blank lines and # comments ignored). Batch execution requires
+  --force or --non-interactive; preview with --plan first.
 
   jc devices list --filter 'active!=true' --ids | jc devices delete --force
-  cat devices.txt | jc devices delete --stdin --force`,
+  jc devices delete --from-file stale-devices.txt --plan`,
 		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.DeviceConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			useStdin, _ := cmd.Flags().GetBool("stdin")
-			if useStdin || (len(args) == 0 && isStdinPiped()) {
-				return runDevicesDeleteStdin(cmd)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("requires a hostname or ID argument (or use --stdin)")
-			}
-			return runDevicesDelete(cmd, args[0])
-		},
+		RunE:               batchRunE("device", "delete", runDevicesDelete),
 	}
 
-	cmd.Flags().Bool("stdin", false, "Read hostnames/IDs from stdin (one per line)")
+	addBatchSourceFlags(cmd)
 
 	return cmd
 }
@@ -262,35 +253,6 @@ func runDevicesDelete(cmd *cobra.Command, identifier string) error {
 }
 
 // runDevicesDeleteStdin reads hostnames/IDs from stdin and deletes each one.
-func runDevicesDeleteStdin(cmd *cobra.Command) error {
-	identifiers, err := readLinesFromStdin()
-	if err != nil {
-		return err
-	}
-
-	if len(identifiers) == 0 {
-		return nil
-	}
-
-	client, err := newV1Client()
-	if err != nil {
-		return err
-	}
-
-	result := runStdinBatch(identifiers, "device", "Deleting", cmd.ErrOrStderr(), func(identifier string) error {
-		id, err := resolveDevice(cmd.Context(), client, identifier)
-		if err != nil {
-			return err
-		}
-		_, err = client.Delete(cmd.Context(), "/systems/"+id)
-		return err
-	})
-
-	if result.Failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
-	}
-	return nil
-}
 
 func newDevicesUpdateCmd() *cobra.Command {
 	var (
@@ -444,12 +406,13 @@ func newDevicesLockCmd() *cobra.Command {
 		Use:   "lock <hostname-or-id>",
 		Short: "Send MDM lock command to a device",
 		Long:  "Send an MDM lock command to a JumpCloud device. Accepts a hostname or ID. The device will be locked remotely.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.DeviceConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDevicesMDMCommand(cmd, args[0], "lock")
-		},
+		RunE: batchRunE("device", "lock", func(cmd *cobra.Command, identifier string) error {
+			return runDevicesMDMCommand(cmd, identifier, "lock")
+		}),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
@@ -458,12 +421,13 @@ func newDevicesRestartCmd() *cobra.Command {
 		Use:   "restart <hostname-or-id>",
 		Short: "Send MDM restart command to a device",
 		Long:  "Send an MDM restart command to a JumpCloud device. Accepts a hostname or ID. The device will be restarted remotely.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.DeviceConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDevicesMDMCommand(cmd, args[0], "restart")
-		},
+		RunE: batchRunE("device", "restart", func(cmd *cobra.Command, identifier string) error {
+			return runDevicesMDMCommand(cmd, identifier, "restart")
+		}),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
@@ -476,17 +440,18 @@ func newDevicesEraseCmd() *cobra.Command {
 Accepts a hostname or 24-character hex system ID.
 WARNING: This will WIPE ALL DATA on the device. This action is irreversible.
 The --confirm-erase flag is REQUIRED as a safety measure.`,
-		Args:               cobra.ExactArgs(1),
+		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.DeviceConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: batchRunE("device", "erase", func(cmd *cobra.Command, identifier string) error {
 			confirmErase, _ := cmd.Flags().GetBool("confirm-erase")
 			if !confirmErase {
 				return fmt.Errorf("device erase is extremely destructive and irreversible. You must pass --confirm-erase to proceed")
 			}
-			return runDevicesMDMCommand(cmd, args[0], "erase")
-		},
+			return runDevicesMDMCommand(cmd, identifier, "erase")
+		}),
 	}
 	cmd.Flags().Bool("confirm-erase", false, "Required safety flag to confirm device erase")
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

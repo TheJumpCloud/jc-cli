@@ -149,10 +149,10 @@ func TestUsersDeleteStdin_DeleteMultiple(t *testing.T) {
 	}
 
 	progress := errBuf.String()
-	if !strings.Contains(progress, "Deleting 1 of 2") {
+	if !strings.Contains(progress, "delete 1 of 2") {
 		t.Errorf("progress should show 1 of 2: %q", progress)
 	}
-	if !strings.Contains(progress, "Deleting 2 of 2") {
+	if !strings.Contains(progress, "delete 2 of 2") {
 		t.Errorf("progress should show 2 of 2: %q", progress)
 	}
 	if !strings.Contains(progress, "2 succeeded, 0 failed") {
@@ -174,8 +174,12 @@ func TestUsersDeleteStdin_EmptyStdinNoError(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"users", "delete", "--stdin"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected no error for empty stdin, got: %v", err)
+	// KLA-446 semantics change: an empty batch source is an ERROR, not
+	// a silent no-op — an upstream filter matching nothing should be
+	// visible, not vanish.
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no identifiers") {
+		t.Fatalf("expected empty-stdin error, got: %v", err)
 	}
 }
 
@@ -199,7 +203,7 @@ func TestUsersDeleteStdin_InvalidUser(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for partially failed batch")
 	}
-	if !strings.Contains(err.Error(), "1 of 2 deletions failed") {
+	if !strings.Contains(err.Error(), "1 of 2 delete operations failed") {
 		t.Errorf("error should report failure count: %q", err.Error())
 	}
 
@@ -222,7 +226,7 @@ func TestUsersDelete_NoArgsNoStdinError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no args and no stdin")
 	}
-	if !strings.Contains(err.Error(), "requires a username or ID argument") {
+	if !strings.Contains(err.Error(), "requires an identifier argument") {
 		t.Errorf("error should mention required argument: %q", err.Error())
 	}
 }
@@ -267,8 +271,10 @@ func TestDevicesDeleteStdin_EmptyStdinNoError(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"devices", "delete", "--stdin"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected no error for empty stdin, got: %v", err)
+	// Same KLA-446 semantics change as the users test above.
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no identifiers") {
+		t.Fatalf("expected empty-stdin error, got: %v", err)
 	}
 }
 
@@ -284,7 +290,7 @@ func TestDevicesDelete_NoArgsNoStdinError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no args and no stdin")
 	}
-	if !strings.Contains(err.Error(), "requires a hostname or ID argument") {
+	if !strings.Contains(err.Error(), "requires an identifier argument") {
 		t.Errorf("error should mention required argument: %q", err.Error())
 	}
 }

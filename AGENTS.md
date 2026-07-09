@@ -74,10 +74,19 @@ jc users list --filter 'suspended=true' --ids | jc users delete --force
 # Stdin batch mode
 cat user-ids.txt | jc users delete --stdin --force
 
+# File batch mode — the runbook-friendly variant (newline identifiers,
+# blank lines + # comments ignored; works on every single-identifier
+# mutating command: delete/lock/unlock/erase/restart/reset-*)
+jc users delete --from-file users-to-offboard.txt --plan   # preview with line numbers
+jc users delete --from-file users-to-offboard.txt --force  # batch requires --force
+jc devices lock --from-file lost-devices.txt --force
+
 # Bulk CSV operations
 jc bulk create users --file new-users.csv
 jc bulk update users --file updates.csv
 ```
+
+Batch rules: exactly one identifier source (inline arg, `--from-file`, or `--stdin`); batch execution requires `--force`/`--non-interactive`; failures are collected per row and reported with original file line numbers; `--plan` renders one aggregated preview.
 
 ## Graph associations
 

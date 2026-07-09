@@ -258,7 +258,7 @@ func runAppleMDMUpdate(cmd *cobra.Command, identifier, name, orgName string) err
 }
 
 func newAppleMDMDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "delete <name-or-id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete an Apple MDM configuration",
@@ -266,12 +266,12 @@ func newAppleMDMDeleteCmd() *cobra.Command {
 
 Accepts a configuration name or 24-character hex ID.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppleMDMDelete(cmd, args[0])
-		},
+		RunE: batchRunE("Apple MDM config", "delete", runAppleMDMDelete),
 	}
+	addBatchSourceFlags(cmd)
+	return cmd
 }
 
 func runAppleMDMDelete(cmd *cobra.Command, identifier string) error {

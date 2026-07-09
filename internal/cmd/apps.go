@@ -342,13 +342,12 @@ func newAppsDeleteCmd() *cobra.Command {
 Accepts an app name or 24-character hex application ID.
 Shows the app name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:               cobra.ExactArgs(1),
+		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.ApplicationConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppsDelete(cmd, args[0])
-		},
+		RunE: batchRunE("app", "delete", runAppsDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

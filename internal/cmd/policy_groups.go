@@ -276,7 +276,7 @@ func runPolicyGroupsUpdate(cmd *cobra.Command, identifier, name, description str
 }
 
 func newPolicyGroupsDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "delete <name-or-id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete a policy group",
@@ -285,12 +285,12 @@ func newPolicyGroupsDeleteCmd() *cobra.Command {
 Accepts a group name or 24-character hex ID.
 Shows the group name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.PolicyGroupConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPolicyGroupsDelete(cmd, args[0])
-		},
+		RunE: batchRunE("policy group", "delete", runPolicyGroupsDelete),
 	}
+	addBatchSourceFlags(cmd)
+	return cmd
 }
 
 func runPolicyGroupsDelete(cmd *cobra.Command, identifier string) error {

@@ -292,11 +292,10 @@ func newAdminsDeleteCmd() *cobra.Command {
 Accepts an email address or 24-character hex admin ID.
 Shows the admin email before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminsDelete(cmd, args[0])
-		},
+		Args: cobra.MaximumNArgs(1),
+		RunE: batchRunE("admin", "delete", runAdminsDelete),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

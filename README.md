@@ -852,14 +852,23 @@ jc users list --filter "suspended:eq:true" --ids | xargs -I{} jc users delete {}
 jc graph traverse --from device_group:Servers --to user --ids | xargs -I{} jc users get {}
 ```
 
-### Stdin Batch Mode
+### Batch Mode (stdin and files)
 
-Pipe IDs from stdin for batch operations:
+Every single-identifier mutating command (`delete`, `lock`, `unlock`, `erase`, `restart`, `reset-mfa`, `reset-password`, `revoke` — across all resource types) accepts identifiers from a pipe or a file:
 
 ```bash
-echo -e "user1-id\nuser2-id\nuser3-id" | jc users delete --stdin --force
+# Stdin
 jc users list --filter "suspended:eq:true" --ids | jc users delete --stdin --force
+
+# From a file — the runbook-friendly variant that lives in git next to
+# the runbook. Newline-separated; blank lines and # comments ignored.
+jc users delete --from-file users-to-offboard.txt --plan    # aggregated preview, line numbers
+jc users delete --from-file users-to-offboard.txt --force   # execute
+jc devices lock --from-file lost-devices.txt --force
+jc policies delete --from-file deprecated-policies.txt --force
 ```
+
+Rules: exactly one identifier source per invocation (inline argument, `--from-file`, or `--stdin`); batch execution requires `--force` or `--non-interactive` (one prompt per row would be useless, and silently skipping confirmation would be worse); per-row failures are collected and reported at the end with the original file line numbers, and the command exits non-zero if any row failed.
 
 ### Quiet Mode
 

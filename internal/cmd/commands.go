@@ -274,13 +274,12 @@ func newCommandsDeleteCmd() *cobra.Command {
 Accepts a command name or 24-character hex command ID.
 Shows the command name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:               cobra.ExactArgs(1),
+		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommandsDelete(cmd, args[0])
-		},
+		RunE: batchRunE("command", "delete", runCommandsDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

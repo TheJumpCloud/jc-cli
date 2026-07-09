@@ -371,13 +371,12 @@ func newPoliciesDeleteCmd() *cobra.Command {
 Accepts a policy name or 24-character hex ID.
 Shows the policy name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:               cobra.ExactArgs(1),
+		Args:               cobra.MaximumNArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.PolicyConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPoliciesDelete(cmd, args[0])
-		},
+		RunE: batchRunE("policy", "delete", runPoliciesDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
