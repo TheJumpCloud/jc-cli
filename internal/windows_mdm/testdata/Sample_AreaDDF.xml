@@ -1,0 +1,218 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <Node>
+    <NodeName>Sample</NodeName>
+    <Path>./Device/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>AllowWidget</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Enables or disables the sample widget. Most restricted value is 0.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>WidgetTimeout</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Number of days before the widget times out.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>4</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17763</MSFT:OsBuildVersion>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="Range">
+          <MSFT:Value>[0-730]</MSFT:Value>
+        </MSFT:AllowedValues>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>WidgetGroup</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Get />
+        </AccessType>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <One />
+        </Occurrence>
+        <Scope>
+          <Permanent />
+        </Scope>
+        <DFType>
+          <DDFName></DDFName>
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName>NestedName</NodeName>
+        <DFProperties>
+          <AccessType>
+            <Add />
+            <Get />
+            <Replace />
+          </AccessType>
+          <Description>A nested string setting inside a group node.</Description>
+          <DFFormat>
+            <chr />
+          </DFFormat>
+          <Occurrence>
+            <ZeroOrOne />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFType>
+            <MIME>text/plain</MIME>
+          </DFType>
+          <MSFT:AllowedValues ValueType="None">
+          </MSFT:AllowedValues>
+        </DFProperties>
+      </Node>
+    </Node>
+    <Node>
+      <NodeName>LegacyAdmxThing</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>An ADMX-backed sample setting.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Deprecated OsBuildDeprecated="10.0.22000" />
+        <MSFT:AllowedValues ValueType="ADMX">
+          <MSFT:AdmxBacked Area="Sample~AT~System~Sample" Name="LegacyAdmxThing_1" File="Sample.admx" />
+        </MSFT:AllowedValues>
+      </DFProperties>
+    </Node>
+  </Node>
+  <Node>
+    <NodeName>Sample</NodeName>
+    <Path>./User/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>AllowWidget</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Per-user variant of the sample widget policy.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+      </DFProperties>
+    </Node>
+  </Node>
+</MgmtTree>

@@ -34,6 +34,7 @@ user-scoped variants of these templates today).`,
 	}
 	cmd.AddCommand(newWindowsMDMOMAURICmd())
 	cmd.AddCommand(newWindowsMDMRegistryCmd())
+	cmd.AddCommand(newWindowsMDMCSPCmd())
 	return cmd
 }
 

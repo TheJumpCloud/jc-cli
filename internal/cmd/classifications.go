@@ -325,8 +325,15 @@ var commandClass = map[string]string{
 	// version — prints build info.
 	"jc version": ClassInternal,
 
-	// windows-mdm — both create JC policies (POST /policies);
-	// reversible via policy delete.
+	// windows-mdm — create-policy leaves POST /policies (reversible
+	// via policy delete). csp list/show are pure reads, classed
+	// read-only to match the apple-mdm payloads list/show precedent
+	// (CodeRabbit PR #65 review); template/update stay internal
+	// because they write local files (settings-file / cache).
+	"jc windows-mdm csp list":               ClassReadOnly,
+	"jc windows-mdm csp show":               ClassReadOnly,
+	"jc windows-mdm csp template":           ClassInternal,
+	"jc windows-mdm csp update":             ClassInternal,
 	"jc windows-mdm oma-uri create-policy":  ClassMutating,
 	"jc windows-mdm registry create-policy": ClassMutating,
 }

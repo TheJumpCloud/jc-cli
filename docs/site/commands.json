@@ -1037,10 +1037,11 @@
     },
     {
       "path": "jc windows-mdm",
-      "description": "Create Windows custom MDM policies (OMA-URI and registry)",
-      "long": "Create JumpCloud custom policies for Windows devices from raw Policy CSP settings (`oma-uri create-policy`, each setting an OMA-URI path + format + value triple) or HKLM registry rows (`registry create-policy`) — the Windows analog of `jc apple-mdm payloads create-policy`, minus the catalog: both JumpCloud templates accept arbitrary entries, exactly like Intune's Custom OMA-URI profile. Values are validated up front (format/type enums with Admin Portal aliases, OMA-URI `./` path shape, hive-prefix rejection since HKEY_LOCAL_MACHINE is implied, numeric checks for int/DWORD/QWORD) with every problem aggregated into one pass. Templates (`custom_oma_uri_mdm_windows` / `custom_registry_keys_policy_windows`) are resolved dynamically by name — no hardcoded IDs — so a tenant without Windows MDM fails fast with an actionable error. Both policy shapes are device-scoped. Supports `--plan` for safe preview. OMA-URI paths come from Microsoft's Policy CSP reference; a built-in searchable CSP catalog is a planned follow-up.",
+      "description": "Windows MDM: Policy CSP catalog + custom OMA-URI and registry policies",
+      "long": "The Windows MDM workbench: discover, author, and create custom Windows policies. `csp list/show/template` browse Microsoft's Policy CSP catalog (~230 areas, ~3,700 settings — every OMA-URI path, wire format, allowed values, OS-build applicability, ADMX-backed flag), turning a natural-language intent into the exact `{uri, format, value}` triple; catalog data is Microsoft's pinned DDF v2 snapshot, downloaded on demand from Microsoft's official URL (SHA-256-verified, cached locally, offline afterwards — never vendored, since Microsoft's terms don't permit redistribution). `oma-uri create-policy` and `registry create-policy` then POST the policy via JumpCloud's generic custom templates (`custom_oma_uri_mdm_windows` / `custom_registry_keys_policy_windows`), resolved dynamically by name — no hardcoded IDs — with all values validated up front (format/type enums with Admin Portal aliases, OMA-URI `./` path shape, hive-prefix rejection since HKEY_LOCAL_MACHINE is implied, numeric checks for int/DWORD/QWORD) and every problem aggregated into one pass. Both policy shapes are device-scoped. Supports `--plan` for safe preview. The Windows analog of `jc apple-mdm payloads`.",
       "category": "Devices \u0026 MDM",
       "subcommands": [
+        "csp",
         "oma-uri",
         "registry"
       ],
@@ -1058,7 +1059,7 @@
         {
           "name": "settings-file",
           "type": "string",
-          "description": "JSON file with an array of {uri, format, value} objects (oma-uri create-policy)"
+          "description": "JSON file with an array of {uri, format, value} objects (oma-uri create-policy; `csp template` emits this shape)"
         },
         {
           "name": "key",
@@ -1069,6 +1070,36 @@
           "name": "keys-file",
           "type": "string",
           "description": "JSON file with an array of {location, name, type, data} objects (registry create-policy)"
+        },
+        {
+          "name": "area",
+          "type": "string",
+          "description": "Restrict to one Policy CSP area (csp list)"
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "description": "Case-insensitive substring over area, name, URI, and description (csp list)"
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "description": "Restrict to device- or user-scoped settings (csp list)"
+        },
+        {
+          "name": "exclude-admx",
+          "type": "bool",
+          "description": "Drop ADMX-backed settings (csp list)"
+        },
+        {
+          "name": "output-file",
+          "type": "string",
+          "description": "Write the settings-file JSON to this path (csp template)"
+        },
+        {
+          "name": "refresh",
+          "type": "bool",
+          "description": "Delete the cached snapshot and re-download (csp update)"
         }
       ]
     },
@@ -1364,7 +1395,7 @@
     {
       "path": "jc mcp",
       "description": "MCP server for AI agent integration",
-      "long": "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 207 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and Windows custom MDM tools (`windows_mdm_oma_uri_create_policy` / `windows_mdm_registry_create_policy`) that create OMA-URI (Policy CSP) and HKLM registry policies the same way. Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
+      "long": "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 210 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
       "category": "AI \u0026 Automation",
       "subcommands": [
         "serve"

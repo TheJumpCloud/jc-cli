@@ -75,7 +75,7 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
 - **Full JumpCloud API surface** — 28 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
-- **AI-native** — built-in [MCP server](#mcp-server) with 207 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **AI-native** — built-in [MCP server](#mcp-server) with 210 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -561,6 +561,16 @@ A browsable catalog, offline `.mobileconfig` generator (single-payload via `temp
 ### Windows custom MDM policies
 
 ```bash
+# Discover: browse Microsoft's Policy CSP catalog (~230 areas, ~3,700 settings)
+jc windows-mdm csp list --search camera                  # natural-language → OMA-URI
+jc windows-mdm csp show Camera/AllowCamera               # format, allowed values, OS build
+jc windows-mdm csp template Camera/AllowCamera \
+    Bluetooth/AllowDiscoverableMode --output-file lockdown.json
+jc windows-mdm csp update                                # prefetch/refresh the snapshot
+
+# Author + create: the template output feeds create-policy directly
+jc windows-mdm oma-uri create-policy --name "Lockdown" --settings-file lockdown.json --plan
+
 # Policy CSP settings via OMA-URI — the Windows analog of apple-mdm payloads create-policy
 jc windows-mdm oma-uri create-policy --name "Require BitLocker" \
     --setting 'uri=./Device/Vendor/MSFT/Policy/Config/BitLocker/RequireDeviceEncryption,format=int,value=1'
@@ -580,7 +590,9 @@ jc windows-mdm oma-uri create-policy --name "Baseline" --settings-file baseline.
 jc windows-mdm registry create-policy --name "Chrome baseline" --keys-file chrome.json
 ```
 
-Creates JumpCloud "Custom MDM (OMA-URI)" and "Advanced: Custom Registry Keys" policies for Windows devices — for settings JumpCloud has no built-in policy for, exactly like Intune's Custom OMA-URI profile. Values are validated up front (format/type enums, OMA-URI path shape, hive-prefix rejection, numeric checks for int/DWORD/QWORD) with every problem reported in one pass. Templates are resolved dynamically by name — no hardcoded IDs. Both policy shapes are device-scoped. OMA-URI paths come from [Microsoft's Policy CSP reference](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-configuration-service-provider); a built-in searchable CSP catalog is planned as a follow-up.
+Creates JumpCloud "Custom MDM (OMA-URI)" and "Advanced: Custom Registry Keys" policies for Windows devices — for settings JumpCloud has no built-in policy for, exactly like Intune's Custom OMA-URI profile. Values are validated up front (format/type enums, OMA-URI path shape, hive-prefix rejection, numeric checks for int/DWORD/QWORD) with every problem reported in one pass. Templates are resolved dynamically by name — no hardcoded IDs. Both policy shapes are device-scoped.
+
+The `csp` catalog covers every Policy CSP area including ADMX-backed settings (flagged — their values need ADMX-style XML). Catalog data is Microsoft's pinned DDF v2 snapshot, downloaded **on demand** from Microsoft's official URL (SHA-256-verified) into `~/.cache/jc/windows-mdm-ddf/` — never vendored into the binary, since Microsoft's download terms don't permit redistribution. Offline after the one-time fetch; air-gapped hosts can pre-place the zip in the cache dir. Standalone CSPs (BitLocker CSP, Firewall CSP, VPNv2) are not in the catalog, but their OMA-URIs work with `oma-uri create-policy` directly.
 
 ### Interactive TUI
 
@@ -641,7 +653,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**207 tools available** covering all 28 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus **Windows custom MDM tools** (`windows_mdm_oma_uri_create_policy` / `windows_mdm_registry_create_policy`) for creating OMA-URI (Policy CSP) and HKLM registry policies. All destructive operations require explicit `execute: true` confirmation.
+**210 tools available** covering all 28 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot) feeding OMA-URI and HKLM-registry policy creation. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -1039,7 +1051,7 @@ internal/
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
   tui/                  Interactive terminal UI (Bubbletea) — 28 resource views
-  mcp/                  MCP server (official Go SDK) — 207 tools
+  mcp/                  MCP server (official Go SDK) — 210 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
   schema/               Machine-readable CLI schema (27 resource schemas)

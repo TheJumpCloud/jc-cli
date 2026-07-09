@@ -21,17 +21,19 @@ func newMcpCmd() *cobra.Command {
 		Long: `Start an MCP server that exposes JumpCloud operations as tools and resources
 for AI assistants like Claude Desktop and Claude Code.
 
-207 tools cover the full JumpCloud surface plus a dedicated Apple MDM
+210 tools cover the full JumpCloud surface plus a dedicated Apple MDM
 payloads catalog (apple_mdm_payloads_search / _show / _template /
 _create_policy). The catalog lets an agent map a natural-language MDM
 intent — "disable AirDrop on iPads", "enforce FileVault on Macs" — to
 one of Apple's vendored schemas (com.apple.applicationaccess,
 com.apple.security.firewall, …) and create a JumpCloud Custom MDM
 Configuration Profile from it in one tool call. Windows gets the same
-create path via windows_mdm_oma_uri_create_policy (Policy CSP settings)
-and windows_mdm_registry_create_policy (HKLM registry keys). Every
-create_policy tool routes through the step-up auth gate (Touch ID /
-TTY / webhook) before any POST to JumpCloud.
+flow: windows_mdm_csp_search / _show / _template browse Microsoft's
+Policy CSP catalog (~3700 settings, fetched on demand from Microsoft's
+official DDF snapshot), feeding windows_mdm_oma_uri_create_policy
+(Policy CSP settings) and windows_mdm_registry_create_policy (HKLM
+registry keys). Every create_policy tool routes through the step-up
+auth gate (Touch ID / TTY / webhook) before any POST to JumpCloud.
 
 Configure in Claude Desktop:
   {
