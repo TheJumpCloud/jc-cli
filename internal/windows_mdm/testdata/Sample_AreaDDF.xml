@@ -163,6 +163,9 @@
           <MIME>text/plain</MIME>
         </DFType>
         <MSFT:Deprecated OsBuildDeprecated="10.0.22000" />
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.22000, 10.0.19043.1202, 10.0.19042.1202</MSFT:OsBuildVersion>
+        </MSFT:Applicability>
         <MSFT:AllowedValues ValueType="ADMX">
           <MSFT:AdmxBacked Area="Sample~AT~System~Sample" Name="LegacyAdmxThing_1" File="Sample.admx" />
         </MSFT:AllowedValues>
