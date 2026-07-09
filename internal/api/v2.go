@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -149,7 +150,25 @@ func (c *V2Client) ListAll(ctx context.Context, endpoint string, opts V2ListOpti
 
 		// Follow the "next" Link header for pagination.
 		nextURL := parseLinkNext(resp.Header.Get("Link"))
-		if nextURL == "" || len(pageItems) == 0 {
+		if nextURL == "" {
+			// Not every v2 endpoint emits Link headers — /policies,
+			// for one, paginates only via limit/skip (confirmed live
+			// during KLA-464: a 100+-policy tenant silently truncated
+			// `jc policies list` and the MDM policy screens to the
+			// first page). Fall back to skip-based pagination whenever
+			// the page came back full; a final short-or-empty page
+			// terminates the loop.
+			if len(pageItems) < pageSizeForV2List(opts) {
+				break
+			}
+			next, err := addSkipToURL(reqURL, len(pageItems))
+			if err != nil {
+				return nil, fmt.Errorf("building skip pagination URL: %w", err)
+			}
+			reqURL = next
+			continue
+		}
+		if len(pageItems) == 0 {
 			break
 		}
 
@@ -343,6 +362,36 @@ func (c *V2Client) buildV2ListURL(endpoint string, opts V2ListOptions) (string, 
 		q.Set("search", opts.Search)
 	}
 
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// pageSizeForV2List reproduces the per-page limit buildV2ListURL set,
+// so the skip-fallback can tell a full page (more may follow) from a
+// short one (done).
+func pageSizeForV2List(opts V2ListOptions) int {
+	pageSize := DefaultV2PageSize
+	if opts.Limit > 0 && opts.Limit < pageSize {
+		pageSize = opts.Limit
+	}
+	return pageSize
+}
+
+// addSkipToURL advances the skip query parameter by delta, preserving
+// every other parameter of the current request URL.
+func addSkipToURL(rawURL string, delta int) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	skip := 0
+	if s := q.Get("skip"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			skip = n
+		}
+	}
+	q.Set("skip", strconv.Itoa(skip+delta))
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

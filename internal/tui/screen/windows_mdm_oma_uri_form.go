@@ -34,6 +34,12 @@ type WindowsMDMOMAURIFormScreen struct {
 
 	stage formStage
 
+	// mode selects between create (POST /policies) and edit
+	// (PUT /policies/{editPolicyID}) — set by
+	// NewWindowsMDMOMAURIFormScreenForEdit.
+	mode         formMode
+	editPolicyID string
+
 	preview      viewport.Model
 	previewReady bool
 	// normalized is the validated, alias-canonicalized settings list
@@ -155,7 +161,84 @@ func suggestWindowsPolicyName(draft *windowsMDMDraft) string {
 	return name
 }
 
-func (s *WindowsMDMOMAURIFormScreen) Title() string { return "Author: Windows OMA-URI policy" }
+// NewWindowsMDMOMAURIFormScreenForEdit builds the form pre-populated
+// from a decoded policy; submit routes to PUT /policies/{id}. Each
+// decoded entry is rehydrated through the catalog by URI so enum
+// pick-lists and range validation come back; entries whose URI isn't
+// in the catalog (standalone CSPs, hand-authored paths) fall back to
+// plain text rows — edited verbatim, never dropped. cat may be nil
+// (snapshot fetch failed): everything falls back to text rows.
+func NewWindowsMDMOMAURIFormScreenForEdit(decoded windows_mdm.DecodedPolicy, cat *windows_mdm.Catalog) *WindowsMDMOMAURIFormScreen {
+	// Edit mode gets a private draft: the rows come from the decoded
+	// policy, not from the browse screen's pick-flow, and clearing it
+	// on success must not disturb any in-flight create draft.
+	draft := &windowsMDMDraft{}
+	rows := make([]windowsOMAURIRow, 0, len(decoded.Settings))
+	for _, entry := range decoded.Settings {
+		setting, ok := windows_mdm.Setting{}, false
+		if cat != nil {
+			setting, ok = cat.ByURI(entry.URI)
+		}
+		if !ok {
+			// Synthesized minimal setting — keeps the row editable
+			// with the stored format even without catalog metadata.
+			setting = windows_mdm.Setting{
+				Area:   "(not in catalog)",
+				Name:   entry.URI,
+				URI:    entry.URI,
+				Format: entry.Format,
+				Scope:  "device",
+			}
+		}
+		draft.settings = append(draft.settings, setting)
+		row := buildWindowsOMAURIRow(setting)
+		// Override the seed with the policy's stored value.
+		switch row.kind {
+		case windowsRowKindEnum:
+			matched := false
+			for i, opt := range row.options {
+				if opt.Value == entry.Value {
+					row.selectedIdx = i
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				// Catalog drift: the stored value isn't among the
+				// catalog's enum options. Silently landing on the
+				// default option would MUTATE the policy on save —
+				// degrade to a text row carrying the stored value
+				// verbatim instead, same philosophy as a catalog
+				// miss (CodeRabbit PR #68 review).
+				row = windowsOMAURIRow{setting: setting, kind: windowsRowKindText}
+				row.text = textinput.New()
+				row.text.CharLimit = 512
+				row.text.SetValue(entry.Value)
+			}
+		case windowsRowKindBool:
+			row.boolValue = strings.EqualFold(entry.Value, "true")
+		default:
+			row.text.SetValue(entry.Value)
+		}
+		rows = append(rows, row)
+	}
+
+	s := NewWindowsMDMOMAURIFormScreen(draft)
+	s.rows = rows
+	s.mode = formModeEdit
+	s.editPolicyID = decoded.PolicyID
+	s.nameInput.SetValue(decoded.PolicyName)
+	s.policyName = decoded.PolicyName
+	s.refocus()
+	return s
+}
+
+func (s *WindowsMDMOMAURIFormScreen) Title() string {
+	if s.mode == formModeEdit {
+		return "Edit: Windows OMA-URI policy"
+	}
+	return "Author: Windows OMA-URI policy"
+}
 
 func (s *WindowsMDMOMAURIFormScreen) TextInputActive() bool {
 	if s.stage != mdmFormStageEdit {
@@ -484,6 +567,8 @@ func (s *WindowsMDMOMAURIFormScreen) startCreate() (tea.Model, tea.Cmd) {
 func (s *WindowsMDMOMAURIFormScreen) createCmd() tea.Cmd {
 	policyName := s.policyName
 	settings := s.normalized
+	mode := s.mode
+	editID := s.editPolicyID
 	return func() tea.Msg {
 		client, err := newV2ClientForWindowsMDM()
 		if err != nil {
@@ -495,7 +580,12 @@ func (s *WindowsMDMOMAURIFormScreen) createCmd() tea.Cmd {
 			return windowsMDMCreateMsg{err: fmt.Errorf("resolving template: %w", err)}
 		}
 		body := windows_mdm.BuildOMAURIPolicyBody(policyName, tmpl, settings)
-		raw, err := client.Create(ctx, "/policies", body)
+		var raw []byte
+		if mode == formModeEdit {
+			raw, err = client.Update(ctx, "/policies/"+editID, body)
+		} else {
+			raw, err = client.Create(ctx, "/policies", body)
+		}
 		if err != nil {
 			return windowsMDMCreateMsg{err: err}
 		}
@@ -530,10 +620,18 @@ func (s *WindowsMDMOMAURIFormScreen) View() string {
 		hint := style.Subtitle.Render("Preview · c to create policy · Esc back to form · j/k scroll")
 		return s.preview.View() + "\n" + hint
 	case mdmFormStageCreating:
-		return fmt.Sprintf("%s Creating JumpCloud policy %q…", s.spinner.View(), s.policyName)
+		verb := "Creating"
+		if s.mode == formModeEdit {
+			verb = "Updating"
+		}
+		return fmt.Sprintf("%s %s JumpCloud policy %q…", s.spinner.View(), verb, s.policyName)
 	case mdmFormStageSuccess:
 		var b strings.Builder
-		fmt.Fprintln(&b, style.Success.Render("Policy created."))
+		verb := "Policy created."
+		if s.mode == formModeEdit {
+			verb = "Policy updated."
+		}
+		fmt.Fprintln(&b, style.Success.Render(verb))
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "  ID:   "+s.policyID)
 		fmt.Fprintln(&b, "  Name: "+s.policyName)

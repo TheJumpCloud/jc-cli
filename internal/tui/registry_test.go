@@ -71,9 +71,10 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// "apple-mdm-payloads" adds a virtual device-management entry (+1),
 	// "apple-mdm-custom-policies" adds a second virtual device-management entry (+1),
 	// "windows-mdm-csp" + "windows-mdm-registry" add two more virtual
-	// device-management entries (+2, KLA-462),
+	// device-management entries (+2, KLA-462), and
+	// "windows-mdm-custom-policies" a third (+1, KLA-464),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -121,9 +122,10 @@ func TestRegistryByKey(t *testing.T) {
 	// "recipes" adds a virtual workflow entry (+1),
 	// "apple-mdm-payloads" adds a virtual device-management entry (+1),
 	// "windows-mdm-csp" + "windows-mdm-registry" add two more virtual
-	// device-management entries (+2, KLA-462),
+	// device-management entries (+2, KLA-462), and
+	// "windows-mdm-custom-policies" a third (+1, KLA-464),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}

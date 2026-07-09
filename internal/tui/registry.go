@@ -567,6 +567,16 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryDeviceMgmt,
 	})
 
+	// Windows MDM custom policies: the edit counterpart (KLA-464) —
+	// lists existing Custom MDM (OMA-URI) + Custom Registry Keys
+	// policies; drilling in decodes and opens the matching form
+	// pre-populated for a PUT.
+	entries = append(entries, ResourceEntry{
+		Key:         "windows-mdm-custom-policies",
+		DisplayName: "Windows MDM custom policies",
+		Category:    CategoryDeviceMgmt,
+	})
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 

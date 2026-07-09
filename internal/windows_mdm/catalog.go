@@ -225,9 +225,10 @@ type Catalog struct {
 	// Snapshot names the pinned Microsoft drop the data came from.
 	Snapshot string
 	settings []Setting
-	byRef    map[string]int      // "Area/Name" (lowercased) → index
-	byArea   map[string][]int    // lowercased area → indices
-	areas    []string            // sorted canonical area names
+	byRef    map[string]int   // "Area/Name" (lowercased) → index
+	byURI    map[string]int   // full OMA-URI (lowercased) → index
+	byArea   map[string][]int // lowercased area → indices
+	areas    []string         // sorted canonical area names
 }
 
 var (
@@ -269,6 +270,7 @@ func LoadCatalog(dir string) (*Catalog, error) {
 	c := &Catalog{
 		Snapshot: SnapshotName,
 		byRef:    map[string]int{},
+		byURI:    map[string]int{},
 		byArea:   map[string][]int{},
 	}
 	areaSeen := map[string]bool{}
@@ -295,6 +297,9 @@ func LoadCatalog(dir string) (*Catalog, error) {
 			if prev, dup := c.byRef[key]; !dup || (c.settings[prev].Scope == "user" && s.Scope == "device") {
 				c.byRef[key] = idx
 			}
+			// URIs are unique across scopes (./Device vs ./User
+			// prefixes differ), so no dedup rule is needed here.
+			c.byURI[strings.ToLower(s.URI)] = idx
 			areaKey := strings.ToLower(s.Area)
 			c.byArea[areaKey] = append(c.byArea[areaKey], idx)
 			if !areaSeen[s.Area] {
@@ -320,6 +325,17 @@ func (c *Catalog) Areas() []string { return c.areas }
 // both device and user variants exist, the device one is returned.
 func (c *Catalog) ByRef(ref string) (Setting, bool) {
 	idx, ok := c.byRef[strings.ToLower(strings.TrimSpace(ref))]
+	if !ok {
+		return Setting{}, false
+	}
+	return c.settings[idx], true
+}
+
+// ByURI looks up a setting by its full OMA-URI (case-insensitive) —
+// the edit path's rehydration hook: a decoded policy entry regains
+// its enum/range metadata when the URI is in the catalog.
+func (c *Catalog) ByURI(uri string) (Setting, bool) {
+	idx, ok := c.byURI[strings.ToLower(strings.TrimSpace(uri))]
 	if !ok {
 		return Setting{}, false
 	}

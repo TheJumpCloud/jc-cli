@@ -628,7 +628,7 @@ The grid is responsive — three columns at 120+ chars, two at 90-119, single-co
 - **Detail views** — associations tab with group membership, graph traversal, and related resources
 - **Directory Insights** — query by service, time range, and event type; drill into events; `x` for AI explanation
 - **Apple MDM** — browse the vendored payload catalog, author policies in a typed form (or `$EDITOR`), edit existing Custom MDM policies
-- **Windows MDM** — browse Microsoft's Policy CSP catalog (~3,700 settings, fetched on demand), add settings to a draft (`a`), author the OMA-URI policy with enum pick-lists and range validation, preview, create; plus a registry-key policy row editor
+- **Windows MDM** — browse Microsoft's Policy CSP catalog (~3,700 settings, fetched on demand), add settings to a draft (`a`), author the OMA-URI policy with enum pick-lists and range validation, preview, create; a registry-key policy row editor; and a custom-policies list that decodes existing OMA-URI/registry policies back into the form for editing
 - **CRUD** — `n` to create (schema-driven form), `E` to edit, `d` to delete (with confirmation)
 - **Form navigation** — `j`/`k` between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel; sensitive fields are masked
 - **Clipboard & export** — `c` to copy ID, `e` then `j`/`c`/`J` for JSON clipboard / CSV file / JSON file
