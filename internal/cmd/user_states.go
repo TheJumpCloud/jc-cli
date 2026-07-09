@@ -196,18 +196,18 @@ func runUserStatesGet(cmd *cobra.Command, id string) error {
 }
 
 func newUserStatesDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "delete <state-id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete a scheduled user state change",
 		Long: `Delete a scheduled user state change.
 
 Accepts a state change ID. Use --force to skip confirmation.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUserStatesDelete(cmd, args[0])
-		},
+		Args: cobra.MaximumNArgs(1),
+		RunE: batchRunE("user state", "delete", runUserStatesDelete),
 	}
+	addBatchSourceFlags(cmd)
+	return cmd
 }
 
 func runUserStatesDelete(cmd *cobra.Command, id string) error {

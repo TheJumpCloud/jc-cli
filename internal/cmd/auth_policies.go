@@ -354,13 +354,12 @@ func newAuthPoliciesDeleteCmd() *cobra.Command {
 Accepts a policy name or 24-character hex ID.
 Shows the policy name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAuthPoliciesDelete(cmd, args[0])
-		},
+		RunE: batchRunE("auth policy", "delete", runAuthPoliciesDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

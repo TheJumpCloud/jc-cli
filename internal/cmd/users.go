@@ -467,28 +467,19 @@ Accepts a username or 24-character hex user ID.
 Shows the user's username and email before prompting for confirmation.
 Use --force to skip the confirmation prompt.
 
-Stdin mode:
-  Use --stdin to read usernames/IDs from stdin (one per line).
-  When stdin is piped, --stdin is implied automatically.
-  In stdin mode, --force is implied (no confirmation prompts).
+Batch mode:
+  Use --from-file <path> or --stdin to read usernames/IDs (one per
+  line; blank lines and # comments ignored). Batch execution requires
+  --force or --non-interactive; preview with --plan first.
 
   jc users list --filter 'suspended=true' --ids | jc users delete --force
-  cat users.txt | jc users delete --stdin --force`,
+  jc users delete --from-file users-to-offboard.txt --plan`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			useStdin, _ := cmd.Flags().GetBool("stdin")
-			if useStdin || (len(args) == 0 && isStdinPiped()) {
-				return runUsersDeleteStdin(cmd)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("requires a username or ID argument (or use --stdin)")
-			}
-			return runUsersDelete(cmd, args[0])
-		},
+		RunE:              batchRunE("user", "delete", runUsersDelete),
 	}
 
-	cmd.Flags().Bool("stdin", false, "Read usernames/IDs from stdin (one per line)")
+	addBatchSourceFlags(cmd)
 
 	return cmd
 }
@@ -557,47 +548,19 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 }
 
 // runUsersDeleteStdin reads usernames/IDs from stdin and deletes each one.
-func runUsersDeleteStdin(cmd *cobra.Command) error {
-	identifiers, err := readLinesFromStdin()
-	if err != nil {
-		return err
-	}
-
-	if len(identifiers) == 0 {
-		return nil
-	}
-
-	client, err := newV1Client()
-	if err != nil {
-		return err
-	}
-
-	result := runStdinBatch(identifiers, "user", "Deleting", cmd.ErrOrStderr(), func(identifier string) error {
-		id, err := resolveUser(cmd.Context(), client, identifier)
-		if err != nil {
-			return err
-		}
-		_, err = client.Delete(cmd.Context(), "/systemusers/"+id)
-		return err
-	})
-
-	if result.Failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
-	}
-	return nil
-}
 
 func newUsersLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lock <username-or-id>",
 		Short: "Lock a user account",
 		Long:              "Lock a JumpCloud user account by setting account_locked=true. Accepts a username or ID.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersLockUnlock(cmd, args[0], true)
-		},
+		RunE: batchRunE("user", "lock", func(cmd *cobra.Command, identifier string) error {
+			return runUsersLockUnlock(cmd, identifier, true)
+		}),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
@@ -606,12 +569,13 @@ func newUsersUnlockCmd() *cobra.Command {
 		Use:   "unlock <username-or-id>",
 		Short: "Unlock a user account",
 		Long:              "Unlock a JumpCloud user account by setting account_locked=false. Accepts a username or ID.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersLockUnlock(cmd, args[0], false)
-		},
+		RunE: batchRunE("user", "unlock", func(cmd *cobra.Command, identifier string) error {
+			return runUsersLockUnlock(cmd, identifier, false)
+		}),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
@@ -679,12 +643,11 @@ func newUsersResetMFACmd() *cobra.Command {
 
 Accepts a username or 24-character hex user ID.
 The user will need to re-enroll in MFA on their next login.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersResetMFA(cmd, args[0])
-		},
+		RunE: batchRunE("user", "reset-mfa", runUsersResetMFA),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
@@ -726,12 +689,11 @@ func newUsersResetPasswordCmd() *cobra.Command {
 		Use:   "reset-password <username-or-id>",
 		Short: "Trigger a password reset for a user",
 		Long:              "Trigger a password reset email for a JumpCloud user. Accepts a username or ID. The user's password will expire and they will be prompted to set a new one.",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUsersResetPassword(cmd, args[0])
-		},
+		RunE: batchRunE("user", "reset-password", runUsersResetPassword),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

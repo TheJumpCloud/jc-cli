@@ -317,11 +317,10 @@ Requires confirmation unless --force is set.
 Examples:
   jc access-requests revoke aabbccddee112233aabb0001
   jc access-requests revoke aabbccddee112233aabb0001 --force`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAccessRequestsRevoke(cmd, args[0])
-		},
+		Args: cobra.MaximumNArgs(1),
+		RunE: batchRunE("access request", "revoke", runAccessRequestsRevoke),
 	}
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

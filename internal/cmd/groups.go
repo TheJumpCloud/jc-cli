@@ -362,25 +362,16 @@ Accepts a group name or 24-character hex group ID.
 Shows the group name, member count, and associated resources before prompting
 for confirmation. Use --force to skip the confirmation prompt.
 
-Stdin mode:
-  Use --stdin to read group names/IDs from stdin (one per line).
-  When stdin is piped, --stdin is implied automatically.
-  In stdin mode, --force is implied (no confirmation prompts).`,
+Batch mode:
+  Use --from-file <path> or --stdin to read group names/IDs (one per
+  line; blank lines and # comments ignored). Batch execution requires
+  --force or --non-interactive; preview with --plan first.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserGroupConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			useStdin, _ := cmd.Flags().GetBool("stdin")
-			if useStdin || (len(args) == 0 && isStdinPiped()) {
-				return runGroupsUserDeleteStdin(cmd)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("requires a group name or ID argument (or use --stdin)")
-			}
-			return runGroupsUserDelete(cmd, args[0])
-		},
+		RunE:              batchRunE("user group", "delete", runGroupsUserDelete),
 	}
 
-	cmd.Flags().Bool("stdin", false, "Read group names/IDs from stdin (one per line)")
+	addBatchSourceFlags(cmd)
 
 	return cmd
 }
@@ -448,35 +439,6 @@ func runGroupsUserDelete(cmd *cobra.Command, identifier string) error {
 }
 
 // runGroupsUserDeleteStdin reads group names/IDs from stdin and deletes each one.
-func runGroupsUserDeleteStdin(cmd *cobra.Command) error {
-	identifiers, err := readLinesFromStdin()
-	if err != nil {
-		return err
-	}
-
-	if len(identifiers) == 0 {
-		return nil
-	}
-
-	client, err := newV2Client()
-	if err != nil {
-		return err
-	}
-
-	result := runStdinBatch(identifiers, "user group", "Deleting", cmd.ErrOrStderr(), func(identifier string) error {
-		id, err := resolveUserGroup(cmd.Context(), client, identifier)
-		if err != nil {
-			return err
-		}
-		_, err = client.Delete(cmd.Context(), "/usergroups/"+id)
-		return err
-	})
-
-	if result.Failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
-	}
-	return nil
-}
 
 // enrichWithMemberCount fetches member counts for each group in parallel and
 // injects a "memberCount" field into each group's JSON. The endpointFmt should
@@ -799,25 +761,16 @@ Accepts a group name or 24-character hex group ID.
 Shows the group name before prompting for confirmation.
 Use --force to skip the confirmation prompt.
 
-Stdin mode:
-  Use --stdin to read group names/IDs from stdin (one per line).
-  When stdin is piped, --stdin is implied automatically.
-  In stdin mode, --force is implied (no confirmation prompts).`,
+Batch mode:
+  Use --from-file <path> or --stdin to read group names/IDs (one per
+  line; blank lines and # comments ignored). Batch execution requires
+  --force or --non-interactive; preview with --plan first.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.DeviceGroupConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			useStdin, _ := cmd.Flags().GetBool("stdin")
-			if useStdin || (len(args) == 0 && isStdinPiped()) {
-				return runGroupsDeviceDeleteStdin(cmd)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("requires a group name or ID argument (or use --stdin)")
-			}
-			return runGroupsDeviceDelete(cmd, args[0])
-		},
+		RunE:              batchRunE("device group", "delete", runGroupsDeviceDelete),
 	}
 
-	cmd.Flags().Bool("stdin", false, "Read group names/IDs from stdin (one per line)")
+	addBatchSourceFlags(cmd)
 
 	return cmd
 }
@@ -885,35 +838,6 @@ func runGroupsDeviceDelete(cmd *cobra.Command, identifier string) error {
 }
 
 // runGroupsDeviceDeleteStdin reads group names/IDs from stdin and deletes each one.
-func runGroupsDeviceDeleteStdin(cmd *cobra.Command) error {
-	identifiers, err := readLinesFromStdin()
-	if err != nil {
-		return err
-	}
-
-	if len(identifiers) == 0 {
-		return nil
-	}
-
-	client, err := newV2Client()
-	if err != nil {
-		return err
-	}
-
-	result := runStdinBatch(identifiers, "device group", "Deleting", cmd.ErrOrStderr(), func(identifier string) error {
-		id, err := resolveDeviceGroup(cmd.Context(), client, identifier)
-		if err != nil {
-			return err
-		}
-		_, err = client.Delete(cmd.Context(), "/systemgroups/"+id)
-		return err
-	})
-
-	if result.Failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", result.Failed, result.Succeeded+result.Failed)
-	}
-	return nil
-}
 
 // --- Group Membership Management ---
 

@@ -307,13 +307,12 @@ func newLDAPDeleteCmd() *cobra.Command {
 Accepts an LDAP server name or 24-character hex ID.
 Shows the LDAP server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLDAPDelete(cmd, args[0])
-		},
+		RunE: batchRunE("LDAP server", "delete", runLDAPDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

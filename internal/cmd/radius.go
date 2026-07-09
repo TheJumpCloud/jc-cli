@@ -291,7 +291,7 @@ func runRADIUSUpdate(cmd *cobra.Command, identifier, name, sharedSecret string, 
 }
 
 func newRADIUSDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "delete <name-or-id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete a RADIUS server",
@@ -300,12 +300,12 @@ func newRADIUSDeleteCmd() *cobra.Command {
 Accepts a server name or 24-character hex ID.
 Shows the server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.RADIUSServerConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRADIUSDelete(cmd, args[0])
-		},
+		RunE: batchRunE("RADIUS server", "delete", runRADIUSDelete),
 	}
+	addBatchSourceFlags(cmd)
+	return cmd
 }
 
 func runRADIUSDelete(cmd *cobra.Command, identifier string) error {

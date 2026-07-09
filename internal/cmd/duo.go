@@ -193,13 +193,12 @@ func newDuoDeleteCmd() *cobra.Command {
 Accepts a Duo account name or 24-character hex ID.
 Shows the Duo account name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDuoDelete(cmd, args[0])
-		},
+		RunE: batchRunE("Duo integration", "delete", runDuoDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

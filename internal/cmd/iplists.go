@@ -301,13 +301,12 @@ func newIPListsDeleteCmd() *cobra.Command {
 Accepts an IP list name or 24-character hex ID.
 Shows the IP list name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IPListConfig),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIPListsDelete(cmd, args[0])
-		},
+		RunE: batchRunE("IP list", "delete", runIPListsDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 

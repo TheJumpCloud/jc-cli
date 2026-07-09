@@ -325,12 +325,11 @@ func newCustomEmailDeleteCmd() *cobra.Command {
 Shows the type before prompting for confirmation.
 Use --force to skip the confirmation prompt.
 Valid types: %s.`, strings.Join(validCustomEmailTypes, ", ")),
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCustomEmailDelete(cmd, args[0])
-		},
+		Args: cobra.MaximumNArgs(1),
+		RunE: batchRunE("custom email", "delete", runCustomEmailDelete),
 	}
 
+	addBatchSourceFlags(cmd)
 	return cmd
 }
 
