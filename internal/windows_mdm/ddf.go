@@ -212,9 +212,13 @@ func walkDDF(n ddfNode, uri, base, area, scope string, out *[]Setting) {
 			Deprecated:   child.DFProperties.Deprecated != nil,
 		}
 		if app := child.DFProperties.Applicability; app != nil {
-			// Multiple builds appear newline/whitespace-separated when
-			// a feature was backported; the first is the primary release.
-			s.MinOSBuild = strings.Fields(app.OsBuildVersion + " ")[0]
+			// Backported features list multiple builds comma-separated
+			// ("10.0.22000, 10.0.19043.1202, …"); the first — without a
+			// minor number — is the primary release. Split on the comma
+			// (not just whitespace, which left a trailing "," on the
+			// build — caught during the KLA-460 live full test).
+			first, _, _ := strings.Cut(app.OsBuildVersion, ",")
+			s.MinOSBuild = strings.TrimSpace(first)
 		}
 		if av := child.DFProperties.AllowedValues; av != nil {
 			s.ADMXBacked = av.ValueType == "ADMX" || av.AdmxBacked != nil

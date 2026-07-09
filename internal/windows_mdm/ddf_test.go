@@ -80,6 +80,12 @@ func TestParseAreaDDF_FixtureShape(t *testing.T) {
 	if !admx.Deprecated {
 		t.Error("LegacyAdmxThing should be flagged deprecated")
 	}
+	// Backported builds are comma-separated; MinOSBuild must be the
+	// first build with no trailing comma (caught during the KLA-460
+	// live full test — "10.0.22000," rendered in csp show).
+	if admx.MinOSBuild != "10.0.22000" {
+		t.Errorf("MinOSBuild = %q, want 10.0.22000 (no trailing comma)", admx.MinOSBuild)
+	}
 
 	// User-scoped root parsed with the right scope + URI prefix.
 	user := byName["user:AllowWidget"]
