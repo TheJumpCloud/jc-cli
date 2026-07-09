@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -76,9 +77,15 @@ type loadCatalogMsg struct {
 }
 
 // windowsCSPCatalogLoader is overridable for tests — the default
-// fetches/loads the real Microsoft snapshot via DefaultCatalog.
+// fetches/loads the real Microsoft snapshot via DefaultCatalog. The
+// context is bounded: an unresponsive endpoint must surface as the
+// error/retry state, not hang the fetch goroutine forever after the
+// operator Esc'd away (CodeRabbit PR #67 review). Three minutes is
+// generous for a ~700KB download + parse even on a slow link.
 var windowsCSPCatalogLoader = func() ([]windows_mdm.Setting, string, error) {
-	cat, err := windows_mdm.DefaultCatalog(context.Background(), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cat, err := windows_mdm.DefaultCatalog(ctx, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -214,6 +221,12 @@ func (s *WindowsMDMCSPListScreen) updateBrowseMode(msg tea.KeyMsg) (tea.Model, t
 			s.cursor = 0
 		}
 	case "/":
+		// The error view renders instead of the list; entering filter
+		// mode there would type into a hidden input (CodeRabbit PR #67
+		// review).
+		if s.err != "" {
+			return s, nil
+		}
 		s.filtering = true
 		return s, s.filter.Focus()
 	case "c":

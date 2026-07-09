@@ -133,6 +133,19 @@ func TestWindowsCSPList_FilterNarrowsAndResets(t *testing.T) {
 	}
 }
 
+func TestWindowsCSPList_NoFilterModeOnErrorScreen(t *testing.T) {
+	// The error view renders instead of the list; `/` must not start
+	// typing into a hidden filter box (CodeRabbit PR #67 review).
+	stubCatalogLoader(t, nil, errors.New("boom"))
+	s := NewWindowsMDMCSPListScreen()
+	model, _ := s.Update(s.loadCmd()())
+	s = model.(*WindowsMDMCSPListScreen)
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if s.filtering {
+		t.Error("filter mode must not activate while the error view is shown")
+	}
+}
+
 func TestWindowsCSPList_CursorClamps(t *testing.T) {
 	s := loadedCSPList(t)
 	s.cursor = 3

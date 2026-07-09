@@ -433,14 +433,20 @@ func (s *WindowsMDMOMAURIFormScreen) submit() (tea.Model, tea.Cmd) {
 	normalized, err := windows_mdm.NormalizeAndValidateSettings(settings)
 	if err != nil {
 		// The aggregate error names rows as "setting N: ..." — map
-		// each line back onto its row without clobbering a more
-		// specific inline error.
+		// each line back onto its row, ACCUMULATING with "; " like the
+		// registry form so every problem for a row surfaces in one
+		// pass instead of one fix/resubmit cycle each (CodeRabbit
+		// PR #67 review). An inline numeric error stays first.
 		for _, line := range strings.Split(err.Error(), "\n") {
 			line = strings.TrimSpace(line)
 			for i := range s.rows {
 				prefix := fmt.Sprintf("setting %d:", i+1)
-				if strings.HasPrefix(line, prefix) && s.rows[i].err == "" {
-					s.rows[i].err = strings.TrimSpace(strings.TrimPrefix(line, prefix))
+				if strings.HasPrefix(line, prefix) {
+					msg := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+					if s.rows[i].err != "" {
+						s.rows[i].err += "; "
+					}
+					s.rows[i].err += msg
 				}
 			}
 		}
