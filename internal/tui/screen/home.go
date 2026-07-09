@@ -392,6 +392,14 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewAppleMDMPoliciesListScreen()}
 		}
+	case "windows-mdm-csp":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewWindowsMDMCSPListScreen()}
+		}
+	case "windows-mdm-registry":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewWindowsMDMRegistryFormScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}

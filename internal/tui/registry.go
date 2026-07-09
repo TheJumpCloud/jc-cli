@@ -548,6 +548,25 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryDeviceMgmt,
 	})
 
+	// Windows MDM CSP catalog (KLA-462): browse Microsoft's Policy CSP
+	// settings (fetch-on-demand DDF snapshot — NOT vendored; see
+	// internal/windows_mdm/catalog.go for the licensing rationale),
+	// draft settings, and create Custom MDM (OMA-URI) policies.
+	entries = append(entries, ResourceEntry{
+		Key:         "windows-mdm-csp",
+		DisplayName: "Windows MDM policies (CSP)",
+		Category:    CategoryDeviceMgmt,
+	})
+
+	// Windows registry policy authoring: the "Advanced: Custom
+	// Registry Keys" counterpart — a free-form row editor (no catalog
+	// behind it; registry keys are operator knowledge).
+	entries = append(entries, ResourceEntry{
+		Key:         "windows-mdm-registry",
+		DisplayName: "Windows registry policy",
+		Category:    CategoryDeviceMgmt,
+	})
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 
