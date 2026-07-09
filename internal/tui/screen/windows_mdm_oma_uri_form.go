@@ -195,11 +195,25 @@ func NewWindowsMDMOMAURIFormScreenForEdit(decoded windows_mdm.DecodedPolicy, cat
 		// Override the seed with the policy's stored value.
 		switch row.kind {
 		case windowsRowKindEnum:
+			matched := false
 			for i, opt := range row.options {
 				if opt.Value == entry.Value {
 					row.selectedIdx = i
+					matched = true
 					break
 				}
+			}
+			if !matched {
+				// Catalog drift: the stored value isn't among the
+				// catalog's enum options. Silently landing on the
+				// default option would MUTATE the policy on save —
+				// degrade to a text row carrying the stored value
+				// verbatim instead, same philosophy as a catalog
+				// miss (CodeRabbit PR #68 review).
+				row = windowsOMAURIRow{setting: setting, kind: windowsRowKindText}
+				row.text = textinput.New()
+				row.text.CharLimit = 512
+				row.text.SetValue(entry.Value)
 			}
 		case windowsRowKindBool:
 			row.boolValue = strings.EqualFold(entry.Value, "true")

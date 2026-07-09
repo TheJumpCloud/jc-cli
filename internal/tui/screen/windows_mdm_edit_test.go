@@ -57,6 +57,25 @@ func TestOMAURIFormEdit_RehydratesFromCatalog(t *testing.T) {
 	}
 }
 
+// TestOMAURIFormEdit_EnumDriftPreservesStoredValue guards the
+// CodeRabbit PR #68 catch: a stored value absent from the catalog's
+// enum options (catalog drift) must NOT silently land on the default
+// option — that would mutate the policy on save. It degrades to a
+// text row carrying the stored value verbatim.
+func TestOMAURIFormEdit_EnumDriftPreservesStoredValue(t *testing.T) {
+	cat := catalogFromSettings(t, nil)
+	decoded := decodedOMAURIPolicy()
+	decoded.Settings[0].Value = "42" // not in the fixture's {0,1} enum
+	s := NewWindowsMDMOMAURIFormScreenForEdit(decoded, cat)
+
+	if s.rows[0].kind != windowsRowKindText {
+		t.Fatalf("drifted enum should degrade to text, kind=%d", s.rows[0].kind)
+	}
+	if s.rows[0].text.Value() != "42" {
+		t.Errorf("stored value must survive verbatim: %q", s.rows[0].text.Value())
+	}
+}
+
 func TestOMAURIFormEdit_NilCatalogFallsBackToText(t *testing.T) {
 	s := NewWindowsMDMOMAURIFormScreenForEdit(decodedOMAURIPolicy(), nil)
 	for i, r := range s.rows {
