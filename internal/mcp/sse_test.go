@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -58,8 +59,22 @@ func startSSEServer(t *testing.T, cfg SSEConfig) (*Server, string) {
 		t.Fatal("SSE server did not start listening")
 	}
 
-	baseURL := "http://" + addr.String()
+	baseURL := "http://" + loopbackHostPort(addr)
 	return server, baseURL
+}
+
+// loopbackHostPort normalizes an unspecified bind host (":0" →
+// "[::]:PORT") to 127.0.0.1. go-sdk ≥1.6 ships DNS-rebinding
+// protection: requests arriving on a loopback interface with a
+// non-loopback Host header get 403, and "::" (unspecified) doesn't
+// count as loopback. Real clients connect via 127.0.0.1 anyway — the
+// tests should too, keeping the SDK's protection enabled rather than
+// opting out of it.
+func loopbackHostPort(addr net.Addr) string {
+	if tcp, ok := addr.(*net.TCPAddr); ok && tcp.IP.IsUnspecified() {
+		return fmt.Sprintf("127.0.0.1:%d", tcp.Port)
+	}
+	return addr.String()
 }
 
 func TestSSE_ServerStartsAndAcceptsConnections(t *testing.T) {
@@ -489,7 +504,7 @@ func TestSSE_ReadOnlyMode(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	baseURL := "http://" + server.Listener().String()
+	baseURL := "http://" + loopbackHostPort(server.Listener())
 
 	transport := &mcp.SSEClientTransport{
 		Endpoint: baseURL,
