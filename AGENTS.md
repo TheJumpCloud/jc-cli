@@ -162,6 +162,9 @@ jc bundle apply example-baseline --group "Corp Devices"
 # adds the policies as members, and binds the device group to it.
 # Create-only: name conflicts are rejected up front; mid-apply failures
 # are never rolled back — exact cleanup commands are printed instead.
+jc bundle status example-baseline   # drift detection: per-unit in-sync/
+# drifted (value-level diffs)/missing + orphaned group members; finds the
+# policy group by its bundle:<name>@<version> description marker
 ```
 
 ## Global flags reference
