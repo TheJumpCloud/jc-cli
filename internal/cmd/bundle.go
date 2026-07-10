@@ -1,0 +1,216 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/klaassen-consulting/jc/internal/bundle"
+	"github.com/klaassen-consulting/jc/internal/output"
+)
+
+// bundleDefaultFields is the field subset for bundle list table output.
+var bundleDefaultFields = []string{"name", "version", "origin", "platforms", "policies"}
+
+func newBundleCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "bundle",
+		Short: "Manage security baseline bundles (pre-configured policy sets)",
+		Long: `Bundles are versioned YAML artifacts grouping multiple policies —
+Apple multi-payload profiles and Windows OMA-URI / registry policies —
+into one named baseline.
+
+Built-in bundles are compiled into jc. User-defined bundles live in
+~/.config/jc/bundles/; a user bundle with the same name overrides the
+built-in one. Every bundle carries a source block recording where its
+content came from (licensing provenance).`,
+	}
+
+	cmd.AddCommand(newBundleListCmd())
+	cmd.AddCommand(newBundleShowCmd())
+	cmd.AddCommand(newBundleValidateCmd())
+	cmd.AddCommand(newBundleExportCmd())
+
+	return cmd
+}
+
+func newBundleListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all available bundles (built-in + user-defined)",
+		RunE:    runBundleList,
+	}
+}
+
+func runBundleList(cmd *cobra.Command, args []string) error {
+	bundles, err := bundle.LoadAll()
+	if err != nil {
+		return err
+	}
+
+	var data []json.RawMessage
+	for _, b := range bundles {
+		summary := map[string]interface{}{
+			"name":      b.Name,
+			"version":   b.Version,
+			"origin":    b.Source.Origin,
+			"platforms": strings.Join(b.Platforms(), ", "),
+			"policies":  len(b.Policies),
+		}
+		if b.Description != "" {
+			summary["description"] = b.Description
+		}
+		raw, err := json.Marshal(summary)
+		if err != nil {
+			return err
+		}
+		data = append(data, raw)
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = bundleDefaultFields
+	if err := output.WriteList(cmd.OutOrStdout(), data, opts); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "── %d bundles ──\n", len(data))
+	return nil
+}
+
+func newBundleShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <name>",
+		Short: "Display a bundle in full: metadata, source, and every policy unit",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runBundleShow,
+	}
+}
+
+// findBundleByName loads all bundles and resolves one by name, listing
+// the available names on a miss (recipe show precedent).
+func findBundleByName(name string) (*bundle.Bundle, error) {
+	bundles, err := bundle.LoadAll()
+	if err != nil {
+		return nil, err
+	}
+	b := bundle.FindByName(bundles, name)
+	if b == nil {
+		available := make([]string, 0, len(bundles))
+		for _, x := range bundles {
+			available = append(available, x.Name)
+		}
+		return nil, fmt.Errorf("bundle %q not found. Available bundles: %s", name, strings.Join(available, ", "))
+	}
+	return b, nil
+}
+
+func runBundleShow(cmd *cobra.Command, args []string) error {
+	b, err := findBundleByName(args[0])
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return err
+	}
+	return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+}
+
+func newBundleValidateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "validate [name]",
+		Short: "Deep-validate a bundle offline (Apple payloads + Windows settings)",
+		Long: `Validate a bundle by name or from a file. Structural checks and deep
+validation both run: Apple payloads validate against the embedded
+schema catalog, Windows OMA-URI settings and registry keys through the
+same rules the create-policy commands enforce. Everything is offline —
+no JumpCloud API calls, no catalog downloads.
+
+Examples:
+  jc bundle validate example-baseline
+  jc bundle validate --file my-baseline.yaml`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runBundleValidate,
+	}
+	cmd.Flags().String("file", "", "Validate a bundle file instead of a named bundle")
+	return cmd
+}
+
+func runBundleValidate(cmd *cobra.Command, args []string) error {
+	file, _ := cmd.Flags().GetString("file")
+
+	var b *bundle.Bundle
+	var err error
+	var what string
+	switch {
+	case file != "" && len(args) > 0:
+		return fmt.Errorf("pass a bundle name or --file, not both")
+	case file != "":
+		b, err = bundle.ParseFile(file)
+		what = file
+	case len(args) == 1:
+		b, err = findBundleByName(args[0])
+		what = args[0]
+	default:
+		return fmt.Errorf("pass a bundle name or --file")
+	}
+	if err != nil {
+		return err
+	}
+
+	cat, err := apple_mdm.Default()
+	if err != nil {
+		return err
+	}
+	if err := bundle.Validate(b, cat); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Bundle %s is valid (%d policy units).\n", what, len(b.Policies))
+	return nil
+}
+
+func newBundleExportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export <name>",
+		Short: "Export a bundle as YAML (fork a builtin into your own baseline)",
+		Long: `Export a bundle's YAML to stdout or a file. The exported file is a
+complete, portable bundle: edit it and drop it into ~/.config/jc/bundles/
+(same name overrides the builtin) or apply it directly with --file.
+
+Examples:
+  jc bundle export example-baseline
+  jc bundle export example-baseline --file my-baseline.yaml`,
+		Args: cobra.ExactArgs(1),
+		RunE: runBundleExport,
+	}
+	cmd.Flags().String("file", "", "Write the bundle to a file instead of stdout")
+	return cmd
+}
+
+func runBundleExport(cmd *cobra.Command, args []string) error {
+	b, err := findBundleByName(args[0])
+	if err != nil {
+		return err
+	}
+	data, err := bundle.MarshalYAML(b)
+	if err != nil {
+		return fmt.Errorf("marshaling bundle: %w", err)
+	}
+
+	outFile, _ := cmd.Flags().GetString("file")
+	if outFile != "" {
+		if err := os.WriteFile(outFile, data, 0o600); err != nil {
+			return fmt.Errorf("writing file: %w", err)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "Bundle %q exported to %s\n", args[0], outFile)
+		return nil
+	}
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
+}

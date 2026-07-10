@@ -26,7 +26,7 @@ Use `--org <profile>` to override the active profile per command.
 | admins | `jc admins list` | `jc admins get` | `jc admins create` | — | `jc admins delete` |
 | commands | `jc commands list` | `jc commands get` | `jc commands create` | `jc commands update` | `jc commands delete` |
 
-Other resources: `ad`, `apple-mdm`, `windows-mdm`, `auth-policies`, `custom-emails`, `duo`, `gsuite`, `identity-providers`, `insights`, `iplists`, `ldap`, `office365`, `org`, `policy-groups`, `radius`, `saas-management`, `software`, `user-states`, `assets`, `graph`, `system-insights`.
+Other resources: `ad`, `apple-mdm`, `windows-mdm`, `auth-policies`, `bundle`, `custom-emails`, `duo`, `gsuite`, `identity-providers`, `insights`, `iplists`, `ldap`, `office365`, `org`, `policy-groups`, `radius`, `saas-management`, `software`, `user-states`, `assets`, `graph`, `system-insights`.
 
 ## Output control
 
@@ -147,6 +147,14 @@ jc windows-mdm csp template Camera/AllowCamera --output-file s.json
 jc windows-mdm oma-uri create-policy --name "Lockdown" --settings-file s.json --plan
 jc windows-mdm registry create-policy --name "Autorun off" \
     --key 'location=SOFTWARE\Policies\Microsoft\Windows\Explorer,name=NoAutorun,type=DWORD,data=1' --plan
+
+# Bundles: versioned YAML baselines grouping Apple profiles + Windows
+# OMA-URI/registry policies. Builtins are embedded; user bundles live in
+# ~/.config/jc/bundles/ (same name overrides the builtin).
+jc bundle list
+jc bundle show example-baseline
+jc bundle validate --file my-baseline.yaml   # offline deep validation
+jc bundle export example-baseline --file my-baseline.yaml   # fork a builtin
 ```
 
 ## Global flags reference
