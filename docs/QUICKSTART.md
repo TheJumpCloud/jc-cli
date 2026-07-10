@@ -91,6 +91,10 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc iplists list/get/create/update/delete` | IP allow/block lists |
 | `jc insights query/count/distinct` | Directory Insights events |
 | `jc graph traverse --from TYPE:NAME --to TYPE` | Association graph |
+| `jc apple-mdm payloads list/show/template/create-policy` | Apple MDM: browse Apple's schema catalog, emit .mobileconfig, create JC custom policies |
+| `jc windows-mdm csp list/show/template` | Windows MDM: browse Microsoft's CSP catalog (~5,100 settings) |
+| `jc windows-mdm oma-uri/registry create-policy` | Windows MDM: create custom OMA-URI / registry policies |
+| `jc multi --filter 'prod-*' -- <command>` | Run any command across multiple org profiles, merged report |
 
 ### Interactive TUI
 
@@ -163,7 +167,7 @@ Add to Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-158 tools available. All destructive operations require explicit confirmation.
+210 tools available, including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
 
 ### Plan Mode (Dry Run)
 
@@ -194,6 +198,27 @@ jc devices list --all --output csv > devices.csv
 
 # Count users by department
 jc users list --query "[].department" | jq 'group_by(.) | map({dept: .[0], count: length})'
+```
+
+## Batch Operations (files + CSV)
+
+```bash
+# Identifier lists — newline-separated, # comments ignored; works on every
+# delete/lock/unlock/erase/restart/reset command across resources
+jc users delete --from-file users-to-offboard.txt --plan    # preview with line numbers
+jc users delete --from-file users-to-offboard.txt --force   # execute (batch requires --force)
+jc devices lock --from-file lost-devices.txt --force
+
+# CSV bulk (per-row create/update/delete via the `operation` column)
+jc bulk users --file new-hires.csv --plan
+jc bulk user-groups --file groups.csv --force
+jc bulk device-groups --file groups.csv --force
+jc bulk devices --file devices.csv --force        # update/delete only
+jc bulk admins --file admins.csv --force
+
+# Fan a command out across org profiles (MSP view)
+jc multi --filter 'prod-*' -- users list --ids            # IDs prefixed profile/
+jc multi --profiles acme,globex -- policies list          # JSON aggregate per profile
 ```
 
 ## Getting Help
