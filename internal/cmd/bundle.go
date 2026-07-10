@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/bundle"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
 // bundleDefaultFields is the field subset for bundle list table output.
@@ -34,8 +36,122 @@ content came from (licensing provenance).`,
 	cmd.AddCommand(newBundleShowCmd())
 	cmd.AddCommand(newBundleValidateCmd())
 	cmd.AddCommand(newBundleExportCmd())
+	cmd.AddCommand(newBundleApplyCmd())
 
 	return cmd
+}
+
+func newBundleApplyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "apply [name]",
+		Short: "Apply a bundle: create its policies, a policy group, and optionally bind a device group",
+		Long: `Apply a bundle to the tenant. Creates one policy per unit (named
+"<bundle>/<unit>"), a policy group holding them all (named
+"<bundle> (v<version>)" unless overridden), and — with --group — binds
+that policy group to a device group so every device in it receives the
+baseline.
+
+Apply is create-only: it refuses to run when any of the names it would
+create already exist (delete the previous apply, bump the bundle
+version, or pass --policy-group-name). On a mid-apply failure nothing
+is rolled back; the exact cleanup commands are printed instead.
+
+Use --plan to preview every step without any writes.
+
+Examples:
+  jc bundle apply example-baseline --plan
+  jc bundle apply example-baseline --group "Corp Macs"
+  jc bundle apply --file my-baseline.yaml --policy-group-name "Pilot baseline"`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runBundleApply,
+	}
+	cmd.Flags().String("file", "", "Apply a bundle file instead of a named bundle")
+	cmd.Flags().String("group", "", "Device group (name or ID) to bind the policy group to")
+	cmd.Flags().String("policy-group-name", "", `Policy group name (default "<bundle> (v<version>)")`)
+	return cmd
+}
+
+func runBundleApply(cmd *cobra.Command, args []string) error {
+	file, _ := cmd.Flags().GetString("file")
+
+	var b *bundle.Bundle
+	var err error
+	switch {
+	case file != "" && len(args) > 0:
+		return fmt.Errorf("pass a bundle name or --file, not both")
+	case file != "":
+		b, err = bundle.ParseFile(file)
+	case len(args) == 1:
+		b, err = findBundleByName(args[0])
+	default:
+		return fmt.Errorf("pass a bundle name or --file")
+	}
+	if err != nil {
+		return err
+	}
+
+	cat, err := apple_mdm.Default()
+	if err != nil {
+		return err
+	}
+	client, err := newV2Client()
+	if err != nil {
+		return fmt.Errorf("building v2 client: %w", err)
+	}
+	ctx := cmd.Context()
+
+	opts := bundle.ApplyOptions{}
+	opts.PolicyGroupName, _ = cmd.Flags().GetString("policy-group-name")
+	if group, _ := cmd.Flags().GetString("group"); group != "" {
+		id, err := resolveDeviceGroup(ctx, client, group)
+		if err != nil {
+			return fmt.Errorf("resolving device group %q: %w", group, err)
+		}
+		opts.DeviceGroupID, opts.DeviceGroupName = id, group
+	}
+
+	applyPlan, err := bundle.BuildApplyPlan(ctx, client, b, cat, opts)
+	if err != nil {
+		return err
+	}
+
+	if viper.GetBool("plan") {
+		effects := make([]string, 0, len(applyPlan.Steps))
+		for _, s := range applyPlan.Steps {
+			effects = append(effects, fmt.Sprintf("%s %q — %s", s.Kind, s.Name, s.Detail))
+		}
+		p := &plan.Plan{
+			Action:   "apply",
+			Resource: "security baseline bundle",
+			Target:   fmt.Sprintf("%s (v%s)", b.Name, b.Version),
+			Effects:  effects,
+			// Reversible via the printed cleanup path, but multi-object.
+			Reversible: true,
+		}
+		return renderPlan(cmd, p)
+	}
+
+	result, err := applyPlan.Execute(ctx, client)
+	if err != nil {
+		// Partial-failure contract: the error already carries the
+		// created-objects report + cleanup commands.
+		return err
+	}
+
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	if err := output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions()); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Applied bundle %s v%s: %d policies, policy group %q",
+		b.Name, b.Version, len(result.Created)-1, applyPlan.PolicyGroupName)
+	if result.Bound {
+		fmt.Fprintf(cmd.ErrOrStderr(), ", bound to device group %q", applyPlan.DeviceGroupName)
+	}
+	fmt.Fprintln(cmd.ErrOrStderr())
+	return nil
 }
 
 func newBundleListCmd() *cobra.Command {

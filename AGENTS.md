@@ -155,6 +155,13 @@ jc bundle list
 jc bundle show example-baseline
 jc bundle validate --file my-baseline.yaml   # offline deep validation
 jc bundle export example-baseline --file my-baseline.yaml   # fork a builtin
+jc bundle apply example-baseline --group "Corp Devices" --plan  # preview every step
+jc bundle apply example-baseline --group "Corp Devices"
+# apply creates one policy per unit ("<bundle>/<unit>"), a policy group
+# ("<bundle> (v<version>)", description carries bundle:<name>@<version>),
+# adds the policies as members, and binds the device group to it.
+# Create-only: name conflicts are rejected up front; mid-apply failures
+# are never rolled back — exact cleanup commands are printed instead.
 ```
 
 ## Global flags reference

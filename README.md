@@ -194,7 +194,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices | Manage Apple MDM configurations |
 | `policy-templates` | list, get | Browse policy templates |
 | `policy-groups` | list, get, create, update, delete | Manage policy groups |
-| `bundle` | list, show, validate, export | Security baseline bundles: versioned YAML sets of Apple + Windows policies (builtin + user-defined) |
+| `bundle` | list, show, validate, export, apply | Security baseline bundles: versioned YAML sets of Apple + Windows policies (builtin + user-defined); apply creates the policies + a policy group and binds a device group |
 | `system-insights` | \<table\>, tables | Query osquery system insights (62 tables) |
 | `user-states` | list, get, create, delete | Schedule bulk user suspend/reactivate |
 | `gsuite` | list, get, translation-rules, import-users | Manage G Suite directory integrations |
