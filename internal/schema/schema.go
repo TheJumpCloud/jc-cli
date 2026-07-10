@@ -1130,9 +1130,10 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc bulk",
 				Description: "Bulk operations from CSV files",
-				Subcommands: []string{"users"},
+				Long:        "CSV-driven batch operations. `jc bulk <resource> --file <csv>` processes one operation per row (create by default; the optional `operation` column selects create/update/delete). Beyond the original `users` engine, a generalized engine (KLA-466) covers `user-groups`, `device-groups`, `devices` (update/delete only — devices are enrolled, not created), and `admins` — each with a hand-curated CSV-column→API-field map (e.g. the admins `role` column maps to the API's `roleName`), unknown-column validation (typos are errors, never silently dropped), boolean coercion, per-row failure isolation with original line numbers, and `--plan` previews. Bulk execution requires `--force` or `--non-interactive`. Policies are deliberately not CSV-able (template-specific nested values).",
+				Subcommands: []string{"users", "user-groups", "device-groups", "devices", "admins"},
 				Flags: []FlagEntry{
-					{Name: "file", Type: "string", Description: "Path to CSV file"},
+					{Name: "file", Type: "string", Description: "Path to CSV file (required)"},
 				},
 			},
 			{

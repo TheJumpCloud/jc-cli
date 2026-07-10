@@ -103,8 +103,13 @@ var commandClass = map[string]string{
 	"jc auth-policies simulate":     ClassReadOnly,
 	"jc auth-policies update":       ClassMutating,
 
-	// bulk — CSV-driven user batch ops; CAN include delete rows.
-	"jc bulk users": ClassDestructive,
+	// bulk — CSV-driven batch ops; every one CAN include delete rows,
+	// so worst-case capability is destructive across the board.
+	"jc bulk admins":        ClassDestructive,
+	"jc bulk device-groups": ClassDestructive,
+	"jc bulk devices":       ClassDestructive,
+	"jc bulk user-groups":   ClassDestructive,
+	"jc bulk users":         ClassDestructive,
 
 	// commands — saved-command lifecycle; `run`/`trigger` are remote code execution.
 	"jc commands create":  ClassMutating,
