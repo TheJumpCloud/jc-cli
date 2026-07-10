@@ -400,6 +400,13 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"windows_mdm_csp_search",
 		"windows_mdm_csp_show",
 		"windows_mdm_csp_template",
+
+		// security baseline bundles (KLA-472): list/show/status
+		// read-only, apply Execute-gated.
+		"bundle_list",
+		"bundle_show",
+		"bundle_status",
+		"bundle_apply",
 	}
 
 	toolNames := make(map[string]bool)
@@ -414,8 +421,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 210 {
-		t.Errorf("expected 210 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 214 {
+		t.Errorf("expected 214 tools, got %d", len(result.Tools))
 	}
 }
 

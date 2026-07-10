@@ -167,7 +167,7 @@ Add to Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-210 tools available, including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
+214 tools available, including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
 
 ### Plan Mode (Dry Run)
 
