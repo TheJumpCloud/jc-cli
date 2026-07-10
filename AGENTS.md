@@ -81,9 +81,19 @@ jc users delete --from-file users-to-offboard.txt --plan   # preview with line n
 jc users delete --from-file users-to-offboard.txt --force  # batch requires --force
 jc devices lock --from-file lost-devices.txt --force
 
-# Bulk CSV operations
-jc bulk create users --file new-users.csv
-jc bulk update users --file updates.csv
+# Bulk CSV operations (per-row create/update/delete via the `operation` column;
+# unknown columns are errors; --plan previews; execution requires --force)
+jc bulk users --file new-users.csv
+jc bulk user-groups --file groups.csv --force
+jc bulk device-groups --file groups.csv --force
+jc bulk devices --file devices.csv --force        # update/delete only
+jc bulk admins --file admins.csv --force
+
+# Cross-profile fan-out (MSP): run any command across org profiles.
+# Destructive inner commands (per jc:class) require --allow-destructive;
+# read_only-role profiles are skipped for writes.
+jc multi --filter 'prod-*' -- users list --ids    # IDs prefixed <profile>/
+jc multi --profiles a,b,c -- policies list        # JSON aggregate [{profile,status,data|error}]
 ```
 
 Batch rules: exactly one identifier source (inline arg, `--from-file`, or `--stdin`); batch execution requires `--force`/`--non-interactive`; failures are collected per row and reported with original file line numbers; `--plan` renders one aggregated preview.
@@ -118,6 +128,25 @@ jc schema resources         # Resource types and their operations
 jc recipe list              # List available recipes
 jc recipe run <name>        # Run a recipe
 jc recipe show <name>       # Show recipe steps
+```
+
+## MDM custom policies
+
+```bash
+# Apple: browse Apple's vendored schema catalog, emit .mobileconfig, create JC policies
+jc apple-mdm payloads list --os macOS --search wifi
+jc apple-mdm payloads show com.apple.wifi.managed
+jc apple-mdm payloads create-policy com.apple.security.firewall \
+    --name "Firewall" --values EnableFirewall=true --plan
+
+# Windows: browse Microsoft's CSP catalog (~5,100 settings incl. standalone CSPs
+# like BitLocker CSP; fetched on demand, cached), then create OMA-URI/registry policies
+jc windows-mdm csp list --search bitlocker --kind csp
+jc windows-mdm csp show BitLocker/RequireDeviceEncryption
+jc windows-mdm csp template Camera/AllowCamera --output-file s.json
+jc windows-mdm oma-uri create-policy --name "Lockdown" --settings-file s.json --plan
+jc windows-mdm registry create-policy --name "Autorun off" \
+    --key 'location=SOFTWARE\Policies\Microsoft\Windows\Explorer,name=NoAutorun,type=DWORD,data=1' --plan
 ```
 
 ## Global flags reference

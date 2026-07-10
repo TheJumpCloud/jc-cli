@@ -611,7 +611,7 @@ The `csp` catalog covers every Policy CSP area **and** the standalone CSPs (BitL
 jc tui                      # Launch the interactive browser
 ```
 
-Full-screen terminal UI for browsing all 26 JumpCloud resource types.
+Full-screen terminal UI for browsing all JumpCloud resource types, plus dedicated MDM workbenches (Apple payloads catalog + authoring, Windows CSP catalog + policy authoring/editing).
 
 **Home screen** — Three-column grid layout mirroring the JumpCloud Admin Console:
 
@@ -624,7 +624,8 @@ Full-screen terminal UI for browsing all 26 JumpCloud resource types.
                          > Policy Grps   (3)  Insights
  Security                > Software      (5)    > Dir Insights
    > Auth Policies (5)   > Apple MDM     (1)    > Sys Insights
-   > IP Lists      (3)   > Assets        (4)
+   > IP Lists      (3)   > Windows MDM   (3)
+                         > Assets        (4)
                        Settings
                          > Admins        (3)
                          > Organization
@@ -666,7 +667,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**210 tools available** covering all 28 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot) feeding OMA-URI and HKLM-registry policy creation. All destructive operations require explicit `execute: true` confirmation.
+**210 tools available** covering all 28 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names

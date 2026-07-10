@@ -42,7 +42,8 @@ jc <resource> <verb> [identifier] [flags]
 | `ldap` | | list, get, create, update, delete, samba-domains |
 | `ad` | | list, get, create, update, delete |
 | `radius` | | list, get, create, update, delete |
-| `apple-mdm` | | list, get, create, update, delete, enrollment-profiles, devices |
+| `apple-mdm` | | list, get, create, update, delete, enrollment-profiles, devices, payloads (list/show/template/create-policy/compose — Apple schema catalog → JC custom policies) |
+| `windows-mdm` | | csp list/show/template/update (Microsoft CSP catalog, ~5,100 settings), oma-uri create-policy, registry create-policy |
 | `policy-groups` | | list, get, create, update, delete |
 | `policy-templates` | | list, get |
 | `assets` | | devices/accessories/locations list/get/create/update/delete |
@@ -52,6 +53,8 @@ jc <resource> <verb> [identifier] [flags]
 | `duo` | | list, get, create, delete, apps |
 | `custom-emails` | | templates, get, create, update, delete |
 | `app-templates` | | list, get |
+| `multi` | | `jc multi --filter 'prod-*' -- <command>` — fan any command across org profiles; destructive inner commands need `--allow-destructive` |
+| `bulk` | | users, user-groups, device-groups, devices, admins — CSV batch via `--file` (per-row `operation` column; `--plan` previews; execution needs `--force`) |
 
 ## Output Formats
 
@@ -164,4 +167,14 @@ jc auth switch production             # Switch profiles
 
 ```bash
 jc tui                                # Full-screen terminal browser
+```
+
+## Batch Mode
+
+Every single-identifier mutating command (delete/lock/unlock/erase/restart/reset-*) accepts identifier lists:
+
+```bash
+jc users delete --from-file offboard.txt --plan   # newline IDs, # comments; preview w/ line numbers
+jc users delete --from-file offboard.txt --force  # batch execution requires --force
+jc users list --filter "suspended:eq:true" --ids | jc users delete --stdin --force
 ```
