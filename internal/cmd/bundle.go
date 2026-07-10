@@ -37,8 +37,93 @@ content came from (licensing provenance).`,
 	cmd.AddCommand(newBundleValidateCmd())
 	cmd.AddCommand(newBundleExportCmd())
 	cmd.AddCommand(newBundleApplyCmd())
+	cmd.AddCommand(newBundleStatusCmd())
 
 	return cmd
+}
+
+func newBundleStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status [name]",
+		Short: "Compare an applied bundle against the tenant (drift detection)",
+		Long: `Check whether the tenant still matches a bundle's definition.
+
+Finds the bundle's policy group (by its bundle:<name>@<version>
+description marker, falling back to the default group name), lists its
+member policies, decodes each one, and diffs values against the bundle.
+
+Per-unit states: in-sync, drifted (with value-level diffs), missing
+(policy deleted or renamed). Member policies that match no bundle unit
+are reported as orphans. Read-only — nothing is changed.
+
+Examples:
+  jc bundle status example-baseline
+  jc bundle status --file my-baseline.yaml`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runBundleStatus,
+	}
+	cmd.Flags().String("file", "", "Check a bundle file instead of a named bundle")
+	return cmd
+}
+
+func runBundleStatus(cmd *cobra.Command, args []string) error {
+	file, _ := cmd.Flags().GetString("file")
+
+	var b *bundle.Bundle
+	var err error
+	switch {
+	case file != "" && len(args) > 0:
+		return fmt.Errorf("pass a bundle name or --file, not both")
+	case file != "":
+		b, err = bundle.ParseFile(file)
+	case len(args) == 1:
+		b, err = findBundleByName(args[0])
+	default:
+		return fmt.Errorf("pass a bundle name or --file")
+	}
+	if err != nil {
+		return err
+	}
+
+	cat, err := apple_mdm.Default()
+	if err != nil {
+		return err
+	}
+	client, err := newV2Client()
+	if err != nil {
+		return fmt.Errorf("building v2 client: %w", err)
+	}
+
+	report, err := bundle.Status(cmd.Context(), client, b, cat)
+	if err != nil {
+		return err
+	}
+
+	raw, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	if err := output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions()); err != nil {
+		return err
+	}
+
+	// Human summary on stderr: one line per unit + verdict.
+	w := cmd.ErrOrStderr()
+	for _, u := range report.Units {
+		fmt.Fprintf(w, "  %-9s %s\n", u.State, u.PolicyName)
+		for _, d := range u.Diffs {
+			fmt.Fprintf(w, "            ↳ %s\n", d)
+		}
+	}
+	for _, o := range report.Orphans {
+		fmt.Fprintf(w, "  %-9s %s (member of the policy group but not in the bundle)\n", "orphan", o)
+	}
+	if report.InSync {
+		fmt.Fprintf(w, "Bundle %s v%s is in sync (%d units).\n", report.Bundle, report.Version, len(report.Units))
+	} else {
+		fmt.Fprintf(w, "Bundle %s v%s has drifted.\n", report.Bundle, report.Version)
+	}
+	return nil
 }
 
 func newBundleApplyCmd() *cobra.Command {

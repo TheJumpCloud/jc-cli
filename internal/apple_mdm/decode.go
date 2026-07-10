@@ -73,16 +73,21 @@ var reservedPayloadKeysSet = map[string]struct{}{
 	"PayloadDisplayName": {},
 }
 
-// DecodeCustomMDMPolicy parses the raw JSON response from
-// `GET /policies/{id}` and produces a DecodedPolicy. Tolerant of older
-// policies that predate the redispatchPolicy field; missing wire
-// pieces collapse to zero values rather than errors.
-//
-// The function does NOT need the live catalog (the matching is a
-// pure lookup); it's the caller's responsibility to make sure
-// apple_mdm.Default() has loaded by the time DecodedPolicy.Schema is
-// consumed.
-func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
+// policyEnvelope is the shared first half of decoding: the JC policy
+// response metadata plus the parsed plist envelope's PayloadContent.
+// Both the single-payload TUI decode and the multi-payload
+// bundle-status decode start here.
+type policyEnvelope struct {
+	PolicyID, PolicyName, TemplateName string
+	Redispatch, RemovalDisallowed      bool
+	Contents                           []any
+}
+
+// decodePolicyEnvelope parses the raw JSON response from
+// `GET /policies/{id}` down to the plist envelope's PayloadContent.
+// Tolerant of older policies that predate the redispatchPolicy field;
+// missing wire pieces collapse to zero values rather than errors.
+func decodePolicyEnvelope(raw []byte) (policyEnvelope, error) {
 	// Structural unmarshal of just the fields we care about. Going
 	// through a typed shape keeps the parser tolerant of JC adding
 	// new fields to the policy response without churning this code.
@@ -99,10 +104,10 @@ func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
 		} `json:"values"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return DecodedPolicy{}, fmt.Errorf("parsing policy JSON: %w", err)
+		return policyEnvelope{}, fmt.Errorf("parsing policy JSON: %w", err)
 	}
 
-	d := DecodedPolicy{
+	env := policyEnvelope{
 		PolicyID:     resp.ID,
 		PolicyName:   resp.Name,
 		TemplateName: resp.Template.Name,
@@ -117,32 +122,108 @@ func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
 			}
 		case "redispatchPolicy":
 			if b, ok := v.Value.(bool); ok {
-				d.Redispatch = b
+				env.Redispatch = b
 			}
 		}
 	}
 	if plistBase64 == "" {
-		return d, fmt.Errorf("policy %s has no payload values entry", resp.ID)
+		return env, fmt.Errorf("policy %s has no payload values entry", resp.ID)
 	}
 
 	plistBytes, err := base64.StdEncoding.DecodeString(plistBase64)
 	if err != nil {
-		return d, fmt.Errorf("decoding base64 payload: %w", err)
+		return env, fmt.Errorf("decoding base64 payload: %w", err)
 	}
 
 	envelope, err := parsePlistEnvelope(plistBytes)
 	if err != nil {
-		return d, fmt.Errorf("parsing plist envelope: %w", err)
+		return env, fmt.Errorf("parsing plist envelope: %w", err)
 	}
 
 	if removalDisallowed, ok := envelope["PayloadRemovalDisallowed"].(bool); ok {
-		d.RemovalDisallowed = removalDisallowed
+		env.RemovalDisallowed = removalDisallowed
 	}
 
 	contents, ok := envelope["PayloadContent"].([]any)
 	if !ok || len(contents) == 0 {
-		return d, fmt.Errorf("plist envelope has no PayloadContent array")
+		return env, fmt.Errorf("plist envelope has no PayloadContent array")
 	}
+	env.Contents = contents
+	return env, nil
+}
+
+// DecodedPayload is one inner payload of a profile: the Apple type
+// plus its values with the emitter-owned Payload* keys stripped.
+type DecodedPayload struct {
+	Type   string         `json:"type"`
+	Values map[string]any `json:"values"`
+}
+
+// DecodedProfile is the multi-payload view of a Custom MDM policy —
+// the shape `jc bundle status` diffs against a bundle's compose
+// config (KLA-471). Unlike DecodedPolicy it never bails on
+// multi-payload profiles; every inner payload is returned in envelope
+// order.
+type DecodedProfile struct {
+	PolicyID          string
+	PolicyName        string
+	TemplateName      string
+	Redispatch        bool
+	RemovalDisallowed bool
+	Payloads          []DecodedPayload
+}
+
+// DecodeProfilePayloads parses a `GET /policies/{id}` response into
+// every inner payload of its mobileconfig. Needs no catalog: the
+// diffing caller compares types+values directly.
+func DecodeProfilePayloads(raw []byte) (DecodedProfile, error) {
+	env, err := decodePolicyEnvelope(raw)
+	if err != nil {
+		return DecodedProfile{}, err
+	}
+	p := DecodedProfile{
+		PolicyID:          env.PolicyID,
+		PolicyName:        env.PolicyName,
+		TemplateName:      env.TemplateName,
+		Redispatch:        env.Redispatch,
+		RemovalDisallowed: env.RemovalDisallowed,
+	}
+	for i, c := range env.Contents {
+		inner, ok := c.(map[string]any)
+		if !ok {
+			return p, fmt.Errorf("PayloadContent[%d] is not a dictionary (got %T)", i, c)
+		}
+		typ, _ := inner["PayloadType"].(string)
+		p.Payloads = append(p.Payloads, DecodedPayload{
+			Type:   typ,
+			Values: stripReservedPayloadKeys(inner),
+		})
+	}
+	return p, nil
+}
+
+// DecodeCustomMDMPolicy parses the raw JSON response from
+// `GET /policies/{id}` and produces a DecodedPolicy — the TUI edit
+// flow's single-payload view (multi-payload profiles set IsMulti and
+// bail; bundle status uses DecodeProfilePayloads instead).
+//
+// The function does NOT need the live catalog (the matching is a
+// pure lookup); it's the caller's responsibility to make sure
+// apple_mdm.Default() has loaded by the time DecodedPolicy.Schema is
+// consumed.
+func DecodeCustomMDMPolicy(raw []byte) (DecodedPolicy, error) {
+	env, err := decodePolicyEnvelope(raw)
+	d := DecodedPolicy{
+		PolicyID:          env.PolicyID,
+		PolicyName:        env.PolicyName,
+		TemplateName:      env.TemplateName,
+		Redispatch:        env.Redispatch,
+		RemovalDisallowed: env.RemovalDisallowed,
+	}
+	if err != nil {
+		return d, err
+	}
+	contents := env.Contents
 	if len(contents) > 1 {
 		d.IsMulti = true
 		return d, nil

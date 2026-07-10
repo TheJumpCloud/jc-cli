@@ -117,6 +117,7 @@ var commandClass = map[string]string{
 	"jc bundle export":   ClassInternal, // writes a yaml file
 	"jc bundle list":     ClassInternal, // catalog of bundles
 	"jc bundle show":     ClassInternal,
+	"jc bundle status":   ClassReadOnly, // GETs policy group + members + policies; diffs locally
 	"jc bundle validate": ClassInternal, // offline: embedded Apple catalog + static Windows rules
 
 	// commands — saved-command lifecycle; `run`/`trigger` are remote code execution.
