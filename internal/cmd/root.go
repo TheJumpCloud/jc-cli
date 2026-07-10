@@ -127,7 +127,8 @@ interface.`,
 	// Security & Policies
 	addToGroup(rootCmd, "security",
 		newPoliciesCmd(), newPolicyGroupsCmd(), newPolicyTemplatesCmd(),
-		newIPListsCmd(), newRADIUSCmd(), newDuoCmd(), newCustomEmailsCmd(),
+		newBundleCmd(), newIPListsCmd(), newRADIUSCmd(), newDuoCmd(),
+		newCustomEmailsCmd(),
 	)
 
 	// Directory Integrations

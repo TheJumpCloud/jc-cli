@@ -1,0 +1,52 @@
+# example-baseline — a neutral demonstration of the bundle format.
+#
+# This bundle is original jc-cli content: its settings are common,
+# uncontroversial hardening defaults chosen to exercise all three
+# policy unit types. It is NOT derived from any benchmark or baseline
+# publication. Fork it as a starting point:
+#
+#   jc bundle export example-baseline --file my-baseline.yaml
+#   # edit, then drop into ~/.config/jc/bundles/
+#
+# A user bundle with the same `name` overrides the builtin.
+name: example-baseline
+version: "1.0.0"
+description: >-
+  Neutral example bundle demonstrating the format: one macOS profile
+  (firewall), one Windows OMA-URI policy (camera off), and one Windows
+  registry policy (Autorun off). Not derived from any benchmark.
+source:
+  origin: builtin
+  attribution: Authored by the jc-cli project.
+policies:
+  # apple_profile: a multi-payload Configuration profile, verbatim the
+  # shape `jc apple-mdm payloads compose` consumes under `profile:`.
+  # `os` defaults to macOS; `profile.name` defaults to the unit name.
+  - name: Enable macOS firewall
+    type: apple_profile
+    profile:
+      payloads:
+        - type: com.apple.security.firewall
+          values:
+            EnableFirewall: true
+            EnableStealthMode: true
+
+  # windows_oma_uri: {uri, format, value} triples — one Custom MDM
+  # (OMA-URI) policy. Formats: int, chr, float, bool, xml, b64.
+  - name: Disable camera
+    type: windows_oma_uri
+    settings:
+      - uri: ./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera
+        format: int
+        value: "0"
+
+  # windows_registry: HKLM-relative rows (never prefix the hive) — one
+  # Custom Registry Keys policy. Types: DWORD, QWORD, String,
+  # expandString, multiString.
+  - name: Disable Autorun
+    type: windows_registry
+    keys:
+      - location: SOFTWARE\Policies\Microsoft\Windows\Explorer
+        name: NoAutorun
+        type: DWORD
+        data: "1"

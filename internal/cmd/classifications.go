@@ -111,6 +111,13 @@ var commandClass = map[string]string{
 	"jc bulk user-groups":   ClassDestructive,
 	"jc bulk users":         ClassDestructive,
 
+	// bundle — security baseline bundles; v1 surface is entirely
+	// local (embedded builtins + ~/.config/jc/bundles/), no API.
+	"jc bundle export":   ClassInternal, // writes a yaml file
+	"jc bundle list":     ClassInternal, // catalog of bundles
+	"jc bundle show":     ClassInternal,
+	"jc bundle validate": ClassInternal, // offline: embedded Apple catalog + static Windows rules
+
 	// commands — saved-command lifecycle; `run`/`trigger` are remote code execution.
 	"jc commands create":  ClassMutating,
 	"jc commands delete":  ClassDestructive,
