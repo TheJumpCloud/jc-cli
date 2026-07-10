@@ -1,0 +1,218 @@
+# GENERATED FILE — do not edit by hand.
+# Regenerate: jc bundle import mscp --baseline cis_lvl2 --name macos-cis-lvl2 --output internal/bundle/builtin/macos-cis-lvl2.yaml
+#             (then restore this header and origin: builtin)
+# Source: NIST macOS Security Compliance Project, tag tahoe_rev3 (CC BY 4.0 — see NOTICE.md).
+name: macos-cis-lvl2
+version: tahoe_rev3
+description: macOS hardening baseline derived from NIST mSCP cis_lvl2 (tahoe_rev3). One policy per payload domain; profile-enforceable subset (56 of 119 rules).
+source:
+    origin: builtin
+    attribution: 'Derived from the NIST macOS Security Compliance Project (usnistgov/macos_security, tag tahoe_rev3): macOS 26.0: Security Configuration - CIS Apple macOS 26.0 Tahoe v1.1.0 Benchmark (Level 2). Covers the configuration-profile-enforceable subset: 56 of 119 baseline rules; the other 63 rules require mSCP''s shell-based checks outside MDM.'
+    license: CC BY 4.0
+    url: https://github.com/usnistgov/macos_security
+policies:
+    - name: com.apple.applicationaccess
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.applicationaccess'
+        payloads:
+            - type: com.apple.applicationaccess
+              values:
+                allowAirDrop: false
+                allowAirPlayIncomingRequests: false
+                allowApplePersonalizedAdvertising: false
+                allowAssistant: false
+                allowCloudDesktopAndDocuments: false
+                allowContentCaching: false
+                allowDiagnosticSubmission: false
+                allowExternalIntelligenceIntegrations: false
+                allowExternalIntelligenceIntegrationsSignIn: false
+                allowMailSummary: false
+                allowMediaSharing: false
+                allowMediaSharingModification: false
+                allowNotesTranscription: false
+                allowNotesTranscriptionSummary: false
+                allowWritingTools: false
+                forceOnDeviceOnlyDictation: true
+              raw: true
+    - name: com.apple.mDNSResponder
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.mDNSResponder'
+        payloads:
+            - type: com.apple.mDNSResponder
+              values:
+                NoMulticastAdvertisements: true
+              raw: true
+    - name: com.apple.SoftwareUpdate
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.SoftwareUpdate'
+        payloads:
+            - type: com.apple.SoftwareUpdate
+              values:
+                AutomaticDownload: true
+                AutomaticallyInstallAppUpdates: true
+                AutomaticallyInstallMacOSUpdates: true
+                ConfigDataInstall: true
+                CriticalUpdateInstall: true
+    - name: com.apple.systempolicy.control
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.systempolicy.control'
+        payloads:
+            - type: com.apple.systempolicy.control
+              values:
+                EnableAssessment: true
+    - name: com.apple.Safari
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.Safari'
+        payloads:
+            - type: com.apple.Safari
+              values:
+                AutoOpenSafeDownloads: false
+                BlockStoragePolicy: 2
+                ShowFullURLInSmartSearchField: true
+                ShowOverlayStatusBar: true
+                WarnAboutFraudulentWebsites: true
+                WebKitPreferences.privateClickMeasurementEnabled: true
+                WebKitPreferences.storageBlockingPolicy: 1
+                WebKitStorageBlockingPolicy: 1
+              raw: true
+    - name: com.apple.Terminal
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.Terminal'
+        payloads:
+            - type: com.apple.Terminal
+              values:
+                SecureKeyboardEntry: true
+              raw: true
+    - name: com.apple.loginwindow
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.loginwindow'
+        payloads:
+            - type: com.apple.loginwindow
+              values:
+                LoginwindowText: Center for Internet Security Test Message
+                RetriesUntilHint: 0
+                SHOWFULLNAME: true
+                com.apple.login.mcx.DisableAutoLoginClient: true
+                screenUnlockMode: 1
+              raw: true
+    - name: com.apple.mobiledevice.passwordpolicy
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.mobiledevice.passwordpolicy'
+        payloads:
+            - type: com.apple.mobiledevice.passwordpolicy
+              values:
+                customRegex:
+                    passwordContentDescription:
+                        default: Password must match custom regex.
+                    passwordContentRegex: $ODV
+                maxFailedAttempts: 5
+                maxPINAgeInDays: 365
+                minComplexChars: 1
+                minLength: 15
+                minutesUntilFailedLoginReset: 15
+                pinHistory: 24
+                requireAlphanumeric: true
+    - name: com.apple.SubmitDiagInfo
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.SubmitDiagInfo'
+        payloads:
+            - type: com.apple.SubmitDiagInfo
+              values:
+                AutoSubmit: false
+              raw: true
+    - name: com.apple.MCX
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.MCX'
+        payloads:
+            - type: com.apple.MCX
+              values:
+                DisableGuestAccount: true
+                EnableGuestAccount: false
+                dontAllowFDEDisable: true
+                forceInternetSharingOff: true
+                timeServer: time.apple.com
+              raw: true
+    - name: com.apple.security.firewall
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.security.firewall'
+        payloads:
+            - type: com.apple.security.firewall
+              values:
+                EnableFirewall: true
+                EnableStealthMode: true
+    - name: com.apple.Accessibility
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.Accessibility'
+        payloads:
+            - type: com.apple.Accessibility
+              values:
+                AXSAudioDonationSiriImprovementEnabled: false
+              raw: true
+    - name: com.apple.assistant.support
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.assistant.support'
+        payloads:
+            - type: com.apple.assistant.support
+              values:
+                Search Queries Data Sharing Status: 2
+                Siri Data Sharing Opt-In Status: 2
+              raw: true
+    - name: com.apple.screensaver
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.screensaver'
+        payloads:
+            - type: com.apple.screensaver
+              values:
+                askForPassword: true
+                askForPasswordDelay: 5
+                idleTime: 900
+              raw: true
+    - name: com.apple.TimeMachine
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.TimeMachine'
+        payloads:
+            - type: com.apple.TimeMachine
+              values:
+                AutoBackup: true
+              raw: true
+    - name: com.apple.ManagedClient.preferences
+      type: apple_profile
+      os: macOS
+      profile:
+        name: 'macos-cis-lvl2: com.apple.ManagedClient.preferences'
+        payloads:
+            - type: com.apple.ManagedClient.preferences
+              values:
+                com.apple.timed:
+                    TMAutomaticTimeOnlyEnabled: true
+              raw: true

@@ -1,0 +1,8 @@
+title: "Conflict fixture"
+description: fixture
+parent_values: conflictbase
+profile:
+  - section: one
+    rules:
+      - test_firewall_enable
+      - test_firewall_conflict

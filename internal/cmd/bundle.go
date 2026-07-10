@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/bundle"
+	"github.com/klaassen-consulting/jc/internal/mscp"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 )
@@ -38,8 +40,107 @@ content came from (licensing provenance).`,
 	cmd.AddCommand(newBundleExportCmd())
 	cmd.AddCommand(newBundleApplyCmd())
 	cmd.AddCommand(newBundleStatusCmd())
+	cmd.AddCommand(newBundleImportCmd())
 
 	return cmd
+}
+
+func newBundleImportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Generate bundles from external baseline sources",
+	}
+	cmd.AddCommand(newBundleImportMSCPCmd())
+	return cmd
+}
+
+func newBundleImportMSCPCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "mscp",
+		Short: "Generate a bundle from a NIST mSCP baseline (cis_lvl1, cis_lvl2, DISA-STIG, ...)",
+		Long: `Convert a NIST macOS Security Compliance Project baseline into a jc
+bundle. The pinned mSCP release (` + mscp.SnapshotTag + `) is downloaded once from
+GitHub (SHA-256-verified) into the local cache; air-gapped hosts can
+pre-place the zip — the error message shows where.
+
+Only the configuration-profile-enforceable subset of a baseline
+converts (mSCP enforces the rest via shell scripts, outside MDM's
+reach) — the generated bundle's description records the exact
+coverage. mSCP is CC BY 4.0; the generated bundle carries the
+attribution in its source block.
+
+The bundle is written to ~/.config/jc/bundles/ (or --output) and is
+then usable like any other: jc bundle apply/status/export.
+
+Examples:
+  jc bundle import mscp --baseline cis_lvl1
+  jc bundle import mscp --baseline cis_lvl2 --output ./cis2.yaml
+  jc bundle import mscp --baseline DISA-STIG --name macos-stig`,
+		RunE: runBundleImportMSCP,
+	}
+	cmd.Flags().String("baseline", "", "mSCP baseline manifest name (required; e.g. cis_lvl1, cis_lvl2, DISA-STIG, 800-53r5_moderate)")
+	cmd.Flags().String("name", "", `Bundle name (default "macos-<baseline>", lowercased)`)
+	cmd.Flags().String("output", "", "Write the bundle YAML here instead of ~/.config/jc/bundles/<name>.yaml")
+	cmd.Flags().Bool("refresh", false, "Re-download the mSCP snapshot even if cached")
+	_ = cmd.MarkFlagRequired("baseline")
+	return cmd
+}
+
+func runBundleImportMSCP(cmd *cobra.Command, args []string) error {
+	baseline, _ := cmd.Flags().GetString("baseline")
+	name, _ := cmd.Flags().GetString("name")
+	outPath, _ := cmd.Flags().GetString("output")
+	refresh, _ := cmd.Flags().GetBool("refresh")
+
+	if name == "" {
+		name = "macos-" + strings.ToLower(strings.ReplaceAll(baseline, "_", "-"))
+	}
+
+	if refresh {
+		if err := os.RemoveAll(mscp.CacheDir()); err != nil {
+			return fmt.Errorf("clearing mSCP cache: %w", err)
+		}
+	}
+
+	progress := func(msg string) { fmt.Fprintln(cmd.ErrOrStderr(), msg) }
+	dir, err := mscp.EnsureSnapshot(cmd.Context(), "", progress)
+	if err != nil {
+		return err
+	}
+
+	manifest, err := mscp.LoadBaseline(dir, baseline)
+	if err != nil {
+		return err
+	}
+	rules, err := mscp.LoadRules(dir)
+	if err != nil {
+		return err
+	}
+
+	b, report, err := mscp.Convert(rules, manifest, name, "imported")
+	if err != nil {
+		return err
+	}
+
+	data, err := bundle.MarshalYAML(b)
+	if err != nil {
+		return err
+	}
+	if outPath == "" {
+		dir := bundle.BundlesDir()
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("creating bundles directory: %w", err)
+		}
+		outPath = filepath.Join(dir, name+".yaml")
+	}
+	if err := os.WriteFile(outPath, data, 0o600); err != nil {
+		return fmt.Errorf("writing bundle: %w", err)
+	}
+
+	fmt.Fprint(cmd.ErrOrStderr(), report.Summary())
+	fmt.Fprintf(cmd.OutOrStdout(), "Bundle %q written to %s\n", name, outPath)
+	fmt.Fprintf(cmd.ErrOrStderr(), "Preview with `jc bundle show %s`, then `jc bundle apply %s --plan`.\n", name, name)
+	return nil
 }
 
 func newBundleStatusCmd() *cobra.Command {

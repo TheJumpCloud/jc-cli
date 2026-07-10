@@ -165,6 +165,13 @@ jc bundle apply example-baseline --group "Corp Devices"
 jc bundle status example-baseline   # drift detection: per-unit in-sync/
 # drifted (value-level diffs)/missing + orphaned group members; finds the
 # policy group by its bundle:<name>@<version> description marker
+jc bundle apply macos-cis-lvl1 --group "Corp Macs" --plan
+# builtin macOS hardening baselines derived from the NIST mSCP (CC BY 4.0,
+# tag-pinned): macos-cis-lvl1 (14 policies, 48/100 rules) and
+# macos-cis-lvl2 (16 policies, 56/119 rules) — the profile-enforceable
+# subset; the rest are mSCP shell checks outside MDM's reach.
+jc bundle import mscp --baseline DISA-STIG   # generate more from any
+# mSCP baseline manifest (800-53r5_*, cmmc_lvl2, ...) into ~/.config/jc/bundles/
 ```
 
 ## Global flags reference

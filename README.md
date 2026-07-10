@@ -194,7 +194,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices | Manage Apple MDM configurations |
 | `policy-templates` | list, get | Browse policy templates |
 | `policy-groups` | list, get, create, update, delete | Manage policy groups |
-| `bundle` | list, show, validate, export, apply, status | Security baseline bundles: versioned YAML sets of Apple + Windows policies (builtin + user-defined); apply creates the policies + a policy group and binds a device group; status reports per-unit drift |
+| `bundle` | list, show, validate, export, apply, status, import mscp | Security baseline bundles: versioned YAML sets of Apple + Windows policies. Builtin macOS hardening baselines derived from NIST mSCP (cis_lvl1/cis_lvl2); `import mscp` generates more from any mSCP baseline. apply creates the policies + a policy group and binds a device group; status reports per-unit drift |
 | `system-insights` | \<table\>, tables | Query osquery system insights (62 tables) |
 | `user-states` | list, get, create, delete | Schedule bulk user suspend/reactivate |
 | `gsuite` | list, get, translation-rules, import-users | Manage G Suite directory integrations |

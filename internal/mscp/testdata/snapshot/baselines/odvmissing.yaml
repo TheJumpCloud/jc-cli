@@ -1,0 +1,7 @@
+title: "ODV-missing fixture"
+description: fixture
+parent_values: odvmissing
+profile:
+  - section: one
+    rules:
+      - test_odv_missing
