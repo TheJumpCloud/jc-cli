@@ -194,13 +194,7 @@ func runComposeCreatePolicy(cmd *cobra.Command,
 	// Aggregate the errors across all unsupported payloads so the
 	// operator sees every offender in one pass.
 	appleSchemaPlatform := canonicalApplePlatform(osFamily)
-	var unsupported []string
-	for _, p := range instances {
-		sup, ok := p.Schema.SupportedOS[appleSchemaPlatform]
-		if !ok || !sup.Available() {
-			unsupported = append(unsupported, p.Schema.Type)
-		}
-	}
+	unsupported := apple_mdm.UnsupportedPayloadTypes(instances, appleSchemaPlatform)
 	if len(unsupported) > 0 {
 		return fmt.Errorf(
 			"the following payload(s) do not declare support for %s: %s\n"+

@@ -151,6 +151,23 @@ func (c *ComposeConfig) BuildPayloadInstances(cat *Catalog) ([]PayloadInstance, 
 	return instances, env, nil
 }
 
+// UnsupportedPayloadTypes returns the payload types among instances
+// that do not declare support for the given Apple platform ("macOS",
+// "iOS" — the catalog's verbatim keys). Callers refuse to create a
+// policy when this is non-empty: JumpCloud would accept the profile
+// but the device silently ignores unsupported payloads (Bugbot PR #51
+// / #59 lineage). Shared by compose create-policy and bundle apply.
+func UnsupportedPayloadTypes(instances []PayloadInstance, applePlatform string) []string {
+	var unsupported []string
+	for _, p := range instances {
+		sup, ok := p.Schema.SupportedOS[applePlatform]
+		if !ok || !sup.Available() {
+			unsupported = append(unsupported, p.Schema.Type)
+		}
+	}
+	return unsupported
+}
+
 // resolveComposePayload picks the right catalog entry for a compose
 // payload, preferring an explicit ID when supplied, falling back to
 // PayloadType lookup with the same disambiguation as `payloads show`.

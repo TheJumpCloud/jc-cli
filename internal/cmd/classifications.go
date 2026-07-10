@@ -111,8 +111,9 @@ var commandClass = map[string]string{
 	"jc bulk user-groups":   ClassDestructive,
 	"jc bulk users":         ClassDestructive,
 
-	// bundle — security baseline bundles; v1 surface is entirely
-	// local (embedded builtins + ~/.config/jc/bundles/), no API.
+	// bundle — security baseline bundles. Authoring/browsing is local;
+	// apply creates N policies + a policy group + a binding.
+	"jc bundle apply":    ClassMutating, // POSTs policies, policy group, associations
 	"jc bundle export":   ClassInternal, // writes a yaml file
 	"jc bundle list":     ClassInternal, // catalog of bundles
 	"jc bundle show":     ClassInternal,
