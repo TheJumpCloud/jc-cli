@@ -99,10 +99,12 @@ func TestLoadCatalog_IndicesAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
-	if cat.Len() != 5 {
+	// testdata holds the Sample policy area (5 settings) AND the
+	// SampleCSP standalone fixture (3 settings, KLA-467).
+	if cat.Len() != 8 {
 		t.Fatalf("Len = %d", cat.Len())
 	}
-	if got := cat.Areas(); len(got) != 1 || got[0] != "Sample" {
+	if got := cat.Areas(); len(got) != 2 || got[0] != "Sample" || got[1] != "SampleCSP" {
 		t.Errorf("Areas = %v", got)
 	}
 
@@ -250,5 +252,106 @@ func TestEnsureSnapshot_MarkerShortCircuits(t *testing.T) {
 	got, err := EnsureSnapshot(t.Context(), dir, nil)
 	if err != nil || got != dir {
 		t.Fatalf("marker short-circuit failed: %v %q", err, got)
+	}
+}
+
+// ── KLA-467: standalone-CSP catalog extension ──────────────────────
+
+func TestStandaloneCSP_ParseProvenanceAndDynamicNodes(t *testing.T) {
+	cat, err := LoadCatalog("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Static leaf in a standalone CSP: full URI, csp provenance.
+	s, ok := cat.ByRef("SampleCSP/RequireThing")
+	if !ok {
+		t.Fatal("SampleCSP/RequireThing not found")
+	}
+	if s.URI != "./Device/Vendor/MSFT/SampleCSP/RequireThing" || s.Kind != KindStandaloneCSP {
+		t.Errorf("standalone leaf wrong: %+v", s)
+	}
+	if s.RequiresInstance {
+		t.Error("static leaf must not be flagged requires-instance")
+	}
+	if s.AllowedValues == nil || len(s.AllowedValues.Enum) != 2 {
+		t.Errorf("enum metadata lost: %+v", s.AllowedValues)
+	}
+
+	// Dynamic subtree: {instance} placeholder + flag propagated.
+	dyn, ok := cat.ByRef("SampleCSP/Profiles/{instance}/Enabled")
+	if !ok {
+		t.Fatal("dynamic-subtree leaf not found")
+	}
+	if dyn.URI != "./Device/Vendor/MSFT/SampleCSP/Profiles/{instance}/Enabled" {
+		t.Errorf("dynamic URI wrong: %q", dyn.URI)
+	}
+	if !dyn.RequiresInstance {
+		t.Error("dynamic-subtree leaf must be flagged requires-instance")
+	}
+}
+
+func TestStandaloneCSP_ByRefCollisionPolicyWins(t *testing.T) {
+	cat, err := LoadCatalog("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sample/AllowWidget exists in the policy area AND (as
+	// SampleCSP/AllowWidget) in the CSP — different areas, no
+	// collision. The real collision case: same Area/Name across
+	// kinds can't happen with these fixtures' area names, so assert
+	// the priority rule directly.
+	if !refBeats(Setting{Kind: ""}, Setting{Kind: KindStandaloneCSP}) {
+		t.Error("policy-area must beat standalone-CSP in byRef collisions")
+	}
+	if refBeats(Setting{Kind: KindStandaloneCSP}, Setting{Kind: ""}) {
+		t.Error("standalone-CSP must not displace a policy-area entry")
+	}
+	// Within a kind, device still beats user.
+	if !refBeats(Setting{Scope: "device"}, Setting{Scope: "user"}) {
+		t.Error("device must beat user within a kind")
+	}
+
+	// ByRef accepts a full OMA-URI as the unambiguous form.
+	s, ok := cat.ByRef("./Device/Vendor/MSFT/SampleCSP/RequireThing")
+	if !ok || s.Name != "RequireThing" {
+		t.Errorf("ByRef should resolve full URIs: %+v ok=%v", s, ok)
+	}
+}
+
+func TestStandaloneCSP_KindFilter(t *testing.T) {
+	cat, err := LoadCatalog("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := cat.Filter(FilterOpts{Kind: "policy"})
+	csp := cat.Filter(FilterOpts{Kind: KindStandaloneCSP})
+	if len(policy) != 5 || len(csp) != 3 {
+		t.Errorf("kind filter wrong: policy=%d csp=%d", len(policy), len(csp))
+	}
+	for _, s := range csp {
+		if s.Kind != KindStandaloneCSP {
+			t.Errorf("csp filter leaked: %+v", s)
+		}
+	}
+	// Empty kind = both.
+	if got := cat.Filter(FilterOpts{}); len(got) != 8 {
+		t.Errorf("unfiltered = %d", len(got))
+	}
+}
+
+func TestStandaloneCSP_TemplateRoundTrip(t *testing.T) {
+	cat, err := LoadCatalog("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := cat.ByRef("SampleCSP/RequireThing")
+	tpl := TemplateSetting(s)
+	if tpl.URI != s.URI || tpl.Format != "int" || tpl.Value != "0" {
+		t.Errorf("template wrong: %+v", tpl)
+	}
+	// Standalone-CSP URIs pass the create-path validation unchanged.
+	if _, err := NormalizeAndValidateSettings([]OMAURISetting{tpl}); err != nil {
+		t.Errorf("standalone template should validate: %v", err)
 	}
 }

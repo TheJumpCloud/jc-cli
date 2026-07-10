@@ -24,14 +24,16 @@ func installFixtureSnapshot(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	src, err := os.ReadFile(filepath.Join("..", "windows_mdm", "testdata", "Sample_AreaDDF.xml"))
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"Sample_AreaDDF.xml", "SampleCSP.xml"} {
+		src, err := os.ReadFile(filepath.Join("..", "windows_mdm", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), src, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Sample_AreaDDF.xml"), src, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".complete"), []byte("test\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".complete.v2"), []byte("test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -106,8 +108,8 @@ func TestCSPListShowTemplate_OfflineOverFixture(t *testing.T) {
 		t.Fatalf("csp list ndjson: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 4 { // 4 device-scoped fixture settings
-		t.Fatalf("expected 4 NDJSON lines, got %d:\n%s", len(lines), out)
+	if len(lines) != 7 { // 4 policy + 3 standalone-CSP device-scoped fixture settings
+		t.Fatalf("expected 7 NDJSON lines, got %d:\n%s", len(lines), out)
 	}
 	for _, line := range lines {
 		var one map[string]any
@@ -160,5 +162,64 @@ func TestCSPTemplate_FeedsCreatePolicy(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "ADMX-backed") {
 		t.Errorf("expected ADMX warning on stderr, got: %s", stderr)
+	}
+}
+
+// ── KLA-467: standalone-CSP surfacing ──────────────────────────────
+
+func TestCSPKindFilterAndStandaloneShow(t *testing.T) {
+	installFixtureSnapshot(t)
+
+	// --kind csp narrows to the standalone fixture settings.
+	out, _, err := runCSP(t, "windows-mdm", "csp", "list", "--kind", "csp", "-o", "human")
+	if err != nil {
+		t.Fatalf("csp list --kind csp: %v", err)
+	}
+	if !strings.Contains(out, "SampleCSP/RequireThing") || strings.Contains(out, "Sample/WidgetTimeout") {
+		t.Errorf("kind filter wrong:\n%s", out)
+	}
+
+	// show surfaces provenance + the {instance} contract.
+	out, _, err = runCSP(t, "windows-mdm", "csp", "show", "SampleCSP/Profiles/{instance}/Enabled", "-o", "human")
+	if err != nil {
+		t.Fatalf("csp show dynamic: %v", err)
+	}
+	for _, want := range []string{"standalone CSP", "{instance}", "substitute"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show missing %q:\n%s", want, out)
+		}
+	}
+
+	// Full-URI ref works too.
+	out, _, err = runCSP(t, "windows-mdm", "csp", "show", "./Device/Vendor/MSFT/SampleCSP/RequireThing", "-o", "human")
+	if err != nil || !strings.Contains(out, "RequireThing") {
+		t.Errorf("full-URI show failed: %v", err)
+	}
+}
+
+func TestCSPTemplate_InstancePlaceholderWarnsAndCreateRefuses(t *testing.T) {
+	installFixtureSnapshot(t)
+
+	// template warns on stderr but still emits (the operator edits the uri).
+	out, stderr, err := runCSP(t, "windows-mdm", "csp", "template", "SampleCSP/Profiles/{instance}/Enabled")
+	if err != nil {
+		t.Fatalf("template: %v", err)
+	}
+	if !strings.Contains(stderr, "{instance}") {
+		t.Errorf("expected {instance} warning on stderr: %q", stderr)
+	}
+	if !strings.Contains(out, "{instance}") {
+		t.Error("template should emit the placeholder uri verbatim")
+	}
+
+	// create-policy refuses an unsubstituted placeholder before any API call.
+	dir := t.TempDir()
+	file := filepath.Join(dir, "s.json")
+	if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runCSP(t, "windows-mdm", "oma-uri", "create-policy", "--name", "x", "--settings-file", file)
+	if err == nil || !strings.Contains(err.Error(), "{instance}") {
+		t.Errorf("create must refuse unsubstituted placeholders: %v", err)
 	}
 }

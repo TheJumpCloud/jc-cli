@@ -46,7 +46,10 @@ const (
 // snapshotMarker is written after a successful extract; its presence
 // means the cache dir is complete (a crash mid-extract leaves no
 // marker, and the next run re-extracts).
-const snapshotMarker = ".complete"
+// The ".v2" suffix invalidates KLA-460-era caches, which extracted
+// only the *_AreaDDF.xml files — KLA-467 also needs the standalone
+// CSP files. Re-extraction reuses the already-downloaded zip.
+const snapshotMarker = ".complete.v2"
 
 // CacheDir returns the directory the extracted snapshot lives in:
 // $XDG_CACHE_HOME/jc/windows-mdm-ddf/<SnapshotName> (or ~/.cache/...),
@@ -172,10 +175,10 @@ func verifySnapshotSHA256(zipPath string) error {
 	return nil
 }
 
-// extractAreaDDFs unpacks only the Policy-area DDF files
-// (*_AreaDDF.xml) — the standalone CSP files (BitLocker.xml, VPNv2.xml,
-// …) describe full CSPs, not Policy CSP areas, and are out of scope
-// for this catalog. Paths are flattened and validated (zip-slip).
+// extractAreaDDFs unpacks every DDF XML in the drop: the Policy-area
+// files (*_AreaDDF.xml, the KLA-460 catalog) AND the standalone CSP
+// files (BitLocker.xml, VPNv2.xml, … — KLA-467). Paths are flattened
+// and validated (zip-slip).
 func extractAreaDDFs(zipPath, dir string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -189,7 +192,7 @@ func extractAreaDDFs(zipPath, dir string) error {
 	count := 0
 	for _, f := range r.File {
 		base := filepath.Base(f.Name)
-		if !strings.HasSuffix(base, "_AreaDDF.xml") || f.FileInfo().IsDir() {
+		if !strings.HasSuffix(base, ".xml") || f.FileInfo().IsDir() {
 			continue
 		}
 		// filepath.Base above already defeats zip-slip; keep the
@@ -213,7 +216,7 @@ func extractAreaDDFs(zipPath, dir string) error {
 		count++
 	}
 	if count == 0 {
-		return fmt.Errorf("zip contained no *_AreaDDF.xml files — wrong archive?")
+		return fmt.Errorf("zip contained no DDF XML files — wrong archive?")
 	}
 	return nil
 }
@@ -275,8 +278,14 @@ func LoadCatalog(dir string) (*Catalog, error) {
 	}
 	areaSeen := map[string]bool{}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_AreaDDF.xml") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".xml") {
 			continue
+		}
+		// Provenance: Policy CSP areas keep Kind "" (original shape);
+		// standalone CSPs (BitLocker.xml, VPNv2.xml, …) tag "csp".
+		kind := ""
+		if !strings.HasSuffix(e.Name(), "_AreaDDF.xml") {
+			kind = KindStandaloneCSP
 		}
 		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
@@ -287,14 +296,17 @@ func LoadCatalog(dir string) (*Catalog, error) {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		for _, s := range settings {
+			s.Kind = kind
 			idx := len(c.settings)
 			c.settings = append(c.settings, s)
-			// Device and user variants of the same policy share
-			// Area/Name; the device one wins the byRef slot (JC's
-			// template is device-scoped) and the user variant stays
-			// reachable via Filter.
+			// byRef collision priority: a Policy-area setting beats a
+			// standalone-CSP one sharing Area/Name (Bitlocker area vs
+			// BitLocker CSP both have EncryptionMethod — the policy
+			// variant keeps the KLA-460 behavior; the CSP variant
+			// stays reachable via full URI or Filter). Within a kind,
+			// device beats user (JC's template is device-scoped).
 			key := strings.ToLower(s.Area + "/" + s.Name)
-			if prev, dup := c.byRef[key]; !dup || (c.settings[prev].Scope == "user" && s.Scope == "device") {
+			if prev, dup := c.byRef[key]; !dup || refBeats(s, c.settings[prev]) {
 				c.byRef[key] = idx
 			}
 			// URIs are unique across scopes (./Device vs ./User
@@ -321,10 +333,30 @@ func (c *Catalog) Len() int { return len(c.settings) }
 // Areas returns the sorted list of area names.
 func (c *Catalog) Areas() []string { return c.areas }
 
-// ByRef looks up a setting by "Area/Name" (case-insensitive). When
-// both device and user variants exist, the device one is returned.
+// KindStandaloneCSP tags settings from standalone CSP files (vs the
+// "" default for Policy CSP areas).
+const KindStandaloneCSP = "csp"
+
+// refBeats decides byRef collision priority: policy-area beats
+// standalone-CSP; within a kind, device beats user.
+func refBeats(candidate, incumbent Setting) bool {
+	if candidate.Kind != incumbent.Kind {
+		return candidate.Kind == "" && incumbent.Kind == KindStandaloneCSP
+	}
+	return incumbent.Scope == "user" && candidate.Scope == "device"
+}
+
+// ByRef looks up a setting by "Area/Name" (case-insensitive), or by
+// full OMA-URI when ref starts with "./" — the unambiguous form for
+// names shared between a Policy area and a standalone CSP. On
+// Area/Name collisions the Policy-area setting wins; within a kind,
+// device beats user.
 func (c *Catalog) ByRef(ref string) (Setting, bool) {
-	idx, ok := c.byRef[strings.ToLower(strings.TrimSpace(ref))]
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "./") {
+		return c.ByURI(ref)
+	}
+	idx, ok := c.byRef[strings.ToLower(ref)]
 	if !ok {
 		return Setting{}, false
 	}
@@ -354,6 +386,9 @@ type FilterOpts struct {
 	// ExcludeADMX drops ADMX-backed settings (their values need
 	// ADMX-style XML, not plain scalars).
 	ExcludeADMX bool
+	// Kind restricts provenance: "policy" (Policy CSP areas only) or
+	// "csp" (standalone CSPs only). Empty = both.
+	Kind string
 }
 
 // Filter returns the settings matching every set field of opts.
@@ -377,6 +412,16 @@ func (c *Catalog) Filter(opts FilterOpts) []Setting {
 		}
 		if opts.ExcludeADMX && s.ADMXBacked {
 			continue
+		}
+		switch opts.Kind {
+		case "policy":
+			if s.Kind != "" {
+				continue
+			}
+		case KindStandaloneCSP:
+			if s.Kind != KindStandaloneCSP {
+				continue
+			}
 		}
 		if needle != "" {
 			hay := strings.ToLower(s.Area + " " + s.Name + " " + s.URI + " " + s.Description)

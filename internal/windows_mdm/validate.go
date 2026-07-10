@@ -73,6 +73,12 @@ func NormalizeAndValidateSettings(settings []OMAURISetting) ([]OMAURISetting, er
 		label := fmt.Sprintf("setting %d", i+1)
 		if s.URI == "" {
 			problems = append(problems, label+": uri is required")
+		} else if strings.Contains(s.URI, "{instance}") {
+			// Catalog placeholder from a dynamic-named CSP subtree
+			// (KLA-467) — the operator must substitute a real node
+			// name (app name, profile name) before creating.
+			problems = append(problems, fmt.Sprintf(
+				"%s: uri %q contains the {instance} placeholder — replace it with the real node name before creating", label, s.URI))
 		} else if !strings.HasPrefix(s.URI, "./") {
 			// The Policy CSP addresses nodes as ./Device/Vendor/MSFT/...,
 			// ./User/Vendor/MSFT/..., or the device-implied ./Vendor/MSFT/...

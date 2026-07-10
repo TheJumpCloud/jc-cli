@@ -88,3 +88,21 @@ func TestWindowsCSPShow_AuthorRequiresDraft(t *testing.T) {
 		t.Error("c with a draft should push the form")
 	}
 }
+
+func TestWindowsCSPShow_RequiresInstanceRefusedFromDraft(t *testing.T) {
+	// The draft form edits values, not URIs — an {instance} setting
+	// can't be substituted in-form, so adding it is refused with a
+	// pointer at the CLI path (KLA-467).
+	setting := testCSPSettings()[0]
+	setting.URI = "./Device/Vendor/MSFT/SampleCSP/Profiles/{instance}/Enabled"
+	setting.RequiresInstance = true
+	draft := &windowsMDMDraft{}
+	s := NewWindowsMDMCSPShowScreen(setting, draft)
+	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if len(draft.settings) != 0 {
+		t.Fatal("requires-instance setting must not enter the draft")
+	}
+	if !s.noteIsErr || !strings.Contains(s.note, "{instance}") {
+		t.Errorf("refusal should explain the placeholder: %q", s.note)
+	}
+}
