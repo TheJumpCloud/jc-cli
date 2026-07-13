@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/klaassen-consulting/jc/internal/api"
@@ -397,5 +398,41 @@ func TestFetchV1Search_CachesResults(t *testing.T) {
 	}
 	if callCount != 1 {
 		t.Errorf("server called %d times, want 1 (cached)", callCount)
+	}
+}
+
+// TestFetchV2DetailViaList covers resources with no single-get
+// endpoint (GET /applemdms/{id} is a 404 on every tenant): detail is
+// the list response filtered by id. The stub 404s the single-get to
+// prove the fetcher never calls it.
+func TestFetchV2DetailViaList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v2/applemdms":
+			_, _ = w.Write([]byte(`[{"id":"mdm-1","name":"one"},{"id":"mdm-2","name":"two"}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		}
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{NewV2Client: func() (*api.V2Client, error) { return newTestV2Client(srv.URL) }}
+
+	msg := f.FetchV2DetailViaList("apple-mdm", "/applemdms", "mdm-2", 1)()
+	res, ok := msg.(DetailResultMsg)
+	if !ok || res.Err != nil {
+		t.Fatalf("detail via list failed: %+v", msg)
+	}
+	if !strings.Contains(string(res.Data), `"name":"two"`) {
+		t.Errorf("wrong object returned: %s", res.Data)
+	}
+
+	// Unknown id: a clear error, not a raw 404.
+	msg = f.FetchV2DetailViaList("apple-mdm", "/applemdms", "mdm-9", 2)()
+	res = msg.(DetailResultMsg)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "mdm-9") {
+		t.Errorf("unknown id should error clearly: %v", res.Err)
 	}
 }

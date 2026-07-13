@@ -518,6 +518,39 @@ func (f *Fetcher) FetchV2Detail(resourceKey, endpoint, id string, gen int64) tea
 	}
 }
 
+// FetchV2DetailViaList fetches one object by listing its endpoint and
+// matching the id field — for V2 resources with no single-get endpoint
+// (GET /applemdms/{id} is a 404 on every tenant; the list is the only
+// read the API offers).
+func (f *Fetcher) FetchV2DetailViaList(resourceKey, endpoint, id string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		client, err := f.NewV2Client()
+		if err != nil {
+			return DetailResultMsg{ResourceKey: resourceKey, ID: id, Generation: gen, Err: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		result, err := client.ListAll(ctx, endpoint, api.V2ListOptions{})
+		if err != nil {
+			return DetailResultMsg{ResourceKey: resourceKey, ID: id, Generation: gen, Err: err}
+		}
+		for _, raw := range result.Data {
+			var obj struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(raw, &obj) == nil && obj.ID == id {
+				return DetailResultMsg{ResourceKey: resourceKey, ID: id, Data: raw, Generation: gen}
+			}
+		}
+		return DetailResultMsg{
+			ResourceKey: resourceKey, ID: id, Generation: gen,
+			Err: fmt.Errorf("no %s object with id %s in the list response (%d items)", resourceKey, id, len(result.Data)),
+		}
+	}
+}
+
 // AssocNameReq describes a single resource whose name should be resolved.
 type AssocNameReq struct {
 	ID        string

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
@@ -4617,7 +4618,9 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			data, err := client.Get(ctx, "/applemdms/"+id)
+			// No GET /applemdms/{id} exists (404s on every tenant) —
+			// list and match instead.
+			data, err := apple_mdm.FetchMDMTenantByID(ctx, client, id)
 			if err != nil {
 				return errorResult(fmt.Sprintf("getting Apple MDM config: %v", err)), nil, nil
 			}

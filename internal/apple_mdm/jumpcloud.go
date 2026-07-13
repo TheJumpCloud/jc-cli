@@ -164,3 +164,24 @@ func BuildCustomMDMPolicyBody(policyName string, tmpl CustomMDMTemplate, plistXM
 		"values":   values,
 	}
 }
+
+// FetchMDMTenantByID returns one Apple MDM tenant object from
+// GET /applemdms. JumpCloud has NO single-get endpoint for this
+// resource — GET /applemdms/{id} is a 404 on every tenant (confirmed
+// live 2026-07-13) — so "get by id" must list and match. Every read
+// surface (CLI get, MCP apple_mdm_get, TUI detail) goes through here.
+func FetchMDMTenantByID(ctx context.Context, client *api.V2Client, id string) (json.RawMessage, error) {
+	result, err := client.ListAll(ctx, "/applemdms", api.V2ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing Apple MDM configurations: %w", err)
+	}
+	for _, raw := range result.Data {
+		var obj struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &obj); err == nil && obj.ID == id {
+			return raw, nil
+		}
+	}
+	return nil, fmt.Errorf("no Apple MDM configuration with id %q (of %d on the tenant)", id, len(result.Data))
+}
