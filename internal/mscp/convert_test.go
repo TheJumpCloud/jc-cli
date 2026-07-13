@@ -218,3 +218,24 @@ func TestExtract_StripsTopDirAndFilters(t *testing.T) {
 		}
 	}
 }
+
+// TestConvert_ListValuesUnionMerge: list-valued keys set by multiple
+// rules union (order-preserving, deduped) instead of conflicting —
+// SkipSetupItems in the 800-53 baselines is the real-world case that
+// caught this (each rule contributes its own skip item).
+func TestConvert_ListValuesUnionMerge(t *testing.T) {
+	rules, manifest := loadFixture(t, "listbase")
+	b, _, err := Convert(rules, manifest, "x", "imported")
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	vals := b.Policies[0].Profile.Payloads[0].Values
+	list, ok := vals["SkipItems"].([]any)
+	if !ok || len(list) != 2 || list[0] != "ItemA" || list[1] != "ItemB" {
+		t.Errorf("SkipItems union = %v, want [ItemA ItemB]", vals["SkipItems"])
+	}
+	// Agreeing scalars still pass untouched.
+	if vals["Shared"] != true {
+		t.Errorf("Shared = %v", vals["Shared"])
+	}
+}
