@@ -28,6 +28,20 @@ Regeneration: each file's header comment records the exact
 `jc bundle import mscp` invocation; the snapshot is pinned by tag +
 SHA-256 in `internal/mscp/fetch.go`.
 
+## windows-stig-cat1.yaml
+
+Derived from the **DISA Microsoft Windows 11 Security Technical
+Implementation Guide**, Version 2 Release 8,
+<https://public.cyber.mil/stigs/downloads/>. STIGs are works of the
+United States Government and are in the public domain (17 U.S.C.
+§ 105); no license is required for reuse.
+
+What this file reproduces: the registry locations, value names, types,
+and required values from the CAT I rule check text, plus the WN11-*
+rule identifiers. The curation (unit grouping, exclusion of
+hardware/provisioning-dependent rules) is original jc-cli work — the
+file's header comment records the exact scope.
+
 ## example-baseline.yaml
 
 Original jc-cli content; not derived from any external publication.

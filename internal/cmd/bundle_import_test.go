@@ -129,3 +129,62 @@ func TestBuiltinBaselines_Regenerable(t *testing.T) {
 		}
 	}
 }
+
+// TestBuiltinWindowsSTIG_Facts pins the hand-curated STIG baseline:
+// the registry values were transcribed verbatim from the DISA Windows
+// 11 STIG V2R8 check text (KLA-474), so any drift here must be a
+// deliberate re-curation against a newer STIG release.
+func TestBuiltinWindowsSTIG_Facts(t *testing.T) {
+	builtins, err := bundle.LoadBuiltIn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := bundle.FindByName(builtins, "windows-stig-cat1")
+	if b == nil {
+		t.Fatal("windows-stig-cat1 missing")
+	}
+	if b.Version != "2r8" {
+		t.Errorf("version = %q, want 2r8", b.Version)
+	}
+	if !strings.Contains(b.Source.Attribution, "DISA") || !strings.Contains(b.Source.Attribution, "public domain") {
+		t.Errorf("attribution must cite DISA + public domain: %s", b.Source.Attribution)
+	}
+
+	// 5 registry units, 13 keys total, every unit description carries
+	// WN11 STIG rule IDs.
+	if len(b.Policies) != 5 {
+		t.Fatalf("units = %d, want 5", len(b.Policies))
+	}
+	keys := 0
+	values := map[string]string{} // "location|name" → data
+	for _, u := range b.Policies {
+		if u.Type != bundle.UnitWindowsRegistry {
+			t.Errorf("unit %q type = %s, want windows_registry", u.Name, u.Type)
+		}
+		if !strings.Contains(u.Description, "WN11-") {
+			t.Errorf("unit %q description must carry STIG rule IDs: %q", u.Name, u.Description)
+		}
+		for _, k := range u.Keys {
+			if k.Type != "DWORD" {
+				t.Errorf("%s/%s: type %s, want DWORD (all V2R8 CAT I registry values are REG_DWORD)", u.Name, k.Name, k.Type)
+			}
+			keys++
+			values[k.Location+"|"+k.Name] = k.Data
+		}
+	}
+	if keys != 13 {
+		t.Errorf("keys = %d, want 13", keys)
+	}
+
+	// Spot-pin the values most dangerous to get wrong.
+	for loc, want := range map[string]string{
+		`SYSTEM\CurrentControlSet\Control\Lsa|LmCompatibilityLevel`:                               "5",
+		`SYSTEM\CurrentControlSet\Control\Session Manager\kernel|DisableExceptionChainValidation`: "0", // 0 = SEHOP ON
+		`SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer|NoDriveTypeAutoRun`:          "255",
+		`SOFTWARE\Policies\Microsoft\Windows\Installer|AlwaysInstallElevated`:                     "0",
+	} {
+		if got, ok := values[loc]; !ok || got != want {
+			t.Errorf("%s = %q, want %q", loc, got, want)
+		}
+	}
+}
