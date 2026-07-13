@@ -80,6 +80,15 @@ func Convert(rules map[string]*Rule, b *Baseline, bundleName, origin string) (*b
 					return nil, nil, err
 				}
 				if prev, exists := owners[pt][k]; exists {
+					// List-valued keys union-merge: rules contribute
+					// items independently (SkipSetupItems is the
+					// canonical case — one rule adds AppleID, another
+					// iCloudStorage). mSCP's own generator concatenates
+					// these the same way. Scalars must agree.
+					if unioned, ok := mergeLists(merged[pt][k], resolved); ok {
+						merged[pt][k] = unioned
+						continue
+					}
 					if fmt.Sprintf("%v", prev.value) != fmt.Sprintf("%v", resolved) {
 						return nil, nil, fmt.Errorf(
 							"baseline %s: rules %s and %s set %s/%s to different values (%v vs %v)",
@@ -143,6 +152,29 @@ func Convert(rules map[string]*Rule, b *Baseline, bundleName, origin string) (*b
 		return nil, nil, fmt.Errorf("generated bundle failed validation: %w", err)
 	}
 	return out, report, nil
+}
+
+// mergeLists returns the order-preserving, deduplicated union of two
+// values when BOTH are YAML sequences; ok is false otherwise (scalars
+// fall through to the equality check).
+func mergeLists(existing, incoming any) (any, bool) {
+	a, aok := existing.([]any)
+	b, bok := incoming.([]any)
+	if !aok || !bok {
+		return nil, false
+	}
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]any, 0, len(a)+len(b))
+	for _, list := range [][]any{a, b} {
+		for _, item := range list {
+			key := fmt.Sprintf("%v", item)
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, item)
+			}
+		}
+	}
+	return out, true
 }
 
 // validatesAgainstCatalog reports whether the merged values can go

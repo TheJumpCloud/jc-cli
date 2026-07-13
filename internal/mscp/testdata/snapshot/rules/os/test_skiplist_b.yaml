@@ -1,0 +1,11 @@
+id: test_skiplist_b
+title: Test list contribution B
+tags:
+  - listbase
+mobileconfig: true
+mobileconfig_info:
+  com.example.setupassistant:
+    SkipItems:
+      - ItemB
+      - ItemA
+    Shared: true

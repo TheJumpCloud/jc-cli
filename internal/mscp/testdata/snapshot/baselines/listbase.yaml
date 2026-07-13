@@ -1,0 +1,8 @@
+title: "List-merge fixture"
+description: fixture
+parent_values: listbase
+profile:
+  - section: one
+    rules:
+      - test_skiplist_a
+      - test_skiplist_b
