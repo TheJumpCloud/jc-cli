@@ -38,23 +38,23 @@ var commandClass = map[string]string{
 	"jc app-templates list": ClassReadOnly,
 
 	// apple-mdm — MDM tenant + payloads catalog (KLA-449..452 arc).
-	"jc apple-mdm create":                  ClassMutating,
-	"jc apple-mdm delete":                  ClassDestructive,
-	"jc apple-mdm devices":                 ClassReadOnly,
-	"jc apple-mdm enrollment-profiles":     ClassReadOnly,
-	"jc apple-mdm get":                     ClassReadOnly,
-	"jc apple-mdm list":                    ClassReadOnly,
+	"jc apple-mdm create":              ClassMutating,
+	"jc apple-mdm delete":              ClassDestructive,
+	"jc apple-mdm devices":             ClassReadOnly,
+	"jc apple-mdm enrollment-profiles": ClassReadOnly,
+	"jc apple-mdm get":                 ClassReadOnly,
+	"jc apple-mdm list":                ClassReadOnly,
 	// payloads compose: --create-policy turns this into a JC POST
 	// (same wire shape as create-policy), so worst-case capability is
 	// mutating, not internal. Cursor Bugbot PR #62 catch.
-	"jc apple-mdm payloads compose":        ClassMutating,
-	"jc apple-mdm payloads create-policy":  ClassMutating, // POSTs a JC policy
-	"jc apple-mdm payloads list":           ClassReadOnly, // vendored catalog
-	"jc apple-mdm payloads show":           ClassReadOnly,
+	"jc apple-mdm payloads compose":       ClassMutating,
+	"jc apple-mdm payloads create-policy": ClassMutating, // POSTs a JC policy
+	"jc apple-mdm payloads list":          ClassReadOnly, // vendored catalog
+	"jc apple-mdm payloads show":          ClassReadOnly,
 	// payloads template is offline-only — emits a .mobileconfig file
 	// and never touches the JC API.
-	"jc apple-mdm payloads template":       ClassInternal,
-	"jc apple-mdm update":                  ClassMutating,
+	"jc apple-mdm payloads template": ClassInternal,
+	"jc apple-mdm update":            ClassMutating,
 
 	// apps — JC software app records.
 	"jc apps create": ClassMutating,
@@ -113,12 +113,13 @@ var commandClass = map[string]string{
 
 	// bundle — security baseline bundles. Authoring/browsing is local;
 	// apply creates N policies + a policy group + a binding.
-	"jc bundle apply":    ClassMutating, // POSTs policies, policy group, associations
-	"jc bundle export":   ClassInternal, // writes a yaml file
-	"jc bundle list":     ClassInternal, // catalog of bundles
-	"jc bundle show":     ClassInternal,
-	"jc bundle status":   ClassReadOnly, // GETs policy group + members + policies; diffs locally
-	"jc bundle validate": ClassInternal, // offline: embedded Apple catalog + static Windows rules
+	"jc bundle apply":       ClassMutating, // POSTs policies, policy group, associations
+	"jc bundle export":      ClassInternal, // writes a yaml file
+	"jc bundle import mscp": ClassInternal, // fetches NIST mSCP (read-only), writes a local yaml
+	"jc bundle list":        ClassInternal, // catalog of bundles
+	"jc bundle show":        ClassInternal,
+	"jc bundle status":      ClassReadOnly, // GETs policy group + members + policies; diffs locally
+	"jc bundle validate":    ClassInternal, // offline: embedded Apple catalog + static Windows rules
 
 	// commands — saved-command lifecycle; `run`/`trigger` are remote code execution.
 	"jc commands create":  ClassMutating,
@@ -216,16 +217,16 @@ var commandClass = map[string]string{
 	"jc iplists update": ClassMutating,
 
 	// ldap — LDAP directory integration + samba domain mgmt.
-	"jc ldap create":               ClassMutating,
-	"jc ldap delete":               ClassDestructive,
-	"jc ldap get":                  ClassReadOnly,
-	"jc ldap list":                 ClassReadOnly,
-	"jc ldap samba-domain-create":  ClassMutating,
-	"jc ldap samba-domain-delete":  ClassDestructive,
-	"jc ldap samba-domain-get":     ClassReadOnly,
-	"jc ldap samba-domain-update":  ClassMutating,
-	"jc ldap samba-domains":        ClassReadOnly,
-	"jc ldap update":               ClassMutating,
+	"jc ldap create":              ClassMutating,
+	"jc ldap delete":              ClassDestructive,
+	"jc ldap get":                 ClassReadOnly,
+	"jc ldap list":                ClassReadOnly,
+	"jc ldap samba-domain-create": ClassMutating,
+	"jc ldap samba-domain-delete": ClassDestructive,
+	"jc ldap samba-domain-get":    ClassReadOnly,
+	"jc ldap samba-domain-update": ClassMutating,
+	"jc ldap samba-domains":       ClassReadOnly,
+	"jc ldap update":              ClassMutating,
 
 	// mcp — MCP server launcher + tool list.
 	"jc mcp serve": ClassInternal, // runs the server; doesn't itself call JC
@@ -276,10 +277,10 @@ var commandClass = map[string]string{
 	"jc radius update": ClassMutating,
 
 	// recipe — recipe authoring (local) + execution (variable impact).
-	"jc recipe create":   ClassInternal, // local YAML scaffold
-	"jc recipe export":   ClassInternal, // writes a yaml file
-	"jc recipe import":   ClassInternal, // pulls a yaml file
-	"jc recipe list":     ClassInternal, // catalog of recipes
+	"jc recipe create":   ClassInternal,    // local YAML scaffold
+	"jc recipe export":   ClassInternal,    // writes a yaml file
+	"jc recipe import":   ClassInternal,    // pulls a yaml file
+	"jc recipe list":     ClassInternal,    // catalog of recipes
 	"jc recipe run":      ClassDestructive, // executes a recipe; can include deletes
 	"jc recipe show":     ClassInternal,
 	"jc recipe validate": ClassInternal,
@@ -305,14 +306,14 @@ var commandClass = map[string]string{
 	"jc setup": ClassInternal,
 
 	// software — software/license records.
-	"jc software associations":     ClassReadOnly,
-	"jc software create":           ClassMutating,
-	"jc software delete":           ClassDestructive,
-	"jc software get":              ClassReadOnly,
-	"jc software list":             ClassReadOnly,
-	"jc software reclaim-license":  ClassMutating,
-	"jc software statuses":         ClassReadOnly,
-	"jc software update":           ClassMutating,
+	"jc software associations":    ClassReadOnly,
+	"jc software create":          ClassMutating,
+	"jc software delete":          ClassDestructive,
+	"jc software get":             ClassReadOnly,
+	"jc software list":            ClassReadOnly,
+	"jc software reclaim-license": ClassMutating,
+	"jc software statuses":        ClassReadOnly,
+	"jc software update":          ClassMutating,
 
 	// system-insights — read-only osquery view.
 	"jc system-insights list":   ClassReadOnly,

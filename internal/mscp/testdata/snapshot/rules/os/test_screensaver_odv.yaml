@@ -1,0 +1,12 @@
+id: test_screensaver_odv
+title: Test screensaver timeout
+tags:
+  - testbase
+odv:
+  hint: Number of seconds.
+  recommended: 1200
+  testbase: 900
+mobileconfig: true
+mobileconfig_info:
+  com.apple.screensaver:
+    idleTime: $ODV

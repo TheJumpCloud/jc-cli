@@ -1,0 +1,8 @@
+id: test_pref_domain_raw
+title: Test preference domain with no vendored schema
+tags:
+  - testbase
+mobileconfig: true
+mobileconfig_info:
+  com.example.prefdomain:
+    SomeSetting: false

@@ -1,0 +1,5 @@
+id: test_shell_only
+title: Test shell-only rule
+tags:
+  - testbase
+mobileconfig: false

@@ -72,6 +72,14 @@ type ComposePayload struct {
 	// shape CoerceAndValidate consumes elsewhere in this package.
 	// May be nil/empty if every required key has a schema default.
 	Values map[string]any `yaml:"values,omitempty" json:"values,omitempty"`
+
+	// Raw skips catalog validation: Values are emitted verbatim under
+	// Type. For payload types Apple ships no device-management schema
+	// for — preference domains like com.apple.Safari, merged
+	// com.apple.MCX payloads, nested com.apple.ManagedClient.preferences
+	// — which are valid in profiles regardless (mSCP and Jamf emit
+	// them the same way). The operator owns key correctness.
+	Raw bool `yaml:"raw,omitempty" json:"raw,omitempty"`
 }
 
 // LoadComposeConfig reads a compose-profile YAML/JSON file from disk
@@ -127,6 +135,21 @@ func (c *ComposeConfig) BuildPayloadInstances(cat *Catalog) ([]PayloadInstance, 
 			errs = append(errs, fmt.Sprintf("payloads[%d]: 'type' is required", i))
 			continue
 		}
+		if p.Raw {
+			// Synthetic schema: just enough for the emitter (Type for
+			// PayloadType, Title for the display-name fallback). Nil
+			// SupportedOS marks it as platform-unchecked.
+			if len(p.Values) == 0 {
+				errs = append(errs, fmt.Sprintf("payloads[%d] (%s): raw payloads need at least one value", i, p.Type))
+				continue
+			}
+			instances = append(instances, PayloadInstance{
+				Schema:      Payload{Type: p.Type, Title: p.Type},
+				Values:      p.Values,
+				DisplayName: p.DisplayName,
+			})
+			continue
+		}
 		schema, err := resolveComposePayload(cat, p)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("payloads[%d] (%s): %v", i, p.Type, err))
@@ -160,6 +183,12 @@ func (c *ComposeConfig) BuildPayloadInstances(cat *Catalog) ([]PayloadInstance, 
 func UnsupportedPayloadTypes(instances []PayloadInstance, applePlatform string) []string {
 	var unsupported []string
 	for _, p := range instances {
+		// Raw payloads carry a synthetic schema with no SupportedOS —
+		// there's nothing to check against; the operator vouched for
+		// the payload by marking it raw.
+		if p.Schema.SupportedOS == nil {
+			continue
+		}
 		sup, ok := p.Schema.SupportedOS[applePlatform]
 		if !ok || !sup.Available() {
 			unsupported = append(unsupported, p.Schema.Type)

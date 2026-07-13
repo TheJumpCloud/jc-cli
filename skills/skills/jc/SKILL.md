@@ -45,7 +45,7 @@ jc <resource> <verb> [identifier] [flags]
 | `apple-mdm` | | list, get, create, update, delete, enrollment-profiles, devices, payloads (list/show/template/create-policy/compose — Apple schema catalog → JC custom policies) |
 | `windows-mdm` | | csp list/show/template/update (Microsoft CSP catalog, ~5,100 settings), oma-uri create-policy, registry create-policy |
 | `policy-groups` | | list, get, create, update, delete |
-| `bundle` | | list, show, validate, export, apply --group/--plan, status (security baseline bundles: versioned YAML sets of Apple profiles + Windows OMA-URI/registry policies; builtins embedded, user bundles in ~/.config/jc/bundles/; apply = N policies + policy group + device-group binding, create-only with conflict pre-flight; status = per-unit drift with value-level diffs) |
+| `bundle` | | list, show, validate, export, apply --group/--plan, status, import mscp --baseline (security baseline bundles: versioned YAML sets of Apple profiles + Windows OMA-URI/registry policies; builtin macOS hardening baselines macos-cis-lvl1/macos-cis-lvl2 derived from NIST mSCP, more via import mscp; user bundles in ~/.config/jc/bundles/; apply = N policies + policy group + device-group binding, create-only with conflict pre-flight; status = per-unit drift with value-level diffs) |
 | `policy-templates` | | list, get |
 | `assets` | | devices/accessories/locations list/get/create/update/delete |
 | `user-states` | | list, get, create, delete |

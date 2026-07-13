@@ -1,0 +1,9 @@
+id: test_firewall_stealth
+title: Test stealth mode (agreeing overlap on EnableFirewall)
+tags:
+  - testbase
+mobileconfig: true
+mobileconfig_info:
+  com.apple.security.firewall:
+    EnableFirewall: true
+    EnableStealthMode: true

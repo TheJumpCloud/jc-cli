@@ -1,0 +1,8 @@
+id: test_firewall_conflict
+title: Test conflicting firewall value
+tags:
+  - conflictbase
+mobileconfig: true
+mobileconfig_info:
+  com.apple.security.firewall:
+    EnableFirewall: false

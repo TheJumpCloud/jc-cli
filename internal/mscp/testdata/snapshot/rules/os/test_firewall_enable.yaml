@@ -1,0 +1,8 @@
+id: test_firewall_enable
+title: Test firewall on
+tags:
+  - testbase
+mobileconfig: true
+mobileconfig_info:
+  com.apple.security.firewall:
+    EnableFirewall: true

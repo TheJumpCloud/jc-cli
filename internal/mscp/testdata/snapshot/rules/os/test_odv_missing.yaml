@@ -1,0 +1,8 @@
+id: test_odv_missing
+title: Test ODV placeholder without values
+tags:
+  - odvmissing
+mobileconfig: true
+mobileconfig_info:
+  com.apple.screensaver:
+    idleTime: $ODV

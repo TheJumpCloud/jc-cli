@@ -1,0 +1,13 @@
+title: "Test baseline for the jc converter (hand-written fixture, no mSCP content)"
+description: fixture
+parent_values: testbase
+profile:
+  - section: one
+    rules:
+      - test_firewall_enable
+      - test_screensaver_odv
+      - test_shell_only
+  - section: two
+    rules:
+      - test_pref_domain_raw
+      - test_firewall_stealth
