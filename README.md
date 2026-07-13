@@ -626,7 +626,7 @@ Full-screen terminal UI for browsing all JumpCloud resource types, plus dedicate
  Security                > Software      (5)    > Dir Insights
    > Auth Policies (5)   > Apple MDM     (1)    > Sys Insights
    > IP Lists      (3)   > Windows MDM   (3)
-                         > Assets        (4)
+   > Baseline Bundles    > Assets        (4)
                        Settings
                          > Admins        (3)
                          > Organization
@@ -642,6 +642,7 @@ The grid is responsive — three columns at 120+ chars, two at 90-119, single-co
 - **Directory Insights** — query by service, time range, and event type; drill into events; `x` for AI explanation
 - **Apple MDM** — browse the vendored payload catalog, author policies in a typed form (or `$EDITOR`), edit existing Custom MDM policies
 - **Windows MDM** — browse Microsoft's CSP catalog (~5,100 settings incl. standalone CSPs, fetched on demand), add settings to a draft (`a`), author the OMA-URI policy with enum pick-lists and range validation, preview, create; a registry-key policy row editor; and a custom-policies list that decodes existing OMA-URI/registry policies back into the form for editing
+- **Security baseline bundles** — browse the builtin + user bundles (CIS-derived macOS, Windows 11 STIG CAT I), inspect per-unit provenance, apply with a step-by-step plan preview and explicit confirm, and a per-unit drift dashboard with value-level diffs (`s`)
 - **CRUD** — `n` to create (schema-driven form), `E` to edit, `d` to delete (with confirmation)
 - **Form navigation** — `j`/`k` between fields, `h`/`l` to toggle booleans, `Ctrl+S` to save, `Esc` to cancel; sensitive fields are masked
 - **Clipboard & export** — `c` to copy ID, `e` then `j`/`c`/`J` for JSON clipboard / CSV file / JSON file
