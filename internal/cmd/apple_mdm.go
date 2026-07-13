@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
@@ -112,7 +113,9 @@ func runAppleMDMGet(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	result, err := client.Get(cmd.Context(), "/applemdms/"+id)
+	// JumpCloud has no GET /applemdms/{id} — it 404s on every tenant
+	// (confirmed live 2026-07-13); the helper lists and matches.
+	result, err := apple_mdm.FetchMDMTenantByID(cmd.Context(), client, id)
 	if err != nil {
 		return err
 	}
@@ -285,7 +288,7 @@ func runAppleMDMDelete(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 
-	mdmData, err := client.Get(cmd.Context(), "/applemdms/"+id)
+	mdmData, err := apple_mdm.FetchMDMTenantByID(cmd.Context(), client, id)
 	if err != nil {
 		return err
 	}

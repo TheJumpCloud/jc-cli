@@ -99,6 +99,10 @@ func (d *DetailScreen) fetchDetail() tea.Cmd {
 	case tui.ClientV1:
 		return d.fetcher.FetchV1Detail(d.entry.Key, d.entry.ListEndpoint, d.id, gen)
 	case tui.ClientV2:
+		if d.entry.DetailViaList {
+			// Resources with no single-get endpoint (e.g. /applemdms).
+			return d.fetcher.FetchV2DetailViaList(d.entry.Key, d.entry.ListEndpoint, d.id, gen)
+		}
 		return d.fetcher.FetchV2Detail(d.entry.Key, d.entry.ListEndpoint, d.id, gen)
 	default:
 		return nil

@@ -81,6 +81,7 @@ type ResourceEntry struct {
 	FlattenFunc     func([]json.RawMessage) []json.RawMessage      // Optional post-fetch flattening (e.g. assets)
 	ResponseKey     string                                         // V2 wrapped response key (e.g. "identityProviders")
 	MutateBodyFunc  func(body map[string]any) map[string]any       // Optional body transform before create/update (e.g. wrap in {"fields": ...})
+	DetailViaList   bool                                           // True when the API has no GET {endpoint}/{id} — detail = list + match (e.g. /applemdms)
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -492,6 +493,13 @@ func BuildRegistry() []ResourceEntry {
 		if name == "system-insights" {
 			entry.PivotField = "system_id"
 			entry.PivotTargetKey = "devices"
+		}
+
+		// JumpCloud has no GET /applemdms/{id} (404s on every tenant,
+		// confirmed live 2026-07-13) — the detail screen must list and
+		// match instead.
+		if name == "apple-mdm" {
+			entry.DetailViaList = true
 		}
 
 		// Cloud directory resources are folded into a sub-menu.

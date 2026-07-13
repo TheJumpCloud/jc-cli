@@ -43,14 +43,12 @@ func startAppleMDMServer(t *testing.T, configs []map[string]any) *httptest.Serve
 			json.NewEncoder(w).Encode(devices)
 
 		case r.Method == http.MethodGet && strings.HasPrefix(path, "/applemdms/"):
-			id := strings.TrimPrefix(path, "/applemdms/")
-			for _, c := range configs {
-				if c["id"] == id {
-					json.NewEncoder(w).Encode(c)
-					return
-				}
-			}
-			http.NotFound(w, r)
+			// The REAL JumpCloud API has no GET /applemdms/{id} — it
+			// 404s on every tenant (confirmed live 2026-07-13). The
+			// stub mirrors that so any code path still doing a
+			// single-get fails here the way it fails in production.
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
 
 		case r.Method == http.MethodPost && path == "/applemdms":
 			body, _ := io.ReadAll(r.Body)
