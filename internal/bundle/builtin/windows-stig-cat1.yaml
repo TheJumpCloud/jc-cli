@@ -1,0 +1,122 @@
+# windows-stig-cat1 — hand-curated from the DISA Microsoft Windows 11
+# STIG V2R8 (a U.S. Government work: public domain, 17 U.S.C. § 105).
+# See NOTICE.md.
+#
+# Scope: the CAT I (high-severity) subset enforceable via HKLM registry
+# policy — 13 of the 27 CAT I rules. Every location/value/type below is
+# transcribed verbatim from the STIG check text. Deliberately EXCLUDED:
+#   - WN11-CC-000075 (Credential Guard): requires UEFI/VBS-capable
+#     hardware; forcing LsaCfgFlags with UEFI lock on unsupported
+#     devices is not safely reversible from a baseline.
+#   - WN11-00-000031 (BitLocker pre-boot PIN): requires per-device PIN
+#     provisioning before the policy is safe to enforce.
+#   - WN11-SO-000140 and the remaining CAT I rules: no registry policy
+#     surface (device state, installed software, user rights, secedit).
+name: windows-stig-cat1
+version: 2r8
+description: >-
+  Windows 11 hardening baseline derived from the DISA Windows 11 STIG
+  V2R8: the CAT I (high-severity) subset enforceable via registry
+  policy (13 of 27 CAT I rules). Excluded rules are listed in the
+  bundle file's header comment.
+source:
+  origin: builtin
+  attribution: >-
+    Derived from the DISA Microsoft Windows 11 Security Technical
+    Implementation Guide, Version 2 Release 8 — a U.S. Government work
+    in the public domain. CAT I registry-enforceable subset: 13 of 27
+    CAT I rules (Credential Guard and BitLocker pre-boot PIN excluded
+    as hardware/provisioning-dependent; the rest have no registry
+    policy surface).
+  license: Public domain (U.S. Government work)
+  url: https://public.cyber.mil/stigs/downloads/
+policies:
+  - name: Autoplay and Autorun disabled
+    type: windows_registry
+    description: WN11-CC-000180, WN11-CC-000185, WN11-CC-000190
+    keys:
+      # WN11-CC-000180: Autoplay must be turned off for non-volume devices.
+      - location: SOFTWARE\Policies\Microsoft\Windows\Explorer
+        name: NoAutoplayfornonVolume
+        type: DWORD
+        data: "1"
+      # WN11-CC-000185: default autorun behavior = do not execute.
+      - location: SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer
+        name: NoAutorun
+        type: DWORD
+        data: "1"
+      # WN11-CC-000190: Autoplay disabled for all drives (0xFF).
+      - location: SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer
+        name: NoDriveTypeAutoRun
+        type: DWORD
+        data: "255"
+
+  - name: WinRM Basic authentication disabled
+    type: windows_registry
+    description: WN11-CC-000330, WN11-CC-000345
+    keys:
+      # WN11-CC-000330: WinRM client must not use Basic authentication.
+      - location: SOFTWARE\Policies\Microsoft\Windows\WinRM\Client
+        name: AllowBasic
+        type: DWORD
+        data: "0"
+      # WN11-CC-000345: WinRM service must not use Basic authentication.
+      - location: SOFTWARE\Policies\Microsoft\Windows\WinRM\Service
+        name: AllowBasic
+        type: DWORD
+        data: "0"
+
+  - name: Elevated installer and Remote Assistance disabled
+    type: windows_registry
+    description: WN11-CC-000315, WN11-CC-000155
+    keys:
+      # WN11-CC-000315: "Always install with elevated privileges" off.
+      - location: SOFTWARE\Policies\Microsoft\Windows\Installer
+        name: AlwaysInstallElevated
+        type: DWORD
+        data: "0"
+      # WN11-CC-000155: solicited Remote Assistance not allowed.
+      - location: SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services
+        name: fAllowToGetHelp
+        type: DWORD
+        data: "0"
+
+  - name: Anonymous access and NTLM hardening
+    type: windows_registry
+    description: WN11-SO-000145, WN11-SO-000150, WN11-SO-000165, WN11-SO-000195, WN11-SO-000205
+    keys:
+      # WN11-SO-000145: no anonymous enumeration of SAM accounts.
+      - location: SYSTEM\CurrentControlSet\Control\Lsa
+        name: RestrictAnonymousSAM
+        type: DWORD
+        data: "1"
+      # WN11-SO-000150: no anonymous enumeration of SAM accounts and shares.
+      - location: SYSTEM\CurrentControlSet\Control\Lsa
+        name: RestrictAnonymous
+        type: DWORD
+        data: "1"
+      # WN11-SO-000165: restrict anonymous access to named pipes/shares.
+      - location: SYSTEM\CurrentControlSet\Services\LanManServer\Parameters
+        name: RestrictNullSessAccess
+        type: DWORD
+        data: "1"
+      # WN11-SO-000195: never store the LAN Manager password hash.
+      - location: SYSTEM\CurrentControlSet\Control\Lsa
+        name: NoLMHash
+        type: DWORD
+        data: "1"
+      # WN11-SO-000205: NTLMv2 only; refuse LM & NTLM.
+      - location: SYSTEM\CurrentControlSet\Control\Lsa
+        name: LmCompatibilityLevel
+        type: DWORD
+        data: "5"
+
+  - name: Structured Exception Handling Overwrite Protection
+    type: windows_registry
+    description: WN11-00-000150
+    keys:
+      # WN11-00-000150: SEHOP enabled (0 = chain validation NOT disabled).
+      - location: SYSTEM\CurrentControlSet\Control\Session Manager\kernel
+        name: DisableExceptionChainValidation
+        type: DWORD
+        data: "0"

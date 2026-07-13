@@ -172,6 +172,11 @@ jc bundle apply macos-cis-lvl1 --group "Corp Macs" --plan
 # subset; the rest are mSCP shell checks outside MDM's reach.
 jc bundle import mscp --baseline DISA-STIG   # generate more from any
 # mSCP baseline manifest (800-53r5_*, cmmc_lvl2, ...) into ~/.config/jc/bundles/
+jc bundle apply windows-stig-cat1 --group "Corp Windows" --plan
+# builtin Windows 11 baseline hand-curated from the DISA Windows 11 STIG
+# V2R8 (public domain): the CAT I registry-enforceable subset — 5 policies,
+# 13 registry values covering 13 of 27 CAT I rules (exclusions documented
+# in the bundle header).
 ```
 
 ## Global flags reference

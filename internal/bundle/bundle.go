@@ -76,6 +76,9 @@ type PolicyUnit struct {
 	Name string `yaml:"name" json:"name"`
 	// Type is one of the Unit* constants.
 	Type string `yaml:"type" json:"type"`
+	// Description is optional per-unit provenance (e.g. the benchmark
+	// rule IDs a unit implements) — carried through show/export.
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 
 	// OS applies to apple_profile units only: macOS (default) or iOS.
 	OS string `yaml:"os,omitempty" json:"os,omitempty"`
