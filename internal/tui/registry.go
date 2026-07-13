@@ -585,6 +585,16 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryDeviceMgmt,
 	})
 
+	// Security baseline bundles (KLA-477): a virtual entry — bundles
+	// are local artifacts (embedded builtins + ~/.config/jc/bundles/),
+	// not an API resource. Browse → detail → apply flow / drift
+	// dashboard, all reusing internal/bundle orchestration.
+	entries = append(entries, ResourceEntry{
+		Key:         "bundles",
+		DisplayName: "Security baseline bundles",
+		Category:    CategorySecurity,
+	})
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 

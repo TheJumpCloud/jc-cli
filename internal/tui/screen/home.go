@@ -404,6 +404,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewWindowsMDMPoliciesListScreen()}
 		}
+	case "bundles":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewBundlesListScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}
