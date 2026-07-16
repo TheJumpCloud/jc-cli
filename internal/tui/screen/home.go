@@ -408,6 +408,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewBundlesListScreen()}
 		}
+	case "directories":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewDirectoriesListScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}

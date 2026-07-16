@@ -41,6 +41,7 @@ jc <resource> <verb> [identifier] [flags]
 | `system-insights` | | \<table-name\>, tables |
 | `ldap` | | list, get, create, update, delete, samba-domains |
 | `ad` | | list, get, create, update, delete |
+| `directories` | | list (unified view of all directory integrations incl. OAuth health — broken grants show as error) |
 | `radius` | | list, get, create, update, delete |
 | `apple-mdm` | | list, get, create, update, delete, enrollment-profiles, devices, payloads (list/show/template/create-policy/compose — Apple schema catalog → JC custom policies) |
 | `windows-mdm` | | csp list/show/template/update (Microsoft CSP catalog, ~5,100 settings), oma-uri create-policy, registry create-policy |

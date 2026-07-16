@@ -153,6 +153,10 @@ var commandClass = map[string]string{
 	"jc devices search":  ClassReadOnly,
 	"jc devices update":  ClassMutating,
 
+	// directories — unified read-only view of all directory
+	// integrations (incl. OAuth health).
+	"jc directories list": ClassReadOnly,
+
 	// doctor — health probe; local + read-only.
 	"jc doctor": ClassInternal,
 

@@ -378,7 +378,6 @@ var SystemInsightsTables = []string{
 
 // placeholderEntries defines "Coming soon" items shown grayed out in the menu.
 var placeholderEntries = []ResourceEntry{
-	{Key: "hr-directories", DisplayName: "HR Directories", Category: CategoryUserMgmt, Placeholder: true},
 	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
 	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
@@ -593,6 +592,18 @@ func BuildRegistry() []ResourceEntry {
 		Key:         "bundles",
 		DisplayName: "Security baseline bundles",
 		Category:    CategorySecurity,
+	})
+
+	// Directories (KLA-479): unified view of every directory
+	// integration (Google Workspace, M365, LDAP, AD, HRIS providers)
+	// with OAuth health — replaces the old "HR Directories"
+	// placeholder. Read-only: GET /api/v2/directories is the only
+	// public surface; per-type management stays on the dedicated
+	// entries.
+	entries = append(entries, ResourceEntry{
+		Key:         "directories",
+		DisplayName: "Directories",
+		Category:    CategoryUserMgmt,
 	})
 
 	// Add placeholder entries.

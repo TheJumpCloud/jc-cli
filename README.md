@@ -190,6 +190,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `software` | list, get, create, update, delete, statuses, associations, reclaim-license | Manage software apps (V2) |
 | `ldap` | list, get, create, update, delete, samba-domains, samba-domain-get/create/update/delete | Manage LDAP server integrations |
 | `ad` | list, get, create, update, delete | Manage Active Directory integrations |
+| `directories` | list | Unified read-only view of every directory integration with OAuth health |
 | `radius` | list, get, create, update, delete | Manage RADIUS server integrations |
 | `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices | Manage Apple MDM configurations |
 | `policy-templates` | list, get | Browse policy templates |
