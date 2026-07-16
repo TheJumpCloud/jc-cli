@@ -76,9 +76,10 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// "bundles" a security entry (+1, KLA-477), and
 	// "directories" a user-mgmt entry (+1, KLA-479), and
 	// "password-policies" a security entry (+1, KLA-480), and
-	// "patch-management" a device-mgmt entry (+1, KLA-481),
+	// "patch-management" a device-mgmt entry (+1, KLA-481), and
+	// "mfa-overview" a security entry (+1, KLA-482),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -131,9 +132,10 @@ func TestRegistryByKey(t *testing.T) {
 	// "bundles" a security entry (+1, KLA-477), and
 	// "directories" a user-mgmt entry (+1, KLA-479), and
 	// "password-policies" a security entry (+1, KLA-480), and
-	// "patch-management" a device-mgmt entry (+1, KLA-481),
+	// "patch-management" a device-mgmt entry (+1, KLA-481), and
+	// "mfa-overview" a security entry (+1, KLA-482),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -414,9 +416,11 @@ func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
 	// hr-directories graduated to the real "directories" entry
 	// (KLA-479); the rest await public API surface (or their own
 	// tickets: KLA-480/481/482).
+	// Only Vault and Device Trust remain — no public API for either
+	// (KLA-482 recon); everything else graduated to real screens.
 	want := []string{
 		"vault",
-		"mfa-configurations", "device-trust",
+		"device-trust",
 	}
 	for _, k := range want {
 		if !placeholders[k] {

@@ -379,7 +379,6 @@ var SystemInsightsTables = []string{
 // placeholderEntries defines "Coming soon" items shown grayed out in the menu.
 var placeholderEntries = []ResourceEntry{
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
-	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
 	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
 }
 
@@ -621,6 +620,16 @@ func BuildRegistry() []ResourceEntry {
 		Key:         "patch-management",
 		DisplayName: "Patch Management",
 		Category:    CategoryDeviceMgmt,
+	})
+
+	// MFA Overview (KLA-482): virtual entry — read-only posture
+	// dashboard (org knobs + per-factor user enrollment). JumpCloud
+	// has no public MFA *configuration* endpoint, so this replaces
+	// the "MFA Configurations" placeholder with what the API offers.
+	entries = append(entries, ResourceEntry{
+		Key:         "mfa-overview",
+		DisplayName: "MFA Overview",
+		Category:    CategorySecurity,
 	})
 
 	// Add placeholder entries.

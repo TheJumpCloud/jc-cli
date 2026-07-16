@@ -420,6 +420,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewPatchPoliciesListScreen()}
 		}
+	case "mfa-overview":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewMFAOverviewScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}
