@@ -16,8 +16,8 @@ func testCSPSettings() []windows_mdm.Setting {
 	return []windows_mdm.Setting{
 		{
 			Area: "Camera", Name: "AllowCamera",
-			URI:    "./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera",
-			Scope:  "device", Format: "int",
+			URI:   "./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera",
+			Scope: "device", Format: "int",
 			Description:  "Disables or enables the camera.",
 			DefaultValue: "1",
 			AllowedValues: &windows_mdm.AllowedValues{

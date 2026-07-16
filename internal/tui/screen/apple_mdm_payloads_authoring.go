@@ -86,9 +86,9 @@ type AppleMDMPayloadsAuthoringScreen struct {
 	name textinput.Model
 
 	// Stage 2/3: temp file path holding the YAML scaffold.
-	tmpDir   string
-	tmpFile  string
-	editErr  string
+	tmpDir  string
+	tmpFile string
+	editErr string
 
 	// Stage 3 → 4/5: validated values + emitted mobileconfig.
 	values       map[string]any

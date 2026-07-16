@@ -104,12 +104,12 @@ type userAggregation struct {
 
 // deviceAggregation holds client-side bucketed device data.
 type deviceAggregation struct {
-	OSCounts    map[string]int // os name → count
-	Online      int            // lastContact < 1h
-	Recent      int            // lastContact < 24h
-	Stale       int            // lastContact < 7d
-	Offline     int            // lastContact >= 7d
-	Total       int
+	OSCounts map[string]int // os name → count
+	Online   int            // lastContact < 1h
+	Recent   int            // lastContact < 24h
+	Stale    int            // lastContact < 7d
+	Offline  int            // lastContact >= 7d
+	Total    int
 }
 
 // policyComplianceAgg holds aggregated policy compliance status counts.
@@ -963,7 +963,7 @@ func (d *DashboardScreen) renderEventsWidget(widgetWidth int) string {
 		data := make([]int, sparklineDays)
 		for i := 0; i < sparklineDays; i++ {
 			data[i] = d.eventSparkline[i]
-			day := now.AddDate(0, 0, -(sparklineDays-1-i))
+			day := now.AddDate(0, 0, -(sparklineDays - 1 - i))
 			labels = append(labels, day.Format("Mon")[0:2])
 		}
 		spark := component.Sparkline{
