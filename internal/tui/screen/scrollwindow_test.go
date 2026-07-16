@@ -56,9 +56,29 @@ func TestWindowLines_FitsUnchanged(t *testing.T) {
 	if got := windowLines(lines, 3, 20); len(got) != 10 {
 		t.Errorf("fitting content must pass through, got %d lines", len(got))
 	}
-	// Unknown height (first render before WindowSizeMsg): everything.
+	// Unknown height with content that fits the default budget: all lines.
 	if got := windowLines(lines, 3, 0); len(got) != 10 {
-		t.Errorf("unknown height must pass through, got %d lines", len(got))
+		t.Errorf("unknown height, fitting content: got %d lines", len(got))
+	}
+}
+
+// TestWindowLines_UnknownHeightTallListWindows is the real field-report
+// mechanism: when bubbletea never delivered a WindowSizeMsg (height 0),
+// a tall screen must STILL window so the cursor stays visible, rather
+// than dumping every line and scrolling the cursor off.
+func TestWindowLines_UnknownHeightTallListWindows(t *testing.T) {
+	lines := mkLines(40)
+	lines[0] = "CURSOR"
+	out := windowLines(lines, 0, 0) // 0 = unknown height
+	if len(out) > defaultWindowBudget+1 {
+		t.Fatalf("unknown height did not window: %d lines", len(out))
+	}
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "CURSOR") {
+		t.Fatalf("cursor lost under unknown height:\n%s", joined)
+	}
+	if !strings.Contains(joined, "more below") {
+		t.Errorf("clip marker missing under unknown height")
 	}
 }
 

@@ -7,6 +7,18 @@ import (
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
+// defaultWindowBudget is used when the terminal height is unknown
+// (budget <= 0). bubbletea does not always deliver an initial
+// WindowSizeMsg before the first key events — most notably on some
+// terminals it only arrives on the first resize — so height can be 0
+// well past the first render. Returning ALL lines in that case (the
+// original design) reproduces the exact field-report bug: on a tall
+// screen the cursor row scrolls off and keypresses act invisibly.
+// Windowing to a conservative default instead GUARANTEES the cursor
+// stays visible; the moment a real WindowSizeMsg arrives it corrects
+// to the true height.
+const defaultWindowBudget = 20
+
 // windowLines slices pre-rendered body lines so focusLine stays
 // visible within budget, appending "… N more" markers on the clipped
 // edges. The user-reported failure mode this prevents (KLA-480 field
@@ -16,9 +28,12 @@ import (
 //
 // budget is the number of body lines the screen may use (height minus
 // its fixed header/footer chrome). budget <= 0 means unknown height —
-// return everything (first render arrives before WindowSizeMsg).
+// fall back to defaultWindowBudget rather than dumping everything.
 func windowLines(lines []string, focusLine, budget int) []string {
-	if budget <= 0 || len(lines) <= budget {
+	if budget <= 0 {
+		budget = defaultWindowBudget
+	}
+	if len(lines) <= budget {
 		return lines
 	}
 	if focusLine < 0 {
