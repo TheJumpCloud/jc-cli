@@ -133,7 +133,7 @@ interface.`,
 
 	// Directory Integrations
 	addToGroup(rootCmd, "directory",
-		newLDAPCmd(), newADCmd(), newGsuiteCmd(),
+		newDirectoriesCmd(), newLDAPCmd(), newADCmd(), newGsuiteCmd(),
 		newOffice365Cmd(), newSaaSManagementCmd(), newGraphCmd(),
 	)
 

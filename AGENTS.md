@@ -26,7 +26,7 @@ Use `--org <profile>` to override the active profile per command.
 | admins | `jc admins list` | `jc admins get` | `jc admins create` | — | `jc admins delete` |
 | commands | `jc commands list` | `jc commands get` | `jc commands create` | `jc commands update` | `jc commands delete` |
 
-Other resources: `ad`, `apple-mdm`, `windows-mdm`, `auth-policies`, `bundle`, `custom-emails`, `duo`, `gsuite`, `identity-providers`, `insights`, `iplists`, `ldap`, `office365`, `org`, `policy-groups`, `radius`, `saas-management`, `software`, `user-states`, `assets`, `graph`, `system-insights`.
+Other resources: `ad`, `apple-mdm`, `windows-mdm`, `auth-policies`, `bundle`, `directories` (unified integration list + OAuth health), `custom-emails`, `duo`, `gsuite`, `identity-providers`, `insights`, `iplists`, `ldap`, `office365`, `org`, `policy-groups`, `radius`, `saas-management`, `software`, `user-states`, `assets`, `graph`, `system-insights`.
 
 ## Output control
 
