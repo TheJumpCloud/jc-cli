@@ -412,6 +412,10 @@ func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewDirectoriesListScreen()}
 		}
+	case "password-policies":
+		return func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewPasswordPolicyScreen()}
+		}
 	default:
 		return func() tea.Msg {
 			return tui.PushScreenMsg{Screen: NewListScreen(entry)}
