@@ -74,9 +74,10 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// device-management entries (+2, KLA-462), and
 	// "windows-mdm-custom-policies" a third (+1, KLA-464), and
 	// "bundles" a security entry (+1, KLA-477), and
-	// "directories" a user-mgmt entry (+1, KLA-479),
+	// "directories" a user-mgmt entry (+1, KLA-479), and
+	// "password-policies" a security entry (+1, KLA-480),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -127,9 +128,10 @@ func TestRegistryByKey(t *testing.T) {
 	// device-management entries (+2, KLA-462), and
 	// "windows-mdm-custom-policies" a third (+1, KLA-464), and
 	// "bundles" a security entry (+1, KLA-477), and
-	// "directories" a user-mgmt entry (+1, KLA-479),
+	// "directories" a user-mgmt entry (+1, KLA-479), and
+	// "password-policies" a security entry (+1, KLA-480),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -413,7 +415,7 @@ func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
 	want := []string{
 		"patch-management",
 		"vault",
-		"mfa-configurations", "device-trust", "password-policies",
+		"mfa-configurations", "device-trust",
 	}
 	for _, k := range want {
 		if !placeholders[k] {

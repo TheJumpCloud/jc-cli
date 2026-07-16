@@ -382,7 +382,6 @@ var placeholderEntries = []ResourceEntry{
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
 	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
 	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
-	{Key: "password-policies", DisplayName: "Password Policies", Category: CategorySecurity, Placeholder: true},
 }
 
 // cloudDirResources lists schema resource names that are folded into the
@@ -604,6 +603,15 @@ func BuildRegistry() []ResourceEntry {
 		Key:         "directories",
 		DisplayName: "Directories",
 		Category:    CategoryUserMgmt,
+	})
+
+	// Password Policies (KLA-480): virtual entry — org-settings
+	// passwordPolicy view + edit (V1 /organizations, read-modify-write
+	// PUT verified live 2026-07-16).
+	entries = append(entries, ResourceEntry{
+		Key:         "password-policies",
+		DisplayName: "Password Policies",
+		Category:    CategorySecurity,
 	})
 
 	// Add placeholder entries.
