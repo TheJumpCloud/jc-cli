@@ -378,7 +378,6 @@ var SystemInsightsTables = []string{
 
 // placeholderEntries defines "Coming soon" items shown grayed out in the menu.
 var placeholderEntries = []ResourceEntry{
-	{Key: "patch-management", DisplayName: "Patch Management", Category: CategoryDeviceMgmt, Placeholder: true},
 	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
 	{Key: "mfa-configurations", DisplayName: "MFA Configurations", Category: CategorySecurity, Placeholder: true},
 	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
@@ -612,6 +611,16 @@ func BuildRegistry() []ResourceEntry {
 		Key:         "password-policies",
 		DisplayName: "Password Policies",
 		Category:    CategorySecurity,
+	})
+
+	// Patch Management (KLA-481): virtual entry — the tenant's
+	// OS-update policies grouped by platform. JumpCloud patch
+	// management has no dedicated API; it IS the OS-update policy
+	// template family (pinned in the screen with a test).
+	entries = append(entries, ResourceEntry{
+		Key:         "patch-management",
+		DisplayName: "Patch Management",
+		Category:    CategoryDeviceMgmt,
 	})
 
 	// Add placeholder entries.
