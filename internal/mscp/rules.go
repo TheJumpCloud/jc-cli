@@ -127,16 +127,46 @@ func LoadRules(dir string) (map[string]*Rule, error) {
 // the baseline's own column wins, then "recommended". A rule that uses
 // $ODV without a resolvable value is a converter error, not a silent
 // drop — the generated baseline must never ship a literal "$ODV".
+//
+// $ODV is not always a top-level scalar: mSCP nests it inside payload
+// dictionaries and lists (e.g. com.apple.mobiledevice.passwordpolicy's
+// customRegex.passwordContentRegex). This walks the whole value tree so
+// a nested placeholder is substituted too — the shallow version shipped
+// a literal "$ODV" as a device-facing password regex (review 2026-07-17).
 func resolveODV(r *Rule, parentValues string, v any) (any, error) {
-	s, isString := v.(string)
-	if !isString || s != "$ODV" {
+	switch val := v.(type) {
+	case string:
+		if val != "$ODV" {
+			return val, nil
+		}
+		if odv, ok := r.ODV[parentValues]; ok {
+			return odv, nil
+		}
+		if odv, ok := r.ODV["recommended"]; ok {
+			return odv, nil
+		}
+		return nil, fmt.Errorf("rule %s uses $ODV but has no %q or recommended value", r.ID, parentValues)
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, nested := range val {
+			resolved, err := resolveODV(r, parentValues, nested)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = resolved
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(val))
+		for i, nested := range val {
+			resolved, err := resolveODV(r, parentValues, nested)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = resolved
+		}
+		return out, nil
+	default:
 		return v, nil
 	}
-	if val, ok := r.ODV[parentValues]; ok {
-		return val, nil
-	}
-	if val, ok := r.ODV["recommended"]; ok {
-		return val, nil
-	}
-	return nil, fmt.Errorf("rule %s uses $ODV but has no %q or recommended value", r.ID, parentValues)
 }

@@ -230,3 +230,34 @@ func TestMarshalYAML_RoundTrip(t *testing.T) {
 		t.Errorf("round trip lost data: %+v", again)
 	}
 }
+
+// TestValidate_PlatformMismatch is the review regression (2026-07-17):
+// Validate must enforce the same platform-support check apply does, so
+// a bundle that validates clean creates cleanly. A macOS-only payload
+// declared os: iOS previously passed validate then failed at apply.
+func TestValidate_PlatformMismatch(t *testing.T) {
+	yaml := `
+name: mismatch
+version: "1"
+policies:
+  - name: firewall on ios
+    type: apple_profile
+    os: iOS
+    profile:
+      payloads:
+        - type: com.apple.security.firewall
+          values: {EnableFirewall: true}
+`
+	b, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse (structure valid): %v", err)
+	}
+	cat, err := apple_mdm.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = Validate(b, cat)
+	if err == nil || !strings.Contains(err.Error(), "do not declare support for iOS") {
+		t.Errorf("iOS/macOS-only mismatch must fail validate: %v", err)
+	}
+}
