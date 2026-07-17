@@ -77,6 +77,24 @@ func NewBundleApplyScreen(b *bundle.Bundle) *BundleApplyScreen {
 	return &BundleApplyScreen{bundle: b, groupInput: ti, spinner: sp}
 }
 
+// doneBodyLines is the windowable body of the success stage — the
+// created-resources list plus the optional device-group-bound note.
+// Both the scroll clamp and the View use it so the clamp bound can
+// never drift from the rendered length (Cursor Bugbot, PR #91).
+func (s *BundleApplyScreen) doneBodyLines() []string {
+	if s.result == nil {
+		return nil
+	}
+	lines := make([]string, 0, len(s.result.Created)+2)
+	for _, c := range s.result.Created {
+		lines = append(lines, fmt.Sprintf("  %-13s %-50s %s", c.Kind, c.Name, c.ID))
+	}
+	if s.result.Bound {
+		lines = append(lines, "", "  Device group bound to the policy group.")
+	}
+	return lines
+}
+
 func (s *BundleApplyScreen) Title() string { return "Apply bundle: " + s.bundle.Name }
 
 func (s *BundleApplyScreen) TextInputActive() bool { return s.stage == bundleApplyStageGroup }
@@ -192,13 +210,9 @@ func (s *BundleApplyScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "enter":
 				return s, func() tea.Msg { return tui.PopScreenMsg{} }
 			case "up", "k":
-				if s.result != nil {
-					s.scroll = clampScroll(s.scroll-1, len(s.result.Created))
-				}
+				s.scroll = clampScroll(s.scroll-1, len(s.doneBodyLines()))
 			case "down", "j":
-				if s.result != nil {
-					s.scroll = clampScroll(s.scroll+1, len(s.result.Created))
-				}
+				s.scroll = clampScroll(s.scroll+1, len(s.doneBodyLines()))
 			}
 		}
 	}
@@ -242,14 +256,7 @@ func (s *BundleApplyScreen) View() string {
 			fmt.Fprintln(&b, style.Success.Render(fmt.Sprintf(
 				"Applied %s v%s: %d objects created", s.bundle.Name, s.bundle.Version, len(s.result.Created))))
 			fmt.Fprintln(&b)
-			lines := make([]string, 0, len(s.result.Created)+2)
-			for _, c := range s.result.Created {
-				lines = append(lines, fmt.Sprintf("  %-13s %-50s %s", c.Kind, c.Name, c.ID))
-			}
-			if s.result.Bound {
-				lines = append(lines, "", "  Device group bound to the policy group.")
-			}
-			fmt.Fprintln(&b, renderWindowed(lines, s.scroll, s.height, 4))
+			fmt.Fprintln(&b, renderWindowed(s.doneBodyLines(), s.scroll, s.height, 4))
 		}
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · Enter/Esc back"))

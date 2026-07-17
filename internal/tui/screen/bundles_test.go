@@ -283,3 +283,32 @@ func TestBundleStatusScreen_RendersDrift(t *testing.T) {
 		}
 	}
 }
+
+// TestBundleApplyScreen_DoneScrollReachesBoundLine is the Cursor Bugbot
+// regression (PR #91): with Bound=true the body has 2 extra lines
+// beyond Created, and scroll must be able to reach them.
+func TestBundleApplyScreen_DoneScrollReachesBoundLine(t *testing.T) {
+	s := NewBundleApplyScreen(&bundle.Bundle{Name: "t", Version: "1"})
+	s.stage = bundleApplyStageDone
+	created := make([]bundle.CreatedResource, 30)
+	for i := range created {
+		created[i] = bundle.CreatedResource{Kind: "policy", Name: fmt.Sprintf("p%d", i), ID: fmt.Sprintf("id%d", i)}
+	}
+	s.result = &bundle.ApplyResult{Created: created, Bound: true}
+	s.Update(tea.WindowSizeMsg{Width: 100, Height: 8})
+
+	// Body length includes the 2 bound lines; scroll must clamp to it.
+	bodyLen := len(s.doneBodyLines())
+	if bodyLen != 32 {
+		t.Fatalf("body len = %d, want 32 (30 created + blank + bound)", bodyLen)
+	}
+	for i := 0; i < 60; i++ {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if s.scroll != bodyLen-1 {
+		t.Errorf("scroll clamped to %d, want %d — bound line unreachable", s.scroll, bodyLen-1)
+	}
+	if !strings.Contains(s.View(), "Device group bound") {
+		t.Errorf("bound line not reachable after scrolling:\n%s", s.View())
+	}
+}
