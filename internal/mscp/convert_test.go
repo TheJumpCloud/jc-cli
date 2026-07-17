@@ -239,3 +239,35 @@ func TestConvert_ListValuesUnionMerge(t *testing.T) {
 		t.Errorf("Shared = %v", vals["Shared"])
 	}
 }
+
+// TestConvert_NestedODVResolved is the review regression (2026-07-17):
+// $ODV nested inside dicts/lists must be substituted, not left as a
+// literal (it shipped a device-facing "$ODV" password regex before).
+func TestConvert_NestedODVResolved(t *testing.T) {
+	rules, manifest := loadFixture(t, "nestedodv")
+	b, _, err := Convert(rules, manifest, "x", "imported")
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	vals := b.Policies[0].Profile.Payloads[0].Values
+	// parent_values column "testbase" → "baseline-regex".
+	if vals["topScalar"] != "baseline-regex" {
+		t.Errorf("top-level ODV = %v, want baseline-regex", vals["topScalar"])
+	}
+	nested, ok := vals["nestedDict"].(map[string]any)
+	if !ok {
+		t.Fatalf("nestedDict wrong type: %T", vals["nestedDict"])
+	}
+	if nested["inner"] != "baseline-regex" {
+		t.Errorf("nested ODV = %v, want baseline-regex", nested["inner"])
+	}
+	list, ok := nested["list"].([]any)
+	if !ok || len(list) != 2 || list[0] != "baseline-regex" || list[1] != "literal" {
+		t.Errorf("list ODV substitution wrong: %v", nested["list"])
+	}
+	// No literal $ODV anywhere in the marshaled bundle.
+	data, _ := bundle.MarshalYAML(b)
+	if strings.Contains(string(data), "$ODV") {
+		t.Errorf("literal $ODV survived conversion:\n%s", data)
+	}
+}

@@ -120,7 +120,7 @@ policies:
                 customRegex:
                     passwordContentDescription:
                         default: Password must match custom regex.
-                    passwordContentRegex: $ODV
+                    passwordContentRegex: ^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).*$
                 maxFailedAttempts: 5
                 maxPINAgeInDays: 365
                 minComplexChars: 1

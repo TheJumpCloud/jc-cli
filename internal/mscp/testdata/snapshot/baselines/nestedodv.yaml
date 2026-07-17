@@ -1,0 +1,7 @@
+title: "Nested-ODV fixture"
+description: fixture
+parent_values: testbase
+profile:
+  - section: one
+    rules:
+      - test_nested_odv

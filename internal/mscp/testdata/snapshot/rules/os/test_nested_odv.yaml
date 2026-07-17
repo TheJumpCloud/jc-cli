@@ -1,0 +1,17 @@
+id: test_nested_odv
+title: Test nested ODV substitution
+tags:
+  - testbase
+odv:
+  hint: A regex.
+  recommended: default-regex
+  testbase: baseline-regex
+mobileconfig: true
+mobileconfig_info:
+  com.example.nested:
+    topScalar: $ODV
+    nestedDict:
+      inner: $ODV
+      list:
+        - $ODV
+        - literal

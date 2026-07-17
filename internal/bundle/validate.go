@@ -23,8 +23,19 @@ func Validate(b *Bundle, cat *apple_mdm.Catalog) error {
 		at := fmt.Sprintf("policies[%d] (%s)", i, u.Name)
 		switch u.Type {
 		case UnitAppleProfile:
-			if _, _, err := u.Profile.BuildPayloadInstances(cat); err != nil {
+			instances, _, err := u.Profile.BuildPayloadInstances(cat)
+			if err != nil {
 				errs = append(errs, fmt.Sprintf("%s: %v", at, err))
+				break
+			}
+			// The platform-support check apply enforces belongs here
+			// too — it's fully offline, so a bundle that validates must
+			// not then fail at apply on an os/payload mismatch (review
+			// 2026-07-17). Raw payloads carry no SupportedOS and are
+			// skipped by UnsupportedPayloadTypes.
+			if bad := apple_mdm.UnsupportedPayloadTypes(instances, u.OS); len(bad) > 0 {
+				errs = append(errs, fmt.Sprintf("%s: payload(s) do not declare support for %s: %s",
+					at, u.OS, strings.Join(bad, ", ")))
 			}
 		case UnitWindowsOMAURI:
 			if _, err := windows_mdm.NormalizeAndValidateSettings(u.WindowsSettings()); err != nil {
