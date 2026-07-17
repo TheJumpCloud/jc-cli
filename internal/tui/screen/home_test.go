@@ -408,7 +408,7 @@ func TestHomeScreen_LeftRightNavigation(t *testing.T) {
 	overrideBookmarks(t, nil)
 	// Need entries in at least 2 different columns.
 	entries := []tui.ResourceEntry{
-		{Key: "users", DisplayName: "Users", Category: tui.CategoryUserMgmt, Schema: schema.Resources["users"]},       // col 0
+		{Key: "users", DisplayName: "Users", Category: tui.CategoryUserMgmt, Schema: schema.Resources["users"]},         // col 0
 		{Key: "devices", DisplayName: "Devices", Category: tui.CategoryDeviceMgmt, Schema: schema.Resources["devices"]}, // col 1
 		{Key: "apps", DisplayName: "Apps", Category: tui.CategoryAccess, Schema: schema.Resources["apps"]},              // col 2
 	}

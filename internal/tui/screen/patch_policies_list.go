@@ -199,19 +199,23 @@ func (s *PatchPoliciesListScreen) View() string {
 	default:
 		fmt.Fprintln(&b, style.Subtitle.Render(fmt.Sprintf("%d OS-update policies", len(s.rows))))
 		fmt.Fprintln(&b)
+		var lines []string
+		focusLine := 0
 		lastOS := ""
 		for i, r := range s.rows {
 			if r.OS != lastOS {
-				fmt.Fprintln(&b, style.SectionHeader.Render(r.OS))
+				lines = append(lines, style.SectionHeader.Render(r.OS))
 				lastOS = r.OS
 			}
 			line := fmt.Sprintf("%-40s %s", truncTUI(r.Name, 40), r.Template)
 			if i == s.cursor {
-				fmt.Fprintln(&b, style.SelectedRow.Render("> "+line))
+				lines = append(lines, style.SelectedRow.Render("> "+line))
+				focusLine = len(lines) - 1
 			} else {
-				fmt.Fprintln(&b, "  "+line)
+				lines = append(lines, "  "+line)
 			}
 		}
+		fmt.Fprintln(&b, renderWindowed(lines, focusLine, s.height, 4))
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, style.Subtitle.Render("Enter detail · r refresh · Esc back"))
 	}

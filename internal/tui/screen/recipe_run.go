@@ -23,9 +23,10 @@ var RecipeDispatcher recipe.CommandDispatcher
 
 // Progress line format emitted by recipe.Execute() (see internal/recipe/recipe.go).
 // Examples:
-//   [1/3] create-user... done
-//   [2/3] add-to-group... failed
-//   [3/3] verify-user... skipped
+//
+//	[1/3] create-user... done
+//	[2/3] add-to-group... failed
+//	[3/3] verify-user... skipped
 var progressLineRe = regexp.MustCompile(`^\[(\d+)/(\d+)\]\s+(.+?)\.\.\.\s+(done|failed|skipped)$`)
 
 // recipeStepState tracks the runtime status of a single step on the run screen.

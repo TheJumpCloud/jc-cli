@@ -399,18 +399,25 @@ func (s *PasswordPolicyScreen) View() string {
 		header += " — " + s.orgName
 	}
 	fmt.Fprintln(&b, style.Subtitle.Render(header))
+	chrome := 4 // header + blank + footer blank + footer
 	if s.err != "" {
 		fmt.Fprintln(&b, style.Error.Render("Error: "+s.err))
+		chrome++
 	}
 	if s.flash != "" {
 		fmt.Fprintln(&b, style.Success.Render(s.flash))
+		chrome++
 	}
 	fmt.Fprintln(&b)
 
+	// Build body lines with the cursor's line index tracked, then
+	// window so the selected row is always on screen.
+	var lines []string
+	focusLine := 0
 	lastGroup := ""
 	for i, f := range s.rows {
 		if f.Group != lastGroup {
-			fmt.Fprintln(&b, style.SectionHeader.Render(f.Group))
+			lines = append(lines, style.SectionHeader.Render(f.Group))
 			lastGroup = f.Group
 		}
 		val := fmt.Sprintf("%v", s.policy[f.Key])
@@ -432,11 +439,13 @@ func (s *PasswordPolicyScreen) View() string {
 			if s.stage == ppStageEditingValue {
 				line = fmt.Sprintf("%-40s %s", f.Label, s.input.View())
 			}
-			fmt.Fprintln(&b, style.SelectedRow.Render("> "+line))
+			lines = append(lines, style.SelectedRow.Render("> "+line))
+			focusLine = len(lines) - 1
 		} else {
-			fmt.Fprintln(&b, "  "+line)
+			lines = append(lines, "  "+line)
 		}
 	}
+	fmt.Fprintln(&b, renderWindowed(lines, focusLine, s.height, chrome))
 
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, style.Subtitle.Render("space toggle · Enter edit number · Ctrl+S save · r reload · Esc back"))

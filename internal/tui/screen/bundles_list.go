@@ -83,15 +83,17 @@ func (s *BundlesListScreen) View() string {
 	fmt.Fprintln(&b, style.Subtitle.Render(fmt.Sprintf("%d bundles (builtin + ~/.config/jc/bundles/)", len(s.bundles))))
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "  %-20s %-12s %-9s %-16s %s\n", "NAME", "VERSION", "ORIGIN", "PLATFORMS", "POLICIES")
+	var lines []string
 	for i, bd := range s.bundles {
 		line := fmt.Sprintf("%-20s %-12s %-9s %-16s %d",
 			bd.Name, bd.Version, bd.Source.Origin, strings.Join(bd.Platforms(), ", "), len(bd.Policies))
 		if i == s.cursor {
-			fmt.Fprintln(&b, style.SelectedRow.Render("> "+line))
+			lines = append(lines, style.SelectedRow.Render("> "+line))
 		} else {
-			fmt.Fprintln(&b, "  "+line)
+			lines = append(lines, "  "+line)
 		}
 	}
+	fmt.Fprintln(&b, renderWindowed(lines, s.cursor, s.height, 5))
 
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, style.Subtitle.Render("Enter detail · Esc back"))

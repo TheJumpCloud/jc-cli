@@ -187,6 +187,7 @@ func (s *DirectoriesListScreen) View() string {
 		fmt.Fprintln(&b, style.Subtitle.Render(summary))
 		fmt.Fprintln(&b)
 		fmt.Fprintf(&b, "  %-28s %-18s %s\n", "NAME", "TYPE", "HEALTH")
+		var lines []string
 		for i, r := range s.rows {
 			health := style.Success.Render("ok")
 			if r.Health != "ok" {
@@ -194,11 +195,12 @@ func (s *DirectoriesListScreen) View() string {
 			}
 			line := fmt.Sprintf("%-28s %-18s ", truncTUI(r.Name, 28), r.Type)
 			if i == s.cursor {
-				fmt.Fprintln(&b, style.SelectedRow.Render("> "+line)+health)
+				lines = append(lines, style.SelectedRow.Render("> "+line)+health)
 			} else {
-				fmt.Fprintln(&b, "  "+line+health)
+				lines = append(lines, "  "+line+health)
 			}
 		}
+		fmt.Fprintln(&b, renderWindowed(lines, s.cursor, s.height, 5))
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, style.Subtitle.Render("Enter detail · r refresh · Esc back"))
 	}
