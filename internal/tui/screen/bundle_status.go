@@ -25,6 +25,7 @@ type BundleStatusScreen struct {
 	loading bool
 	report  *bundle.StatusReport
 	err     string
+	scroll  int // offsets the per-unit body so the verdict/footer stay pinned
 
 	width, height int
 }
@@ -91,12 +92,33 @@ func (s *BundleStatusScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
 		case "r":
 			if !s.loading {
-				s.loading, s.err, s.report = true, "", nil
+				s.loading, s.err, s.report, s.scroll = true, "", nil, 0
 				return s, tea.Batch(s.spinner.Tick, s.statusCmd())
+			}
+		case "up", "k":
+			if s.report != nil {
+				s.scroll = clampScroll(s.scroll-1, s.statusBodyLen())
+			}
+		case "down", "j":
+			if s.report != nil {
+				s.scroll = clampScroll(s.scroll+1, s.statusBodyLen())
 			}
 		}
 	}
 	return s, nil
+}
+
+// statusBodyLen counts the windowable body lines (per-unit lines +
+// their diffs + orphan lines) so scroll clamps correctly.
+func (s *BundleStatusScreen) statusBodyLen() int {
+	if s.report == nil {
+		return 0
+	}
+	n := 0
+	for _, u := range s.report.Units {
+		n += 1 + len(u.Diffs)
+	}
+	return n + len(s.report.Orphans)
 }
 
 func (s *BundleStatusScreen) View() string {
@@ -120,6 +142,7 @@ func (s *BundleStatusScreen) View() string {
 		fmt.Fprintln(&b, style.Subtitle.Render(fmt.Sprintf(
 			"Policy group %q (matched by %s)", r.PolicyGroupName, matched)))
 		fmt.Fprintln(&b)
+		var lines []string
 		for _, u := range r.Units {
 			var stateLabel string
 			switch u.State {
@@ -130,15 +153,17 @@ func (s *BundleStatusScreen) View() string {
 			default:
 				stateLabel = fmt.Sprintf("%-9s", u.State)
 			}
-			fmt.Fprintf(&b, "  %s %s\n", stateLabel, u.PolicyName)
+			lines = append(lines, fmt.Sprintf("  %s %s", stateLabel, u.PolicyName))
 			for _, d := range u.Diffs {
-				fmt.Fprintln(&b, "            ↳ "+wrapTUIText(d, s.width-14))
+				lines = append(lines, "            ↳ "+wrapTUIText(d, s.width-14))
 			}
 		}
 		for _, o := range r.Orphans {
-			fmt.Fprintf(&b, "  %s %s (in the policy group but not in the bundle)\n",
-				style.Error.Render(fmt.Sprintf("%-9s", "orphan")), o)
+			lines = append(lines, fmt.Sprintf("  %s %s (in the policy group but not in the bundle)",
+				style.Error.Render(fmt.Sprintf("%-9s", "orphan")), o))
 		}
+		// chrome: subtitle + blank + blank + verdict + blank + footer = 6
+		fmt.Fprintln(&b, renderWindowed(lines, s.scroll, s.height, 6))
 		fmt.Fprintln(&b)
 		if r.InSync {
 			fmt.Fprintln(&b, style.Success.Render(fmt.Sprintf("In sync (%d units).", len(r.Units))))
@@ -146,7 +171,7 @@ func (s *BundleStatusScreen) View() string {
 			fmt.Fprintln(&b, style.Error.Render("Drift detected."))
 		}
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, style.Subtitle.Render("r refresh · Esc back"))
+		fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · r refresh · Esc back"))
 	}
 	return b.String()
 }

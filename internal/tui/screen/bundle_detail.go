@@ -17,8 +17,39 @@ import (
 // `s` opens the drift dashboard.
 type BundleDetailScreen struct {
 	bundle *bundle.Bundle
+	scroll int
 	width  int
 	height int
+}
+
+// bodyLines builds every line below the pinned title (description,
+// source, units) so the View can window them and keep the footer
+// visible on long bundles.
+func (s *BundleDetailScreen) bodyLines() []string {
+	bd := s.bundle
+	var lines []string
+	if bd.Description != "" {
+		lines = append(lines, "", "  "+wrapTUIText(bd.Description, s.width-4))
+	}
+	lines = append(lines, "", style.SectionHeader.Render("Source"))
+	if bd.Source.Attribution != "" {
+		lines = append(lines, "  "+wrapTUIText(bd.Source.Attribution, s.width-4))
+	}
+	if bd.Source.License != "" {
+		lines = append(lines, "  License: "+bd.Source.License)
+	}
+	if bd.Source.URL != "" {
+		lines = append(lines, "  "+bd.Source.URL)
+	}
+	lines = append(lines, "", style.SectionHeader.Render(fmt.Sprintf("Policy units (%d)", len(bd.Policies))))
+	for i := range bd.Policies {
+		u := &bd.Policies[i]
+		lines = append(lines, "  "+unitSummary(u))
+		if u.Description != "" {
+			lines = append(lines, "    "+style.Subtitle.Render(u.Description))
+		}
+	}
+	return lines
 }
 
 func NewBundleDetailScreen(b *bundle.Bundle) *BundleDetailScreen {
@@ -48,6 +79,10 @@ func (s *BundleDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, func() tea.Msg {
 				return tui.PushScreenMsg{Screen: NewBundleStatusScreen(b)}
 			}
+		case "up", "k":
+			s.scroll = clampScroll(s.scroll-1, len(s.bodyLines()))
+		case "down", "j":
+			s.scroll = clampScroll(s.scroll+1, len(s.bodyLines()))
 		}
 	}
 	return s, nil
@@ -73,34 +108,9 @@ func (s *BundleDetailScreen) View() string {
 	bd := s.bundle
 
 	fmt.Fprintln(&b, style.Subtitle.Render(fmt.Sprintf("%s v%s (%s)", bd.Name, bd.Version, bd.Source.Origin)))
-	if bd.Description != "" {
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "  "+wrapTUIText(bd.Description, s.width-4))
-	}
-
+	// chrome: title + footer blank + footer = 3
+	fmt.Fprintln(&b, renderWindowed(s.bodyLines(), s.scroll, s.height, 3))
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.SectionHeader.Render("Source"))
-	if bd.Source.Attribution != "" {
-		fmt.Fprintln(&b, "  "+wrapTUIText(bd.Source.Attribution, s.width-4))
-	}
-	if bd.Source.License != "" {
-		fmt.Fprintln(&b, "  License: "+bd.Source.License)
-	}
-	if bd.Source.URL != "" {
-		fmt.Fprintln(&b, "  "+bd.Source.URL)
-	}
-
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.SectionHeader.Render(fmt.Sprintf("Policy units (%d)", len(bd.Policies))))
-	for i := range bd.Policies {
-		u := &bd.Policies[i]
-		fmt.Fprintln(&b, "  "+unitSummary(u))
-		if u.Description != "" {
-			fmt.Fprintln(&b, "    "+style.Subtitle.Render(u.Description))
-		}
-	}
-
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.Subtitle.Render("a apply · s status (drift) · Esc back"))
+	fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · a apply · s status (drift) · Esc back"))
 	return b.String()
 }

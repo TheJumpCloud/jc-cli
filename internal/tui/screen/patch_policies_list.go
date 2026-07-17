@@ -149,6 +149,7 @@ func (s *PatchPoliciesListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, nil
 		}
 		s.rows = m.rows
+		s.cursor = clampScroll(s.cursor, len(s.rows))
 		return s, nil
 	case tea.KeyMsg:
 		switch m.String() {
@@ -231,6 +232,7 @@ type PatchPolicyDetailScreen struct {
 	err     string
 	values  []patchPolicyValue
 	spinner spinner.Model
+	scroll  int
 
 	width, height int
 }
@@ -313,8 +315,13 @@ func (s *PatchPolicyDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return s, nil
 	case tea.KeyMsg:
-		if m.String() == "esc" {
+		switch m.String() {
+		case "esc":
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
+		case "up", "k":
+			s.scroll = clampScroll(s.scroll-1, len(s.values))
+		case "down", "j":
+			s.scroll = clampScroll(s.scroll+1, len(s.values))
 		}
 	}
 	return s, nil
@@ -333,15 +340,18 @@ func (s *PatchPolicyDetailScreen) View() string {
 		fmt.Fprintln(&b, "  No configured values (template defaults apply).")
 	default:
 		fmt.Fprintln(&b, style.SectionHeader.Render("Configured values"))
+		lines := make([]string, 0, len(s.values))
 		for _, v := range s.values {
 			val := v.Value
 			if len(val) > 100 {
 				val = val[:100] + "…"
 			}
-			fmt.Fprintf(&b, "  %-42s %s\n", v.Name, val)
+			lines = append(lines, fmt.Sprintf("  %-42s %s", v.Name, val))
 		}
+		// chrome: title + blank + section header + footer blank + footer = 5
+		fmt.Fprintln(&b, renderWindowed(lines, s.scroll, s.height, 5))
 	}
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.Subtitle.Render("Esc back"))
+	fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · Esc back"))
 	return b.String()
 }

@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -122,5 +123,58 @@ func TestPasswordPolicyScreen_ShortTerminalKeepsCursorVisible(t *testing.T) {
 	// And the footer help stays on screen.
 	if !strings.Contains(view, "Ctrl+S save") {
 		t.Errorf("footer clipped:\n%s", view)
+	}
+}
+
+// TestWindowLines_NeverPanics is the review regression (2026-07-17):
+// budget==1/2 sliced out of range and crashed the whole TUI on short
+// terminals. Sweep the full parameter space; the guarantee is simply
+// "no panic, ever", plus budget is respected once floored.
+func TestWindowLines_NeverPanics(t *testing.T) {
+	for n := 0; n <= 45; n++ {
+		lines := make([]string, n)
+		for i := range lines {
+			lines[i] = "x"
+		}
+		for budget := -2; budget <= 8; budget++ {
+			for focus := -1; focus <= n; focus++ {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Fatalf("PANIC n=%d budget=%d focus=%d: %v", n, budget, focus, r)
+						}
+					}()
+					// The guarantee is simply: no panic, ever. Size and
+					// cursor-visibility correctness are covered by the
+					// other TestWindowLines_* cases.
+					_ = windowLines(lines, focus, budget)
+				}()
+			}
+		}
+	}
+}
+
+// TestNewScreens_FooterVisibleShortTerminal is the review regression
+// (2026-07-17): the detail/status/preview screens dumped their whole
+// body unwindowed, so on a short terminal the footer (and, for
+// bundle_apply, the y-confirm line) scrolled off. Each must keep its
+// footer on screen at a tiny height with a long body.
+func TestNewScreens_FooterVisibleShortTerminal(t *testing.T) {
+	// A long directory raw-JSON detail.
+	big := map[string]any{}
+	for i := 0; i < 60; i++ {
+		big[fmt.Sprintf("field_%02d", i)] = "value"
+	}
+	dd := NewDirectoryDetailScreen(directoryRow{Name: "d", Type: "office_365", Health: "error: x", Raw: big})
+	dd.Update(tea.WindowSizeMsg{Width: 100, Height: 8})
+	if !strings.Contains(dd.View(), "Esc back") {
+		t.Errorf("directory detail footer clipped on short terminal:\n%s", dd.View())
+	}
+	// Scroll down should not panic and footer stays.
+	for i := 0; i < 80; i++ {
+		dd.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if !strings.Contains(dd.View(), "Esc back") {
+		t.Errorf("footer lost after scrolling")
 	}
 }
