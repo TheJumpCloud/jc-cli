@@ -44,6 +44,10 @@ type BundleApplyScreen struct {
 	result *bundle.ApplyResult
 	err    string
 
+	// scroll offsets the plan/result body so long output stays
+	// readable and the confirm/footer line never scrolls off.
+	scroll int
+
 	width, height int
 }
 
@@ -71,6 +75,24 @@ func NewBundleApplyScreen(b *bundle.Bundle) *BundleApplyScreen {
 	sp.Style = style.Spinner
 
 	return &BundleApplyScreen{bundle: b, groupInput: ti, spinner: sp}
+}
+
+// doneBodyLines is the windowable body of the success stage — the
+// created-resources list plus the optional device-group-bound note.
+// Both the scroll clamp and the View use it so the clamp bound can
+// never drift from the rendered length (Cursor Bugbot, PR #91).
+func (s *BundleApplyScreen) doneBodyLines() []string {
+	if s.result == nil {
+		return nil
+	}
+	lines := make([]string, 0, len(s.result.Created)+2)
+	for _, c := range s.result.Created {
+		lines = append(lines, fmt.Sprintf("  %-13s %-50s %s", c.Kind, c.Name, c.ID))
+	}
+	if s.result.Bound {
+		lines = append(lines, "", "  Device group bound to the policy group.")
+	}
+	return lines
 }
 
 func (s *BundleApplyScreen) Title() string { return "Apply bundle: " + s.bundle.Name }
@@ -178,10 +200,19 @@ func (s *BundleApplyScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y":
 				s.stage = bundleApplyStageApplying
 				return s, tea.Batch(s.spinner.Tick, s.executeCmd())
+			case "up", "k":
+				s.scroll = clampScroll(s.scroll-1, len(s.plan.Steps))
+			case "down", "j":
+				s.scroll = clampScroll(s.scroll+1, len(s.plan.Steps))
 			}
 		case bundleApplyStageDone:
-			if m.String() == "esc" || m.String() == "enter" {
+			switch m.String() {
+			case "esc", "enter":
 				return s, func() tea.Msg { return tui.PopScreenMsg{} }
+			case "up", "k":
+				s.scroll = clampScroll(s.scroll-1, len(s.doneBodyLines()))
+			case "down", "j":
+				s.scroll = clampScroll(s.scroll+1, len(s.doneBodyLines()))
 			}
 		}
 	}
@@ -206,11 +237,13 @@ func (s *BundleApplyScreen) View() string {
 	case bundleApplyStagePlan:
 		fmt.Fprintln(&b, style.SectionHeader.Render(fmt.Sprintf("Plan: %d steps — nothing created yet", len(s.plan.Steps))))
 		fmt.Fprintln(&b)
+		lines := make([]string, 0, len(s.plan.Steps))
 		for _, st := range s.plan.Steps {
-			fmt.Fprintf(&b, "  %-13s %s — %s\n", st.Kind, st.Name, st.Detail)
+			lines = append(lines, fmt.Sprintf("  %-13s %s — %s", st.Kind, st.Name, st.Detail))
 		}
+		fmt.Fprintln(&b, renderWindowed(lines, s.scroll, s.height, 4))
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, style.Subtitle.Render("y apply · Esc cancel"))
+		fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · y apply · Esc cancel"))
 
 	case bundleApplyStageApplying:
 		fmt.Fprintln(&b, s.spinner.View()+" Applying (create-only; a failure stops and reports, nothing is rolled back)...")
@@ -223,16 +256,10 @@ func (s *BundleApplyScreen) View() string {
 			fmt.Fprintln(&b, style.Success.Render(fmt.Sprintf(
 				"Applied %s v%s: %d objects created", s.bundle.Name, s.bundle.Version, len(s.result.Created))))
 			fmt.Fprintln(&b)
-			for _, c := range s.result.Created {
-				fmt.Fprintf(&b, "  %-13s %-50s %s\n", c.Kind, c.Name, c.ID)
-			}
-			if s.result.Bound {
-				fmt.Fprintln(&b)
-				fmt.Fprintln(&b, "  Device group bound to the policy group.")
-			}
+			fmt.Fprintln(&b, renderWindowed(s.doneBodyLines(), s.scroll, s.height, 4))
 		}
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, style.Subtitle.Render("Enter/Esc back"))
+		fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · Enter/Esc back"))
 	}
 	return b.String()
 }

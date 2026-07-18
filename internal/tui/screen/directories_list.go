@@ -134,6 +134,7 @@ func (s *DirectoriesListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, nil
 		}
 		s.rows = m.rows
+		s.cursor = clampScroll(s.cursor, len(s.rows))
 		return s, nil
 	case tea.KeyMsg:
 		switch m.String() {
@@ -222,6 +223,7 @@ func truncTUI(s string, width int) string {
 // the list response carries, incl. the complete OAuth error text.
 type DirectoryDetailScreen struct {
 	row           directoryRow
+	scroll        int
 	width, height int
 }
 
@@ -239,32 +241,42 @@ func (s *DirectoryDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		s.width, s.height = m.Width, m.Height
 		return s, nil
 	case tea.KeyMsg:
-		if m.String() == "esc" {
+		switch m.String() {
+		case "esc":
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
+		case "up", "k":
+			s.scroll = clampScroll(s.scroll-1, len(s.bodyLines()))
+		case "down", "j":
+			s.scroll = clampScroll(s.scroll+1, len(s.bodyLines()))
 		}
 	}
 	return s, nil
 }
 
+// bodyLines builds the detail body below the pinned title — health,
+// remediation, and the (potentially large) raw-JSON dump — so the View
+// can window it and keep the footer on screen.
+func (s *DirectoryDetailScreen) bodyLines() []string {
+	var lines []string
+	if s.row.Health == "ok" {
+		lines = append(lines, "  Health: "+style.Success.Render("ok"))
+	} else {
+		lines = append(lines, "  Health: "+style.Error.Render(s.row.Health), "",
+			"  Fix: re-authorize this integration in the Admin Portal",
+			"  (Directory Integrations → "+s.row.Name+").")
+	}
+	lines = append(lines, "", style.SectionHeader.Render("Raw fields"))
+	if pretty, err := json.MarshalIndent(s.row.Raw, "  ", "  "); err == nil {
+		lines = append(lines, strings.Split("  "+string(pretty), "\n")...)
+	}
+	return lines
+}
+
 func (s *DirectoryDetailScreen) View() string {
 	var b strings.Builder
 	fmt.Fprintln(&b, style.Subtitle.Render(fmt.Sprintf("%s (%s)", s.row.Name, s.row.Type)))
+	fmt.Fprintln(&b, renderWindowed(s.bodyLines(), s.scroll, s.height, 3))
 	fmt.Fprintln(&b)
-	if s.row.Health == "ok" {
-		fmt.Fprintln(&b, "  Health: "+style.Success.Render("ok"))
-	} else {
-		fmt.Fprintln(&b, "  Health: "+style.Error.Render(s.row.Health))
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "  Fix: re-authorize this integration in the Admin Portal")
-		fmt.Fprintln(&b, "  (Directory Integrations → "+s.row.Name+").")
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.SectionHeader.Render("Raw fields"))
-	pretty, err := json.MarshalIndent(s.row.Raw, "  ", "  ")
-	if err == nil {
-		fmt.Fprintln(&b, "  "+string(pretty))
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.Subtitle.Render("Esc back"))
+	fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · Esc back"))
 	return b.String()
 }

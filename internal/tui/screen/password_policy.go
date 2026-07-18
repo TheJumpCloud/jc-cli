@@ -270,6 +270,7 @@ func (s *PasswordPolicyScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			s.original[k] = v
 		}
 		s.buildRows()
+		s.cursor = clampScroll(s.cursor, len(s.rows))
 		s.stage = ppStageEdit
 		s.err = ""
 		return s, nil

@@ -51,6 +51,7 @@ type MFAOverviewScreen struct {
 	err     string
 	data    mfaOverviewData
 	spinner spinner.Model
+	scroll  int
 
 	width, height int
 }
@@ -176,9 +177,13 @@ func (s *MFAOverviewScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, func() tea.Msg { return tui.PopScreenMsg{} }
 		case "r":
 			if !s.loading {
-				s.loading, s.err = true, ""
+				s.loading, s.err, s.scroll = true, "", 0
 				return s, tea.Batch(s.spinner.Tick, s.loadCmd())
 			}
+		case "up", "k":
+			s.scroll = clampScroll(s.scroll-1, len(s.bodyLines()))
+		case "down", "j":
+			s.scroll = clampScroll(s.scroll+1, len(s.bodyLines()))
 		}
 	}
 	return s, nil
@@ -189,6 +194,40 @@ func onOff(b bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// bodyLines builds the whole dashboard body (org settings, enrollment
+// aggregation, per-factor counts, the full not-enrolled list) so the
+// View can window it and keep the Admin-Portal note + footer visible.
+// Windowing lets the not-enrolled list show every name (scrollable)
+// rather than an arbitrary cap.
+func (s *MFAOverviewScreen) bodyLines() []string {
+	d := s.data
+	var lines []string
+	lines = append(lines, style.SectionHeader.Render("Org settings"),
+		fmt.Sprintf("  %-42s %s", "Require MFA for administrators", onOff(d.RequireAdminMFA)),
+		fmt.Sprintf("  %-42s %s", "Password reset without MFA enrollment", onOff(d.AllowUnenrolledPWR)),
+		"", style.SectionHeader.Render("User enrollment"))
+	overall := fmt.Sprintf("%d of %d users enrolled", d.Enrolled, d.TotalUsers)
+	if d.Enrolled == d.TotalUsers && d.TotalUsers > 0 {
+		lines = append(lines, "  "+style.Success.Render(overall))
+	} else {
+		lines = append(lines, "  "+style.Error.Render(overall))
+	}
+	if d.Excluded > 0 {
+		lines = append(lines, fmt.Sprintf("  %d user(s) excluded from MFA requirements", d.Excluded))
+	}
+	lines = append(lines, "")
+	for _, f := range mfaFactors {
+		lines = append(lines, fmt.Sprintf("  %-42s %d/%d", f.Label, d.FactorCounts[f.Key], d.TotalUsers))
+	}
+	if len(d.NotEnrolled) > 0 {
+		lines = append(lines, "", style.SectionHeader.Render(fmt.Sprintf("Not enrolled (%d)", len(d.NotEnrolled))))
+		for _, name := range d.NotEnrolled {
+			lines = append(lines, "  "+name)
+		}
+	}
+	return lines
 }
 
 func (s *MFAOverviewScreen) View() string {
@@ -204,46 +243,10 @@ func (s *MFAOverviewScreen) View() string {
 		return b.String()
 	}
 
-	d := s.data
-	fmt.Fprintln(&b, style.SectionHeader.Render("Org settings"))
-	fmt.Fprintf(&b, "  %-42s %s\n", "Require MFA for administrators", onOff(d.RequireAdminMFA))
-	fmt.Fprintf(&b, "  %-42s %s\n", "Password reset without MFA enrollment", onOff(d.AllowUnenrolledPWR))
-
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.SectionHeader.Render("User enrollment"))
-	overall := fmt.Sprintf("%d of %d users enrolled", d.Enrolled, d.TotalUsers)
-	if d.Enrolled == d.TotalUsers && d.TotalUsers > 0 {
-		fmt.Fprintln(&b, "  "+style.Success.Render(overall))
-	} else {
-		fmt.Fprintln(&b, "  "+style.Error.Render(overall))
-	}
-	if d.Excluded > 0 {
-		fmt.Fprintf(&b, "  %d user(s) excluded from MFA requirements\n", d.Excluded)
-	}
-	fmt.Fprintln(&b)
-	for _, f := range mfaFactors {
-		fmt.Fprintf(&b, "  %-42s %d/%d\n", f.Label, d.FactorCounts[f.Key], d.TotalUsers)
-	}
-
-	if len(d.NotEnrolled) > 0 {
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, style.SectionHeader.Render(fmt.Sprintf("Not enrolled (%d)", len(d.NotEnrolled))))
-		const maxNames = 15
-		shown := d.NotEnrolled
-		if len(shown) > maxNames {
-			shown = shown[:maxNames]
-		}
-		for _, name := range shown {
-			fmt.Fprintln(&b, "  "+name)
-		}
-		if len(d.NotEnrolled) > maxNames {
-			fmt.Fprintf(&b, "  … and %d more\n", len(d.NotEnrolled)-maxNames)
-		}
-	}
-
-	fmt.Fprintln(&b)
+	// chrome: 2 footer lines (Admin-Portal note + key hints).
+	fmt.Fprintln(&b, renderWindowed(s.bodyLines(), s.scroll, s.height, 2))
 	fmt.Fprintln(&b, style.Subtitle.Render(
 		"Factor configuration (TOTP/WebAuthn/Push settings) is Admin Portal-only — no public API. Duo lives under Access → Duo Security."))
-	fmt.Fprintln(&b, style.Subtitle.Render("r refresh · Esc back"))
+	fmt.Fprintln(&b, style.Subtitle.Render("↑/↓ scroll · r refresh · Esc back"))
 	return b.String()
 }
