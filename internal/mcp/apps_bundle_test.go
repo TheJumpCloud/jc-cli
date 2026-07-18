@@ -27,10 +27,22 @@ func isolateBundlesDirMCP(t *testing.T) {
 // startBundleTenantServer stubs every V2 endpoint bundle_apply and
 // bundle_status touch. mutations records POSTs in order.
 func startBundleTenantServer(t *testing.T, mutations *[]string) *httptest.Server {
+	return startBundleTenantServerOpts(t, mutations, false)
+}
+
+// startBundleTenantServerOpts is startBundleTenantServer with a knob to
+// fail the policy-group POST — used to exercise the partial-failure path
+// (policies created, group create fails).
+func startBundleTenantServerOpts(t *testing.T, mutations *[]string, failGroupPost bool) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		path := r.URL.Path
+		if failGroupPost && path == "/api/v2/policygroups" && r.Method == "POST" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"group boom"}`))
+			return
+		}
 		switch {
 		case path == "/api/v2/policytemplates" && r.Method == "GET":
 			filter := r.URL.Query().Get("filter")
@@ -184,6 +196,40 @@ func TestBundleApply_PreviewThenExecute(t *testing.T) {
 	}
 	if !strings.HasPrefix(mutations[3], "group:example-baseline (v1.0.0)|bundle:example-baseline@1.0.0") {
 		t.Errorf("group create wrong: %s", mutations[3])
+	}
+}
+
+// TestBundleApply_PartialFailureCarriesResult guards the fix that stops
+// bundle_apply from discarding the structured result on Execute error:
+// when the group POST fails after the policies are created, the error
+// result must still carry out.Result (with every created policy id) so
+// the agent can clean up precisely — not just the bare error text.
+func TestBundleApply_PartialFailureCarriesResult(t *testing.T) {
+	setupToolTest(t)
+	isolateBundlesDirMCP(t)
+	var mutations []string
+	// Fail the policy-group POST so the failure lands after all three
+	// policies were created.
+	srv := startBundleTenantServerOpts(t, &mutations, true)
+	overrideV2ClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	res := callTool(t, cs, "bundle_apply", map[string]any{"name": "example-baseline", "execute": true})
+	if !res.IsError {
+		t.Fatal("expected execute failure")
+	}
+	var out bundleApplyResult
+	if err := json.Unmarshal([]byte(getResultText(t, res)), &out); err != nil {
+		t.Fatalf("error result not structured JSON: %v\n%s", err, getResultText(t, res))
+	}
+	if out.Executed {
+		t.Error("Executed must be false on failure")
+	}
+	if out.Error == "" || !strings.Contains(out.Error, "bundle_apply") {
+		t.Errorf("Error text missing: %q", out.Error)
+	}
+	if out.Result == nil || len(out.Result.Created) != 3 {
+		t.Fatalf("result must carry the 3 created policies: %+v", out.Result)
 	}
 }
 

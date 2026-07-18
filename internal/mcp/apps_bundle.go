@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -65,6 +66,10 @@ type bundleApplyResult struct {
 	Executed        bool               `json:"executed"`
 	// Result is set on the execute path.
 	Result *bundle.ApplyResult `json:"result,omitempty"`
+	// Error carries Execute's failure text on partial failure so the
+	// structured result (with every created ID in Result) still reaches
+	// the agent for precise cleanup.
+	Error string `json:"error,omitempty"`
 }
 
 // findBundle loads all bundles and resolves one by name.
@@ -237,7 +242,18 @@ func (s *Server) registerBundleTools() {
 			out.Result = result
 			out.Executed = err == nil
 			if err != nil {
-				return errorResult(fmt.Sprintf("bundle_apply: %v", err)), nil, nil
+				// Emit the structured result — including every created
+				// ID in out.Result — as an error so the agent can clean
+				// up precisely, not just the bare error text.
+				out.Error = fmt.Sprintf("bundle_apply: %v", err)
+				data, jerr := json.MarshalIndent(out, "", "  ")
+				if jerr != nil {
+					return errorResult(out.Error), nil, nil
+				}
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					IsError: true,
+				}, nil, nil
 			}
 			res, jerr := jsonResult(out)
 			if jerr != nil {

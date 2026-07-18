@@ -160,22 +160,25 @@ func findAppliedPolicyGroup(ctx context.Context, client *api.V2Client, b *Bundle
 }
 
 // listPolicyGroupMembers returns the policy IDs in a policy group.
+// The /members association endpoint paginates, so it must be fetched
+// through ListAll — a bare Get truncates at the default page size and
+// would make a large group's tail units look "missing" in status.
 func listPolicyGroupMembers(ctx context.Context, client *api.V2Client, groupID string) ([]string, error) {
-	raw, err := client.Get(ctx, "/policygroups/"+groupID+"/members")
+	result, err := client.ListAll(ctx, "/policygroups/"+groupID+"/members", api.V2ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("listing policy group members: %w", err)
 	}
-	var members []struct {
-		To struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
-		} `json:"to"`
-	}
-	if err := json.Unmarshal(raw, &members); err != nil {
-		return nil, fmt.Errorf("decoding policy group members: %w", err)
-	}
-	ids := make([]string, 0, len(members))
-	for _, m := range members {
+	ids := make([]string, 0, len(result.Data))
+	for _, raw := range result.Data {
+		var m struct {
+			To struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"to"`
+		}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("decoding policy group members: %w", err)
+		}
 		if m.To.Type == "policy" && m.To.ID != "" {
 			ids = append(ids, m.To.ID)
 		}

@@ -45,6 +45,10 @@ type bundleApplyServer struct {
 	existingPolicies []string
 	existingGroups   []string
 	failPolicyName   string
+	// idlessPolicyName makes a policy POST with that name succeed (201)
+	// but return a body carrying no id — the object exists on the tenant
+	// yet idFrom can't parse it.
+	idlessPolicyName string
 
 	policyCreates int
 }
@@ -98,6 +102,12 @@ func (s *bundleApplyServer) handler(t *testing.T) http.HandlerFunc {
 			if s.failPolicyName != "" && body.Name == s.failPolicyName {
 				w.WriteHeader(http.StatusConflict)
 				_, _ = w.Write([]byte(`{"message":"boom"}`))
+				return
+			}
+			if s.idlessPolicyName != "" && body.Name == s.idlessPolicyName {
+				// Created on the tenant, but the response carries no id.
+				s.mutations = append(s.mutations, "POST /policies "+body.Name)
+				_ = json.NewEncoder(w).Encode(map[string]string{"name": body.Name})
 				return
 			}
 			s.policyCreates++
@@ -267,6 +277,37 @@ func TestBundleApply_MidSequenceFailureReportsCleanup(t *testing.T) {
 		}
 	}
 	_ = stdout
+}
+
+// TestBundleApply_CreatedButIDlessStillReported guards the
+// under-reporting fix: a policy POST that succeeds (object exists on the
+// tenant) but returns no id must still be surfaced in the cleanup report
+// so the operator knows an orphan exists — even though there's no
+// delete-by-id command to offer.
+func TestBundleApply_CreatedButIDlessStillReported(t *testing.T) {
+	setupUsersTest(t)
+	isolateBundlesDir(t)
+	srv := &bundleApplyServer{idlessPolicyName: "test-baseline/Firewall"}
+	startBundleApplyServer(t, srv)
+
+	_, _, err := runBundleCmd(t, "apply", "--file", writeApplyBundle(t))
+	if err == nil {
+		t.Fatal("expected id-parse failure after create")
+	}
+	// The POST happened (object exists) and the report names it for
+	// manual cleanup rather than silently dropping it.
+	if len(srv.mutations) != 1 {
+		t.Fatalf("policy must have been created before the id parse: %v", srv.mutations)
+	}
+	for _, want := range []string{
+		"test-baseline/Firewall",
+		"created but its id was not returned",
+		"NOT rolled back",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("report missing %q:\n%v", want, err)
+		}
+	}
 }
 
 func TestBundleApply_TemplateMissingFailsBeforeCreates(t *testing.T) {

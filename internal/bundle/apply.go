@@ -301,6 +301,13 @@ func (p *ApplyPlan) Execute(ctx context.Context, client *api.V2Client) (*ApplyRe
 	fail := func(step string, err error) (*ApplyResult, error) {
 		var cleanup []string
 		for _, c := range res.Created {
+			if c.ID == "" {
+				// Created on the tenant but its id couldn't be parsed —
+				// there is no delete command to offer, so name it and
+				// point at manual cleanup.
+				cleanup = append(cleanup, fmt.Sprintf("  # %s %q was created but its id was not returned — delete it by name in the Admin Portal", c.Kind, c.Name))
+				continue
+			}
 			switch c.Kind {
 			case "policy":
 				cleanup = append(cleanup, fmt.Sprintf("  jc policies delete %s        # %s", c.ID, c.Name))
@@ -321,11 +328,14 @@ func (p *ApplyPlan) Execute(ctx context.Context, client *api.V2Client) (*ApplyRe
 		if err != nil {
 			return fail(fmt.Sprintf("creating policy %q", pol.name), err)
 		}
-		id, err := idFrom(raw)
-		if err != nil {
-			return fail(fmt.Sprintf("creating policy %q", pol.name), err)
-		}
+		// The POST succeeded, so the policy exists on the tenant whether
+		// or not we can parse its id. Record it first so a subsequent
+		// id-parse failure still reports the created object for cleanup.
+		id, idErr := idFrom(raw)
 		res.Created = append(res.Created, CreatedResource{Kind: "policy", Name: pol.name, ID: id})
+		if idErr != nil {
+			return fail(fmt.Sprintf("creating policy %q", pol.name), idErr)
+		}
 	}
 
 	raw, err := client.Create(ctx, "/policygroups", map[string]any{
@@ -335,12 +345,12 @@ func (p *ApplyPlan) Execute(ctx context.Context, client *api.V2Client) (*ApplyRe
 	if err != nil {
 		return fail(fmt.Sprintf("creating policy group %q", p.PolicyGroupName), err)
 	}
-	gid, err := idFrom(raw)
-	if err != nil {
-		return fail(fmt.Sprintf("creating policy group %q", p.PolicyGroupName), err)
-	}
+	gid, gidErr := idFrom(raw)
 	res.PolicyGroupID = gid
 	res.Created = append(res.Created, CreatedResource{Kind: "policy_group", Name: p.PolicyGroupName, ID: gid})
+	if gidErr != nil {
+		return fail(fmt.Sprintf("creating policy group %q", p.PolicyGroupName), gidErr)
+	}
 
 	for _, c := range res.Created {
 		if c.Kind != "policy" {
