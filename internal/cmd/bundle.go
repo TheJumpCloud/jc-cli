@@ -100,6 +100,13 @@ func runBundleImportMSCP(cmd *cobra.Command, args []string) error {
 		if err := os.RemoveAll(mscp.CacheDir()); err != nil {
 			return fmt.Errorf("clearing mSCP cache: %w", err)
 		}
+		// EnsureSnapshot re-extracts a pre-placed sibling <tag>.zip
+		// without re-downloading, so removing only the extracted dir
+		// leaves --refresh re-extracting the stale archive. Drop the
+		// zip too so a genuine re-download happens.
+		if err := os.Remove(mscp.CacheDir() + ".zip"); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("clearing mSCP cache archive: %w", err)
+		}
 	}
 
 	progress := func(msg string) { fmt.Fprintln(cmd.ErrOrStderr(), msg) }

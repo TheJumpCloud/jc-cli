@@ -83,6 +83,11 @@ func flattenDirectoryHealth(raw json.RawMessage) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("decoding directory entry: %w", err)
 	}
+	if obj == nil {
+		// A JSON-null array element unmarshals to a nil map; assigning
+		// to it would panic. Pass it through untouched.
+		return raw, nil
+	}
 	obj["health"] = directoryHealth(obj)
 	return json.Marshal(obj)
 }

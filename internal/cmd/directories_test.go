@@ -76,3 +76,16 @@ func TestDirectoriesList_HealthDerivation(t *testing.T) {
 		t.Errorf("footer missing: %s", stderr.String())
 	}
 }
+
+// TestFlattenDirectoryHealth_NullElement guards the nil-map panic: a
+// JSON-null array element unmarshals to a nil map, and assigning
+// health to it would panic. It must pass through untouched.
+func TestFlattenDirectoryHealth_NullElement(t *testing.T) {
+	out, err := flattenDirectoryHealth(json.RawMessage(`null`))
+	if err != nil {
+		t.Fatalf("null element: %v", err)
+	}
+	if strings.TrimSpace(string(out)) != "null" {
+		t.Errorf("null element rewritten to %q, want null", string(out))
+	}
+}
