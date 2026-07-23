@@ -719,6 +719,140 @@ func TestCommandsUpdateAPIEndpoint(t *testing.T) {
 	}
 }
 
+// --- KLA-484 regression tests: windows shell + read-modify-write update ---
+
+// TestCommandsCreateWindowsDefaultsShell: a windows command created
+// without --shell must POST shell=powershell (an empty shell won't run)
+// and note the default on stderr.
+func TestCommandsCreateWindowsDefaultsShell(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"_id":"x","name":"Win","command":"Write-Output hi","commandType":"windows","shell":"powershell"}`))
+	}))
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	var stderr bytes.Buffer
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"commands", "create", "--name", "Win", "--command", "Write-Output hi", "--type", "windows"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body["shell"] != "powershell" {
+		t.Errorf("windows create shell = %v, want powershell", body["shell"])
+	}
+	if !strings.Contains(stderr.String(), "defaulting --shell") {
+		t.Errorf("expected default-shell note on stderr, got: %s", stderr.String())
+	}
+}
+
+// TestCommandsCreateWindowsExplicitShell: --shell cmd is honored.
+func TestCommandsCreateWindowsExplicitShell(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"_id":"x"}`))
+	}))
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "create", "--name", "Win", "--command", "dir", "--type", "windows", "--shell", "cmd"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body["shell"] != "cmd" {
+		t.Errorf("windows create shell = %v, want cmd", body["shell"])
+	}
+}
+
+// TestCommandsCreateShellRejectedForNonWindows: --shell on a linux
+// command is a user error, and an invalid shell value is rejected.
+func TestCommandsCreateShellRejectedForNonWindows(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "create", "--name", "L", "--command", "ls", "--type", "linux", "--shell", "powershell"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "only applies to windows") {
+		t.Fatalf("expected non-windows shell error, got: %v", err)
+	}
+
+	cmd = NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "create", "--name", "W", "--command", "x", "--type", "windows", "--shell", "bash"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "invalid shell") {
+		t.Fatalf("expected invalid-shell error, got: %v", err)
+	}
+}
+
+// TestCommandsUpdatePreservesTypeAndShell is the #2 regression: a partial
+// update (only --command) must NOT reset commandType or shell. It fails
+// against the old sparse-PUT code, which sent only {command} and let the
+// full-replace endpoint revert commandType to linux.
+func TestCommandsUpdatePreservesTypeAndShell(t *testing.T) {
+	setupUsersTest(t)
+	var putBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		full := `{"_id":"abc123abc123abc123abc123","id":"abc123abc123abc123abc123",
+			"name":"WinCmd","command":"Write-Output hi","commandType":"windows","shell":"powershell",
+			"launchType":"manual","timeout":"0","trigger":"","organization":"org1","commandRunners":[],"systems":[]}`
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(full))
+		case http.MethodPut:
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			w.Write([]byte(full))
+		}
+	}))
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"commands", "update", "abc123abc123abc123abc123", "--command", "Write-Output hi2"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if putBody["command"] != "Write-Output hi2" {
+		t.Errorf("command not applied: %v", putBody["command"])
+	}
+	// The whole point of #2: unspecified fields survive the update.
+	if putBody["commandType"] != "windows" {
+		t.Errorf("commandType clobbered to %v, want windows (KLA-484 #2)", putBody["commandType"])
+	}
+	if putBody["shell"] != "powershell" {
+		t.Errorf("shell clobbered to %v, want powershell", putBody["shell"])
+	}
+	for _, k := range []string{"launchType", "timeout", "trigger"} {
+		if _, ok := putBody[k]; !ok {
+			t.Errorf("field %q dropped by update; a full-object PUT must preserve it", k)
+		}
+	}
+	// Server-managed keys must be stripped from the PUT payload.
+	for _, k := range []string{"_id", "id", "organization", "commandRunners", "systems"} {
+		if _, ok := putBody[k]; ok {
+			t.Errorf("server-managed key %q must not be sent back in the PUT", k)
+		}
+	}
+}
+
 // --- Delete Tests ---
 
 func TestCommandsDeleteForce(t *testing.T) {
@@ -955,7 +1089,11 @@ func TestRootHelpIncludesCommands(t *testing.T) {
 // ========================================================================
 
 // triggerRecord captures a /runcommand POST request for test assertions.
+// The command id rides under "_id" — the real endpoint 400s on any other
+// field name (KLA-484). ID is the field the CLI must populate; Command is
+// kept only to assert the old wrong field is NOT sent.
 type triggerRecord struct {
+	ID           string   `json:"_id"`
 	Command      string   `json:"command"`
 	Systems      []string `json:"systems"`
 	SystemGroups []string `json:"systemGroups"`
@@ -1066,11 +1204,18 @@ func startCommandsRunServer(t *testing.T, commands []map[string]any, devices []m
 			return
 		}
 
-		// V1: POST /runcommand — trigger a command.
+		// V1: POST /runcommand — trigger a command. Mirror the real
+		// endpoint's contract: the command id must arrive under "_id",
+		// else 400 "command id is required" (verified live, KLA-484).
 		if r.URL.Path == "/runcommand" && r.Method == http.MethodPost {
 			body, _ := io.ReadAll(r.Body)
 			var trigger triggerRecord
 			json.Unmarshal(body, &trigger)
+			if trigger.ID == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"message":"command id is required"}`))
+				return
+			}
 			if triggers != nil {
 				*triggers = append(*triggers, trigger)
 			}
@@ -1159,8 +1304,11 @@ func TestCommandsRunOnDeviceForce(t *testing.T) {
 	if len(triggers) != 1 {
 		t.Fatalf("expected 1 trigger, got %d", len(triggers))
 	}
-	if triggers[0].Command != "aaa111aaa111aaa111aaa111" {
-		t.Errorf("trigger command = %q, want aaa111aaa111aaa111aaa111", triggers[0].Command)
+	if triggers[0].ID != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("trigger _id = %q, want aaa111aaa111aaa111aaa111", triggers[0].ID)
+	}
+	if triggers[0].Command != "" {
+		t.Errorf(`trigger must not send "command" field, got %q`, triggers[0].Command)
 	}
 	if len(triggers[0].Systems) != 1 || triggers[0].Systems[0] != "ddd444ddd444ddd444ddd444" {
 		t.Errorf("trigger systems = %v, want [ddd444ddd444ddd444ddd444]", triggers[0].Systems)
@@ -1403,8 +1551,11 @@ func TestCommandsRunAPIEndpoint(t *testing.T) {
 	if capturedMethod != "POST" {
 		t.Errorf("expected POST method, got %s", capturedMethod)
 	}
-	if capturedBody["command"] != "aaa111aaa111aaa111aaa111" {
-		t.Errorf("body command = %v, want aaa111aaa111aaa111aaa111", capturedBody["command"])
+	if capturedBody["_id"] != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("body _id = %v, want aaa111aaa111aaa111aaa111", capturedBody["_id"])
+	}
+	if _, ok := capturedBody["command"]; ok {
+		t.Errorf(`body must not carry "command" (endpoint 400s on it), got %v`, capturedBody["command"])
 	}
 }
 
@@ -1445,8 +1596,8 @@ func TestCommandsRunByCommandName(t *testing.T) {
 	if len(triggers) != 1 {
 		t.Fatalf("expected 1 trigger, got %d", len(triggers))
 	}
-	if triggers[0].Command != "aaa111aaa111aaa111aaa111" {
-		t.Errorf("trigger command = %q, want aaa111aaa111aaa111aaa111", triggers[0].Command)
+	if triggers[0].ID != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("trigger _id = %q, want aaa111aaa111aaa111aaa111", triggers[0].ID)
 	}
 }
 
