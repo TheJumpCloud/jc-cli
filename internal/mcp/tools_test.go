@@ -1306,6 +1306,47 @@ func TestMCP_CommandsUpdateTool_PreservesType(t *testing.T) {
 	}
 }
 
+// TestMCP_CommandsUpdateTool_ConvertToWindowsDefaultsShell guards the
+// Bugbot finding on PR #93 for the MCP surface: converting a command to
+// windows via command_type (no shell) fills the powershell default.
+func TestMCP_CommandsUpdateTool_ConvertToWindowsDefaultsShell(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{
+		"_id": "aabbccddee112233aabbcc0a", "id": "aabbccddee112233aabbcc0a",
+		"name": "L", "command": "ls", "commandType": "linux", "shell": "",
+	}}
+	var putBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			w.Write(raw)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/aabbccddee112233aabbcc0a") {
+			json.NewEncoder(w).Encode(commands[0])
+			return
+		}
+		writeV1List(w, commands)
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "commands_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc0a", "command_type": "windows", "execute": true,
+	})
+	if result.IsError {
+		t.Fatalf("commands_update failed: %s", getResultText(t, result))
+	}
+	if putBody["commandType"] != "windows" {
+		t.Errorf("commandType = %v, want windows", putBody["commandType"])
+	}
+	if putBody["shell"] != "powershell" {
+		t.Errorf("shell = %v, want powershell (default on convert-to-windows)", putBody["shell"])
+	}
+}
+
 // --- Policies tools tests ---
 
 func TestMCP_PoliciesListTool(t *testing.T) {

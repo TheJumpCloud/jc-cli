@@ -1781,10 +1781,16 @@ func (s *Server) registerCommandTools() {
 				return errorResult("no fields to update — provide at least one field (name, command, command_type, shell)"), nil, nil
 			}
 
-			// --shell only makes sense for a Windows command; drop a stale
-			// shell when the merged type isn't windows, and reject an
-			// explicit shell on a non-windows command.
-			if mergedType, _ := obj["commandType"].(string); mergedType != "windows" {
+			// Reconcile shell with the merged command type.
+			switch mergedType, _ := obj["commandType"].(string); mergedType {
+			case "windows":
+				// A Windows command with an empty shell won't run, so
+				// default it — covers converting a command to windows via
+				// command_type without a shell (same guard as create).
+				if sh, _ := obj["shell"].(string); sh == "" {
+					obj["shell"] = command.DefaultWindowsShell
+				}
+			default:
 				if args.Shell != "" {
 					return errorResult(fmt.Sprintf("shell only applies to windows commands (this command is %q)", mergedType)), nil, nil
 				}

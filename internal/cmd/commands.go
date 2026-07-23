@@ -311,11 +311,24 @@ func runCommandsUpdate(cmd *cobra.Command, identifier, name, commandBody, comman
 		obj["shell"] = shell
 	}
 
-	// --shell only makes sense for a Windows command. An explicit --shell
-	// on a non-Windows command is a user error; a stale shell inherited
-	// from the fetched object (e.g. when converting windows → linux) is
-	// just dropped so the full-object PUT doesn't reassert it.
-	if mergedType, _ := obj["commandType"].(string); mergedType != "windows" {
+	// Reconcile shell with the merged command type.
+	switch mergedType, _ := obj["commandType"].(string); mergedType {
+	case "windows":
+		// A Windows command with an empty shell is stored but won't run,
+		// so default it — this also covers converting a linux/mac command
+		// to windows via --type without --shell (same non-runnable result
+		// the create path guards against).
+		if sh, _ := obj["shell"].(string); sh == "" {
+			obj["shell"] = command.DefaultWindowsShell
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"Note: defaulting shell to %q for this Windows command (pass --shell cmd for Command Prompt).\n",
+				command.DefaultWindowsShell)
+		}
+	default:
+		// An explicit --shell on a non-Windows command is a user error; a
+		// stale shell inherited from the fetched object (e.g. converting
+		// windows → linux) is dropped so the full-object PUT doesn't
+		// reassert it.
 		if cmd.Flags().Changed("shell") {
 			return fmt.Errorf("--shell only applies to windows commands (this command is %q)", mergedType)
 		}

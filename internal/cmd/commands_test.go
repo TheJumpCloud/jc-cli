@@ -853,6 +853,48 @@ func TestCommandsUpdatePreservesTypeAndShell(t *testing.T) {
 	}
 }
 
+// TestCommandsUpdateConvertToWindowsDefaultsShell guards the Bugbot
+// finding on PR #93: converting a linux command to windows via --type
+// (no --shell) must still fill the powershell default, else the PUT
+// yields a non-runnable windows command with shell:"".
+func TestCommandsUpdateConvertToWindowsDefaultsShell(t *testing.T) {
+	setupUsersTest(t)
+	var putBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Existing linux command with no shell.
+		cur := `{"_id":"abc123abc123abc123abc123","name":"L","command":"ls","commandType":"linux","shell":""}`
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(cur))
+		case http.MethodPut:
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			w.Write([]byte(cur))
+		}
+	}))
+	defer server.Close()
+	overrideV1Client(t, server.URL)
+
+	cmd := NewRootCmd()
+	var stderr bytes.Buffer
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"commands", "update", "abc123abc123abc123abc123", "--type", "windows"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if putBody["commandType"] != "windows" {
+		t.Errorf("commandType = %v, want windows", putBody["commandType"])
+	}
+	if putBody["shell"] != "powershell" {
+		t.Errorf("shell = %v, want powershell (default on convert-to-windows)", putBody["shell"])
+	}
+	if !strings.Contains(stderr.String(), "defaulting shell") {
+		t.Errorf("expected default-shell note, got: %s", stderr.String())
+	}
+}
+
 // --- Delete Tests ---
 
 func TestCommandsDeleteForce(t *testing.T) {
