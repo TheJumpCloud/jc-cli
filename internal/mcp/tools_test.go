@@ -1347,6 +1347,45 @@ func TestMCP_CommandsUpdateTool_ConvertToWindowsDefaultsShell(t *testing.T) {
 	}
 }
 
+// TestMCP_CommandsUpdateTool_PlanShowsDefaultedShell guards the second
+// Bugbot finding on PR #93: the execute=false plan preview must reflect
+// the powershell default that the execute path would persist when
+// converting to windows, not just the user-supplied fields.
+func TestMCP_CommandsUpdateTool_PlanShowsDefaultedShell(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{
+		"_id": "aabbccddee112233aabbcc0b", "id": "aabbccddee112233aabbcc0b",
+		"name": "L", "command": "ls", "commandType": "linux", "shell": "",
+	}}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/aabbccddee112233aabbcc0b") {
+			json.NewEncoder(w).Encode(commands[0])
+			return
+		}
+		writeV1List(w, commands)
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	// execute omitted → plan preview only.
+	result := callTool(t, cs, "commands_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc0b", "command_type": "windows",
+	})
+	if result.IsError {
+		t.Fatalf("commands_update plan failed: %s", getResultText(t, result))
+	}
+	var plan map[string]any
+	json.Unmarshal([]byte(getResultText(t, result)), &plan)
+	if plan["plan"] != true {
+		t.Fatalf("expected a plan preview, got: %v", plan)
+	}
+	effects, _ := plan["effects"].(map[string]any)
+	if effects["shell"] != "powershell" {
+		t.Errorf("plan effects shell = %v, want powershell (preview must match execute)", effects["shell"])
+	}
+}
+
 // --- Policies tools tests ---
 
 func TestMCP_PoliciesListTool(t *testing.T) {

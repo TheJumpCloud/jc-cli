@@ -1787,8 +1787,11 @@ func (s *Server) registerCommandTools() {
 				// A Windows command with an empty shell won't run, so
 				// default it — covers converting a command to windows via
 				// command_type without a shell (same guard as create).
+				// Record it in changes too so the execute=false plan
+				// preview reflects the shell the execute path will persist.
 				if sh, _ := obj["shell"].(string); sh == "" {
 					obj["shell"] = command.DefaultWindowsShell
+					changes["shell"] = command.DefaultWindowsShell
 				}
 			default:
 				if args.Shell != "" {
