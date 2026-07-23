@@ -10,6 +10,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
@@ -300,6 +301,7 @@ type commandCreateInput struct {
 	Name        string `json:"name" jsonschema:"Command name"`
 	Command     string `json:"command" jsonschema:"Command body to execute"`
 	CommandType string `json:"command_type" jsonschema:"Command type: linux, mac, windows"`
+	Shell       string `json:"shell,omitempty" jsonschema:"Windows shell: powershell or cmd (windows commands only; defaults to powershell)"`
 }
 
 type commandUpdateInput struct {
@@ -307,6 +309,7 @@ type commandUpdateInput struct {
 	Name        string `json:"name,omitempty" jsonschema:"New command name"`
 	Command     string `json:"command,omitempty" jsonschema:"New command body"`
 	CommandType string `json:"command_type,omitempty" jsonschema:"New command type: linux, mac, windows"`
+	Shell       string `json:"shell,omitempty" jsonschema:"Windows shell: powershell or cmd (windows commands only)"`
 	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
@@ -1652,14 +1655,15 @@ func (s *Server) registerCommandTools() {
 				return planResult("run", "command", args.Command, cmdID, effects)
 			}
 
-			body := map[string]any{
-				"command": cmdID,
-			}
+			// The command id MUST go under "_id" — /runcommand 400s with
+			// "command id is required" for any other field name (KLA-484).
+			var systemIDs, systemGroupIDs []string
 			if isDeviceID {
-				body["systems"] = []string{targetID}
+				systemIDs = []string{targetID}
 			} else {
-				body["systemGroups"] = []string{targetID}
+				systemGroupIDs = []string{targetID}
 			}
+			body := command.RunBody(cmdID, systemIDs, systemGroupIDs)
 			_, err = client.Post(ctx, "/runcommand", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("running command: %v", err)), nil, nil
@@ -1691,10 +1695,26 @@ func (s *Server) registerCommandTools() {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
 			}
-			body := map[string]string{
+			commandType := strings.ToLower(strings.TrimSpace(args.CommandType))
+			shell := strings.ToLower(strings.TrimSpace(args.Shell))
+			if err := command.ValidateShell(shell); err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			body := map[string]any{
 				"name":        args.Name,
 				"command":     args.Command,
-				"commandType": args.CommandType,
+				"commandType": commandType,
+			}
+			switch commandType {
+			case "windows":
+				if shell == "" {
+					shell = command.DefaultWindowsShell
+				}
+				body["shell"] = shell
+			default:
+				if shell != "" {
+					return errorResult(fmt.Sprintf("shell only applies to windows commands (got command_type %q)", commandType)), nil, nil
+				}
 			}
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1713,19 +1733,6 @@ func (s *Server) registerCommandTools() {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
 			}
-			body := map[string]string{}
-			if args.Name != "" {
-				body["name"] = args.Name
-			}
-			if args.Command != "" {
-				body["command"] = args.Command
-			}
-			if args.CommandType != "" {
-				body["commandType"] = args.CommandType
-			}
-			if len(body) == 0 {
-				return errorResult("no fields to update — provide at least one field (name, command, command_type)"), nil, nil
-			}
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
@@ -1734,10 +1741,71 @@ func (s *Server) registerCommandTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			if !args.Execute {
-				return planResult("update", "command", args.Identifier, id, body)
+
+			// Read-modify-write: PUT /commands/{id} is a full-object
+			// replace, so fetch the current object and merge changes onto
+			// it. A sparse body would revert unspecified fields to their
+			// server defaults (notably commandType → "linux") — KLA-484.
+			current, err := client.Get(ctx, "/commands/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("fetching command: %v", err)), nil, nil
 			}
-			data, err := client.Update(ctx, "/commands/"+id, body)
+			var obj map[string]any
+			if err := json.Unmarshal(current, &obj); err != nil {
+				return errorResult(fmt.Sprintf("parsing current command: %v", err)), nil, nil
+			}
+
+			changes := map[string]string{}
+			if args.Name != "" {
+				obj["name"] = args.Name
+				changes["name"] = args.Name
+			}
+			if args.Command != "" {
+				obj["command"] = args.Command
+				changes["command"] = args.Command
+			}
+			if args.CommandType != "" {
+				ct := strings.ToLower(strings.TrimSpace(args.CommandType))
+				obj["commandType"] = ct
+				changes["commandType"] = ct
+			}
+			if args.Shell != "" {
+				sh := strings.ToLower(strings.TrimSpace(args.Shell))
+				if err := command.ValidateShell(sh); err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				obj["shell"] = sh
+				changes["shell"] = sh
+			}
+			if len(changes) == 0 {
+				return errorResult("no fields to update — provide at least one field (name, command, command_type, shell)"), nil, nil
+			}
+
+			// Reconcile shell with the merged command type.
+			switch mergedType, _ := obj["commandType"].(string); mergedType {
+			case "windows":
+				// A Windows command with an empty shell won't run, so
+				// default it — covers converting a command to windows via
+				// command_type without a shell (same guard as create).
+				// Record it in changes too so the execute=false plan
+				// preview reflects the shell the execute path will persist.
+				if sh, _ := obj["shell"].(string); sh == "" {
+					obj["shell"] = command.DefaultWindowsShell
+					changes["shell"] = command.DefaultWindowsShell
+				}
+			default:
+				if args.Shell != "" {
+					return errorResult(fmt.Sprintf("shell only applies to windows commands (this command is %q)", mergedType)), nil, nil
+				}
+				delete(obj, "shell")
+			}
+
+			if !args.Execute {
+				return planResult("update", "command", args.Identifier, id, changes)
+			}
+
+			command.StripServerManaged(obj)
+			data, err := client.Update(ctx, "/commands/"+id, obj)
 			if err != nil {
 				return errorResult(fmt.Sprintf("updating command: %v", err)), nil, nil
 			}

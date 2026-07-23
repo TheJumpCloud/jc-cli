@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -187,7 +188,31 @@ func startV1Server(t *testing.T, users, devices, commands []map[string]any) *htt
 		case strings.HasPrefix(path, "/api/systems/") && strings.Contains(path, "/command/builtin/") && r.Method == "POST":
 			w.WriteHeader(200)
 			json.NewEncoder(w).Encode(map[string]string{})
+		case strings.HasPrefix(path, "/api/commands/") && r.Method == "GET":
+			id := strings.TrimPrefix(path, "/api/commands/")
+			id = strings.Split(id, "/")[0]
+			writeV1Get(w, commands, id, "_id")
+		case path == "/api/commands" && r.Method == "POST":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			body["_id"] = "new-cmd-id-0000000000001"
+			json.NewEncoder(w).Encode(body)
+		case strings.HasPrefix(path, "/api/commands/") && r.Method == "PUT":
+			id := strings.TrimPrefix(path, "/api/commands/")
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			body["_id"] = id
+			json.NewEncoder(w).Encode(body)
 		case path == "/api/runcommand" && r.Method == "POST":
+			// Mirror the real contract: the command id must arrive under
+			// "_id", else 400 "command id is required" (KLA-484).
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if id, _ := body["_id"].(string); id == "" {
+				w.WriteHeader(400)
+				json.NewEncoder(w).Encode(map[string]string{"message": "command id is required"})
+				return
+			}
 			w.WriteHeader(200)
 			json.NewEncoder(w).Encode(map[string]string{})
 		default:
@@ -1177,6 +1202,187 @@ func TestMCP_CommandsRunTool_PlanFirst(t *testing.T) {
 	json.Unmarshal([]byte(text), &plan)
 	if plan["plan"] != true {
 		t.Error("expected plan=true for commands_run without execute")
+	}
+}
+
+// TestMCP_CommandsRunTool_Execute is the #1 regression for the MCP
+// surface: the execute path must POST the command id under "_id". The
+// fake now 400s on a missing "_id" (mirroring the live endpoint), so a
+// regression to the old "command" field fails here.
+func TestMCP_CommandsRunTool_Execute(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{"_id": "aabbccddee112233aabbcc01", "name": "Update Agents"}}
+	devices := []map[string]any{{"_id": "aabbccddee112233aabbcc02", "hostname": "SERVER-01"}}
+	ts := startV1Server(t, nil, devices, commands)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "commands_run", map[string]any{
+		"command": "aabbccddee112233aabbcc01",
+		"target":  "aabbccddee112233aabbcc02",
+		"execute": true,
+	})
+	if result.IsError {
+		t.Fatalf("commands_run execute failed (regression to wrong id field?): %s", getResultText(t, result))
+	}
+	if !strings.Contains(getResultText(t, result), "triggered") {
+		t.Errorf("expected trigger confirmation, got: %s", getResultText(t, result))
+	}
+}
+
+// TestMCP_CommandsCreateTool_WindowsShell: the #3 regression — a windows
+// command created without a shell defaults to powershell.
+func TestMCP_CommandsCreateTool_WindowsShell(t *testing.T) {
+	setupToolTest(t)
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		json.NewEncoder(w).Encode(map[string]any{"_id": "x"})
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "commands_create", map[string]any{
+		"name": "Win", "command": "Write-Output hi", "command_type": "windows",
+	})
+	if result.IsError {
+		t.Fatalf("commands_create failed: %s", getResultText(t, result))
+	}
+	if body["shell"] != "powershell" {
+		t.Errorf("windows create shell = %v, want powershell", body["shell"])
+	}
+}
+
+// TestMCP_CommandsUpdateTool_PreservesType is the #2 regression for MCP:
+// a partial update (command only) must read-modify-write, preserving
+// commandType/shell and stripping server-managed keys.
+func TestMCP_CommandsUpdateTool_PreservesType(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{
+		"_id": "aabbccddee112233aabbcc09", "id": "aabbccddee112233aabbcc09",
+		"name": "WinCmd", "command": "Write-Output hi", "commandType": "windows",
+		"shell": "powershell", "launchType": "manual", "organization": "org1",
+		"commandRunners": []any{}, "systems": []any{},
+	}}
+	var putBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			w.Write(raw)
+			return
+		}
+		// GET single command (RMW fetch) and name resolution list.
+		if strings.HasSuffix(r.URL.Path, "/aabbccddee112233aabbcc09") {
+			json.NewEncoder(w).Encode(commands[0])
+			return
+		}
+		writeV1List(w, commands)
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "commands_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc09",
+		"command":    "Write-Output hi2",
+		"execute":    true,
+	})
+	if result.IsError {
+		t.Fatalf("commands_update failed: %s", getResultText(t, result))
+	}
+	if putBody["commandType"] != "windows" {
+		t.Errorf("commandType clobbered to %v, want windows (KLA-484 #2)", putBody["commandType"])
+	}
+	if putBody["shell"] != "powershell" {
+		t.Errorf("shell clobbered to %v, want powershell", putBody["shell"])
+	}
+	for _, k := range []string{"_id", "id", "organization", "commandRunners", "systems"} {
+		if _, ok := putBody[k]; ok {
+			t.Errorf("server-managed key %q must not be sent back in the PUT", k)
+		}
+	}
+}
+
+// TestMCP_CommandsUpdateTool_ConvertToWindowsDefaultsShell guards the
+// Bugbot finding on PR #93 for the MCP surface: converting a command to
+// windows via command_type (no shell) fills the powershell default.
+func TestMCP_CommandsUpdateTool_ConvertToWindowsDefaultsShell(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{
+		"_id": "aabbccddee112233aabbcc0a", "id": "aabbccddee112233aabbcc0a",
+		"name": "L", "command": "ls", "commandType": "linux", "shell": "",
+	}}
+	var putBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			w.Write(raw)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/aabbccddee112233aabbcc0a") {
+			json.NewEncoder(w).Encode(commands[0])
+			return
+		}
+		writeV1List(w, commands)
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	result := callTool(t, cs, "commands_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc0a", "command_type": "windows", "execute": true,
+	})
+	if result.IsError {
+		t.Fatalf("commands_update failed: %s", getResultText(t, result))
+	}
+	if putBody["commandType"] != "windows" {
+		t.Errorf("commandType = %v, want windows", putBody["commandType"])
+	}
+	if putBody["shell"] != "powershell" {
+		t.Errorf("shell = %v, want powershell (default on convert-to-windows)", putBody["shell"])
+	}
+}
+
+// TestMCP_CommandsUpdateTool_PlanShowsDefaultedShell guards the second
+// Bugbot finding on PR #93: the execute=false plan preview must reflect
+// the powershell default that the execute path would persist when
+// converting to windows, not just the user-supplied fields.
+func TestMCP_CommandsUpdateTool_PlanShowsDefaultedShell(t *testing.T) {
+	setupToolTest(t)
+	commands := []map[string]any{{
+		"_id": "aabbccddee112233aabbcc0b", "id": "aabbccddee112233aabbcc0b",
+		"name": "L", "command": "ls", "commandType": "linux", "shell": "",
+	}}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/aabbccddee112233aabbcc0b") {
+			json.NewEncoder(w).Encode(commands[0])
+			return
+		}
+		writeV1List(w, commands)
+	}))
+	t.Cleanup(ts.Close)
+	overrideV1ClientForTest(t, ts.URL)
+
+	cs := connectToolTestServer(t, Options{})
+	// execute omitted → plan preview only.
+	result := callTool(t, cs, "commands_update", map[string]any{
+		"identifier": "aabbccddee112233aabbcc0b", "command_type": "windows",
+	})
+	if result.IsError {
+		t.Fatalf("commands_update plan failed: %s", getResultText(t, result))
+	}
+	var plan map[string]any
+	json.Unmarshal([]byte(getResultText(t, result)), &plan)
+	if plan["plan"] != true {
+		t.Fatalf("expected a plan preview, got: %v", plan)
+	}
+	effects, _ := plan["effects"].(map[string]any)
+	if effects["shell"] != "powershell" {
+		t.Errorf("plan effects shell = %v, want powershell (preview must match execute)", effects["shell"])
 	}
 }
 

@@ -9,13 +9,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
 // commandDefaultFields is the default field subset shown for command list/table output.
-var commandDefaultFields = []string{"name", "commandType", "command", "schedule", "scheduleRepeatType"}
+// shell is included so Windows commands surface their PowerShell/cmd choice
+// (an empty shell means the command won't run — KLA-484).
+var commandDefaultFields = []string{"name", "commandType", "shell", "command", "schedule", "scheduleRepeatType"}
 
 // resolveCommand resolves a command name or ID to a JumpCloud command ID.
 func resolveCommand(ctx context.Context, client *api.V1Client, identifier string) (string, error) {
@@ -153,6 +156,7 @@ func newCommandsCreateCmd() *cobra.Command {
 		name        string
 		commandBody string
 		commandType string
+		shell       string
 	)
 
 	cmd := &cobra.Command{
@@ -163,15 +167,20 @@ func newCommandsCreateCmd() *cobra.Command {
 Required fields: --name, --command, and --type.
 The newly created command object is returned.
 
-Supported types: linux, mac, windows.`,
+Supported types: linux, mac, windows.
+
+Windows commands run in a shell (--shell powershell|cmd). When --shell is
+omitted for a Windows command it defaults to powershell, because a Windows
+command with no shell is stored but will not run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommandsCreate(cmd, name, commandBody, commandType)
+			return runCommandsCreate(cmd, name, commandBody, commandType, shell)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Command name (required)")
 	cmd.Flags().StringVar(&commandBody, "command", "", "Command body to execute (required)")
 	cmd.Flags().StringVar(&commandType, "type", "", "Command type: linux, mac, windows (required)")
+	cmd.Flags().StringVar(&shell, "shell", "", "Windows shell: powershell or cmd (windows commands only; defaults to powershell)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("command")
 	_ = cmd.MarkFlagRequired("type")
@@ -179,16 +188,37 @@ Supported types: linux, mac, windows.`,
 	return cmd
 }
 
-func runCommandsCreate(cmd *cobra.Command, name, commandBody, commandType string) error {
-	client, err := newV1Client()
-	if err != nil {
+func runCommandsCreate(cmd *cobra.Command, name, commandBody, commandType, shell string) error {
+	commandType = strings.ToLower(strings.TrimSpace(commandType))
+	shell = strings.ToLower(strings.TrimSpace(shell))
+	if err := command.ValidateShell(shell); err != nil {
 		return err
 	}
 
-	body := map[string]string{
+	body := map[string]any{
 		"name":        name,
 		"command":     commandBody,
 		"commandType": commandType,
+	}
+
+	switch commandType {
+	case "windows":
+		if shell == "" {
+			shell = command.DefaultWindowsShell
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"Note: defaulting --shell to %q for this Windows command (pass --shell cmd for Command Prompt).\n",
+				command.DefaultWindowsShell)
+		}
+		body["shell"] = shell
+	default:
+		if shell != "" {
+			return fmt.Errorf("--shell only applies to windows commands (got --type %q)", commandType)
+		}
+	}
+
+	client, err := newV1Client()
+	if err != nil {
+		return err
 	}
 
 	result, err := client.Create(cmd.Context(), "/commands", body)
@@ -205,6 +235,7 @@ func newCommandsUpdateCmd() *cobra.Command {
 		name        string
 		commandBody string
 		commandType string
+		shell       string
 	)
 
 	cmd := &cobra.Command{
@@ -213,36 +244,31 @@ func newCommandsUpdateCmd() *cobra.Command {
 		Long: `Update an existing JumpCloud command.
 
 Accepts a command name or 24-character hex command ID.
-Specify only the fields you want to change. The updated command object is returned.`,
+Specify only the fields you want to change; all other fields are preserved.
+
+Note: JumpCloud's command update is a full-object replace, so this command
+reads the current command, applies your changes, and writes it back — a
+partial update no longer silently resets unspecified fields such as
+commandType or shell (KLA-484).`,
 		Args:               cobra.ExactArgs(1),
 		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommandsUpdate(cmd, args[0], name, commandBody, commandType)
+			return runCommandsUpdate(cmd, args[0], name, commandBody, commandType, shell)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Command name")
 	cmd.Flags().StringVar(&commandBody, "command", "", "Command body to execute")
 	cmd.Flags().StringVar(&commandType, "type", "", "Command type: linux, mac, windows")
+	cmd.Flags().StringVar(&shell, "shell", "", "Windows shell: powershell or cmd (windows commands only)")
 
 	return cmd
 }
 
-func runCommandsUpdate(cmd *cobra.Command, identifier, name, commandBody, commandType string) error {
-	body := map[string]string{}
-
-	if cmd.Flags().Changed("name") {
-		body["name"] = name
-	}
-	if cmd.Flags().Changed("command") {
-		body["command"] = commandBody
-	}
-	if cmd.Flags().Changed("type") {
-		body["commandType"] = commandType
-	}
-
-	if len(body) == 0 {
-		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --command, --type)")
+func runCommandsUpdate(cmd *cobra.Command, identifier, name, commandBody, commandType, shell string) error {
+	if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("command") &&
+		!cmd.Flags().Changed("type") && !cmd.Flags().Changed("shell") {
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --command, --type, --shell)")
 	}
 
 	client, err := newV1Client()
@@ -255,7 +281,63 @@ func runCommandsUpdate(cmd *cobra.Command, identifier, name, commandBody, comman
 		return err
 	}
 
-	result, err := client.Update(cmd.Context(), "/commands/"+id, body)
+	// Read-modify-write: PUT /commands/{id} is a full-object replace, so
+	// fetch the current object, apply only the changed fields, and write
+	// the whole thing back. A sparse body would revert every unspecified
+	// field to its server default (notably commandType → "linux").
+	current, err := client.Get(cmd.Context(), "/commands/"+id)
+	if err != nil {
+		return err
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(current, &obj); err != nil {
+		return fmt.Errorf("parsing current command: %w", err)
+	}
+
+	if cmd.Flags().Changed("name") {
+		obj["name"] = name
+	}
+	if cmd.Flags().Changed("command") {
+		obj["command"] = commandBody
+	}
+	if cmd.Flags().Changed("type") {
+		obj["commandType"] = strings.ToLower(strings.TrimSpace(commandType))
+	}
+	if cmd.Flags().Changed("shell") {
+		shell = strings.ToLower(strings.TrimSpace(shell))
+		if err := command.ValidateShell(shell); err != nil {
+			return err
+		}
+		obj["shell"] = shell
+	}
+
+	// Reconcile shell with the merged command type.
+	switch mergedType, _ := obj["commandType"].(string); mergedType {
+	case "windows":
+		// A Windows command with an empty shell is stored but won't run,
+		// so default it — this also covers converting a linux/mac command
+		// to windows via --type without --shell (same non-runnable result
+		// the create path guards against).
+		if sh, _ := obj["shell"].(string); sh == "" {
+			obj["shell"] = command.DefaultWindowsShell
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"Note: defaulting shell to %q for this Windows command (pass --shell cmd for Command Prompt).\n",
+				command.DefaultWindowsShell)
+		}
+	default:
+		// An explicit --shell on a non-Windows command is a user error; a
+		// stale shell inherited from the fetched object (e.g. converting
+		// windows → linux) is dropped so the full-object PUT doesn't
+		// reassert it.
+		if cmd.Flags().Changed("shell") {
+			return fmt.Errorf("--shell only applies to windows commands (this command is %q)", mergedType)
+		}
+		delete(obj, "shell")
+	}
+
+	command.StripServerManaged(obj)
+
+	result, err := client.Update(cmd.Context(), "/commands/"+id, obj)
 	if err != nil {
 		return err
 	}
@@ -438,16 +520,10 @@ func runCommandsRun(cmd *cobra.Command, commandIdentifier, onTarget string) erro
 		}
 	}
 
-	// Build the trigger request body.
-	body := map[string]any{
-		"command": commandID,
-	}
-	if len(systemIDs) > 0 {
-		body["systems"] = systemIDs
-	}
-	if len(systemGroupIDs) > 0 {
-		body["systemGroups"] = systemGroupIDs
-	}
+	// Build the trigger request body. The command id MUST go under "_id"
+	// — /runcommand 400s with "command id is required" for any other
+	// field name (verified live, KLA-484).
+	body := command.RunBody(commandID, systemIDs, systemGroupIDs)
 
 	_, err = v1Client.Post(ctx, "/runcommand", body)
 	if err != nil {
