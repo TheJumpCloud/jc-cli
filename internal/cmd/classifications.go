@@ -213,6 +213,14 @@ var commandClass = map[string]string{
 	"jc insights save":     ClassMutating, // persists a query def to JC
 	"jc insights saved":    ClassReadOnly,
 
+	// service-accounts — API credentials for automation (V2).
+	"jc service-accounts list":   ClassReadOnly,
+	"jc service-accounts get":    ClassReadOnly,
+	"jc service-accounts create": ClassMutating,
+	"jc service-accounts delete": ClassDestructive,
+	"jc service-accounts rotate": ClassMutating,
+	"jc service-accounts revoke": ClassDestructive,
+
 	// iplists — allow/deny lists for auth policies.
 	"jc iplists create": ClassMutating,
 	"jc iplists delete": ClassDestructive,
