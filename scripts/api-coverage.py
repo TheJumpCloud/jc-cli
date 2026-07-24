@@ -62,6 +62,7 @@ AREA_TO_COMMAND = {
     "RADIUS Servers": "radius",
     "Custom Emails": "custom-emails",
     "Service Accounts": "service-accounts",
+    "Roles": "roles",
     "Administrators": "admins",
     "Command Results": "commands",
     "Policy Group Members & Membership": "policy-groups",

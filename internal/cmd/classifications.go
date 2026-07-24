@@ -213,6 +213,13 @@ var commandClass = map[string]string{
 	"jc insights save":     ClassMutating, // persists a query def to JC
 	"jc insights saved":    ClassReadOnly,
 
+	// roles — RBAC scope sets (V2).
+	"jc roles list":   ClassReadOnly,
+	"jc roles get":    ClassReadOnly,
+	"jc roles create": ClassMutating,
+	"jc roles update": ClassMutating,
+	"jc roles delete": ClassDestructive,
+
 	// service-accounts — API credentials for automation (V2).
 	"jc service-accounts list":   ClassReadOnly,
 	"jc service-accounts get":    ClassReadOnly,

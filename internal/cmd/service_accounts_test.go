@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 // serviceAccountsFixture mirrors the live /service-accounts shape (probed
@@ -67,6 +69,7 @@ func startServiceAccountsServer(t *testing.T, capture *map[string]any) *httptest
 
 func runSA(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
+	viper.Set("cache.enabled", false)
 	root := NewRootCmd()
 	var out, errBuf bytes.Buffer
 	root.SetOut(&out)
