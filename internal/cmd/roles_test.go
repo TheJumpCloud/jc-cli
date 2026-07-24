@@ -125,6 +125,31 @@ func TestRolesUpdate_RMW(t *testing.T) {
 	}
 }
 
+// TestRoles_PlanNoMutation guards the Bugbot finding: --plan must preview,
+// not execute. create --plan issues no POST and returns ExitError(10).
+func TestRoles_PlanNoMutation(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	overrideV2Client(t, startRolesServer(t, &body).URL)
+	root := NewRootCmd()
+	var out, errBuf bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errBuf)
+	viper.Set("cache.enabled", false)
+	root.SetArgs([]string{"roles", "create", "--name", "X", "--scopes", "commands", "--plan"})
+	err := root.Execute()
+	var exitErr *ExitError
+	if !errorAs(err, &exitErr) || exitErr.Code != 10 {
+		t.Fatalf("expected plan ExitError(10), got: %v", err)
+	}
+	if body != nil {
+		t.Errorf("--plan must not POST, but a create body was captured: %v", body)
+	}
+	if !strings.Contains(errBuf.String(), "Plan:") {
+		t.Errorf("expected a plan preview on stderr, got: %s", errBuf.String())
+	}
+}
+
 func TestRolesDelete(t *testing.T) {
 	setupUsersTest(t)
 	var cap = map[string]any{}

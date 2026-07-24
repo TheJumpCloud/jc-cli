@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -155,6 +157,15 @@ func runRolesCreate(cmd *cobra.Command, name, scopes, description string) error 
 	if len(scopeList) == 0 {
 		return fmt.Errorf("--scopes must list at least one scope")
 	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:     "create",
+			Resource:   "role",
+			Target:     name,
+			Effects:    []string{fmt.Sprintf("scopes: %d (%s)", len(scopeList), strings.Join(scopeList, ", "))},
+			Reversible: true,
+		})
+	}
 	body := map[string]any{"name": name, "scopes": scopeList}
 	if description != "" {
 		body["description"] = description
@@ -200,6 +211,25 @@ applies your changes, and writes it back.`,
 func runRolesUpdate(cmd *cobra.Command, identifier, name, scopes, description string) error {
 	if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("scopes") && !cmd.Flags().Changed("description") {
 		return fmt.Errorf("no fields to update. Specify at least one of --name, --scopes, --description")
+	}
+	if viper.GetBool("plan") {
+		var effects []string
+		if cmd.Flags().Changed("name") {
+			effects = append(effects, "name: "+name)
+		}
+		if cmd.Flags().Changed("scopes") {
+			effects = append(effects, "scopes: "+scopes)
+		}
+		if cmd.Flags().Changed("description") {
+			effects = append(effects, "description: "+description)
+		}
+		return renderPlan(cmd, &plan.Plan{
+			Action:     "update",
+			Resource:   "role",
+			Target:     identifier,
+			Effects:    effects,
+			Reversible: true,
+		})
 	}
 	client, err := newV2Client()
 	if err != nil {
@@ -272,6 +302,15 @@ func runRolesDelete(cmd *cobra.Command, identifier string) error {
 		Name string `json:"name"`
 	}
 	_ = json.Unmarshal(raw, &role)
+
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:   "delete",
+			Resource: "role",
+			Target:   fmt.Sprintf("%s (%s)", role.Name, id),
+			Effects:  []string{"Admins or service accounts using this role lose their scopes"},
+		})
+	}
 
 	if mustAbortWithoutTTY() {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
