@@ -186,17 +186,39 @@ func TestServiceAccountsRotate_ClientSecret(t *testing.T) {
 	}
 }
 
+// TestServiceAccountsList_IDs guards the --ids fix: service accounts key on
+// objectId, so `list --ids` must emit those (else the list|delete pipeline
+// silently produces nothing).
+func TestServiceAccountsList_IDs(t *testing.T) {
+	setupUsersTest(t)
+	srv := startServiceAccountsServer(t, nil)
+	overrideV2Client(t, srv.URL)
+	out, _, err := runSA(t, "list", "--ids")
+	if err != nil {
+		t.Fatalf("list --ids: %v", err)
+	}
+	if strings.TrimSpace(out) != "aaa111aaa111aaa111aaa111" {
+		t.Errorf("--ids must emit the objectId, got %q", out)
+	}
+}
+
 func TestServiceAccountsDeleteAndRevoke(t *testing.T) {
 	setupUsersTest(t)
 	var cap map[string]any = map[string]any{}
 	srv := startServiceAccountsServer(t, &cap)
 	overrideV2Client(t, srv.URL)
 
-	if _, _, err := runSA(t, "delete", "ci-bot", "--force"); err != nil {
+	out, _, err := runSA(t, "delete", "ci-bot", "--force")
+	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got, _ := cap["deletedPath"].(string); got != "/service-accounts/aaa111aaa111aaa111aaa111" {
 		t.Errorf("delete hit wrong path: %v", cap["deletedPath"])
+	}
+	// The success message must name the account (GET is wrapped; unwrap must
+	// happen) — not an empty string.
+	if !strings.Contains(out, "ci-bot") {
+		t.Errorf("delete message must show the real name (unwrap), got: %q", out)
 	}
 
 	cap = map[string]any{}

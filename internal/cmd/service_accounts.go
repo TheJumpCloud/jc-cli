@@ -255,7 +255,9 @@ func runServiceAccountsDelete(cmd *cobra.Command, identifier string) error {
 	var sa struct {
 		Name string `json:"name"`
 	}
-	_ = json.Unmarshal(raw, &sa)
+	// The live GET is wrapped in {serviceAccount:…}; unwrap so the
+	// confirmation/success messages show the real name, not "".
+	_ = json.Unmarshal(unwrapField(raw, "serviceAccount"), &sa)
 
 	if mustAbortWithoutTTY() {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
