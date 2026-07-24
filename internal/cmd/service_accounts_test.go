@@ -199,6 +199,29 @@ func TestServiceAccountsList_IDs(t *testing.T) {
 	}
 }
 
+// TestServiceAccounts_PlanNoMutation guards that --plan previews instead of
+// executing: with --plan, create must render a plan and issue no POST (the
+// fake captures POST bodies; a mutation would populate `body`).
+func TestServiceAccounts_PlanNoMutation(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	srv := startServiceAccountsServer(t, &body)
+	overrideV2Client(t, srv.URL)
+	_, errBuf, err := runSA(t, "create", "--name", "x", "--role", "Administrator", "--auth-type", "api_key", "--plan")
+	// Plan mode returns an ExitError with the plan exit code (10) and makes
+	// no changes. The human-readable plan renders to stderr.
+	var exitErr *ExitError
+	if !errorAs(err, &exitErr) || exitErr.Code != 10 {
+		t.Fatalf("expected plan ExitError(10), got: %v", err)
+	}
+	if body != nil {
+		t.Errorf("--plan must not POST, but a create body was captured: %v", body)
+	}
+	if !strings.Contains(errBuf, "Plan:") {
+		t.Errorf("expected a plan preview on stderr, got: %s", errBuf)
+	}
+}
+
 func TestServiceAccountsDeleteAndRevoke(t *testing.T) {
 	setupUsersTest(t)
 	var cap map[string]any = map[string]any{}

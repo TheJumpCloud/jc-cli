@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 )
 
@@ -204,6 +206,15 @@ func runServiceAccountsCreate(cmd *cobra.Command, name, role, authType, lifetime
 	if err != nil {
 		return err
 	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:     "create",
+			Resource:   "service account",
+			Target:     name,
+			Effects:    []string{"role: " + role, "auth-type: " + authType, "lifetime: " + lifetime, "mints a credential (shown once)"},
+			Reversible: true,
+		})
+	}
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -259,6 +270,15 @@ func runServiceAccountsDelete(cmd *cobra.Command, identifier string) error {
 	// confirmation/success messages show the real name, not "".
 	_ = json.Unmarshal(unwrapField(raw, "serviceAccount"), &sa)
 
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:   "delete",
+			Resource: "service account",
+			Target:   fmt.Sprintf("%s (%s)", sa.Name, id),
+			Effects:  []string{"Revokes all of its credentials immediately"},
+		})
+	}
+
 	if mustAbortWithoutTTY() {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
 		return nil
@@ -313,6 +333,15 @@ func runServiceAccountsRotate(cmd *cobra.Command, identifier, authType, lifetime
 	if err != nil {
 		return err
 	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:     "rotate credential",
+			Resource:   "service account",
+			Target:     identifier,
+			Effects:    []string{"auth-type: " + authType, "lifetime: " + lifetime, "mints a new credential; the old one keeps working until revoked"},
+			Reversible: true,
+		})
+	}
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -353,6 +382,14 @@ func runServiceAccountsRevoke(cmd *cobra.Command, identifier, authConfigID strin
 	id, err := resolveServiceAccount(cmd.Context(), client, identifier)
 	if err != nil {
 		return err
+	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:   "revoke credential",
+			Resource: "service account",
+			Target:   identifier,
+			Effects:  []string{"auth-config " + authConfigID + " stops working immediately"},
+		})
 	}
 	if mustAbortWithoutTTY() {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
