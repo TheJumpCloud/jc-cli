@@ -79,7 +79,6 @@ AREA_TO_COMMAND = {
     "Microsoft MDM": "windows-mdm",
     "Object Storage": "apple-mdm",
     "fde": "devices",
-    "Image": "apple-mdm",
 }
 
 # Areas intentionally out of scope for the CLI coverage program (needs a
@@ -99,6 +98,11 @@ METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: api-coverage.py /path/to/index.yaml")
+    # The covered and out-of-scope buckets are counted independently, so a
+    # tag in both would be double-counted and break covered + gap == in_scope.
+    overlap = set(AREA_TO_COMMAND) & OUT_OF_SCOPE
+    if overlap:
+        sys.exit(f"area(s) in both AREA_TO_COMMAND and OUT_OF_SCOPE: {sorted(overlap)}")
     spec = yaml.safe_load(open(sys.argv[1]))
     title = spec.get("info", {}).get("title", "API")
     counts = collections.Counter()
