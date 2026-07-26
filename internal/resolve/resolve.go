@@ -124,6 +124,27 @@ var IPListConfig = ResourceConfig{
 	IDField:      "id",
 }
 
+// ServiceAccountConfig resolves JumpCloud service accounts by name (V2 API).
+// The list response is wrapped in {results, totalCount} and the id lives in
+// objectId, not id.
+var ServiceAccountConfig = ResourceConfig{
+	CacheKey:     "service-accounts",
+	ListEndpoint: "/service-accounts",
+	NameField:    "name",
+	IDField:      "objectId",
+	ResponseKey:  "results",
+}
+
+// RoleConfig resolves JumpCloud roles by name (V2 API), used to scope a
+// service account at create time.
+var RoleConfig = ResourceConfig{
+	CacheKey:     "roles",
+	ListEndpoint: "/roles",
+	NameField:    "name",
+	IDField:      "id",
+	ResponseKey:  "results",
+}
+
 // IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
 var IdentityProviderConfig = ResourceConfig{
 	CacheKey:     "identity-providers",

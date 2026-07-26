@@ -737,8 +737,9 @@ func writeIDs(w io.Writer, data []json.RawMessage) error {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			continue
 		}
-		// Look for "id", "_id", or "ID".
-		for _, key := range []string{"_id", "id", "ID"} {
+		// Look for "id", "_id", "ID", or "objectId" (V2 service accounts,
+		// password policies, and other resources key on objectId).
+		for _, key := range []string{"_id", "id", "ID", "objectId"} {
 			if v, ok := m[key]; ok {
 				fmt.Fprintln(w, formatValue(v))
 				break
