@@ -396,6 +396,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"custom_emails_templates", "custom_emails_get", "custom_emails_create", "custom_emails_update", "custom_emails_delete",
 		// App Templates
 		"app_templates_list", "app_templates_get",
+		// Saved Views
+		"saved_views_list", "saved_views_get", "saved_views_create", "saved_views_update", "saved_views_delete",
 		// Utility
 		"recipe_run", "plan", "explain",
 		// MCP Apps
@@ -446,8 +448,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 214 {
-		t.Errorf("expected 214 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 219 {
+		t.Errorf("expected 219 tools, got %d", len(result.Tools))
 	}
 }
 

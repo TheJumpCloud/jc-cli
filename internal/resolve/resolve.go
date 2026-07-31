@@ -145,6 +145,17 @@ var RoleConfig = ResourceConfig{
 	ResponseKey:  "results",
 }
 
+// SavedViewConfig resolves JumpCloud saved views by name (V2 API). The list
+// response is wrapped in {totalCount, views} and there is no GET-by-id
+// endpoint, so get/update read the object back out of the list.
+var SavedViewConfig = ResourceConfig{
+	CacheKey:     "saved-views",
+	ListEndpoint: "/saved-views",
+	NameField:    "name",
+	IDField:      "id",
+	ResponseKey:  "views",
+}
+
 // IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
 var IdentityProviderConfig = ResourceConfig{
 	CacheKey:     "identity-providers",

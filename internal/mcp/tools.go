@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/savedview"
 	"github.com/klaassen-consulting/jc/internal/simulator"
 	"github.com/klaassen-consulting/jc/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -6051,6 +6052,219 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(string(data)), nil, nil
 		},
 	)
+
+	// --- Saved views (console list column/filter/sort presets, V2) ---
+
+	addTypedTool(s, "saved_views_list", "List all JumpCloud saved views (saved column/filter/sort presets for console lists). Returns objects with id, name, source, shared, isDefault. Use source to show only one list's views.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args savedViewListInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(listInput{Limit: args.Limit, Sort: args.Sort, Filter: args.Filter})
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "views" // GET /saved-views wraps the array in {views}
+			if args.Source != "" {
+				sourceExprs, perr := filter.ParseAll([]string{"source=" + args.Source})
+				if perr != nil {
+					return errorResult(perr.Error()), nil, nil
+				}
+				opts.Filter = append(opts.Filter, filter.ToV2Queries(sourceExprs)...)
+			}
+			result, err := client.ListAll(ctx, "/saved-views", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing saved views: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "saved_views_get", "Get a single JumpCloud saved view by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SavedViewConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			obj, err := fetchSavedViewMCP(ctx, client, id)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := json.Marshal(obj)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saved_views_create", "Create a JumpCloud saved view. name and source are required; source names which console list the view belongs to (e.g. devices, users, user_groups, systems, policies).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args savedViewCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			cols := splitCSV(args.Columns)
+			body, err := savedview.CreateBody(args.Name, args.Source, cols, args.Sort, args.Shared, args.IsDefault)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "saved view", args.Name, "", map[string]string{"source": args.Source})
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/saved-views", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating saved view: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saved_views_update", "Update a JumpCloud saved view (read-modify-write; PUT is a full-object replace). Set execute=true to apply changes; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args savedViewUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SavedViewConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			obj, err := fetchSavedViewMCP(ctx, client, id)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			changes := map[string]string{}
+			if args.Name != "" {
+				obj["name"] = args.Name
+				changes["name"] = args.Name
+			}
+			if args.Columns != "" {
+				cols := splitCSV(args.Columns)
+				obj["columns"] = cols
+				changes["columns"] = strings.Join(cols, ", ")
+			}
+			if args.Sort != "" {
+				config, _ := obj["configuration"].(map[string]any)
+				if config == nil {
+					config = map[string]any{}
+				}
+				config["sort"] = args.Sort
+				obj["configuration"] = config
+				changes["sort"] = args.Sort
+			}
+			if args.Shared != nil {
+				obj["shared"] = *args.Shared
+				changes["shared"] = fmt.Sprintf("%t", *args.Shared)
+			}
+			if len(changes) == 0 {
+				return errorResult("no fields to update — provide at least one of name, columns, sort, shared"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "saved view", args.Identifier, id, changes)
+			}
+			savedview.StripServerManaged(obj)
+			data, err := client.Update(ctx, "/saved-views/"+id, savedview.PutBody(obj))
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating saved view: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "saved_views_delete", "Delete a JumpCloud saved view. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.SavedViewConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "saved view", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, "/saved-views/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting saved view: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Saved view %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+// savedViewListInput adds a source convenience filter to the standard list args.
+type savedViewListInput struct {
+	Limit  int      `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+	Sort   string   `json:"sort,omitempty" jsonschema:"Field to sort by. Prefix with - for descending"`
+	Filter []string `json:"filter,omitempty" jsonschema:"Filter expressions (e.g. shared=true)"`
+	Source string   `json:"source,omitempty" jsonschema:"Show only views for this list (e.g. devices, users, user_groups, systems, policies)"`
+}
+
+type savedViewCreateInput struct {
+	Name      string `json:"name" jsonschema:"Saved view name"`
+	Source    string `json:"source" jsonschema:"List the view belongs to (e.g. devices, users, user_groups, systems, policies)"`
+	Columns   string `json:"columns,omitempty" jsonschema:"Comma-separated column set"`
+	Sort      string `json:"sort,omitempty" jsonschema:"Sort field for the view"`
+	Shared    bool   `json:"shared,omitempty" jsonschema:"Make the view visible to all admins"`
+	IsDefault bool   `json:"is_default,omitempty" jsonschema:"Make this the default view for its source"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set to true to create. Without this the tool returns a plan."`
+}
+
+type savedViewUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Name or ID of the saved view to update"`
+	Name       string `json:"name,omitempty" jsonschema:"New saved view name"`
+	Columns    string `json:"columns,omitempty" jsonschema:"New comma-separated column set (replaces the set)"`
+	Sort       string `json:"sort,omitempty" jsonschema:"New sort field"`
+	Shared     *bool  `json:"shared,omitempty" jsonschema:"Set the shared flag (true or false). Omit to leave unchanged."`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the update. Without this the tool returns a plan."`
+}
+
+// fetchSavedViewMCP reads a saved-view object out of the list by id —
+// /saved-views has no GET-by-id endpoint (verified live 2026-07-31).
+func fetchSavedViewMCP(ctx context.Context, client *api.V2Client, id string) (map[string]any, error) {
+	result, err := client.ListAll(ctx, "/saved-views", api.V2ListOptions{ResponseKey: "views"})
+	if err != nil {
+		return nil, err
+	}
+	for _, raw := range result.Data {
+		var obj map[string]any
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			continue
+		}
+		if s, _ := obj["id"].(string); s == id {
+			return obj, nil
+		}
+	}
+	return nil, fmt.Errorf("saved view %q not found", id)
+}
+
+// splitCSV turns a comma-separated value into a trimmed, empty-free slice.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // jsonResult creates a JSON result from a value.
