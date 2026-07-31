@@ -129,7 +129,7 @@ interface.`,
 	addToGroup(rootCmd, "security",
 		newPoliciesCmd(), newPolicyGroupsCmd(), newPolicyTemplatesCmd(),
 		newBundleCmd(), newIPListsCmd(), newRADIUSCmd(), newDuoCmd(),
-		newCustomEmailsCmd(),
+		newCustomEmailsCmd(), newRolesCmd(),
 	)
 
 	// Directory Integrations
