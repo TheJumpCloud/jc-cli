@@ -14,7 +14,9 @@ import (
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/role"
 	"github.com/klaassen-consulting/jc/internal/savedview"
+	"github.com/klaassen-consulting/jc/internal/serviceaccount"
 	"github.com/klaassen-consulting/jc/internal/simulator"
 	"github.com/klaassen-consulting/jc/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -6208,6 +6210,342 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(fmt.Sprintf("Saved view %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+
+	// --- Service accounts (API credentials for automation, V2) ---
+
+	addTypedTool(s, "service_accounts_list", "List all JumpCloud service accounts (non-human identities that authenticate to the API via an API key or OAuth client secret, scoped by a role). Returns objects with objectId, name, roleName, status, expiresAt.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "results" // GET /service-accounts wraps in {results}
+			result, err := client.ListAll(ctx, "/service-accounts", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing service accounts: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "service_accounts_get", "Get a single JumpCloud service account by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ServiceAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/service-accounts/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting service account: %v", err)), nil, nil
+			}
+			return textResult(string(serviceaccount.Unwrap(data, "serviceAccount"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "service_accounts_create", "Create a JumpCloud service account. Returns the freshly minted credential (API key or client secret) exactly ONCE — capture it. Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args serviceAccountCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			lifetime := args.Lifetime
+			if lifetime == "" {
+				lifetime = "90 Days"
+			}
+			authConfig, err := serviceaccount.BuildAuthConfig(args.AuthType, lifetime)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "service account", args.Name, "", map[string]string{
+					"role": args.Role, "auth-type": args.AuthType, "lifetime": lifetime, "note": "mints a credential (shown once)",
+				})
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			roleID, err := r.Resolve(ctx, args.Role, resolve.RoleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Create(ctx, "/service-accounts", serviceaccount.CreateBody(args.Name, roleID, authConfig))
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating service account: %v", err)), nil, nil
+			}
+			return textResult(string(serviceaccount.Unwrap(data, "serviceAccount"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "service_accounts_delete", "Delete a JumpCloud service account, revoking all of its credentials immediately. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ServiceAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "service account", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, "/service-accounts/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting service account: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Service account %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "service_accounts_rotate", "Add a new credential (API key or client secret) to a service account; returns it ONCE. The old credential keeps working until revoked. Set execute=true to rotate; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args serviceAccountRotateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			lifetime := args.Lifetime
+			if lifetime == "" {
+				lifetime = "90 Days"
+			}
+			authConfig, err := serviceaccount.BuildAuthConfig(args.AuthType, lifetime)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ServiceAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("rotate credential", "service account", args.Identifier, id, map[string]string{
+					"auth-type": args.AuthType, "lifetime": lifetime, "note": "mints a new credential; old one works until revoked",
+				})
+			}
+			data, err := client.Create(ctx, "/service-accounts/"+id+"/auth-config", authConfig)
+			if err != nil {
+				return errorResult(fmt.Sprintf("rotating credential: %v", err)), nil, nil
+			}
+			return textResult(string(serviceaccount.Unwrap(data, "authConfig"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "service_accounts_revoke", "Revoke one credential (auth-config) of a service account, invalidating it immediately. Find auth-config ids in the account's authConfigList. Set execute=true to revoke; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args serviceAccountRevokeInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.ServiceAccountConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("revoke credential", "service account", args.Identifier, id, map[string]string{"auth_config_id": args.AuthConfigID})
+			}
+			if _, err := client.Delete(ctx, "/service-accounts/"+id+"/auth-config/"+args.AuthConfigID); err != nil {
+				return errorResult(fmt.Sprintf("revoking credential: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Credential %s revoked.", args.AuthConfigID)), nil, nil
+		},
+	)
+
+	// --- Roles (RBAC scopes for admins and service accounts, V2) ---
+
+	addTypedTool(s, "roles_list", "List all JumpCloud roles (named sets of API scopes). Returns objects with id, name, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "results" // GET /roles wraps in {results}
+			result, err := client.ListAll(ctx, "/roles", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing roles: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "roles_get", "Get a single JumpCloud role by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.RoleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/roles/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting role: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "roles_create", "Create a JumpCloud role. name and scopes (comma-separated API scopes) are required. Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args roleCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			scopeList := role.SplitScopes(args.Scopes)
+			if len(scopeList) == 0 {
+				return errorResult("scopes must list at least one scope"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "role", args.Name, "", map[string]string{"scopes": strings.Join(scopeList, ", ")})
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/roles", role.CreateBody(args.Name, scopeList, args.Description))
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating role: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "roles_update", "Update a JumpCloud role (read-modify-write; PUT is a full-object replace). Provide only the fields to change. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args roleUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.RoleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			current, err := client.Get(ctx, "/roles/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("fetching role: %v", err)), nil, nil
+			}
+			var obj map[string]any
+			if err := json.Unmarshal(current, &obj); err != nil {
+				return errorResult(fmt.Sprintf("parsing current role: %v", err)), nil, nil
+			}
+			changes := map[string]string{}
+			if args.Name != "" {
+				obj["name"] = args.Name
+				changes["name"] = args.Name
+			}
+			if args.Scopes != "" {
+				scopeList := role.SplitScopes(args.Scopes)
+				if len(scopeList) == 0 {
+					return errorResult("scopes must list at least one scope"), nil, nil
+				}
+				obj["scopes"] = scopeList
+				changes["scopes"] = strings.Join(scopeList, ", ")
+			}
+			if args.Description != "" {
+				obj["description"] = args.Description
+				changes["description"] = args.Description
+			}
+			if len(changes) == 0 {
+				return errorResult("no fields to update — provide at least one of name, scopes, description"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "role", args.Identifier, id, changes)
+			}
+			role.StripServerManaged(obj)
+			data, err := client.Update(ctx, "/roles/"+id, obj)
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating role: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "roles_delete", "Delete a JumpCloud role. Admins or service accounts using it lose their scopes. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.RoleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "role", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, "/roles/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting role: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Role %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+type serviceAccountCreateInput struct {
+	Name     string `json:"name" jsonschema:"Service account name"`
+	Role     string `json:"role" jsonschema:"Role name or ID to scope the account"`
+	AuthType string `json:"auth_type" jsonschema:"Credential type: api_key or client_secret"`
+	Lifetime string `json:"lifetime,omitempty" jsonschema:"Credential lifetime: 30 Days, 60 Days, 90 Days, or 365 Days (default 90 Days)"`
+	Execute  bool   `json:"execute,omitempty" jsonschema:"Set to true to create. Without this the tool returns a plan."`
+}
+
+type serviceAccountRotateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Name or ID of the service account"`
+	AuthType   string `json:"auth_type" jsonschema:"Credential type: api_key or client_secret"`
+	Lifetime   string `json:"lifetime,omitempty" jsonschema:"Credential lifetime: 30 Days, 60 Days, 90 Days, or 365 Days (default 90 Days)"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to rotate. Without this the tool returns a plan."`
+}
+
+type serviceAccountRevokeInput struct {
+	Identifier   string `json:"identifier" jsonschema:"Name or ID of the service account"`
+	AuthConfigID string `json:"auth_config_id" jsonschema:"The auth-config id to revoke (from the account's authConfigList)"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set to true to revoke. Without this the tool returns a plan."`
+}
+
+type roleCreateInput struct {
+	Name        string `json:"name" jsonschema:"Role name"`
+	Scopes      string `json:"scopes" jsonschema:"Comma-separated API scopes (e.g. users,groups,commands)"`
+	Description string `json:"description,omitempty" jsonschema:"Role description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to create. Without this the tool returns a plan."`
+}
+
+type roleUpdateInput struct {
+	Identifier  string `json:"identifier" jsonschema:"Name or ID of the role to update"`
+	Name        string `json:"name,omitempty" jsonschema:"New role name"`
+	Scopes      string `json:"scopes,omitempty" jsonschema:"New comma-separated API scopes (replaces the set)"`
+	Description string `json:"description,omitempty" jsonschema:"New role description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the update. Without this the tool returns a plan."`
 }
 
 // savedViewListInput adds a source convenience filter to the standard list args.
