@@ -63,6 +63,7 @@ AREA_TO_COMMAND = {
     "Custom Emails": "custom-emails",
     "Service Accounts": "service-accounts",
     "Roles": "roles",
+    "Saved Views": "saved-views",
     "Administrators": "admins",
     "Command Results": "commands",
     "Policy Group Members & Membership": "policy-groups",

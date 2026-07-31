@@ -220,6 +220,13 @@ var commandClass = map[string]string{
 	"jc roles update": ClassMutating,
 	"jc roles delete": ClassDestructive,
 
+	// saved-views — console list column/filter/sort presets (V2).
+	"jc saved-views list":   ClassReadOnly,
+	"jc saved-views get":    ClassReadOnly,
+	"jc saved-views create": ClassMutating,
+	"jc saved-views update": ClassMutating,
+	"jc saved-views delete": ClassDestructive,
+
 	// service-accounts — API credentials for automation (V2).
 	"jc service-accounts list":   ClassReadOnly,
 	"jc service-accounts get":    ClassReadOnly,
