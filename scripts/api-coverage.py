@@ -64,6 +64,7 @@ AREA_TO_COMMAND = {
     "Service Accounts": "service-accounts",
     "Roles": "roles",
     "Saved Views": "saved-views",
+    "Notifications Channels": "notification-channels",
     "Administrators": "admins",
     "Command Results": "commands",
     "Policy Group Members & Membership": "policy-groups",

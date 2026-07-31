@@ -12,6 +12,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
+	"github.com/klaassen-consulting/jc/internal/notification"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 	"github.com/klaassen-consulting/jc/internal/role"
@@ -6510,6 +6511,206 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(fmt.Sprintf("Role %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+
+	// --- Notification channels (alert delivery targets, V2) ---
+
+	addTypedTool(s, "notification_channels_list", "List all JumpCloud notification channels (webhook/email/slack delivery targets for alerts). Returns objects with objectId, name, type, enabled, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "channels" // GET /notifications/channels wraps in {channels}
+			result, err := client.ListAll(ctx, "/notifications/channels", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing notification channels: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "notification_channels_get", "Get a single JumpCloud notification channel by name or ID.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.NotificationChannelConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/notifications/channels/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting notification channel: %v", err)), nil, nil
+			}
+			return textResult(string(notification.Unwrap(data))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "notification_channels_create", "Create a JumpCloud notification channel. type is webhook, email, or slack. For webhook, pass url. For email/slack, pass config_json (the raw \"config\" object). Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args notificationChannelCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			apiType, err := notification.NormalizeType(args.Type)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			config, err := notificationConfigFromArgs(args, apiType)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "notification channel", args.Name, "", map[string]string{"type": args.Type})
+			}
+			channel := map[string]any{"name": args.Name, "type": apiType, "enabled": args.Enabled, "config": config}
+			if args.Description != "" {
+				channel["description"] = args.Description
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, "/notifications/channels", notification.Body(channel))
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating notification channel: %v", err)), nil, nil
+			}
+			return textResult(string(notification.Unwrap(data))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "notification_channels_update", "Update a JumpCloud notification channel (read-modify-write; the PATCH endpoint rejects a sparse body). Provide only the fields to change. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args notificationChannelUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.NotificationChannelConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			current, err := client.Get(ctx, "/notifications/channels/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("fetching channel: %v", err)), nil, nil
+			}
+			var obj map[string]any
+			if err := json.Unmarshal(notification.Unwrap(current), &obj); err != nil {
+				return errorResult(fmt.Sprintf("parsing current channel: %v", err)), nil, nil
+			}
+			changes := map[string]string{}
+			if args.Name != "" {
+				obj["name"] = args.Name
+				changes["name"] = args.Name
+			}
+			if args.Description != "" {
+				obj["description"] = args.Description
+				changes["description"] = args.Description
+			}
+			if args.Enabled != nil {
+				obj["enabled"] = *args.Enabled
+				changes["enabled"] = fmt.Sprintf("%t", *args.Enabled)
+			}
+			if args.URL != "" {
+				wh := map[string]any{}
+				if cfg, ok := obj["config"].(map[string]any); ok {
+					if existing, ok := cfg["webhook"].(map[string]any); ok {
+						wh = existing
+					}
+				}
+				wh["url"] = args.URL
+				obj["config"] = map[string]any{"webhook": wh}
+				changes["url"] = args.URL
+			}
+			if len(changes) == 0 {
+				return errorResult("no fields to update — provide at least one of name, description, enabled, url"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "notification channel", args.Identifier, id, changes)
+			}
+			notification.StripServerManaged(obj)
+			data, err := client.Patch(ctx, "/notifications/channels/"+id, notification.Body(obj))
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating notification channel: %v", err)), nil, nil
+			}
+			return textResult(string(notification.Unwrap(data))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "notification_channels_delete", "Delete a JumpCloud notification channel. Alerts routed to it stop being delivered. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.NotificationChannelConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "notification channel", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, "/notifications/channels/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting notification channel: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Notification channel %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+// notificationConfigFromArgs resolves the config block for a channel create:
+// config_json (raw JSON) takes precedence; otherwise a webhook is built from
+// url. Email/slack without config_json is an error (their nested arrays can't
+// be expressed as flat fields).
+func notificationConfigFromArgs(args notificationChannelCreateInput, apiType string) (map[string]any, error) {
+	if args.ConfigJSON != "" {
+		var cfg map[string]any
+		if err := json.Unmarshal([]byte(args.ConfigJSON), &cfg); err != nil {
+			return nil, fmt.Errorf("parsing config_json: %w", err)
+		}
+		return cfg, nil
+	}
+	if apiType == "CHANNEL_TYPE_WEBHOOK" {
+		if args.URL == "" {
+			return nil, fmt.Errorf("webhook channels require url (or config_json)")
+		}
+		return notification.BuildWebhookConfig(args.URL, args.AuthType, args.AuthToken, "", "", args.SSLVerification), nil
+	}
+	return nil, fmt.Errorf("type %s requires config_json with the recipient/channel config (only webhook is expressible with fields)", args.Type)
+}
+
+type notificationChannelCreateInput struct {
+	Name            string `json:"name" jsonschema:"Channel name"`
+	Type            string `json:"type" jsonschema:"Channel type: webhook, email, or slack"`
+	Description     string `json:"description,omitempty" jsonschema:"Channel description"`
+	Enabled         bool   `json:"enabled,omitempty" jsonschema:"Whether the channel is enabled"`
+	URL             string `json:"url,omitempty" jsonschema:"Webhook URL (webhook type)"`
+	AuthType        string `json:"auth_type,omitempty" jsonschema:"Webhook auth type"`
+	AuthToken       string `json:"auth_token,omitempty" jsonschema:"Webhook bearer/auth token"`
+	SSLVerification bool   `json:"ssl_verification,omitempty" jsonschema:"Verify the webhook's TLS certificate"`
+	ConfigJSON      string `json:"config_json,omitempty" jsonschema:"Raw JSON for the config object (email/slack, or advanced webhook)"`
+	Execute         bool   `json:"execute,omitempty" jsonschema:"Set to true to create. Without this the tool returns a plan."`
+}
+
+type notificationChannelUpdateInput struct {
+	Identifier  string `json:"identifier" jsonschema:"Name or ID of the channel to update"`
+	Name        string `json:"name,omitempty" jsonschema:"New channel name"`
+	Description string `json:"description,omitempty" jsonschema:"New channel description"`
+	Enabled     *bool  `json:"enabled,omitempty" jsonschema:"Enable or disable the channel (true or false). Omit to leave unchanged."`
+	URL         string `json:"url,omitempty" jsonschema:"New webhook URL (webhook channels)"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the update. Without this the tool returns a plan."`
 }
 
 type serviceAccountCreateInput struct {
