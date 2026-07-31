@@ -14,37 +14,12 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/serviceaccount"
 )
-
-// serviceAccountDefaultFields is the default field subset shown for service
-// account list/get output. Secrets (apiKey/clientSecret) live under
-// authConfigList and surface only with -a / on create.
-var serviceAccountDefaultFields = []string{"objectId", "name", "roleName", "status", "expiresAt"}
-
-// validAuthTypes maps the friendly CLI value to the API enum.
-var validAuthTypes = map[string]string{"api_key": "API_KEY", "client_secret": "CLIENT_SECRET"}
-
-// validLifetimes is the set the API accepts for an API key / client secret.
-var validLifetimes = map[string]bool{"30 Days": true, "60 Days": true, "90 Days": true, "365 Days": true}
 
 func resolveServiceAccount(ctx context.Context, client *api.V2Client, identifier string) (string, error) {
 	r := resolve.NewV2Resolver(client)
 	return r.Resolve(ctx, identifier, resolve.ServiceAccountConfig)
-}
-
-// unwrapField returns raw[key] when the response is a single-key envelope
-// (the live API wraps get in {serviceAccount:…}, create in {serviceAccount:…},
-// and rotate in {authConfig:…} despite the spec showing the bare object).
-// Falls back to raw untouched if the key is absent or the body isn't an object.
-func unwrapField(raw json.RawMessage, key string) json.RawMessage {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return raw
-	}
-	if inner, ok := obj[key]; ok {
-		return inner
-	}
-	return raw
 }
 
 func newServiceAccountsCmd() *cobra.Command {
@@ -110,7 +85,7 @@ func runServiceAccountsList(cmd *cobra.Command, limit int, sort string, filters 
 		return err
 	}
 	opts := output.CurrentOptions()
-	opts.DefaultFields = serviceAccountDefaultFields
+	opts.DefaultFields = serviceaccount.DefaultFields
 	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
 		return err
 	}
@@ -147,7 +122,7 @@ func runServiceAccountsGet(cmd *cobra.Command, identifier string) error {
 		return err
 	}
 	opts := output.CurrentOptions()
-	return output.WriteSingle(cmd.OutOrStdout(), unwrapField(result, "serviceAccount"), opts)
+	return output.WriteSingle(cmd.OutOrStdout(), serviceaccount.Unwrap(result, "serviceAccount"), opts)
 }
 
 func newServiceAccountsCreateCmd() *cobra.Command {
@@ -182,27 +157,8 @@ Supported lifetimes: "30 Days", "60 Days", "90 Days", "365 Days".`,
 	return cmd
 }
 
-// buildAuthConfig validates the auth-type/lifetime pair and returns the
-// authConfig body fragment the API expects.
-func buildAuthConfig(authType, lifetime string) (map[string]any, error) {
-	apiType, ok := validAuthTypes[strings.ToLower(strings.TrimSpace(authType))]
-	if !ok {
-		return nil, fmt.Errorf("invalid --auth-type %q: must be api_key or client_secret", authType)
-	}
-	if !validLifetimes[lifetime] {
-		return nil, fmt.Errorf(`invalid --lifetime %q: must be one of "30 Days", "60 Days", "90 Days", "365 Days"`, lifetime)
-	}
-	cfg := map[string]any{"authType": apiType}
-	if apiType == "API_KEY" {
-		cfg["apiKeyConfig"] = map[string]any{"lifetime": lifetime}
-	} else {
-		cfg["clientSecretConfig"] = map[string]any{"lifetime": lifetime}
-	}
-	return cfg, nil
-}
-
 func runServiceAccountsCreate(cmd *cobra.Command, name, role, authType, lifetime string) error {
-	authConfig, err := buildAuthConfig(authType, lifetime)
+	authConfig, err := serviceaccount.BuildAuthConfig(authType, lifetime)
 	if err != nil {
 		return err
 	}
@@ -233,7 +189,7 @@ func runServiceAccountsCreate(cmd *cobra.Command, name, role, authType, lifetime
 		return err
 	}
 	opts := output.CurrentOptions()
-	return output.WriteSingle(cmd.OutOrStdout(), unwrapField(result, "serviceAccount"), opts)
+	return output.WriteSingle(cmd.OutOrStdout(), serviceaccount.Unwrap(result, "serviceAccount"), opts)
 }
 
 func newServiceAccountsDeleteCmd() *cobra.Command {
@@ -268,7 +224,7 @@ func runServiceAccountsDelete(cmd *cobra.Command, identifier string) error {
 	}
 	// The live GET is wrapped in {serviceAccount:…}; unwrap so the
 	// confirmation/success messages show the real name, not "".
-	_ = json.Unmarshal(unwrapField(raw, "serviceAccount"), &sa)
+	_ = json.Unmarshal(serviceaccount.Unwrap(raw, "serviceAccount"), &sa)
 
 	if viper.GetBool("plan") {
 		return renderPlan(cmd, &plan.Plan{
@@ -329,7 +285,7 @@ automation, then revoke the old auth-config id.`,
 }
 
 func runServiceAccountsRotate(cmd *cobra.Command, identifier, authType, lifetime string) error {
-	authConfig, err := buildAuthConfig(authType, lifetime)
+	authConfig, err := serviceaccount.BuildAuthConfig(authType, lifetime)
 	if err != nil {
 		return err
 	}
@@ -355,7 +311,7 @@ func runServiceAccountsRotate(cmd *cobra.Command, identifier, authType, lifetime
 		return err
 	}
 	opts := output.CurrentOptions()
-	return output.WriteSingle(cmd.OutOrStdout(), unwrapField(result, "authConfig"), opts)
+	return output.WriteSingle(cmd.OutOrStdout(), serviceaccount.Unwrap(result, "authConfig"), opts)
 }
 
 func newServiceAccountsRevokeCmd() *cobra.Command {

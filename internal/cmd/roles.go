@@ -13,10 +13,11 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/role"
 )
 
 // roleDefaultFields is the default field subset shown for role output.
-var roleDefaultFields = []string{"id", "name", "description"}
+var roleDefaultFields = role.DefaultFields
 
 func newRolesCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -114,16 +115,11 @@ func runRolesGet(cmd *cobra.Command, identifier string) error {
 	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
 
-// splitScopes turns a comma-separated --scopes value into a trimmed,
-// empty-free slice.
+// splitScopes turns a comma-separated value into a trimmed, empty-free slice.
+// It delegates to the shared role.SplitScopes so the CLI and MCP surfaces use
+// one implementation; saved_views also reuses it for --columns.
 func splitScopes(s string) []string {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
-		if v := strings.TrimSpace(p); v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
+	return role.SplitScopes(s)
 }
 
 func newRolesCreateCmd() *cobra.Command {
@@ -166,10 +162,7 @@ func runRolesCreate(cmd *cobra.Command, name, scopes, description string) error 
 			Reversible: true,
 		})
 	}
-	body := map[string]any{"name": name, "scopes": scopeList}
-	if description != "" {
-		body["description"] = description
-	}
+	body := role.CreateBody(name, scopeList, description)
 	client, err := newV2Client()
 	if err != nil {
 		return err
@@ -263,7 +256,7 @@ func runRolesUpdate(cmd *cobra.Command, identifier, name, scopes, description st
 	if cmd.Flags().Changed("description") {
 		obj["description"] = description
 	}
-	delete(obj, "id")
+	role.StripServerManaged(obj)
 	result, err := client.Update(cmd.Context(), "/roles/"+id, obj)
 	if err != nil {
 		return err
