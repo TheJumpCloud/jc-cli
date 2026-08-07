@@ -156,6 +156,17 @@ var SavedViewConfig = ResourceConfig{
 	ResponseKey:  "views",
 }
 
+// NotificationChannelConfig resolves JumpCloud notification channels by name
+// (V2 API). The list response is wrapped in {channels, count} and the id lives
+// under objectId.
+var NotificationChannelConfig = ResourceConfig{
+	CacheKey:     "notification-channels",
+	ListEndpoint: "/notifications/channels",
+	NameField:    "name",
+	IDField:      "objectId",
+	ResponseKey:  "channels",
+}
+
 // IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
 var IdentityProviderConfig = ResourceConfig{
 	CacheKey:     "identity-providers",

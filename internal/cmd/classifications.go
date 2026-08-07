@@ -264,6 +264,13 @@ var commandClass = map[string]string{
 	// gate consults this map for the inner leaf.
 	"jc multi": ClassDestructive,
 
+	// notification-channels — alert delivery targets (webhook/email/slack, V2).
+	"jc notification-channels list":   ClassReadOnly,
+	"jc notification-channels get":    ClassReadOnly,
+	"jc notification-channels create": ClassMutating,
+	"jc notification-channels update": ClassMutating,
+	"jc notification-channels delete": ClassDestructive,
+
 	// office365 — O365 directory integration.
 	"jc office365 get":               ClassReadOnly,
 	"jc office365 import-users":      ClassMutating,
