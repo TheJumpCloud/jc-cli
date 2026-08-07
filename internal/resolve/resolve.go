@@ -167,6 +167,18 @@ var NotificationChannelConfig = ResourceConfig{
 	ResponseKey:  "channels",
 }
 
+// AlertConfig resolves JumpCloud alerts by title (V2 API). The list response
+// is wrapped in {alerts, count} and the id lives under objectId. Alert titles
+// often repeat (e.g. "Device Uptime Monitoring"), so callers usually pass the
+// objectId directly; a unique title still resolves.
+var AlertConfig = ResourceConfig{
+	CacheKey:     "alerts",
+	ListEndpoint: "/alerts",
+	NameField:    "title",
+	IDField:      "objectId",
+	ResponseKey:  "alerts",
+}
+
 // IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
 var IdentityProviderConfig = ResourceConfig{
 	CacheKey:     "identity-providers",
