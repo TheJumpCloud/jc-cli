@@ -16,6 +16,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/healthrule"
 	"github.com/klaassen-consulting/jc/internal/notification"
 	"github.com/klaassen-consulting/jc/internal/recipe"
+	"github.com/klaassen-consulting/jc/internal/report"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 	"github.com/klaassen-consulting/jc/internal/role"
 	"github.com/klaassen-consulting/jc/internal/savedview"
@@ -608,6 +609,9 @@ func (s *Server) registerTools() {
 
 	// --- Search tools ---
 	s.registerSearchTools()
+
+	// --- Reports tools ---
+	s.registerReportTools()
 
 	// --- Graph tools ---
 	s.registerGraphTools()
@@ -7100,6 +7104,95 @@ type searchResourceInput struct {
 	SearchFields []string `json:"search_fields,omitempty" jsonschema:"Fields the term matches against (overrides the resource default)"`
 	Limit        int      `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
 	Sort         string   `json:"sort,omitempty" jsonschema:"Field to sort by. Prefix with - for descending"`
+}
+
+// registerReportTools adds the read-only Reports tools (per family list/get,
+// plus scheduled run history), sharing internal/report with the CLI.
+func (s *Server) registerReportTools() {
+	for _, name := range report.FamilyNames() {
+		f := report.Families[name]
+		addTypedTool(s, "reports_"+f.Name+"_list",
+			fmt.Sprintf("List JumpCloud %s reports (GET %s). Returns report records.", f.Name, f.ListEndpoint),
+			func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+				client, err := newV2ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				opts, err := buildV2ListOptions(args)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				opts.ResponseKey = f.ListKey
+				result, err := client.ListAll(ctx, f.ListEndpoint, opts)
+				if err != nil {
+					return errorResult(fmt.Sprintf("listing %s reports: %v", f.Name, err)), nil, nil
+				}
+				return rawListResult(result.Data, len(result.Data))
+			},
+		)
+		addTypedTool(s, "reports_"+f.Name+"_get",
+			fmt.Sprintf("Get a single JumpCloud %s report by id or name (GET %s/{id}).", f.Name, f.ListEndpoint),
+			func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+				client, err := newV2ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				r := resolve.NewV2Resolver(client)
+				id, err := r.Resolve(ctx, args.Identifier, resolve.ResourceConfig{
+					CacheKey:     "reports-" + f.Name,
+					ListEndpoint: f.ListEndpoint,
+					NameField:    f.NameField,
+					IDField:      f.IDField,
+					ResponseKey:  f.ListKey,
+				})
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				raw, err := client.Get(ctx, f.ListEndpoint+"/"+id)
+				if err != nil {
+					return errorResult(fmt.Sprintf("getting %s report: %v", f.Name, err)), nil, nil
+				}
+				return textResult(string(report.Unwrap(raw, f.GetKey))), nil, nil
+			},
+		)
+	}
+
+	addTypedTool(s, "reports_scheduled_runs", "List JumpCloud scheduled-report runs. Provide schedule_id to list only that schedule's runs; omit for all runs.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args reportRunsInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			endpoint := "/reports/scheduled/runs"
+			if args.ScheduleID != "" {
+				endpoint = "/reports/scheduled/" + args.ScheduleID + "/runs"
+			}
+			result, err := client.ListAll(ctx, endpoint, api.V2ListOptions{Limit: args.Limit, ResponseKey: report.RunsListKey})
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing scheduled runs: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "reports_scheduled_run_get", "Get a single JumpCloud scheduled-report run by id (GET /reports/scheduled/runs/{id}).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			raw, err := client.Get(ctx, "/reports/scheduled/runs/"+args.Identifier)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting scheduled run: %v", err)), nil, nil
+			}
+			return textResult(string(report.Unwrap(raw, report.RunsGetKey))), nil, nil
+		},
+	)
+}
+
+type reportRunsInput struct {
+	ScheduleID string `json:"schedule_id,omitempty" jsonschema:"Optional scheduled-report id; when set, lists only that schedule's runs"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
 }
 
 // healthRuleName extracts a rule's name from a raw rule object for plan output.

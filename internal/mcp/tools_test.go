@@ -412,6 +412,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"health_rules_status", "health_rules_create", "health_rules_update", "health_rules_delete",
 		// Search (v1 resource-index)
 		"search_systems", "search_users", "search_commands", "search_command_results",
+		// Reports (read-only)
+		"reports_templates_list", "reports_templates_get", "reports_saved_list", "reports_saved_get",
+		"reports_custom_list", "reports_custom_get", "reports_builder_list", "reports_builder_get",
+		"reports_scheduled_list", "reports_scheduled_get", "reports_scheduled_runs", "reports_scheduled_run_get",
 		// Utility
 		"recipe_run", "plan", "explain",
 		// MCP Apps
@@ -462,8 +466,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 258 {
-		t.Errorf("expected 258 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 270 {
+		t.Errorf("expected 270 tools, got %d", len(result.Tools))
 	}
 }
 

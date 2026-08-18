@@ -141,7 +141,7 @@ interface.`,
 	// Insights & Monitoring
 	addToGroup(rootCmd, "insights",
 		newInsightsCmd(), newOrgCmd(), newSavedViewsCmd(), newNotificationChannelsCmd(), newAlertsCmd(),
-		newSearchCmd(),
+		newSearchCmd(), newReportsCmd(),
 	)
 
 	// AI & Automation
