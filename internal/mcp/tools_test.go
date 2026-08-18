@@ -416,6 +416,11 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"reports_templates_list", "reports_templates_get", "reports_saved_list", "reports_saved_get",
 		"reports_custom_list", "reports_custom_get", "reports_builder_list", "reports_builder_get",
 		"reports_scheduled_list", "reports_scheduled_get", "reports_scheduled_runs", "reports_scheduled_run_get",
+		// Reports writes
+		"reports_custom_create", "reports_custom_update", "reports_custom_delete",
+		"reports_builder_create", "reports_builder_update", "reports_builder_delete",
+		"reports_scheduled_create", "reports_scheduled_update", "reports_scheduled_delete",
+		"reports_scheduled_trigger", "reports_export",
 		// Utility
 		"recipe_run", "plan", "explain",
 		// MCP Apps
@@ -466,8 +471,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 270 {
-		t.Errorf("expected 270 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 281 {
+		t.Errorf("expected 281 tools, got %d", len(result.Tools))
 	}
 }
 

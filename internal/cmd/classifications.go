@@ -65,6 +65,19 @@ var commandClass = map[string]string{
 	"jc reports scheduled runs": ClassReadOnly,
 	"jc reports scheduled run":  ClassReadOnly,
 
+	// reports writes — create/update/delete across writable families + export.
+	"jc reports custom create":     ClassMutating,
+	"jc reports custom update":     ClassMutating,
+	"jc reports custom delete":     ClassDestructive,
+	"jc reports builder create":    ClassMutating,
+	"jc reports builder update":    ClassMutating,
+	"jc reports builder delete":    ClassDestructive,
+	"jc reports scheduled create":  ClassMutating,
+	"jc reports scheduled update":  ClassMutating,
+	"jc reports scheduled delete":  ClassDestructive,
+	"jc reports scheduled trigger": ClassMutating,
+	"jc reports export":            ClassMutating,
+
 	// alerts rules — health-monitoring rule management (V2).
 	"jc alerts rules list":           ClassReadOnly,
 	"jc alerts rules get":            ClassReadOnly,
