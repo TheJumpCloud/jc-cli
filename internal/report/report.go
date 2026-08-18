@@ -8,18 +8,25 @@
 // {<key>: [...], totalCount}. Only the built-in jumpcloud templates were
 // populated on the tenant (20); the custom / custom-reports / saved / scheduled
 // families exist but were empty, so this package + the `jc reports` group cover
-// the READ operations (list/get across all families + scheduled runs). Write
-// operations (create/update/delete/trigger/export) are a tracked follow-up —
-// their request bodies are large report definitions that could not be
-// live-exercised on an empty tenant.
+// the read AND write operations. The writable families (custom, builder,
+// scheduled) create/update via a {<GetKey>: obj} body — verified live on
+// 2026-08-18 by cloning a built-in template's searchRequest: create returns the
+// bare object, get wraps it in {<GetKey>}, delete returns empty. Scheduled
+// reports require at least one recipient ({channelType,value}) and a
+// scheduleFrequency ∈ {daily,weekly,monthly,quarterly}; their ids are UUIDs
+// (not 24-hex), so LooksLikeID also accepts the UUID form. POST /reports/export
+// takes {exportType,notifyByEmail,reportName,searchRequest} and returns a
+// presigned {downloadUrl}.
 //
-// Only jumpcloud's single-get envelope ({reportTemplate}) was confirmed live;
-// the other families' GetKey follows the singular-of-ListKey convention and
-// Unwrap falls back to the raw body if the key is absent.
+// Only jumpcloud's single-get envelope ({reportTemplate}) was confirmed for the
+// read-only families; their GetKey follows the singular-of-ListKey convention
+// and Unwrap falls back to the raw body if the key is absent.
 package report
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"sort"
 )
 
@@ -40,6 +47,17 @@ type Family struct {
 	NameField string
 	// DefaultFields is the default output column subset.
 	DefaultFields []string
+	// Writable reports whether the family supports create/update/delete. GetKey
+	// doubles as the create/update request-body envelope key.
+	Writable bool
+}
+
+// BodyKey is the request-body envelope key for create/update (same as GetKey).
+func (f Family) BodyKey() string { return f.GetKey }
+
+// WrapBody wraps a report object in the family's {<key>: obj} request envelope.
+func (f Family) WrapBody(obj json.RawMessage) map[string]json.RawMessage {
+	return map[string]json.RawMessage{f.GetKey: obj}
 }
 
 // Families is the set of covered report families, keyed by Name.
@@ -70,6 +88,7 @@ var Families = map[string]Family{
 		IDField:       "id",
 		NameField:     "displayName",
 		DefaultFields: []string{"id", "displayName", "description", "updatedAt"},
+		Writable:      true,
 	},
 	"builder": {
 		Name:          "builder",
@@ -79,6 +98,7 @@ var Families = map[string]Family{
 		IDField:       "id",
 		NameField:     "displayName",
 		DefaultFields: []string{"id", "displayName", "description", "primaryObject", "updatedAt"},
+		Writable:      true,
 	},
 	"scheduled": {
 		Name:          "scheduled",
@@ -88,6 +108,7 @@ var Families = map[string]Family{
 		IDField:       "id",
 		NameField:     "displayName",
 		DefaultFields: []string{"id", "displayName", "exportType", "cronExpression", "isActive", "lastRunStatus", "nextRunAt"},
+		Writable:      true,
 	},
 }
 
@@ -123,4 +144,46 @@ func Unwrap(raw json.RawMessage, key string) json.RawMessage {
 		return inner
 	}
 	return raw
+}
+
+// idPattern matches a 24-hex JumpCloud ObjectId; uuidPattern matches the UUID
+// form scheduled-report ids use.
+var (
+	idPattern   = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+)
+
+// LooksLikeID reports whether s is already a report id (24-hex ObjectId or a
+// UUID). Report families mix the two — scheduled ids are UUIDs — so a plain
+// name-resolver's 24-hex-only check would fail on a scheduled id.
+func LooksLikeID(s string) bool {
+	return idPattern.MatchString(s) || uuidPattern.MatchString(s)
+}
+
+// ParseReportFile decodes a --report-file payload into the object to place in
+// the {<GetKey>} envelope. Accepts either a bare report object or one already
+// wrapped in {"<GetKey>": …}, so a body captured from `get` round-trips.
+func (f Family) ParseReportFile(raw []byte) (json.RawMessage, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("parsing report JSON: %w", err)
+	}
+	if inner, ok := obj[f.GetKey]; ok {
+		return inner, nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// ExportBody builds the POST /reports/export request body. exportType defaults
+// to "csv" when empty.
+func ExportBody(reportName, exportType string, notifyByEmail bool, searchRequest json.RawMessage) map[string]any {
+	if exportType == "" {
+		exportType = "csv"
+	}
+	return map[string]any{
+		"reportName":    reportName,
+		"exportType":    exportType,
+		"notifyByEmail": notifyByEmail,
+		"searchRequest": searchRequest,
+	}
 }

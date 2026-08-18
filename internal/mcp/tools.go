@@ -7157,6 +7157,160 @@ func (s *Server) registerReportTools() {
 		)
 	}
 
+	// Write tools for the writable families (custom, builder, scheduled).
+	for _, name := range report.FamilyNames() {
+		f := report.Families[name]
+		if !f.Writable {
+			continue
+		}
+		addTypedTool(s, "reports_"+f.Name+"_create",
+			fmt.Sprintf("Create a JumpCloud %s report from a raw report object (report_json — a bare object or {\"%s\": …}). Set execute=true to create; otherwise returns a plan.", f.Name, f.GetKey),
+			func(ctx context.Context, req *mcp.CallToolRequest, args reportWriteInput) (*mcp.CallToolResult, any, error) {
+				if s.readOnly {
+					return errorResult("server is in read-only mode"), nil, nil
+				}
+				obj, err := f.ParseReportFile([]byte(args.ReportJSON))
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				if !args.Execute {
+					return planResult("create", f.Name+" report", "new", "", nil)
+				}
+				client, err := newV2ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				raw, err := client.Create(ctx, f.ListEndpoint, f.WrapBody(obj))
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating %s report: %v", f.Name, err)), nil, nil
+				}
+				return textResult(string(report.Unwrap(raw, f.GetKey))), nil, nil
+			},
+		)
+		addTypedTool(s, "reports_"+f.Name+"_update",
+			fmt.Sprintf("Update a JumpCloud %s report (report_json — a bare object or {\"%s\": …}; a body from the get tool round-trips). Set execute=true to apply; otherwise returns a plan.", f.Name, f.GetKey),
+			func(ctx context.Context, req *mcp.CallToolRequest, args reportUpdateInput) (*mcp.CallToolResult, any, error) {
+				if s.readOnly {
+					return errorResult("server is in read-only mode"), nil, nil
+				}
+				obj, err := f.ParseReportFile([]byte(args.ReportJSON))
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				client, err := newV2ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				id, err := resolveReportID(ctx, client, f, args.Identifier)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				if !args.Execute {
+					return planResult("update", f.Name+" report", args.Identifier, id, nil)
+				}
+				raw, err := client.Update(ctx, f.ListEndpoint+"/"+id, f.WrapBody(obj))
+				if err != nil {
+					return errorResult(fmt.Sprintf("updating %s report: %v", f.Name, err)), nil, nil
+				}
+				return textResult(string(report.Unwrap(raw, f.GetKey))), nil, nil
+			},
+		)
+		addTypedTool(s, "reports_"+f.Name+"_delete",
+			fmt.Sprintf("Delete a JumpCloud %s report by id or name. Set execute=true to delete; otherwise returns a plan.", f.Name),
+			func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+				if s.readOnly {
+					return errorResult("server is in read-only mode"), nil, nil
+				}
+				client, err := newV2ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				id, err := resolveReportID(ctx, client, f, args.Identifier)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				if !args.Execute {
+					return planResult("delete", f.Name+" report", args.Identifier, id, nil)
+				}
+				if _, err := client.Delete(ctx, f.ListEndpoint+"/"+id); err != nil {
+					return errorResult(fmt.Sprintf("deleting %s report: %v", f.Name, err)), nil, nil
+				}
+				return textResult(fmt.Sprintf("%s report %q deleted successfully.", f.Name, args.Identifier)), nil, nil
+			},
+		)
+	}
+
+	addTypedTool(s, "reports_scheduled_trigger", "Run a JumpCloud scheduled report now (\"Run Now\"). This generates a run and EMAILS the report's recipients. Set execute=true to trigger; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			f := report.Families["scheduled"]
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			id, err := resolveReportID(ctx, client, f, args.Identifier)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("trigger (emails recipients)", "scheduled report", args.Identifier, id, nil)
+			}
+			if _, err := client.Create(ctx, f.ListEndpoint+"/"+id+"/trigger", map[string]any{}); err != nil {
+				return errorResult(fmt.Sprintf("triggering scheduled report: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Scheduled report %q triggered.", args.Identifier)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "reports_export", "Export a JumpCloud report to a downloadable file, returning a presigned downloadUrl. Provide the searchRequest via from_template (a built-in template id/name) or search_request_json. Set execute=true to export; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args reportExportInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			if args.ReportName == "" {
+				return errorResult("report_name is required"), nil, nil
+			}
+			if (args.FromTemplate == "") == (args.SearchRequestJSON == "") {
+				return errorResult("provide exactly one of from_template or search_request_json"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			var searchRequest json.RawMessage
+			if args.FromTemplate != "" {
+				tf := report.Families["templates"]
+				id, err := resolveReportID(ctx, client, tf, args.FromTemplate)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				raw, err := client.Get(ctx, tf.ListEndpoint+"/"+id)
+				if err != nil {
+					return errorResult(fmt.Sprintf("getting template: %v", err)), nil, nil
+				}
+				var tw struct {
+					SearchRequest json.RawMessage `json:"searchRequest"`
+				}
+				if json.Unmarshal(report.Unwrap(raw, tf.GetKey), &tw); len(tw.SearchRequest) == 0 {
+					return errorResult("template has no searchRequest"), nil, nil
+				}
+				searchRequest = tw.SearchRequest
+			} else {
+				searchRequest = json.RawMessage(args.SearchRequestJSON)
+			}
+			if !args.Execute {
+				return planResult("export", "report", args.ReportName, "", map[string]string{"notify_by_email": fmt.Sprintf("%v", args.NotifyByEmail)})
+			}
+			raw, err := client.Create(ctx, "/reports/export", report.ExportBody(args.ReportName, args.ExportType, args.NotifyByEmail, searchRequest))
+			if err != nil {
+				return errorResult(fmt.Sprintf("exporting report: %v", err)), nil, nil
+			}
+			return textResult(string(raw)), nil, nil
+		},
+	)
+
 	addTypedTool(s, "reports_scheduled_runs", "List JumpCloud scheduled-report runs. Provide schedule_id to list only that schedule's runs; omit for all runs.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args reportRunsInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
@@ -7193,6 +7347,42 @@ func (s *Server) registerReportTools() {
 type reportRunsInput struct {
 	ScheduleID string `json:"schedule_id,omitempty" jsonschema:"Optional scheduled-report id; when set, lists only that schedule's runs"`
 	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+}
+
+type reportWriteInput struct {
+	ReportJSON string `json:"report_json" jsonschema:"Raw JSON for the report object (bare, or wrapped in its envelope key as returned by the get tool)"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply. Without this the tool returns a plan."`
+}
+
+type reportUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Name or id of the report to update"`
+	ReportJSON string `json:"report_json" jsonschema:"Raw JSON for the report object (bare, or wrapped in its envelope key)"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply. Without this the tool returns a plan."`
+}
+
+type reportExportInput struct {
+	ReportName        string `json:"report_name" jsonschema:"Name for the exported report"`
+	FromTemplate      string `json:"from_template,omitempty" jsonschema:"Built-in template id/name to export (pulls its searchRequest)"`
+	SearchRequestJSON string `json:"search_request_json,omitempty" jsonschema:"Raw JSON searchRequest object (alternative to from_template)"`
+	ExportType        string `json:"export_type,omitempty" jsonschema:"Export format (default csv)"`
+	NotifyByEmail     bool   `json:"notify_by_email,omitempty" jsonschema:"Also email the download link to the account"`
+	Execute           bool   `json:"execute,omitempty" jsonschema:"Set to true to export. Without this the tool returns a plan."`
+}
+
+// resolveReportID resolves a report identifier to its id, short-circuiting the
+// two id shapes (24-hex ObjectId and scheduled's UUID) before name resolution.
+func resolveReportID(ctx context.Context, client *api.V2Client, f report.Family, identifier string) (string, error) {
+	if report.LooksLikeID(identifier) {
+		return identifier, nil
+	}
+	r := resolve.NewV2Resolver(client)
+	return r.Resolve(ctx, identifier, resolve.ResourceConfig{
+		CacheKey:     "reports-" + f.Name,
+		ListEndpoint: f.ListEndpoint,
+		NameField:    f.NameField,
+		IDField:      f.IDField,
+		ResponseKey:  f.ListKey,
+	})
 }
 
 // healthRuleName extracts a rule's name from a raw rule object for plan output.

@@ -34,6 +34,7 @@ creating and exporting reports is a planned follow-up.`,
 	for _, name := range report.FamilyNames() {
 		cmd.AddCommand(newReportFamilyCmd(report.Families[name]))
 	}
+	cmd.AddCommand(newReportsExportCmd())
 	return cmd
 }
 
@@ -44,10 +45,16 @@ func newReportFamilyCmd(f report.Family) *cobra.Command {
 	}
 	cmd.AddCommand(newReportListCmd(f))
 	cmd.AddCommand(newReportGetCmd(f))
-	// The scheduled family carries run history as a sub-resource.
+	if f.Writable {
+		cmd.AddCommand(newReportCreateCmd(f))
+		cmd.AddCommand(newReportUpdateCmd(f))
+		cmd.AddCommand(newReportDeleteCmd(f))
+	}
+	// The scheduled family carries run history + a manual trigger.
 	if f.Name == "scheduled" {
 		cmd.AddCommand(newReportScheduledRunsCmd(f))
 		cmd.AddCommand(newReportScheduledRunGetCmd())
+		cmd.AddCommand(newReportScheduledTriggerCmd(f))
 	}
 	return cmd
 }
@@ -121,6 +128,11 @@ func newReportGetCmd(f report.Family) *cobra.Command {
 }
 
 func resolveReport(ctx context.Context, client *api.V2Client, f report.Family, identifier string) (string, error) {
+	// Report ids come in two shapes (24-hex for custom/builder, UUID for
+	// scheduled); short-circuit either before falling back to name resolution.
+	if report.LooksLikeID(identifier) {
+		return identifier, nil
+	}
 	r := resolve.NewV2Resolver(client)
 	return r.Resolve(ctx, identifier, reportResolveConfig(f))
 }
