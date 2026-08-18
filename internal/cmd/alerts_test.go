@@ -47,6 +47,12 @@ func startAlertsServer(t *testing.T, capture *map[string]any) *httptest.Server {
 				_ = json.Unmarshal(b, capture)
 			}
 			json.NewEncoder(w).Encode(map[string]any{"alert": al})
+		case (p == "/alerts/bulk-delete" || p == "/alerts/bulk-update") && r.Method == http.MethodPost:
+			if capture != nil {
+				b, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(b, capture)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"affectedCount": 3})
 		case strings.HasPrefix(p, "/alerts/") && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{"alert": al})
 		case strings.HasPrefix(p, "/alerts/") && r.Method == http.MethodDelete:
@@ -217,6 +223,89 @@ func TestAlerts_PlanNoMutation(t *testing.T) {
 	}
 	if !strings.Contains(errBuf, "Plan:") {
 		t.Errorf("expected plan preview on stderr, got: %s", errBuf)
+	}
+}
+
+func TestAlertsBulkDelete_EmptyFilterRefused(t *testing.T) {
+	setupUsersTest(t)
+	var cap = map[string]any{}
+	overrideV2Client(t, startAlertsServer(t, &cap).URL)
+	_, _, err := runAlerts(t, "bulk-delete", "--force")
+	if err == nil || !strings.Contains(err.Error(), "no filter") {
+		t.Fatalf("expected empty-filter refusal, got %v", err)
+	}
+	if len(cap) != 0 {
+		t.Errorf("must not POST on empty filter, captured: %v", cap)
+	}
+}
+
+func TestAlertsBulkDelete_Body(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	overrideV2Client(t, startAlertsServer(t, &body).URL)
+	out, _, err := runAlerts(t, "bulk-delete", "--severity", "high", "--status", "resolved", "--exclude-id", "keep1", "--force")
+	if err != nil {
+		t.Fatalf("bulk-delete: %v", err)
+	}
+	filter := body["filter"].(map[string]any)
+	if sev := filter["severity"].([]any); sev[0] != "ALERT_SEVERITY_HIGH" {
+		t.Errorf("severity not normalized: %v", filter["severity"])
+	}
+	if filter["status"].([]any)[0] != "ALERT_STATUS_RESOLVED" {
+		t.Errorf("status not normalized: %v", filter["status"])
+	}
+	if body["excludeIds"].([]any)[0] != "keep1" {
+		t.Errorf("excludeIds = %v", body["excludeIds"])
+	}
+	if !strings.Contains(out, "3 alert(s) deleted") {
+		t.Errorf("affectedCount not reported: %q", out)
+	}
+}
+
+func TestAlertsBulkUpdate_Body(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	overrideV2Client(t, startAlertsServer(t, &body).URL)
+	out, _, err := runAlerts(t, "bulk-update", "--status", "open", "--set-status", "acknowledged", "--remark", "sweep", "--force")
+	if err != nil {
+		t.Fatalf("bulk-update: %v", err)
+	}
+	uf := body["updateField"].(map[string]any)
+	if uf["status"] != "ALERT_STATUS_ACKNOWLEDGED" {
+		t.Errorf("updateField.status = %v", uf["status"])
+	}
+	if body["remark"] != "sweep" {
+		t.Errorf("remark = %v", body["remark"])
+	}
+	if !strings.Contains(out, "3 alert(s) updated") {
+		t.Errorf("affectedCount not reported: %q", out)
+	}
+}
+
+func TestAlertsBulkUpdate_InvalidStatus(t *testing.T) {
+	setupUsersTest(t)
+	var cap = map[string]any{}
+	overrideV2Client(t, startAlertsServer(t, &cap).URL)
+	_, _, err := runAlerts(t, "bulk-update", "--title", "x", "--set-status", "snoozed", "--force")
+	if err == nil || !strings.Contains(err.Error(), "invalid status") {
+		t.Fatalf("expected invalid-status error, got %v", err)
+	}
+	if len(cap) != 0 {
+		t.Errorf("invalid status must not POST, captured: %v", cap)
+	}
+}
+
+func TestAlertsBulk_PlanNoMutation(t *testing.T) {
+	setupUsersTest(t)
+	var body map[string]any
+	overrideV2Client(t, startAlertsServer(t, &body).URL)
+	_, _, err := runAlerts(t, "bulk-delete", "--severity", "low", "--plan")
+	var exitErr *ExitError
+	if !errorAs(err, &exitErr) || exitErr.Code != 10 {
+		t.Fatalf("expected plan ExitError(10), got: %v", err)
+	}
+	if body != nil {
+		t.Errorf("--plan must not POST, captured: %v", body)
 	}
 }
 

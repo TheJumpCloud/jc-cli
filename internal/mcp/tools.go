@@ -6815,6 +6815,60 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
+	addTypedTool(s, "alerts_bulk_delete", "Delete many JumpCloud alerts matching a filter, in one request. At least one filter field is required (an empty filter is refused — it would match every alert). Set execute=true to delete; otherwise returns a plan. Returns affectedCount.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args alertsBulkInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			in := args.filterInput()
+			if in.IsEmpty() {
+				return errorResult("refusing to bulk-delete with no filter (it would match every alert); pass at least one filter field"), nil, nil
+			}
+			if !args.Execute {
+				return planResult("bulk delete", "alerts", "matching filter", "", args.planDetails())
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			raw, err := client.Create(ctx, "/alerts/bulk-delete", alert.BulkDeleteBody(in, args.ExcludeIDs))
+			if err != nil {
+				return errorResult(fmt.Sprintf("bulk-deleting alerts: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("%d alert(s) deleted.", alert.AffectedCount(raw))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "alerts_bulk_update", "Change the status of many JumpCloud alerts matching a filter, in one request. At least one filter field is required (an empty filter is refused). set_status is open, acknowledged, or resolved. Set execute=true to apply; otherwise returns a plan. Returns affectedCount.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args alertsBulkUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			in := args.filterInput()
+			if in.IsEmpty() {
+				return errorResult("refusing to bulk-update with no filter (it would match every alert); pass at least one filter field"), nil, nil
+			}
+			body, err := alert.BulkUpdateBody(in, args.SetStatus, args.Remark, args.ExcludeIDs)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				d := args.planDetails()
+				d["set_status"] = args.SetStatus
+				return planResult("bulk update", "alerts", "matching filter", "", d)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			raw, err := client.Create(ctx, "/alerts/bulk-update", body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("bulk-updating alerts: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("%d alert(s) updated.", alert.AffectedCount(raw))), nil, nil
+		},
+	)
+
 	// Health-monitoring rules — the definitions that raise alerts.
 	addTypedTool(s, "health_rules_list", "List JumpCloud health-monitoring rules (the definitions that raise alerts). Returns objects with objectId, name, category, severity, status, ruleType.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
@@ -7122,6 +7176,67 @@ type alertStatusInput struct {
 	Status     string `json:"status" jsonschema:"New status: open, acknowledged, or resolved"`
 	Remark     string `json:"remark,omitempty" jsonschema:"Optional remark recorded with the status change"`
 	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the status change. Without this the tool returns a plan."`
+}
+
+// alertsBulkInput is the shared filter for the bulk-delete/bulk-update tools.
+type alertsBulkInput struct {
+	Category       []string `json:"category,omitempty" jsonschema:"Filter by category (system, directory, admin, …) or raw ALERT_CATEGORY_*"`
+	Severity       []string `json:"severity,omitempty" jsonschema:"Filter by severity (low, medium, high)"`
+	Status         []string `json:"status,omitempty" jsonschema:"Filter by status (open, acknowledged, resolved, …)"`
+	SourceType     []string `json:"source_type,omitempty" jsonschema:"Filter by source type (device, user, policy, …)"`
+	SourceID       []string `json:"source_id,omitempty" jsonschema:"Filter by source objectId"`
+	Title          string   `json:"title,omitempty" jsonschema:"Filter by alert title"`
+	OccurredAfter  string   `json:"occurred_after,omitempty" jsonschema:"Filter to alerts last occurring after this RFC3339 time"`
+	OccurredBefore string   `json:"occurred_before,omitempty" jsonschema:"Filter to alerts last occurring before this RFC3339 time"`
+	ExcludeIDs     []string `json:"exclude_ids,omitempty" jsonschema:"Alert objectIds to exclude from the match"`
+	Execute        bool     `json:"execute,omitempty" jsonschema:"Set to true to apply. Without this the tool returns a plan."`
+}
+
+func (a alertsBulkInput) filterInput() alert.BulkFilterInput {
+	return alert.BulkFilterInput{
+		Category:       a.Category,
+		Severity:       a.Severity,
+		Status:         a.Status,
+		SourceType:     a.SourceType,
+		SourceID:       a.SourceID,
+		Title:          a.Title,
+		OccurredAfter:  a.OccurredAfter,
+		OccurredBefore: a.OccurredBefore,
+	}
+}
+
+func (a alertsBulkInput) planDetails() map[string]string {
+	d := map[string]string{}
+	add := func(k string, vs []string) {
+		if len(vs) > 0 {
+			d[k] = strings.Join(vs, ", ")
+		}
+	}
+	add("category", a.Category)
+	add("severity", a.Severity)
+	add("status", a.Status)
+	add("source_type", a.SourceType)
+	add("source_id", a.SourceID)
+	if a.Title != "" {
+		d["title"] = a.Title
+	}
+	if a.OccurredAfter != "" {
+		d["occurred_after"] = a.OccurredAfter
+	}
+	if a.OccurredBefore != "" {
+		d["occurred_before"] = a.OccurredBefore
+	}
+	if len(a.ExcludeIDs) > 0 {
+		d["exclude_ids"] = strings.Join(a.ExcludeIDs, ", ")
+	}
+	return d
+}
+
+// alertsBulkUpdateInput adds the target status/remark to the shared bulk filter.
+type alertsBulkUpdateInput struct {
+	alertsBulkInput
+	SetStatus string `json:"set_status" jsonschema:"New status to apply: open, acknowledged, or resolved"`
+	Remark    string `json:"remark,omitempty" jsonschema:"Optional remark recorded with the change"`
 }
 
 type serviceAccountCreateInput struct {

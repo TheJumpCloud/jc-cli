@@ -42,6 +42,8 @@ var commandClass = map[string]string{
 	"jc alerts add-note":    ClassMutating,
 	"jc alerts status":      ClassMutating,
 	"jc alerts delete":      ClassDestructive,
+	"jc alerts bulk-delete": ClassDestructive,
+	"jc alerts bulk-update": ClassMutating,
 
 	// alerts rules — health-monitoring rule management (V2).
 	"jc alerts rules list":           ClassReadOnly,

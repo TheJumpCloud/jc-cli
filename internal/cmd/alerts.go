@@ -45,8 +45,212 @@ a unique alert title also resolves.`,
 	cmd.AddCommand(newAlertsAddNoteCmd())
 	cmd.AddCommand(newAlertsStatusCmd())
 	cmd.AddCommand(newAlertsDeleteCmd())
+	cmd.AddCommand(newAlertsBulkDeleteCmd())
+	cmd.AddCommand(newAlertsBulkUpdateCmd())
 	cmd.AddCommand(newAlertsRulesCmd())
 	return cmd
+}
+
+// bulkFilterFlags holds the shared filter/exclude flags for the bulk commands.
+type bulkFilterFlags struct {
+	category       []string
+	severity       []string
+	status         []string
+	sourceType     []string
+	sourceID       []string
+	title          string
+	occurredAfter  string
+	occurredBefore string
+	excludeID      []string
+}
+
+func addBulkFilterFlags(cmd *cobra.Command, f *bulkFilterFlags) {
+	cmd.Flags().StringArrayVar(&f.category, "category", nil, "Filter by category (system, directory, admin, …); repeatable")
+	cmd.Flags().StringArrayVar(&f.severity, "severity", nil, "Filter by severity (low, medium, high); repeatable")
+	cmd.Flags().StringArrayVar(&f.status, "status", nil, "Filter by status (open, acknowledged, resolved, …); repeatable")
+	cmd.Flags().StringArrayVar(&f.sourceType, "source-type", nil, "Filter by source type (device, user, policy, …); repeatable")
+	cmd.Flags().StringArrayVar(&f.sourceID, "source-id", nil, "Filter by source objectId; repeatable")
+	cmd.Flags().StringVar(&f.title, "title", "", "Filter by alert title")
+	cmd.Flags().StringVar(&f.occurredAfter, "occurred-after", "", "Filter to alerts last occurring after this RFC3339 time")
+	cmd.Flags().StringVar(&f.occurredBefore, "occurred-before", "", "Filter to alerts last occurring before this RFC3339 time")
+	cmd.Flags().StringArrayVar(&f.excludeID, "exclude-id", nil, "Exclude these alert objectIds from the match; repeatable")
+}
+
+func (f bulkFilterFlags) input() alert.BulkFilterInput {
+	return alert.BulkFilterInput{
+		Category:       f.category,
+		Severity:       f.severity,
+		Status:         f.status,
+		SourceType:     f.sourceType,
+		SourceID:       f.sourceID,
+		Title:          f.title,
+		OccurredAfter:  f.occurredAfter,
+		OccurredBefore: f.occurredBefore,
+	}
+}
+
+// filterSummary renders the active filter as plan/confirmation effects.
+func (f bulkFilterFlags) summary() []string {
+	in := f.input()
+	var out []string
+	add := func(label string, vals []string) {
+		if len(vals) > 0 {
+			out = append(out, label+": "+strings.Join(vals, ", "))
+		}
+	}
+	add("category", in.Category)
+	add("severity", in.Severity)
+	add("status", in.Status)
+	add("source-type", in.SourceType)
+	add("source-id", in.SourceID)
+	if in.Title != "" {
+		out = append(out, "title: "+in.Title)
+	}
+	if in.OccurredAfter != "" {
+		out = append(out, "occurred-after: "+in.OccurredAfter)
+	}
+	if in.OccurredBefore != "" {
+		out = append(out, "occurred-before: "+in.OccurredBefore)
+	}
+	if len(f.excludeID) > 0 {
+		out = append(out, "excluding "+fmt.Sprintf("%d", len(f.excludeID))+" id(s)")
+	}
+	return out
+}
+
+func newAlertsBulkDeleteCmd() *cobra.Command {
+	var f bulkFilterFlags
+	cmd := &cobra.Command{
+		Use:   "bulk-delete",
+		Short: "Delete many alerts matching a filter",
+		Long: `Delete every alert matching the given filter, in one request.
+
+At least one filter is required — an empty filter is refused because it would
+match every alert. Use --plan to preview, or run and confirm. Returns the
+number of alerts deleted.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAlertsBulkDelete(cmd, f)
+		},
+	}
+	addBulkFilterFlags(cmd, &f)
+	return cmd
+}
+
+func runAlertsBulkDelete(cmd *cobra.Command, f bulkFilterFlags) error {
+	in := f.input()
+	if in.IsEmpty() {
+		return fmt.Errorf("refusing to bulk-delete with no filter (it would match every alert); pass at least one of --category/--severity/--status/--source-type/--source-id/--title/--occurred-after/--occurred-before")
+	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:   "bulk delete",
+			Resource: "alerts",
+			Target:   "alerts matching filter",
+			Effects:  append([]string{"Deletes ALL alerts matching:"}, f.summary()...),
+		})
+	}
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Delete ALL alerts matching %s? [y/N] ", strings.Join(f.summary(), "; "))
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	raw, err := client.Create(cmd.Context(), "/alerts/bulk-delete", alert.BulkDeleteBody(in, f.excludeID))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%d alert(s) deleted.\n", alert.AffectedCount(raw))
+	return nil
+}
+
+func newAlertsBulkUpdateCmd() *cobra.Command {
+	var (
+		f         bulkFilterFlags
+		setStatus string
+		remark    string
+	)
+	cmd := &cobra.Command{
+		Use:   "bulk-update --set-status <open|acknowledged|resolved>",
+		Short: "Change the status of many alerts matching a filter",
+		Long: `Set the status of every alert matching the given filter, in one request.
+
+At least one filter is required — an empty filter is refused because it would
+match every alert. Use --plan to preview, or run and confirm. Returns the
+number of alerts updated.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAlertsBulkUpdate(cmd, f, setStatus, remark)
+		},
+	}
+	addBulkFilterFlags(cmd, &f)
+	cmd.Flags().StringVar(&setStatus, "set-status", "", "New status to apply: open, acknowledged, or resolved (required)")
+	cmd.Flags().StringVar(&remark, "remark", "", "Optional remark recorded with the change")
+	_ = cmd.MarkFlagRequired("set-status")
+	return cmd
+}
+
+func runAlertsBulkUpdate(cmd *cobra.Command, f bulkFilterFlags, setStatus, remark string) error {
+	in := f.input()
+	if in.IsEmpty() {
+		return fmt.Errorf("refusing to bulk-update with no filter (it would match every alert); pass at least one of --category/--severity/--status/--source-type/--source-id/--title/--occurred-after/--occurred-before")
+	}
+	// Validate/normalize the target status up front (also builds the body).
+	body, err := alert.BulkUpdateBody(in, setStatus, remark, f.excludeID)
+	if err != nil {
+		return err
+	}
+	if viper.GetBool("plan") {
+		return renderPlan(cmd, &plan.Plan{
+			Action:     "bulk update",
+			Resource:   "alerts",
+			Target:     "alerts matching filter",
+			Effects:    append([]string{"status → " + strings.ToLower(setStatus) + " for ALL alerts matching:"}, f.summary()...),
+			Reversible: true,
+		})
+	}
+	if mustAbortWithoutTTY() {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+		return nil
+	}
+	if shouldConfirm() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Set status %s for ALL alerts matching %s? [y/N] ", strings.ToLower(setStatus), strings.Join(f.summary(), "; "))
+		reader := getConfirmReader()
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading confirmation: %w", err)
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+			return nil
+		}
+	}
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	raw, err := client.Create(cmd.Context(), "/alerts/bulk-update", body)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%d alert(s) updated.\n", alert.AffectedCount(raw))
+	return nil
 }
 
 func newAlertsListCmd() *cobra.Command {
