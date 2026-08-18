@@ -13,6 +13,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
+	"github.com/klaassen-consulting/jc/internal/healthrule"
 	"github.com/klaassen-consulting/jc/internal/notification"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/resolve"
@@ -6813,6 +6814,231 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(fmt.Sprintf("Alert %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+
+	// Health-monitoring rules — the definitions that raise alerts.
+	addTypedTool(s, "health_rules_list", "List JumpCloud health-monitoring rules (the definitions that raise alerts). Returns objects with objectId, name, category, severity, status, ruleType.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "rules" // GET /healthmonitoring/rules wraps in {rules}
+			result, err := client.ListAll(ctx, healthrule.RulesEndpoint, opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing health-monitoring rules: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "health_rules_get", "Get a single JumpCloud health-monitoring rule by objectId or name.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.HealthRuleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, healthrule.RulesEndpoint+"/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting health-monitoring rule: %v", err)), nil, nil
+			}
+			return textResult(string(healthrule.Unwrap(data, "rule"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rules_stats", "Get JumpCloud health-monitoring rule statistics.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, healthrule.StatsEndpoint)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting rule stats: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rule_templates_list", "List JumpCloud health-monitoring rule templates (read-only definitions that template-based rules derive from). Returns objects with objectId, name, category, type, description.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "templates" // GET /healthmonitoring/ruletemplates wraps in {templates}
+			result, err := client.ListAll(ctx, healthrule.TemplatesEndpoint, opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing rule templates: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "health_rule_templates_get", "Get a single JumpCloud health-monitoring rule template by objectId or name.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.HealthRuleTemplateConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, healthrule.TemplatesEndpoint+"/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting rule template: %v", err)), nil, nil
+			}
+			return textResult(string(healthrule.Unwrap(data, "template"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rules_status", "Enable or disable a JumpCloud health-monitoring rule. A disabled rule stops raising new alerts. Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args healthRuleStatusInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			apiStatus, err := healthrule.NormalizeStatus(args.Status)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.HealthRuleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("set status", "health-monitoring rule", args.Identifier, id, map[string]string{"status": args.Status})
+			}
+			data, err := client.Patch(ctx, healthrule.RulesEndpoint+"/"+id+"/status", healthrule.StatusBody(apiStatus))
+			if err != nil {
+				return errorResult(fmt.Sprintf("setting rule status: %v", err)), nil, nil
+			}
+			return textResult(string(healthrule.Unwrap(data, "rule"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rules_create", "Create a JumpCloud health-monitoring rule from a raw rule object. The rule body is a large nested object (conditions, filters, notification channels, …), so it is supplied as rule_json rather than fields. Set execute=true to create; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args healthRuleCreateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			rule, err := healthrule.ParseRuleFile([]byte(args.RuleJSON))
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "health-monitoring rule", healthRuleName(rule), "", nil)
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Create(ctx, healthrule.RulesEndpoint, healthrule.RuleBody(rule))
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating rule: %v", err)), nil, nil
+			}
+			return textResult(string(healthrule.Unwrap(data, "rule"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rules_update", "Update a JumpCloud health-monitoring rule from a raw rule object supplied as rule_json (a body from health_rules_get round-trips). Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args healthRuleUpdateInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			rule, err := healthrule.ParseRuleFile([]byte(args.RuleJSON))
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.HealthRuleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("update", "health-monitoring rule", args.Identifier, id, nil)
+			}
+			data, err := client.Patch(ctx, healthrule.RulesEndpoint+"/"+id, healthrule.RuleBody(rule))
+			if err != nil {
+				return errorResult(fmt.Sprintf("updating rule: %v", err)), nil, nil
+			}
+			return textResult(string(healthrule.Unwrap(data, "rule"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "health_rules_delete", "Delete a JumpCloud health-monitoring rule. Existing alerts it raised are unaffected. Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.HealthRuleConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "health-monitoring rule", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, healthrule.RulesEndpoint+"/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting rule: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Health-monitoring rule %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
+}
+
+// healthRuleName extracts a rule's name from a raw rule object for plan output.
+func healthRuleName(rule json.RawMessage) string {
+	var r struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal(rule, &r) == nil && r.Name != "" {
+		return r.Name
+	}
+	return "(unnamed rule)"
+}
+
+type healthRuleStatusInput struct {
+	Identifier string `json:"identifier" jsonschema:"Rule objectId or name"`
+	Status     string `json:"status" jsonschema:"New status: enabled or disabled"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the status change. Without this the tool returns a plan."`
+}
+
+type healthRuleCreateInput struct {
+	RuleJSON string `json:"rule_json" jsonschema:"Raw JSON for the rule object (bare, or wrapped in {\"rule\": …} as returned by health_rules_get)"`
+	Execute  bool   `json:"execute,omitempty" jsonschema:"Set to true to create. Without this the tool returns a plan."`
+}
+
+type healthRuleUpdateInput struct {
+	Identifier string `json:"identifier" jsonschema:"Name or ID of the rule to update"`
+	RuleJSON   string `json:"rule_json" jsonschema:"Raw JSON for the rule object (bare, or wrapped in {\"rule\": …} as returned by health_rules_get)"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the update. Without this the tool returns a plan."`
 }
 
 // notificationConfigFromArgs resolves the config block for a channel create:

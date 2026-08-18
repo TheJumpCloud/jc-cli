@@ -179,6 +179,29 @@ var AlertConfig = ResourceConfig{
 	ResponseKey:  "alerts",
 }
 
+// HealthRuleConfig is the resolution config for JumpCloud health-monitoring
+// rules (V2 API). Rules carry a "name" and are keyed by objectId; the list
+// response wraps the array in {rules}.
+var HealthRuleConfig = ResourceConfig{
+	CacheKey:     "health-rules",
+	ListEndpoint: "/healthmonitoring/rules",
+	NameField:    "name",
+	IDField:      "objectId",
+	ResponseKey:  "rules",
+}
+
+// HealthRuleTemplateConfig is the resolution config for JumpCloud
+// health-monitoring rule templates (read-only, V2 API). Templates carry a
+// "name" and are keyed by objectId; the list response wraps the array in
+// {templates}.
+var HealthRuleTemplateConfig = ResourceConfig{
+	CacheKey:     "health-rule-templates",
+	ListEndpoint: "/healthmonitoring/ruletemplates",
+	NameField:    "name",
+	IDField:      "objectId",
+	ResponseKey:  "templates",
+}
+
 // IdentityProviderConfig is the resolution config for JumpCloud identity providers (V2 API).
 var IdentityProviderConfig = ResourceConfig{
 	CacheKey:     "identity-providers",
