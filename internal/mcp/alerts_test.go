@@ -41,6 +41,12 @@ func startAlertsV2Server(t *testing.T, capture *map[string]any) *httptest.Server
 				_ = json.Unmarshal(b, capture)
 			}
 			json.NewEncoder(w).Encode(map[string]any{"alert": al})
+		case (p == "/alerts/bulk-delete" || p == "/alerts/bulk-update") && r.Method == http.MethodPost:
+			if capture != nil {
+				b, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(b, capture)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"affectedCount": 3})
 		case strings.HasPrefix(p, "/alerts/") && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{"alert": al})
 		case strings.HasPrefix(p, "/alerts/") && r.Method == http.MethodDelete:
@@ -155,6 +161,67 @@ func TestMCPAlertsStatus_ExecuteAndValidation(t *testing.T) {
 	})
 	if body["status"] != "ALERT_STATUS_RESOLVED" {
 		t.Errorf("status not normalized: %v", body["status"])
+	}
+}
+
+func TestMCPAlertsBulkDelete_GuardPlanExecute(t *testing.T) {
+	var body map[string]any
+	overrideV2ClientForTest(t, startAlertsV2Server(t, &body).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	// Empty filter is refused before any POST.
+	out := getResultText(t, callTool(t, cs, "alerts_bulk_delete", map[string]any{"execute": true}))
+	if !strings.Contains(out, "no filter") {
+		t.Errorf("expected empty-filter refusal, got: %s", out)
+	}
+	if body != nil {
+		t.Errorf("empty filter must not POST, captured: %v", body)
+	}
+
+	// Plan: no POST.
+	out = getResultText(t, callTool(t, cs, "alerts_bulk_delete", map[string]any{"severity": []any{"high"}}))
+	if body != nil {
+		t.Errorf("plan must not POST, captured: %v", body)
+	}
+	if !strings.Contains(out, "\"plan\": true") {
+		t.Errorf("expected plan, got: %s", out)
+	}
+
+	// Execute: normalized filter is sent, affectedCount reported.
+	out = getResultText(t, callTool(t, cs, "alerts_bulk_delete", map[string]any{"severity": []any{"high"}, "execute": true}))
+	if body["filter"].(map[string]any)["severity"].([]any)[0] != "ALERT_SEVERITY_HIGH" {
+		t.Errorf("severity not normalized: %v", body["filter"])
+	}
+	if !strings.Contains(out, "3 alert(s) deleted") {
+		t.Errorf("affectedCount not reported: %s", out)
+	}
+}
+
+func TestMCPAlertsBulkUpdate_Body(t *testing.T) {
+	var body map[string]any
+	overrideV2ClientForTest(t, startAlertsV2Server(t, &body).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	// Invalid target status rejected, no POST.
+	out := getResultText(t, callTool(t, cs, "alerts_bulk_update", map[string]any{
+		"title": "x", "set_status": "snoozed", "execute": true,
+	}))
+	if !strings.Contains(out, "invalid status") {
+		t.Errorf("expected invalid-status error, got: %s", out)
+	}
+	if body != nil {
+		t.Errorf("invalid status must not POST, captured: %v", body)
+	}
+
+	callTool(t, cs, "alerts_bulk_update", map[string]any{
+		"status": []any{"open"}, "set_status": "resolved", "remark": "sweep", "execute": true,
+	})
+	uf := body["updateField"].(map[string]any)
+	if uf["status"] != "ALERT_STATUS_RESOLVED" {
+		t.Errorf("updateField.status = %v", uf["status"])
+	}
+	if body["remark"] != "sweep" {
+		t.Errorf("remark = %v", body["remark"])
 	}
 }
 

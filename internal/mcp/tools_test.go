@@ -406,6 +406,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"notification_channels_list", "notification_channels_get", "notification_channels_create", "notification_channels_update", "notification_channels_delete",
 		// Alerts
 		"alerts_list", "alerts_get", "alerts_stats", "alerts_occurrences", "alerts_notes", "alerts_add_note", "alerts_status", "alerts_delete",
+		"alerts_bulk_delete", "alerts_bulk_update",
 		// Health-monitoring rules
 		"health_rules_list", "health_rules_get", "health_rules_stats", "health_rule_templates_list", "health_rule_templates_get",
 		"health_rules_status", "health_rules_create", "health_rules_update", "health_rules_delete",
@@ -459,8 +460,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 252 {
-		t.Errorf("expected 252 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 254 {
+		t.Errorf("expected 254 tools, got %d", len(result.Tools))
 	}
 }
 
