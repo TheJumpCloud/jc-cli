@@ -45,6 +45,7 @@ a unique alert title also resolves.`,
 	cmd.AddCommand(newAlertsAddNoteCmd())
 	cmd.AddCommand(newAlertsStatusCmd())
 	cmd.AddCommand(newAlertsDeleteCmd())
+	cmd.AddCommand(newAlertsRulesCmd())
 	return cmd
 }
 
