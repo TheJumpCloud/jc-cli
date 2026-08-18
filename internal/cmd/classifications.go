@@ -51,6 +51,20 @@ var commandClass = map[string]string{
 	"jc search commands":        ClassReadOnly,
 	"jc search command-results": ClassReadOnly,
 
+	// reports — read-only report browsing (v1 covers reads; writes are a follow-up).
+	"jc reports templates list": ClassReadOnly,
+	"jc reports templates get":  ClassReadOnly,
+	"jc reports saved list":     ClassReadOnly,
+	"jc reports saved get":      ClassReadOnly,
+	"jc reports custom list":    ClassReadOnly,
+	"jc reports custom get":     ClassReadOnly,
+	"jc reports builder list":   ClassReadOnly,
+	"jc reports builder get":    ClassReadOnly,
+	"jc reports scheduled list": ClassReadOnly,
+	"jc reports scheduled get":  ClassReadOnly,
+	"jc reports scheduled runs": ClassReadOnly,
+	"jc reports scheduled run":  ClassReadOnly,
+
 	// alerts rules — health-monitoring rule management (V2).
 	"jc alerts rules list":           ClassReadOnly,
 	"jc alerts rules get":            ClassReadOnly,
