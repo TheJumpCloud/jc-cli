@@ -66,6 +66,7 @@ AREA_TO_COMMAND = {
     "Saved Views": "saved-views",
     "Notifications Channels": "notification-channels",
     "Monitoring and Alerting": "alerts",
+    "Search": "search",
     "Administrators": "admins",
     "Command Results": "commands",
     "Policy Group Members & Membership": "policy-groups",

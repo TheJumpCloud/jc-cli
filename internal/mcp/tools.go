@@ -19,6 +19,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/resolve"
 	"github.com/klaassen-consulting/jc/internal/role"
 	"github.com/klaassen-consulting/jc/internal/savedview"
+	"github.com/klaassen-consulting/jc/internal/search"
 	"github.com/klaassen-consulting/jc/internal/serviceaccount"
 	"github.com/klaassen-consulting/jc/internal/simulator"
 	"github.com/klaassen-consulting/jc/internal/version"
@@ -604,6 +605,9 @@ func (s *Server) registerTools() {
 
 	// --- Apps tools ---
 	s.registerAppsTools()
+
+	// --- Search tools ---
+	s.registerSearchTools()
 
 	// --- Graph tools ---
 	s.registerGraphTools()
@@ -7065,6 +7069,37 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(fmt.Sprintf("Health-monitoring rule %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+}
+
+// registerSearchTools adds the v1 resource-index search tools (systems, users,
+// commands, command-results), sharing internal/search with the CLI.
+func (s *Server) registerSearchTools() {
+	for _, name := range search.ResourceNames() {
+		r := search.Resources[name]
+		addTypedTool(s, "search_"+strings.ReplaceAll(r.Name, "-", "_"),
+			fmt.Sprintf("Search JumpCloud %s (v1 %s). A bare term matches %v; use filter for structured matching, or omit the term to match all. Returns matching records.", r.Name, r.Endpoint, r.SearchFields),
+			func(ctx context.Context, req *mcp.CallToolRequest, args searchResourceInput) (*mcp.CallToolResult, any, error) {
+				client, err := newV1ClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+				}
+				body := r.Body(args.Term, args.SearchFields, args.Filter)
+				result, err := client.Search(ctx, r.Endpoint, body, api.SearchOptions{Limit: args.Limit, Sort: args.Sort})
+				if err != nil {
+					return errorResult(fmt.Sprintf("searching %s: %v", r.Name, err)), nil, nil
+				}
+				return rawListResult(result.Data, result.TotalCount)
+			},
+		)
+	}
+}
+
+type searchResourceInput struct {
+	Term         string   `json:"term,omitempty" jsonschema:"Keyword to match across the resource's default search fields. Omit to match all (bounded by filter)."`
+	Filter       []string `json:"filter,omitempty" jsonschema:"Structured V1 filter expressions, e.g. 'activated=true'"`
+	SearchFields []string `json:"search_fields,omitempty" jsonschema:"Fields the term matches against (overrides the resource default)"`
+	Limit        int      `json:"limit,omitempty" jsonschema:"Maximum number of results to return (0 = all)"`
+	Sort         string   `json:"sort,omitempty" jsonschema:"Field to sort by. Prefix with - for descending"`
 }
 
 // healthRuleName extracts a rule's name from a raw rule object for plan output.

@@ -45,6 +45,12 @@ var commandClass = map[string]string{
 	"jc alerts bulk-delete": ClassDestructive,
 	"jc alerts bulk-update": ClassMutating,
 
+	// search — v1 resource-index search (read-only, POST is a query).
+	"jc search systems":         ClassReadOnly,
+	"jc search users":           ClassReadOnly,
+	"jc search commands":        ClassReadOnly,
+	"jc search command-results": ClassReadOnly,
+
 	// alerts rules — health-monitoring rule management (V2).
 	"jc alerts rules list":           ClassReadOnly,
 	"jc alerts rules get":            ClassReadOnly,
