@@ -101,6 +101,19 @@ func startLDAPServer(t *testing.T, servers []map[string]any) *httptest.Server {
 					case http.MethodPut:
 						var input map[string]any
 						json.NewDecoder(r.Body).Decode(&input)
+						// The real samba-domain PUT is a full replace: it rejects
+						// a body missing name or sid. Mirror that so a partial
+						// update (pre-fetch-merge) fails here.
+						if _, ok := input["name"]; !ok {
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write([]byte(`{"message":"missing required property: name"}`))
+							return
+						}
+						if _, ok := input["sid"]; !ok {
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write([]byte(`{"message":"missing required property: sid"}`))
+							return
+						}
 						for k, v := range input {
 							domainFound[k] = v
 						}
@@ -666,6 +679,11 @@ func TestLDAPSambaDomain_Update(t *testing.T) {
 
 	if result["name"] != "UPDATED" {
 		t.Errorf("name = %q, want 'UPDATED'", result["name"])
+	}
+	// The PUT is a full replace: a --name-only update must fetch-merge so the
+	// untouched sid is preserved (the mock rejects a body missing sid).
+	if result["sid"] == nil || result["sid"] == "" {
+		t.Errorf("partial update must preserve sid via fetch-merge, got %v", result["sid"])
 	}
 }
 
