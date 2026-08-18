@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/klaassen-consulting/jc/internal/alert"
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 	"github.com/klaassen-consulting/jc/internal/command"
@@ -6668,6 +6669,150 @@ func (s *Server) registerAppTemplateTools() {
 			return textResult(fmt.Sprintf("Notification channel %q deleted successfully.", args.Identifier)), nil, nil
 		},
 	)
+
+	// --- Alerts (Monitoring & Alerting triage, V2) ---
+
+	addTypedTool(s, "alerts_list", "List JumpCloud alerts (raised by health-monitoring rules against devices, users, etc.). Returns objects with objectId, title, severity, status, sourceName, lastOccurredAt.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			opts, err := buildV2ListOptions(args)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			opts.ResponseKey = "alerts" // GET /alerts wraps in {alerts}
+			result, err := client.ListAll(ctx, "/alerts", opts)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing alerts: %v", err)), nil, nil
+			}
+			return rawListResult(result.Data, len(result.Data))
+		},
+	)
+
+	addTypedTool(s, "alerts_get", "Get a single JumpCloud alert by objectId or title.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AlertConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Get(ctx, "/alerts/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting alert: %v", err)), nil, nil
+			}
+			return textResult(string(alert.Unwrap(data, "alert"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "alerts_stats", "Get JumpCloud alert count statistics.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			data, err := client.Get(ctx, "/alerts-stats")
+			if err != nil {
+				return errorResult(fmt.Sprintf("getting alert stats: %v", err)), nil, nil
+			}
+			return textResult(string(data)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "alerts_occurrences", "List the occurrences of a JumpCloud alert (by objectId or title).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			return alertsSubList(ctx, args.Identifier, "/occurrences", "alertOccurrences")
+		},
+	)
+
+	addTypedTool(s, "alerts_notes", "List the triage notes on a JumpCloud alert (by objectId or title).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
+			return alertsSubList(ctx, args.Identifier, "/notes", "notes")
+		},
+	)
+
+	addTypedTool(s, "alerts_add_note", "Add a triage note to a JumpCloud alert. Notes are permanent (no delete-note endpoint). Set execute=true to add; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args alertNoteInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AlertConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("add note", "alert", args.Identifier, id, map[string]string{"note": args.Note})
+			}
+			data, err := client.Create(ctx, "/alerts/"+id+"/notes", alert.NoteBody(args.Note))
+			if err != nil {
+				return errorResult(fmt.Sprintf("adding note: %v", err)), nil, nil
+			}
+			return textResult(string(alert.Unwrap(data, "note"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "alerts_status", "Change a JumpCloud alert's status (open, acknowledged, or resolved). Set execute=true to apply; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args alertStatusInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			apiStatus, err := alert.NormalizeStatus(args.Status)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AlertConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("set status", "alert", args.Identifier, id, map[string]string{"status": args.Status})
+			}
+			data, err := client.Create(ctx, "/alerts/"+id+"/status", alert.StatusBody(apiStatus, args.Remark))
+			if err != nil {
+				return errorResult(fmt.Sprintf("setting alert status: %v", err)), nil, nil
+			}
+			return textResult(string(alert.Unwrap(data, "alert"))), nil, nil
+		},
+	)
+
+	addTypedTool(s, "alerts_delete", "Delete a JumpCloud alert (and its occurrence history). Set execute=true to delete; otherwise returns a plan.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
+			if s.readOnly {
+				return errorResult("server is in read-only mode"), nil, nil
+			}
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			r := resolve.NewV2Resolver(client)
+			id, err := r.Resolve(ctx, args.Identifier, resolve.AlertConfig)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if !args.Execute {
+				return planResult("delete", "alert", args.Identifier, id, nil)
+			}
+			if _, err := client.Delete(ctx, "/alerts/"+id); err != nil {
+				return errorResult(fmt.Sprintf("deleting alert: %v", err)), nil, nil
+			}
+			return textResult(fmt.Sprintf("Alert %q deleted successfully.", args.Identifier)), nil, nil
+		},
+	)
 }
 
 // notificationConfigFromArgs resolves the config block for a channel create:
@@ -6711,6 +6856,46 @@ type notificationChannelUpdateInput struct {
 	Enabled     *bool  `json:"enabled,omitempty" jsonschema:"Enable or disable the channel (true or false). Omit to leave unchanged."`
 	URL         string `json:"url,omitempty" jsonschema:"New webhook URL (webhook channels)"`
 	Execute     bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the update. Without this the tool returns a plan."`
+}
+
+// alertsSubList fetches a wrapped sub-resource list ({key:[...]}) of an alert
+// and returns the unwrapped array, resolving the identifier first.
+func alertsSubList(ctx context.Context, identifier, subPath, key string) (*mcp.CallToolResult, any, error) {
+	client, err := newV2ClientFunc()
+	if err != nil {
+		return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+	}
+	r := resolve.NewV2Resolver(client)
+	id, err := r.Resolve(ctx, identifier, resolve.AlertConfig)
+	if err != nil {
+		return errorResult(err.Error()), nil, nil
+	}
+	raw, err := client.Get(ctx, "/alerts/"+id+subPath)
+	if err != nil {
+		return errorResult(fmt.Sprintf("listing alert %s: %v", key, err)), nil, nil
+	}
+	var wrap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wrap); err != nil {
+		return errorResult(fmt.Sprintf("parsing response: %v", err)), nil, nil
+	}
+	var items []json.RawMessage
+	if arr := wrap[key]; arr != nil {
+		_ = json.Unmarshal(arr, &items)
+	}
+	return rawListResult(items, len(items))
+}
+
+type alertNoteInput struct {
+	Identifier string `json:"identifier" jsonschema:"Alert objectId or title"`
+	Note       string `json:"note" jsonschema:"The triage note text"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to add the note. Without this the tool returns a plan."`
+}
+
+type alertStatusInput struct {
+	Identifier string `json:"identifier" jsonschema:"Alert objectId or title"`
+	Status     string `json:"status" jsonschema:"New status: open, acknowledged, or resolved"`
+	Remark     string `json:"remark,omitempty" jsonschema:"Optional remark recorded with the status change"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to apply the status change. Without this the tool returns a plan."`
 }
 
 type serviceAccountCreateInput struct {

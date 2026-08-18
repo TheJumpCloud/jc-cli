@@ -65,6 +65,7 @@ AREA_TO_COMMAND = {
     "Roles": "roles",
     "Saved Views": "saved-views",
     "Notifications Channels": "notification-channels",
+    "Monitoring and Alerting": "alerts",
     "Administrators": "admins",
     "Command Results": "commands",
     "Policy Group Members & Membership": "policy-groups",

@@ -404,6 +404,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"roles_list", "roles_get", "roles_create", "roles_update", "roles_delete",
 		// Notification Channels
 		"notification_channels_list", "notification_channels_get", "notification_channels_create", "notification_channels_update", "notification_channels_delete",
+		// Alerts
+		"alerts_list", "alerts_get", "alerts_stats", "alerts_occurrences", "alerts_notes", "alerts_add_note", "alerts_status", "alerts_delete",
 		// Utility
 		"recipe_run", "plan", "explain",
 		// MCP Apps
@@ -454,8 +456,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 235 {
-		t.Errorf("expected 235 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 243 {
+		t.Errorf("expected 243 tools, got %d", len(result.Tools))
 	}
 }
 
