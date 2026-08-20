@@ -597,6 +597,7 @@ func (s *Server) registerTools() {
 
 	// --- Active Directory tools ---
 	s.registerADTools()
+	s.registerADTranslationRuleTools()
 
 	// --- Organization tools ---
 	s.registerOrgTools()

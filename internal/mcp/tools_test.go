@@ -375,6 +375,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"ldap_samba_domains_list", "ldap_samba_domain_get", "ldap_samba_domain_create", "ldap_samba_domain_update", "ldap_samba_domain_delete",
 		// AD
 		"ad_list", "ad_get", "ad_create", "ad_update", "ad_delete",
+		"ad_translation_rules_list", "ad_translation_rules_recommendations",
+		"ad_translation_rules_create", "ad_translation_rules_update",
+		"ad_translation_rules_delete", "ad_translation_rules_bulk",
+		"ad_translation_rules_preview",
 		// System Insights
 		"system_insights_list_table", "system_insights_tables",
 		// RADIUS
@@ -471,8 +475,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 281 {
-		t.Errorf("expected 281 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 288 {
+		t.Errorf("expected 288 tools, got %d", len(result.Tools))
 	}
 }
 
