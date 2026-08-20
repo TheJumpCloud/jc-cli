@@ -219,6 +219,15 @@ var commandClass = map[string]string{
 	"jc devices search":  ClassReadOnly,
 	"jc devices update":  ClassMutating,
 
+	// devices settings — org-wide device defaults (KLA-485). The set
+	// commands change sign-in behaviour for every device in the org, so
+	// they are mutating and prompt for confirmation.
+	"jc devices settings get":               ClassReadOnly,
+	"jc devices settings sign-in get":       ClassReadOnly,
+	"jc devices settings sign-in set":       ClassMutating,
+	"jc devices settings password-sync get": ClassReadOnly,
+	"jc devices settings password-sync set": ClassMutating,
+
 	// directories — unified read-only view of all directory
 	// integrations (incl. OAuth health).
 	"jc directories list": ClassReadOnly,

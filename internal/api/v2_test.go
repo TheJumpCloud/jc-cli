@@ -1147,3 +1147,36 @@ func TestV2Client_ListAll_SkipFallbackWithoutLinkHeaders(t *testing.T) {
 		t.Errorf("capped got %d, want 5", len(capped.Data))
 	}
 }
+
+// Some V2 endpoints answer a successful PUT/PATCH with 204 and an empty body
+// (the org device-settings singletons do). Create and Delete already treated
+// 204 as success; Update and Patch must too.
+func TestV2Client_UpdateAndPatch_Accept204(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(c *V2Client) ([]byte, error)
+	}{
+		{"Update", func(c *V2Client) ([]byte, error) {
+			return c.Update(context.Background(), "/devices/settings/defaultpasswordsync", map[string]any{"enabled": false})
+		}},
+		{"Patch", func(c *V2Client) ([]byte, error) {
+			return c.Patch(context.Background(), "/devices/settings/defaultpasswordsync", map[string]any{"enabled": false})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+
+			c := newTestV2Client(srv.URL)
+			body, err := tc.call(c)
+			if err != nil {
+				t.Fatalf("%s should treat 204 as success, got %v", tc.name, err)
+			}
+			if len(body) != 0 {
+				t.Errorf("expected empty body, got %q", body)
+			}
+		})
+	}
+}
