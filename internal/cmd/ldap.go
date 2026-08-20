@@ -309,7 +309,7 @@ Shows the LDAP server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.LDAPServerConfig),
-		RunE: batchRunE("LDAP server", "delete", runLDAPDelete),
+		RunE:              batchRunE("LDAP server", "delete", runLDAPDelete),
 	}
 
 	addBatchSourceFlags(cmd)
@@ -539,6 +539,32 @@ func runLDAPSambaDomainCreate(cmd *cobra.Command, ldapIdentifier, name, sid stri
 	return output.WriteSingle(cmd.OutOrStdout(), result, opts)
 }
 
+// mergeSambaDomainUpdate builds the full {name, sid} PUT body for a samba
+// domain update: it GETs the current domain and overrides only the fields the
+// caller changed. The samba-domain PUT is a full replace, so a partial body is
+// rejected by the API with "missing required property".
+func mergeSambaDomainUpdate(ctx context.Context, client *api.V2Client, ldapID, domainID string, changeName bool, name string, changeSID bool, sid string) (map[string]any, error) {
+	current, err := client.Get(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+domainID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current samba domain: %w", err)
+	}
+	var cur struct {
+		Name string `json:"name"`
+		SID  string `json:"sid"`
+	}
+	if err := json.Unmarshal(current, &cur); err != nil {
+		return nil, fmt.Errorf("decoding current samba domain: %w", err)
+	}
+	body := map[string]any{"name": cur.Name, "sid": cur.SID}
+	if changeName {
+		body["name"] = name
+	}
+	if changeSID {
+		body["sid"] = sid
+	}
+	return body, nil
+}
+
 func newLDAPSambaDomainUpdateCmd() *cobra.Command {
 	var (
 		domainID string
@@ -568,22 +594,19 @@ Requires --domain-id. Specify only the fields you want to change.`,
 }
 
 func runLDAPSambaDomainUpdate(cmd *cobra.Command, ldapIdentifier, domainID, name, sid string) error {
-	body := map[string]any{}
-	if cmd.Flags().Changed("name") {
-		body["name"] = name
-	}
-	if cmd.Flags().Changed("sid") {
-		body["sid"] = sid
-	}
-
-	if len(body) == 0 {
+	changeName := cmd.Flags().Changed("name")
+	changeSID := cmd.Flags().Changed("sid")
+	if !changeName && !changeSID {
 		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --sid)")
 	}
 
 	if viper.GetBool("plan") {
 		var effects []string
-		for k, v := range body {
-			effects = append(effects, fmt.Sprintf("%s: %v", k, v))
+		if changeName {
+			effects = append(effects, "name: "+name)
+		}
+		if changeSID {
+			effects = append(effects, "sid: "+sid)
 		}
 		p := &plan.Plan{
 			Action:     "update",
@@ -601,6 +624,14 @@ func runLDAPSambaDomainUpdate(cmd *cobra.Command, ldapIdentifier, domainID, name
 	}
 
 	ldapID, err := resolveLDAP(cmd.Context(), client, ldapIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// The PUT is a full replace (the API rejects a partial body with
+	// "missing required property"), so fetch the current domain and merge the
+	// changed fields on top — preserving the "change only what you pass" UX.
+	body, err := mergeSambaDomainUpdate(cmd.Context(), client, ldapID, domainID, changeName, name, changeSID, sid)
 	if err != nil {
 		return err
 	}

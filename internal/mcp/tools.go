@@ -3262,15 +3262,35 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			body := map[string]any{}
+			if !args.Execute {
+				changed := map[string]any{}
+				if args.Name != "" {
+					changed["name"] = args.Name
+				}
+				if args.SID != "" {
+					changed["sid"] = args.SID
+				}
+				return planResult("update", "samba domain", args.DomainID, args.DomainID, changed)
+			}
+			// The samba-domain PUT is a full replace, so fetch the current
+			// domain and merge the changed fields on top before writing.
+			current, err := client.Get(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+args.DomainID)
+			if err != nil {
+				return errorResult(fmt.Sprintf("fetching current samba domain: %v", err)), nil, nil
+			}
+			var cur struct {
+				Name string `json:"name"`
+				SID  string `json:"sid"`
+			}
+			if err := json.Unmarshal(current, &cur); err != nil {
+				return errorResult(fmt.Sprintf("decoding current samba domain: %v", err)), nil, nil
+			}
+			body := map[string]any{"name": cur.Name, "sid": cur.SID}
 			if args.Name != "" {
 				body["name"] = args.Name
 			}
 			if args.SID != "" {
 				body["sid"] = args.SID
-			}
-			if !args.Execute {
-				return planResult("update", "samba domain", args.DomainID, args.DomainID, body)
 			}
 			data, err := client.Update(ctx, "/ldapservers/"+ldapID+"/sambadomains/"+args.DomainID, body)
 			if err != nil {
