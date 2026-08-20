@@ -26,6 +26,16 @@ var commandClass = map[string]string{
 	"jc ad list":   ClassReadOnly,
 	"jc ad update": ClassMutating,
 
+	// ad translation-rules — AD attribute mapping (KLA-485). bulk is
+	// destructive: one body can carry deleteTranslationRuleObjectIds.
+	"jc ad translation-rules list":            ClassReadOnly,
+	"jc ad translation-rules recommendations": ClassReadOnly,
+	"jc ad translation-rules preview":         ClassReadOnly,
+	"jc ad translation-rules create":          ClassMutating,
+	"jc ad translation-rules update":          ClassMutating,
+	"jc ad translation-rules delete":          ClassDestructive,
+	"jc ad translation-rules bulk":            ClassDestructive,
+
 	// admins — JumpCloud admin user mgmt.
 	"jc admins create": ClassMutating,
 	"jc admins delete": ClassDestructive,

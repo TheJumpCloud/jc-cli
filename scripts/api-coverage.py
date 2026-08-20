@@ -56,6 +56,7 @@ AREA_TO_COMMAND = {
     "Authentication Policies": "auth-policies",
     "LDAP Servers": "ldap",
     "Samba Domains": "ldap/samba-domains",
+    "Translation Rules": "ad/translation-rules",
     "System Group Associations": "graph",
     "IP Lists": "iplists",
     "Policy Group Associations": "policy-groups",

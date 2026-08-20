@@ -37,6 +37,7 @@ func newADCmd() *cobra.Command {
 	cmd.AddCommand(newADCreateCmd())
 	cmd.AddCommand(newADUpdateCmd())
 	cmd.AddCommand(newADDeleteCmd())
+	cmd.AddCommand(newADTranslationRulesCmd())
 
 	return cmd
 }
