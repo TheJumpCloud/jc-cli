@@ -1,5 +1,23 @@
 # jc — JumpCloud CLI Agent Context
 
+## Before designing — check docs/solutions/
+
+When you're about to add a new MCP tool, write a JC-API emitter, design an
+authorization gate, or make any other non-trivial structural decision, grep
+[`docs/solutions/`](docs/solutions/) first. It captures the *why* behind
+decisions that aren't obvious from the code alone — design patterns,
+conventions, and postmortems.
+
+```bash
+grep -rl "tags:.*mcp" docs/solutions/         # all MCP-relevant entries
+grep -rl "module: internal/apple_mdm" docs/solutions/  # apple-mdm specific
+grep -rl "applies_when:.*destructive" docs/solutions/  # destructive-ops context
+```
+
+The library starts small and grows when contributors find themselves
+explaining the same decision more than once. See [docs/solutions/README.md](docs/solutions/README.md)
+for the frontmatter convention and authoring guidance.
+
 ## What this tool does
 
 `jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 40+ resource types. Single Go binary, no dependencies.
