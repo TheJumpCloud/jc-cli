@@ -57,6 +57,7 @@ AREA_TO_COMMAND = {
     "LDAP Servers": "ldap",
     "Samba Domains": "ldap/samba-domains",
     "Translation Rules": "ad/translation-rules",
+    "Systems Organization Settings": "devices/settings",
     "System Group Associations": "graph",
     "IP Lists": "iplists",
     "Policy Group Associations": "policy-groups",

@@ -42,6 +42,7 @@ func newDevicesCmd() *cobra.Command {
 	cmd.AddCommand(newDevicesRestartCmd())
 	cmd.AddCommand(newDevicesEraseCmd())
 	cmd.AddCommand(newDevicesFDEKeyCmd())
+	cmd.AddCommand(newDevicesSettingsCmd())
 
 	return cmd
 }

@@ -379,6 +379,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"ad_translation_rules_create", "ad_translation_rules_update",
 		"ad_translation_rules_delete", "ad_translation_rules_bulk",
 		"ad_translation_rules_preview",
+		"devices_settings_get", "devices_settings_signin_set",
+		"devices_settings_password_sync_set",
 		// System Insights
 		"system_insights_list_table", "system_insights_tables",
 		// RADIUS
@@ -475,8 +477,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 288 {
-		t.Errorf("expected 288 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 291 {
+		t.Errorf("expected 291 tools, got %d", len(result.Tools))
 	}
 }
 
