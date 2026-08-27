@@ -32,6 +32,13 @@ func startOrgServer(t *testing.T, putBody *[]byte) *httptest.Server {
 					"enableMaxLoginAttempts":true,"maxLoginAttempts":6,
 					"effectiveDate":"2023-05-03T09:23:50.046Z"
 				}}}`))
+		case r.Method == "GET" && r.URL.Path == "/passwordpolicies":
+			// The V2 half. Deliberately out of precedence order so the
+			// screen's sort is exercised.
+			_, _ = w.Write([]byte(`{"results":[
+				{"objectId":"pp-2","name":"Contractors","precedence":2,"default":false,"groupCount":1},
+				{"objectId":"pp-1","name":"","precedence":1,"default":true,"groupCount":0}
+			]}`))
 		case r.Method == "PUT" && r.URL.Path == "/organizations/org-1":
 			body, _ := io.ReadAll(r.Body)
 			*putBody = body
@@ -44,15 +51,27 @@ func startOrgServer(t *testing.T, putBody *[]byte) *httptest.Server {
 	return srv
 }
 
+// overridePasswordPolicyClient points BOTH clients at the stub. The screen
+// reads two different APIs, and leaving the V2 one unstubbed would let a test
+// reach the real network.
 func overridePasswordPolicyClient(t *testing.T, url string) {
 	t.Helper()
-	orig := newV1ClientForPasswordPolicy
+	origV1 := newV1ClientForPasswordPolicy
 	newV1ClientForPasswordPolicy = func() (*api.V1Client, error) {
 		c := api.NewV1ClientWithKey("test-key")
 		c.BaseURL = url
 		return c, nil
 	}
-	t.Cleanup(func() { newV1ClientForPasswordPolicy = orig })
+	origV2 := newV2ClientForPasswordPolicy
+	newV2ClientForPasswordPolicy = func() (*api.V2Client, error) {
+		c := api.NewV2ClientWithKey("test-key")
+		c.BaseURL = url
+		return c, nil
+	}
+	t.Cleanup(func() {
+		newV1ClientForPasswordPolicy = origV1
+		newV2ClientForPasswordPolicy = origV2
+	})
 }
 
 func loadPasswordPolicyScreen(t *testing.T) *PasswordPolicyScreen {
@@ -175,5 +194,124 @@ func TestPasswordPolicyScreen_NoChangesAndBadNumber(t *testing.T) {
 	}
 	if s.policy["minLength"] != float64(8) {
 		t.Errorf("value must stay 8, got %v", s.policy["minLength"])
+	}
+}
+
+// The screen covers two different APIs that share the name "password policy":
+// the V1 org-settings default and the V2 group-bound policies. Both must load.
+func TestPasswordPolicyScreen_ShowsGroupBoundPolicies(t *testing.T) {
+	var put []byte
+	overridePasswordPolicyClient(t, startOrgServer(t, &put).URL)
+	s := loadPasswordPolicyScreen(t)
+
+	if len(s.groupPolicies) != 2 {
+		t.Fatalf("expected 2 group-bound policies, got %d", len(s.groupPolicies))
+	}
+	// Rendered in precedence order, not the order the API returned them.
+	if s.groupPolicies[0].ObjectID != "pp-1" || s.groupPolicies[1].ObjectID != "pp-2" {
+		t.Errorf("policies not sorted by precedence: %+v", s.groupPolicies)
+	}
+
+	view := s.View()
+	if !strings.Contains(view, "Group-bound policies") {
+		t.Errorf("the group-bound section is missing:\n%s", view)
+	}
+	if !strings.Contains(view, "Contractors") {
+		t.Errorf("a named policy should be listed:\n%s", view)
+	}
+	// The org default has no name in this API; it must not render blank.
+	if !strings.Contains(view, "(unnamed)") {
+		t.Errorf("the unnamed default policy needs a placeholder:\n%s", view)
+	}
+	if !strings.Contains(view, "g group policies") {
+		t.Errorf("the footer should offer the drill-in when policies exist:\n%s", view)
+	}
+	// The org-default half must still be there and editable.
+	if !strings.Contains(view, "Organization password policy") {
+		t.Errorf("the org default section is missing:\n%s", view)
+	}
+}
+
+// A failure reading the V2 half must not stop the org default from loading;
+// they are independent APIs and the editable half is the more important one.
+func TestPasswordPolicyScreen_GroupHalfFailureIsIsolated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/organizations":
+			_, _ = w.Write([]byte(`{"totalCount":1,"results":[{"id":"org-1","displayName":"Test Org"}]}`))
+		case r.URL.Path == "/organizations/org-1":
+			_, _ = w.Write([]byte(`{"id":"org-1","settings":{"passwordPolicy":{"enableMinLength":true,"minLength":8}}}`))
+		case r.URL.Path == "/passwordpolicies":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"nope"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	overridePasswordPolicyClient(t, srv.URL)
+
+	s := NewPasswordPolicyScreen()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	runCmd(t, s, s.loadCmd())
+
+	if s.stage != ppStageEdit {
+		t.Fatalf("the org default must still load: stage=%v err=%q", s.stage, s.err)
+	}
+	if s.err != "" {
+		t.Errorf("the group-bound failure must not surface as the screen error: %q", s.err)
+	}
+	if s.groupErr == "" {
+		t.Error("the group-bound failure should be reported in its own section")
+	}
+	if !strings.Contains(s.View(), "403") {
+		t.Errorf("the section should show what went wrong:\n%s", s.View())
+	}
+}
+
+func TestPasswordPolicyScreen_NoGroupPolicies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/organizations":
+			_, _ = w.Write([]byte(`{"totalCount":1,"results":[{"id":"org-1","displayName":"Test Org"}]}`))
+		case r.URL.Path == "/organizations/org-1":
+			_, _ = w.Write([]byte(`{"id":"org-1","settings":{"passwordPolicy":{"enableMinLength":true,"minLength":8}}}`))
+		case r.URL.Path == "/passwordpolicies":
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	overridePasswordPolicyClient(t, srv.URL)
+
+	s := NewPasswordPolicyScreen()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	runCmd(t, s, s.loadCmd())
+
+	view := s.View()
+	if !strings.Contains(view, "every user falls under the organization default") {
+		t.Errorf("an empty group-bound list should explain what that means:\n%s", view)
+	}
+	// With nothing to open, the footer must not advertise the drill-in.
+	if strings.Contains(view, "g group policies") {
+		t.Errorf("the footer should not offer a drill-in with no policies:\n%s", view)
+	}
+}
+
+func TestPasswordPolicyEntry_IsReadOnlyAndUnwrapsResults(t *testing.T) {
+	e := passwordPolicyEntry()
+	if e.ResponseKey != "results" {
+		t.Errorf("ResponseKey = %q; the V2 list wraps its array in \"results\"", e.ResponseKey)
+	}
+	if e.Schema.IDField != "objectId" {
+		t.Errorf("IDField = %q, want objectId", e.Schema.IDField)
+	}
+	for _, v := range e.Schema.Verbs {
+		if v != "list" && v != "get" {
+			t.Errorf("the drill-in is a viewer; unexpected verb %q", v)
+		}
 	}
 }

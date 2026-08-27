@@ -3,6 +3,7 @@ package tui
 import (
 	"testing"
 
+	"github.com/klaassen-consulting/jc/internal/report"
 	"github.com/klaassen-consulting/jc/internal/schema"
 )
 
@@ -77,9 +78,10 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// "directories" a user-mgmt entry (+1, KLA-479), and
 	// "password-policies" a security entry (+1, KLA-480), and
 	// "patch-management" a device-mgmt entry (+1, KLA-481), and
-	// "mfa-overview" a security entry (+1, KLA-482),
+	// "mfa-overview" a security entry (+1, KLA-482), and
+	// "reports" an insights sub-menu entry (+1, KLA-485),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -133,9 +135,10 @@ func TestRegistryByKey(t *testing.T) {
 	// "directories" a user-mgmt entry (+1, KLA-479), and
 	// "password-policies" a security entry (+1, KLA-480), and
 	// "patch-management" a device-mgmt entry (+1, KLA-481), and
-	// "mfa-overview" a security entry (+1, KLA-482),
+	// "mfa-overview" a security entry (+1, KLA-482), and
+	// "reports" an insights sub-menu entry (+1, KLA-485),
 	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -511,4 +514,81 @@ func TestBuildRegistry_NewCategories(t *testing.T) {
 			t.Errorf("missing category %q", c)
 		}
 	}
+}
+
+// The reports sub-menu is derived from report.Families rather than from
+// schema.Resources, so a family added or renamed there must appear here
+// without a second edit.
+func TestBuildRegistry_ReportsSubMenu(t *testing.T) {
+	m := RegistryByKey()
+	e, ok := m["reports"]
+	if !ok {
+		t.Fatal("reports entry missing from the registry")
+	}
+	if e.Category != CategoryInsights {
+		t.Errorf("reports category = %q", e.Category)
+	}
+	if len(e.SubMenu) != len(report.Families) {
+		t.Fatalf("sub-menu has %d children, but report.Families has %d — the two have drifted",
+			len(e.SubMenu), len(report.Families))
+	}
+
+	byKey := map[string]ResourceEntry{}
+	for _, c := range e.SubMenu {
+		byKey[c.Key] = c
+	}
+
+	for name, f := range report.Families {
+		c, ok := byKey["reports-"+name]
+		if !ok {
+			t.Errorf("family %q has no sub-menu entry", name)
+			continue
+		}
+		if c.ListEndpoint != f.ListEndpoint {
+			t.Errorf("%s endpoint = %q, want %q", name, c.ListEndpoint, f.ListEndpoint)
+		}
+		// Each family wraps its array in a different key; getting this wrong
+		// yields an empty list rather than an error.
+		if c.ResponseKey != f.ListKey {
+			t.Errorf("%s ResponseKey = %q, want %q", name, c.ResponseKey, f.ListKey)
+		}
+		if c.Schema.IDField != f.IDField {
+			t.Errorf("%s IDField = %q, want %q", name, c.Schema.IDField, f.IDField)
+		}
+	}
+}
+
+// Scheduled reports deliver to real recipients on a cron, so the TUI must not
+// offer to create or edit a schedule behind a generic form.
+func TestBuildRegistry_ScheduledReportsAreReadOnly(t *testing.T) {
+	m := RegistryByKey()
+	var scheduled, custom ResourceEntry
+	for _, c := range m["reports"].SubMenu {
+		switch c.Key {
+		case "reports-scheduled":
+			scheduled = c
+		case "reports-custom":
+			custom = c
+		}
+	}
+
+	for _, v := range scheduled.Schema.Verbs {
+		if v != "list" && v != "get" {
+			t.Errorf("scheduled reports must be read-only in the TUI, got verb %q", v)
+		}
+	}
+	// The gate is specific to scheduled, not blanket read-only: a writable
+	// family still gets its write verbs.
+	if !hasVerbInList(custom.Schema.Verbs, "create") {
+		t.Errorf("custom views are writable and should offer create: %v", custom.Schema.Verbs)
+	}
+}
+
+func hasVerbInList(verbs []string, want string) bool {
+	for _, v := range verbs {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }

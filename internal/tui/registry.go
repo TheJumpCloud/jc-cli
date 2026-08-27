@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 
+	"github.com/klaassen-consulting/jc/internal/report"
 	"github.com/klaassen-consulting/jc/internal/schema"
 )
 
@@ -443,6 +444,64 @@ var assetResources = map[string]bool{
 	"assets": true,
 }
 
+// reportFamilyDisplayNames gives each report family a name an admin would
+// recognise; report.Family.Name is the CLI subcommand, which is terser.
+var reportFamilyDisplayNames = map[string]string{
+	"templates": "Built-in Templates",
+	"saved":     "Saved Reports",
+	"custom":    "Custom Views",
+	"builder":   "Report Builder",
+	"scheduled": "Scheduled Reports",
+}
+
+// reportFamilyOrder fixes the sub-menu order: browse the built-ins first,
+// then what this org has saved or built, then what runs on a schedule.
+var reportFamilyOrder = []string{"templates", "saved", "custom", "builder", "scheduled"}
+
+// reportFamilyEntries builds one sub-menu child per report family, deriving
+// the endpoint, envelope key and field metadata from internal/report.
+func reportFamilyEntries() []ResourceEntry {
+	out := make([]ResourceEntry, 0, len(reportFamilyOrder))
+	for _, name := range reportFamilyOrder {
+		f, ok := report.Families[name]
+		if !ok {
+			continue
+		}
+
+		// Scheduled reports stay read-only here. Creating or editing a
+		// schedule through a generic key/value form sets up recurring
+		// delivery to real recipients, which is not something to offer
+		// behind a two-keystroke form.
+		verbs := []string{"list", "get"}
+		if f.Writable && name != "scheduled" {
+			verbs = []string{"list", "get", "create", "update", "delete"}
+		}
+
+		dn := reportFamilyDisplayNames[name]
+		if dn == "" {
+			dn = f.Name
+		}
+
+		out = append(out, ResourceEntry{
+			Key:          "reports-" + name,
+			DisplayName:  dn,
+			Category:     CategoryInsights,
+			ClientType:   ClientV2,
+			ListEndpoint: f.ListEndpoint,
+			ResponseKey:  f.ListKey,
+			Schema: schema.ResourceSchema{
+				Resource:      "reports-" + name,
+				APIVersion:    "v2",
+				Verbs:         verbs,
+				DefaultFields: f.DefaultFields,
+				IDField:       f.IDField,
+				NameField:     f.NameField,
+			},
+		})
+	}
+	return out
+}
+
 // BuildRegistry creates ResourceEntry items for all schema resources.
 func BuildRegistry() []ResourceEntry {
 	entries := make([]ResourceEntry, 0, len(schema.Resources))
@@ -568,6 +627,21 @@ func BuildRegistry() []ResourceEntry {
 			SubMenu:     cloudDirChildren,
 		})
 	}
+
+	// Reports: a sub-menu over the five report families, built from
+	// report.Families rather than from schema.Resources.
+	//
+	// The families differ in endpoint, response envelope and writability, and
+	// internal/report already models all of that for the CLI. Deriving the
+	// entries from it keeps one source of truth — a family added or renamed
+	// there appears here without a second edit — and the generic list screen
+	// works off entry.Schema, which need not be a registered schema resource.
+	entries = append(entries, ResourceEntry{
+		Key:         "reports",
+		DisplayName: "Reports",
+		Category:    CategoryInsights,
+		SubMenu:     reportFamilyEntries(),
+	})
 
 	// Recipes: a virtual entry (no API endpoint) that opens the recipe runner.
 	// The home screen branches on Key="recipes" to open NewRecipeListScreen.
