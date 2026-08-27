@@ -658,6 +658,188 @@ var Resources = map[string]ResourceSchema{
 		IDField:       "_id",
 		NameField:     "name",
 	},
+
+	// --- KLA-485 coverage areas ---
+	//
+	// These reached the CLI and MCP without a schema entry, which is why the
+	// TUI never learned they exist: BuildRegistry() in internal/tui builds its
+	// menu from this map. Verbs are set deliberately rather than copied — the
+	// generic TUI screens gate their create/edit/delete affordances on them,
+	// and not every resource here can be safely authored through a generic
+	// key/value form.
+
+	// Workflows are LIST/GET only on purpose. A workflow is a DSL document
+	// with no published schema; it cannot be authored in a generic form, and
+	// creating one also needs an execution role and local validation. The TUI
+	// is a viewer here and hands authoring to `jc workflows templates init` /
+	// `validate` / `create`.
+	"workflows": {
+		Resource:      "workflows",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "status", "trigger_type", "last_ran"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique workflow identifier", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Workflow name", Required: true},
+			{Name: "description", Type: "string", Description: "Workflow description"},
+			{Name: "status", Type: "string", Description: "active or inactive"},
+			{Name: "trigger_type", Type: "string", Description: "jc_events, external, or scheduler (derived from the DSL)", ReadOnly: true},
+			{Name: "execution_role_id", Type: "string", Description: "Role the workflow executes as"},
+			{Name: "dsl", Type: "object", Description: "The workflow definition document"},
+			{Name: "last_ran", Type: "datetime", Description: "When the workflow last executed", ReadOnly: true},
+			{Name: "created_at", Type: "datetime", Description: "Creation time", ReadOnly: true},
+			{Name: "updated_at", Type: "datetime", Description: "Last update time", ReadOnly: true},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name", "status"},
+		IDField:       "id",
+		NameField:     "name",
+	},
+
+	// Runs outlive the workflow they came from — a run whose workflow was
+	// deleted still lists, carrying workflowDeletedAt — so this is a
+	// top-level audit trail rather than a child of workflows.
+	"workflow-runs": {
+		Resource:      "workflow-runs",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "workflowId", "status", "startedAt", "completedAt"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique run identifier", ReadOnly: true},
+			{Name: "workflowId", Type: "string", Description: "Workflow this run came from", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Workflow name at run time", ReadOnly: true},
+			{Name: "status", Type: "string", Description: "running, completed, or failed", ReadOnly: true},
+			{Name: "startedAt", Type: "datetime", Description: "When the run started", ReadOnly: true},
+			{Name: "completedAt", Type: "datetime", Description: "When the run finished", ReadOnly: true},
+			{Name: "error", Type: "string", Description: "Failure message, when the run failed", ReadOnly: true},
+			{Name: "workflowDeletedAt", Type: "datetime", Description: "Set when the workflow has since been deleted; the run survives it", ReadOnly: true},
+			{Name: "executionDetails", Type: "object", Description: "Per-step trace: what each step called and the status it got back", ReadOnly: true},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"startedAt"},
+		IDField:       "id",
+		NameField:     "name",
+	},
+
+	"workflow-templates": {
+		Resource:      "workflow-templates",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "category", "description"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Unique template identifier", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Template name", ReadOnly: true},
+			{Name: "category", Type: "string", Description: "Device Management, Security, or User Management", ReadOnly: true},
+			{Name: "description", Type: "string", Description: "What the template automates", ReadOnly: true},
+			{Name: "dsl", Type: "object", Description: "The template's workflow definition, with REPLACE_WITH_* placeholders", ReadOnly: true},
+		},
+		FilterSupport: false,
+		SortSupport:   true,
+		SortFields:    []string{"name", "category"},
+		IDField:       "id",
+		NameField:     "name",
+	},
+
+	"health-rules": {
+		Resource:      "health-rules",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
+		DefaultFields: []string{"objectId", "name", "category", "severity", "status", "ruleType"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "Unique rule identifier", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Rule name", Required: true},
+			{Name: "description", Type: "string", Description: "Rule description"},
+			{Name: "category", Type: "string", Description: "Rule category"},
+			{Name: "severity", Type: "string", Description: "Severity raised when the rule matches"},
+			{Name: "status", Type: "string", Description: "Whether the rule is active"},
+			{Name: "ruleType", Type: "string", Description: "Rule type"},
+			{Name: "eventType", Type: "string", Description: "Event the rule watches"},
+			{Name: "alertsEnabled", Type: "bool", Description: "Whether matches raise alerts"},
+			{Name: "conditions", Type: "array", Description: "Match conditions"},
+			{Name: "groupObjectIds", Type: "array", Description: "Device and user group IDs the rule is scoped to"},
+			{Name: "createdAt", Type: "datetime", Description: "Creation time", ReadOnly: true},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name", "severity"},
+		IDField:       "objectId",
+		NameField:     "name",
+	},
+
+	"health-rule-templates": {
+		Resource:      "health-rule-templates",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"objectId", "name", "category", "type", "description"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "Unique template identifier", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Template name", ReadOnly: true},
+			{Name: "category", Type: "string", Description: "Template category", ReadOnly: true},
+			{Name: "type", Type: "string", Description: "Template type", ReadOnly: true},
+			{Name: "ruleType", Type: "string", Description: "Rule type the template produces", ReadOnly: true},
+			{Name: "description", Type: "string", Description: "What the template monitors", ReadOnly: true},
+			{Name: "osFamily", Type: "string", Description: "OS family the template applies to", ReadOnly: true},
+			{Name: "configurations", Type: "array", Description: "Configurable inputs", ReadOnly: true},
+		},
+		FilterSupport: false,
+		SortSupport:   true,
+		SortFields:    []string{"name", "category"},
+		IDField:       "objectId",
+		NameField:     "name",
+	},
+
+	// Alerts are triage objects: they are acknowledged, resolved and
+	// annotated, never created or deleted by hand, so update is the only
+	// write verb.
+	"alerts": {
+		Resource:      "alerts",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "update"},
+		DefaultFields: []string{"objectId", "title", "severity", "status", "sourceName", "lastOccurredAt"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "Unique alert identifier", ReadOnly: true},
+			{Name: "title", Type: "string", Description: "Alert title", ReadOnly: true},
+			{Name: "description", Type: "string", Description: "Alert description", ReadOnly: true},
+			{Name: "severity", Type: "string", Description: "Alert severity", ReadOnly: true},
+			{Name: "status", Type: "string", Description: "Triage state"},
+			{Name: "remark", Type: "string", Description: "Note added while triaging"},
+			{Name: "sourceName", Type: "string", Description: "What raised the alert", ReadOnly: true},
+			{Name: "occurrencesCount", Type: "int", Description: "How many times it has occurred", ReadOnly: true},
+			{Name: "firstOccurredAt", Type: "datetime", Description: "First occurrence", ReadOnly: true},
+			{Name: "lastOccurredAt", Type: "datetime", Description: "Most recent occurrence", ReadOnly: true},
+			{Name: "acknowledgedAt", Type: "datetime", Description: "When it was acknowledged", ReadOnly: true},
+			{Name: "resolvedAt", Type: "datetime", Description: "When it was resolved", ReadOnly: true},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"lastOccurredAt", "severity"},
+		IDField:       "objectId",
+		NameField:     "title",
+	},
+
+	"service-accounts": {
+		Resource:      "service-accounts",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
+		DefaultFields: []string{"objectId", "name", "roleName", "status", "expiresAt"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "Unique service account identifier", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Service account name", Required: true},
+			{Name: "roleId", Type: "string", Description: "Role granting the account its permissions"},
+			{Name: "roleName", Type: "string", Description: "Role name", ReadOnly: true},
+			{Name: "status", Type: "string", Description: "Account status"},
+			{Name: "authType", Type: "string", Description: "Credential type (e.g. API_KEY)"},
+			{Name: "expiresAt", Type: "datetime", Description: "When the credential expires", ReadOnly: true},
+			{Name: "createdAt", Type: "datetime", Description: "Creation time", ReadOnly: true},
+		},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name", "expiresAt"},
+		IDField:       "objectId",
+		NameField:     "name",
+	},
 }
 
 // ResourceNames returns the sorted list of all resource type names.

@@ -1562,6 +1562,7 @@
     "access-requests",
     "ad",
     "admins",
+    "alerts",
     "app-templates",
     "apple-mdm",
     "apps",
@@ -1573,6 +1574,8 @@
     "duo",
     "groups",
     "gsuite",
+    "health-rule-templates",
+    "health-rules",
     "identity-providers",
     "insights",
     "iplists",
@@ -1584,9 +1587,13 @@
     "policy-templates",
     "radius",
     "saas-management",
+    "service-accounts",
     "software",
     "system-insights",
     "user-states",
-    "users"
+    "users",
+    "workflow-runs",
+    "workflow-templates",
+    "workflows"
   ]
 }

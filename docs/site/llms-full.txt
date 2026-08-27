@@ -607,6 +607,7 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `access-requests`
 - `ad`
 - `admins`
+- `alerts`
 - `app-templates`
 - `apple-mdm`
 - `apps`
@@ -618,6 +619,8 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `duo`
 - `groups`
 - `gsuite`
+- `health-rule-templates`
+- `health-rules`
 - `identity-providers`
 - `insights`
 - `iplists`
@@ -629,7 +632,11 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `policy-templates`
 - `radius`
 - `saas-management`
+- `service-accounts`
 - `software`
 - `system-insights`
 - `user-states`
 - `users`
+- `workflow-runs`
+- `workflow-templates`
+- `workflows`

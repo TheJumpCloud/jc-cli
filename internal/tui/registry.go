@@ -64,50 +64,70 @@ const (
 
 // ResourceEntry is a TUI-enriched view of a schema resource.
 type ResourceEntry struct {
-	Key             string                                         // Schema key (e.g. "users")
-	DisplayName     string                                         // Human-readable name (e.g. "Users")
-	Category        Category                                       // UI grouping
-	ClientType      ClientType                                     // Which API client to use
-	ListEndpoint    string                                         // API endpoint for listing
-	GetEndpoint     string                                         // API endpoint template for single get (with %s for ID)
-	GraphSourceType string                                         // V2 graph source type (e.g. "user"), empty if no associations
-	PivotField      string                                         // Row field whose value becomes the ID for pivot navigation
-	PivotTargetKey  string                                         // Registry key of the target resource to pivot to
-	SearchEndpoint  string                                         // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
-	SearchFields    []string                                       // Fields to search across (e.g. ["username","email","firstname","lastname"])
-	Schema          schema.ResourceSchema                          // Full schema metadata
-	Placeholder     bool                                           // True for "Coming soon" items
-	SubMenu         []ResourceEntry                                // Non-nil for sub-menu groupings (e.g. Cloud Directories)
-	FlattenFunc     func([]json.RawMessage) []json.RawMessage      // Optional post-fetch flattening (e.g. assets)
-	ResponseKey     string                                         // V2 wrapped response key (e.g. "identityProviders")
-	MutateBodyFunc  func(body map[string]any) map[string]any       // Optional body transform before create/update (e.g. wrap in {"fields": ...})
-	DetailViaList   bool                                           // True when the API has no GET {endpoint}/{id} — detail = list + match (e.g. /applemdms)
+	Key             string                                    // Schema key (e.g. "users")
+	DisplayName     string                                    // Human-readable name (e.g. "Users")
+	Category        Category                                  // UI grouping
+	ClientType      ClientType                                // Which API client to use
+	ListEndpoint    string                                    // API endpoint for listing
+	GetEndpoint     string                                    // API endpoint template for single get (with %s for ID)
+	GraphSourceType string                                    // V2 graph source type (e.g. "user"), empty if no associations
+	PivotField      string                                    // Row field whose value becomes the ID for pivot navigation
+	PivotTargetKey  string                                    // Registry key of the target resource to pivot to
+	SearchEndpoint  string                                    // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
+	SearchFields    []string                                  // Fields to search across (e.g. ["username","email","firstname","lastname"])
+	Schema          schema.ResourceSchema                     // Full schema metadata
+	Placeholder     bool                                      // True for "Coming soon" items
+	SubMenu         []ResourceEntry                           // Non-nil for sub-menu groupings (e.g. Cloud Directories)
+	FlattenFunc     func([]json.RawMessage) []json.RawMessage // Optional post-fetch flattening (e.g. assets)
+	ResponseKey     string                                    // V2 wrapped response key (e.g. "identityProviders")
+	MutateBodyFunc  func(body map[string]any) map[string]any  // Optional body transform before create/update (e.g. wrap in {"fields": ...})
+	DetailViaList   bool                                      // True when the API has no GET {endpoint}/{id} — detail = list + match (e.g. /applemdms)
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
 var graphSourceTypes = map[string]string{
-	"users":          "user",
-	"devices":        "device",
-	"user-groups":    "user_group",
-	"device-groups":  "device_group",
-	"apps":           "application",
-	"commands":       "command",
-	"policies":       "policy",
-	"policy-groups":  "policy_group",
-	"software":       "software_app",
+	"users":         "user",
+	"devices":       "device",
+	"user-groups":   "user_group",
+	"device-groups": "device_group",
+	"apps":          "application",
+	"commands":      "command",
+	"policies":      "policy",
+	"policy-groups": "policy_group",
+	"software":      "software_app",
 }
 
 // searchEndpoints maps resource keys to their POST search endpoint.
 // Only V1 resources with dedicated /search/ endpoints are listed here.
+// responseKeys maps a resource to the object key its V2 list response wraps
+// the array in. Most V2 lists answer a bare array; these do not, and the
+// generic fetch needs the key to unwrap them. Kept as a map rather than a
+// chain of special cases because the KLA-485 areas made the chain the
+// majority of BuildRegistry.
+var responseKeys = map[string]string{
+	"identity-providers":    "identityProviders",
+	"workflows":             "results",
+	"workflow-runs":         "results",
+	"workflow-templates":    "templates",
+	"health-rules":          "rules",
+	"health-rule-templates": "templates",
+	"alerts":                "alerts",
+	"service-accounts":      "results",
+}
+
 var searchEndpoints = map[string]string{
-	"users":   "/search/systemusers",
-	"devices": "/search/systems",
+	"users":    "/search/systemusers",
+	"devices":  "/search/systems",
+	"commands": "/search/commands",
 }
 
 // searchFields maps resource keys to the fields searched by POST search.
+// searchFields are the fields a bare search term matches against, mirroring
+// internal/search so the TUI and `jc search` agree on what a term hits.
 var searchFields = map[string][]string{
-	"users":   {"username", "email", "firstname", "lastname"},
-	"devices": {"displayName", "hostname", "serialNumber"},
+	"users":    {"username", "email", "firstname", "lastname"},
+	"devices":  {"displayName", "hostname", "serialNumber"},
+	"commands": {"name", "command"},
 }
 
 // graphEndpoints maps graph source types to their V2 API endpoint prefix.
@@ -259,8 +279,8 @@ var resourceCategory = map[string]Category{
 	"radius":          CategoryAccess,
 
 	// Security
-	"auth-policies": CategorySecurity,
-	"iplists":             CategorySecurity,
+	"auth-policies":      CategorySecurity,
+	"iplists":            CategorySecurity,
 	"identity-providers": CategoryAccess,
 	"saas-management":    CategoryAccess,
 
@@ -273,77 +293,105 @@ var resourceCategory = map[string]Category{
 	"custom-emails": CategorySettings,
 	"user-states":   CategorySettings,
 	"bulk":          CategorySettings,
-	"duo": CategorySettings,
+	"duo":           CategorySettings,
+
+	// KLA-485 coverage areas.
+	"workflows":             CategoryWorkflows,
+	"workflow-runs":         CategoryWorkflows,
+	"workflow-templates":    CategoryWorkflows,
+	"health-rules":          CategoryInsights,
+	"health-rule-templates": CategoryInsights,
+	"alerts":                CategoryInsights,
+	"service-accounts":      CategoryAccess,
+
 	// Note: gsuite and office365 are excluded — they are folded into the
 	// "cloud-directories" sub-menu entry by BuildRegistry().
 }
 
 // displayNames maps schema resource names to human-readable display names.
 var displayNames = map[string]string{
-	"users":            "Users",
-	"devices":          "Devices",
-	"user-groups":      "User Groups",
-	"device-groups":    "Device Groups",
-	"commands":         "Commands",
-	"policies":         "Policies",
-	"apps":             "Applications",
-	"admins":           "Administrators",
-	"auth-policies":    "Auth Policies",
-	"iplists":          "IP Lists",
-	"insights":         "Directory Insights",
-	"software":         "Software Apps",
-	"assets":           "Assets",
-	"ldap":             "LDAP Servers",
-	"ad":               "Active Directory",
-	"org":              "Organization",
-	"system-insights":  "System Insights",
-	"radius":           "RADIUS Servers",
-	"policy-templates": "Policy Templates",
-	"apple-mdm":        "Apple MDM",
-	"policy-groups":    "Policy Groups",
-	"user-states":      "User States",
-	"gsuite":           "Google Workspace",
-	"office365":        "M365",
-	"duo":              "Duo Security",
-	"custom-emails":    "Custom Emails",
-	"app-templates":        "App Templates",
-	"identity-providers":   "Identity Providers",
-	"saas-management":     "SaaS Management",
-	"access-requests":     "Access Requests",
+	"users":              "Users",
+	"devices":            "Devices",
+	"user-groups":        "User Groups",
+	"device-groups":      "Device Groups",
+	"commands":           "Commands",
+	"policies":           "Policies",
+	"apps":               "Applications",
+	"admins":             "Administrators",
+	"auth-policies":      "Auth Policies",
+	"iplists":            "IP Lists",
+	"insights":           "Directory Insights",
+	"software":           "Software Apps",
+	"assets":             "Assets",
+	"ldap":               "LDAP Servers",
+	"ad":                 "Active Directory",
+	"org":                "Organization",
+	"system-insights":    "System Insights",
+	"radius":             "RADIUS Servers",
+	"policy-templates":   "Policy Templates",
+	"apple-mdm":          "Apple MDM",
+	"policy-groups":      "Policy Groups",
+	"user-states":        "User States",
+	"gsuite":             "Google Workspace",
+	"office365":          "M365",
+	"duo":                "Duo Security",
+	"custom-emails":      "Custom Emails",
+	"app-templates":      "App Templates",
+	"identity-providers": "Identity Providers",
+	"saas-management":    "SaaS Management",
+	"access-requests":    "Access Requests",
+
+	// KLA-485 coverage areas.
+	"workflows":             "Workflows",
+	"workflow-runs":         "Workflow Runs",
+	"workflow-templates":    "Workflow Templates",
+	"health-rules":          "Health Rules",
+	"health-rule-templates": "Health Rule Templates",
+	"alerts":                "Alerts",
+	"service-accounts":      "Service Accounts",
 }
 
 // listEndpoints maps schema resource names to their list API endpoint.
 var listEndpoints = map[string]string{
-	"users":            "/systemusers",
-	"devices":          "/systems",
-	"commands":         "/commands",
-	"apps":             "/applications",
-	"admins":           "/users",
-	"org":              "/organizations",
-	"radius":           "/radiusservers",
-	"app-templates":    "/application-templates",
-	"user-groups":      "/usergroups",
-	"device-groups":    "/systemgroups",
-	"policies":         "/policies",
-	"auth-policies":    "/authn/policies",
-	"iplists":          "/iplists",
-	"software":         "/softwareapps",
+	"users":         "/systemusers",
+	"devices":       "/systems",
+	"commands":      "/commands",
+	"apps":          "/applications",
+	"admins":        "/users",
+	"org":           "/organizations",
+	"radius":        "/radiusservers",
+	"app-templates": "/application-templates",
+	"user-groups":   "/usergroups",
+	"device-groups": "/systemgroups",
+	"policies":      "/policies",
+	"auth-policies": "/authn/policies",
+	"iplists":       "/iplists",
+	"software":      "/softwareapps",
 	// "assets" handled by special sub-menu case in BuildRegistry()
-	"ldap":             "/ldapservers",
-	"ad":               "/activedirectories",
-	"policy-templates": "/policytemplates",
-	"apple-mdm":        "/applemdms",
-	"policy-groups":    "/policygroups",
-	"user-states":      "/bulk/userstates",
-	"gsuite":           "/gsuites",
-	"office365":        "/office365s",
-	"duo":              "/duo/accounts",
-	"custom-emails":    "/customemail/templates",
+	"ldap":               "/ldapservers",
+	"ad":                 "/activedirectories",
+	"policy-templates":   "/policytemplates",
+	"apple-mdm":          "/applemdms",
+	"policy-groups":      "/policygroups",
+	"user-states":        "/bulk/userstates",
+	"gsuite":             "/gsuites",
+	"office365":          "/office365s",
+	"duo":                "/duo/accounts",
+	"custom-emails":      "/customemail/templates",
 	"system-insights":    "/systeminsights",
 	"insights":           "/events",
 	"identity-providers": "/identity-providers",
-	"saas-management":   "/saas-management/applications",
-	"access-requests":   "/accessrequests",
+	"saas-management":    "/saas-management/applications",
+	"access-requests":    "/accessrequests",
+
+	// KLA-485 coverage areas.
+	"workflows":             "/workflows",
+	"workflow-runs":         "/workflows/runs",
+	"workflow-templates":    "/workflows/templates",
+	"health-rules":          "/healthmonitoring/rules",
+	"health-rule-templates": "/healthmonitoring/ruletemplates",
+	"alerts":                "/alerts",
+	"service-accounts":      "/service-accounts",
 }
 
 // clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
@@ -474,12 +522,12 @@ func BuildRegistry() []ResourceEntry {
 			GraphSourceType: graphSourceTypes[name],
 			SearchEndpoint:  searchEndpoints[name],
 			SearchFields:    searchFields[name],
+			ResponseKey:     responseKeys[name],
 			Schema:          s,
 		}
 
-		// Identity Providers: wrapped V2 response + OIDC field flattening.
+		// Identity Providers additionally need OIDC field flattening.
 		if name == "identity-providers" {
-			entry.ResponseKey = "identityProviders"
 			entry.FlattenFunc = flattenIdentityProvidersTUI
 			entry.MutateBodyFunc = nestIdentityProviderOIDC
 		}
