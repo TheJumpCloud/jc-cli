@@ -114,6 +114,9 @@ var responseKeys = map[string]string{
 	"health-rule-templates": "templates",
 	"alerts":                "alerts",
 	"service-accounts":      "results",
+	"notification-channels": "channels",
+	"roles":                 "results",
+	"saved-views":           "views",
 }
 
 var searchEndpoints = map[string]string{
@@ -304,6 +307,9 @@ var resourceCategory = map[string]Category{
 	"health-rule-templates": CategoryInsights,
 	"alerts":                CategoryInsights,
 	"service-accounts":      CategoryAccess,
+	"notification-channels": CategoryInsights,
+	"roles":                 CategoryAccess,
+	"saved-views":           CategorySettings,
 
 	// Note: gsuite and office365 are excluded — they are folded into the
 	// "cloud-directories" sub-menu entry by BuildRegistry().
@@ -350,6 +356,9 @@ var displayNames = map[string]string{
 	"health-rule-templates": "Health Rule Templates",
 	"alerts":                "Alerts",
 	"service-accounts":      "Service Accounts",
+	"notification-channels": "Notification Channels",
+	"roles":                 "Roles",
+	"saved-views":           "Saved Views",
 }
 
 // listEndpoints maps schema resource names to their list API endpoint.
@@ -393,6 +402,9 @@ var listEndpoints = map[string]string{
 	"health-rule-templates": "/healthmonitoring/ruletemplates",
 	"alerts":                "/alerts",
 	"service-accounts":      "/service-accounts",
+	"notification-channels": "/notifications/channels",
+	"roles":                 "/roles",
+	"saved-views":           "/saved-views",
 }
 
 // clientTypeOverrides corrects resources whose schema.APIVersion doesn't match
@@ -752,6 +764,16 @@ func BuildRegistry() []ResourceEntry {
 		Key:         "mfa-overview",
 		DisplayName: "MFA Overview",
 		Category:    CategorySecurity,
+	})
+
+	// Device Settings (KLA-485): virtual entry — the two org-wide device
+	// settings singletons (/devices/settings/signinwithjumpcloud and
+	// /defaultpasswordsync). No collection stands behind them, so the generic
+	// list screen cannot serve them; see screen/device_settings.go.
+	entries = append(entries, ResourceEntry{
+		Key:         "device-settings",
+		DisplayName: "Device Settings",
+		Category:    CategoryDeviceMgmt,
 	})
 
 	// Add placeholder entries.

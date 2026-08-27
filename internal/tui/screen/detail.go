@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/klaassen-consulting/jc/internal/transrule"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/component"
 	"github.com/klaassen-consulting/jc/internal/tui/fetch"
@@ -700,4 +702,36 @@ func (d *DetailScreen) renderAssociations() string {
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+// adTranslationRulesEntry synthesizes the list entry for one AD instance's
+// translation rules. The endpoint is parameterized by the parent's ID, which
+// is why this cannot be a registry entry: there is no single endpoint to
+// register.
+//
+// Rules are read-only here. Creating one means choosing a source type and
+// direction and getting an expression right, and a bulk body can carry
+// deletions — that belongs with `jc ad translation-rules`, which validates and
+// plans it.
+func adTranslationRulesEntry(adID, domain string) tui.ResourceEntry {
+	name := "Translation Rules"
+	if domain != "" {
+		name += " — " + domain
+	}
+	return tui.ResourceEntry{
+		Key:          "ad-translation-rules",
+		DisplayName:  name,
+		Category:     tui.CategoryUserMgmt,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: transrule.Endpoint(adID),
+		ResponseKey:  "rules",
+		Schema: schema.ResourceSchema{
+			Resource:      "ad-translation-rules",
+			APIVersion:    "v2",
+			Verbs:         []string{"list", "get"},
+			DefaultFields: transrule.DefaultFields,
+			IDField:       "objectId",
+			NameField:     "source",
+		},
+	}
 }

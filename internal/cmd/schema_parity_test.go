@@ -56,11 +56,6 @@ var notAResource = map[string]string{
 	"password-policies": "one TUI screen covering both the V1 org-settings default " +
 		"and the V2 group-bound policies; the two have different shapes",
 
-	// Known gaps, tracked. Removing an entry here is the way to schedule the
-	// work; the test then demands a schema entry.
-	"notification-channels": "KLA-485 TUI PR 3",
-	"roles":                 "KLA-485 TUI PR 3",
-	"saved-views":           "KLA-485 TUI PR 3",
 	"service-accounts-keys": "sub-resource of service-accounts",
 }
 
