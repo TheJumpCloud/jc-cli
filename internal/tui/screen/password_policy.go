@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,12 +14,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/pwpolicy"
+	"github.com/klaassen-consulting/jc/internal/schema"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // newV1ClientForPasswordPolicy is overridable for tests.
 var newV1ClientForPasswordPolicy = api.NewV1Client
+
+// newV2ClientForPasswordPolicy is overridable for tests. The screen reads two
+// different APIs: the org-wide default lives in V1 /organizations settings,
+// while the group-bound policies are a V2 resource.
+var newV2ClientForPasswordPolicy = api.NewV2Client
 
 // passwordPolicyField describes one editable policy knob, in display
 // order with group headers.
@@ -101,6 +109,13 @@ type PasswordPolicyScreen struct {
 	rows     []passwordPolicyField
 	cursor   int
 
+	// groupPolicies are the V2 /passwordpolicies entries: policies bound to
+	// user groups and ordered by precedence. They are a different API from
+	// the org default above, but an admin thinks of both as "password
+	// policy", so both live on this screen.
+	groupPolicies []pwpolicy.ListItem
+	groupErr      string
+
 	err   string
 	flash string
 
@@ -112,6 +127,11 @@ type ppLoadedMsg struct {
 	orgID, orgName string
 	settings       map[string]any
 	err            error
+
+	groupPolicies []pwpolicy.ListItem
+	// groupErr is kept separate from err: failing to read the group-bound
+	// policies must not stop the org default from loading and being edited.
+	groupErr string
 }
 
 // ppSavedMsg carries the save result.
@@ -168,7 +188,51 @@ func (s *PasswordPolicyScreen) loadCmd() tea.Cmd {
 		if err := json.Unmarshal(detail, &parsed); err != nil || parsed.Settings == nil {
 			return ppLoadedMsg{err: fmt.Errorf("organization response carried no settings")}
 		}
-		return ppLoadedMsg{orgID: org.ID, orgName: org.DisplayName, settings: parsed.Settings}
+		msg := ppLoadedMsg{orgID: org.ID, orgName: org.DisplayName, settings: parsed.Settings}
+		msg.groupPolicies, msg.groupErr = loadGroupPolicies(ctx)
+		return msg
+	}
+}
+
+// loadGroupPolicies reads the V2 group-bound policies. Its failure is
+// reported separately so the org default stays usable on its own.
+func loadGroupPolicies(ctx context.Context) ([]pwpolicy.ListItem, string) {
+	client, err := newV2ClientForPasswordPolicy()
+	if err != nil {
+		return nil, "building v2 client: " + err.Error()
+	}
+	raw, err := client.Get(ctx, pwpolicy.Endpoint)
+	if err != nil {
+		return nil, "reading group-bound policies: " + err.Error()
+	}
+	items, err := pwpolicy.ParseListItems(raw)
+	if err != nil {
+		return nil, err.Error()
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Precedence < items[j].Precedence })
+	return items, ""
+}
+
+// passwordPolicyEntry synthesizes the registry entry used to drill into the
+// group-bound policies. It is not a registered schema resource: the list
+// projection is flat and sparse while a single read nests everything under
+// "policy", so the two cannot share one field list.
+func passwordPolicyEntry() tui.ResourceEntry {
+	return tui.ResourceEntry{
+		Key:          "password-policies-group",
+		DisplayName:  "Group Password Policies",
+		Category:     tui.CategorySecurity,
+		ClientType:   tui.ClientV2,
+		ListEndpoint: pwpolicy.Endpoint,
+		ResponseKey:  "results",
+		Schema: schema.ResourceSchema{
+			Resource:      "password-policies-group",
+			APIVersion:    "v2",
+			Verbs:         []string{"list", "get"},
+			DefaultFields: pwpolicy.ListDefaultFields,
+			IDField:       "objectId",
+			NameField:     "name",
+		},
 	}
 }
 
@@ -252,6 +316,9 @@ func (s *PasswordPolicyScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return s, nil
 
 	case ppLoadedMsg:
+		// The group-bound half is independent of the org default: keep
+		// whatever loaded even if the other half failed.
+		s.groupPolicies, s.groupErr = m.groupPolicies, m.groupErr
 		if m.err != nil {
 			s.stage = ppStageEdit
 			s.err = m.err.Error()
@@ -339,7 +406,17 @@ func (s *PasswordPolicyScreen) updateEdit(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		s.stage = ppStageLoading
 		s.err = ""
+		s.groupErr = ""
 		return s, tea.Batch(s.spinner.Tick, s.loadCmd())
+	case "g":
+		// Open the group-bound policies as a normal list, which gives them
+		// the generic detail view. Nothing to open when there are none.
+		if len(s.groupPolicies) == 0 {
+			return s, nil
+		}
+		return s, func() tea.Msg {
+			return tui.PushScreenMsg{Screen: NewListScreen(passwordPolicyEntry())}
+		}
 	case "up", "k":
 		if s.cursor > 0 {
 			s.cursor--
@@ -446,9 +523,56 @@ func (s *PasswordPolicyScreen) View() string {
 			lines = append(lines, "  "+line)
 		}
 	}
+	lines = append(lines, s.groupPolicyLines()...)
 	fmt.Fprintln(&b, renderWindowed(lines, focusLine, s.height, chrome))
 
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, style.Subtitle.Render("space toggle · Enter edit number · Ctrl+S save · r reload · Esc back"))
+	footer := "space toggle · Enter edit number · Ctrl+S save · r reload · Esc back"
+	if len(s.groupPolicies) > 0 {
+		footer = "space toggle · Enter edit number · g group policies · Ctrl+S save · r reload · Esc back"
+	}
+	fmt.Fprintln(&b, style.Subtitle.Render(footer))
 	return b.String()
+}
+
+// groupPolicyLines renders the V2 group-bound policies beneath the org
+// default. They are shown rather than edited here: the two halves are
+// different APIs with different shapes, and `g` opens the group-bound list
+// where they can be inspected properly.
+func (s *PasswordPolicyScreen) groupPolicyLines() []string {
+	var out []string
+	out = append(out, "", style.SectionHeader.Render("Group-bound policies"))
+
+	switch {
+	case s.groupErr != "":
+		out = append(out, "  "+style.Error.Render(s.groupErr))
+		return out
+	case len(s.groupPolicies) == 0:
+		out = append(out, "  "+style.Subtitle.Render(
+			"none — every user falls under the organization default above"))
+		return out
+	}
+
+	for _, p := range s.groupPolicies {
+		name := p.Name
+		if name == "" {
+			name = style.Subtitle.Render("(unnamed)")
+		}
+		marker := " "
+		if p.Default {
+			marker = "*"
+		}
+		out = append(out, fmt.Sprintf("  %s %-32s precedence %-4d %s",
+			marker, name, p.Precedence, pluralGroups(p.GroupCount)))
+	}
+	out = append(out, "  "+style.Subtitle.Render(
+		"* organization default · lowest precedence wins · g to open"))
+	return out
+}
+
+func pluralGroups(n int) string {
+	if n == 1 {
+		return "1 group"
+	}
+	return fmt.Sprintf("%d groups", n)
 }

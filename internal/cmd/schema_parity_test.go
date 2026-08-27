@@ -50,10 +50,14 @@ var notAResource = map[string]string{
 	"bundle":      "security baseline bundles have a bespoke TUI screen",
 	"windows-mdm": "has bespoke TUI screens per policy type",
 
+	// Reached in the TUI without a schema entry, deliberately.
+	"reports": "five families with different envelopes and writability; the TUI " +
+		"sub-menu is derived from report.Families so there is one source of truth",
+	"password-policies": "one TUI screen covering both the V1 org-settings default " +
+		"and the V2 group-bound policies; the two have different shapes",
+
 	// Known gaps, tracked. Removing an entry here is the way to schedule the
 	// work; the test then demands a schema entry.
-	"password-policies":     "KLA-485 TUI PR 2 — merges with the existing org-settings screen",
-	"reports":               "KLA-485 TUI PR 2 — four families, needs a sub-menu",
 	"notification-channels": "KLA-485 TUI PR 3",
 	"roles":                 "KLA-485 TUI PR 3",
 	"saved-views":           "KLA-485 TUI PR 3",
