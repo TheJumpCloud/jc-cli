@@ -307,6 +307,40 @@ func (c *V2Client) Delete(ctx context.Context, endpoint string) (json.RawMessage
 	return body, nil
 }
 
+// DeleteWithBody sends a DELETE request carrying a JSON body.
+//
+// Most V2 deletes address a single resource by URL, but a few batch endpoints
+// (e.g. DELETE /passwordpolicies with {objectIds:[…]}) take the set to remove
+// in the body instead. Returns the response body, which may be empty.
+func (c *V2Client) DeleteWithBody(ctx context.Context, endpoint string, reqBody any) (json.RawMessage, error) {
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling request body: %w", err)
+	}
+
+	reqURL := c.BaseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
+	}
+
+	return respBody, nil
+}
+
 // Patch sends a PATCH request to partially update a resource at the given V2 endpoint.
 // The body should be a JSON-serializable object. Returns the updated resource.
 func (c *V2Client) Patch(ctx context.Context, endpoint string, reqBody any) (json.RawMessage, error) {

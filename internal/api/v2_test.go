@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1178,5 +1179,72 @@ func TestV2Client_UpdateAndPatch_Accept204(t *testing.T) {
 				t.Errorf("expected empty body, got %q", body)
 			}
 		})
+	}
+}
+
+func TestV2Client_DeleteWithBody(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotBody   []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := newTestV2Client(srv.URL)
+	body, err := c.DeleteWithBody(context.Background(), "/passwordpolicies",
+		map[string]any{"objectIds": []string{"a", "b"}})
+	if err != nil {
+		t.Fatalf("DeleteWithBody: %v", err)
+	}
+
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", gotMethod)
+	}
+	if gotPath != "/passwordpolicies" {
+		t.Errorf("path = %q", gotPath)
+	}
+	// The point of this method is that the body actually reaches the server;
+	// net/http will happily drop it if the request is built carelessly.
+	if string(gotBody) != `{"objectIds":["a","b"]}` {
+		t.Errorf("body = %q, want the objectIds payload", gotBody)
+	}
+	if string(body) != `{}` {
+		t.Errorf("response = %q", body)
+	}
+}
+
+func TestV2Client_DeleteWithBody_Accepts204(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	if _, err := newTestV2Client(srv.URL).DeleteWithBody(context.Background(), "/passwordpolicies",
+		map[string]any{"objectIds": []string{"a"}}); err != nil {
+		t.Fatalf("204 should be success, got %v", err)
+	}
+}
+
+func TestV2Client_DeleteWithBody_PropagatesError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"nope"}`))
+	}))
+	defer srv.Close()
+
+	_, err := newTestV2Client(srv.URL).DeleteWithBody(context.Background(), "/passwordpolicies",
+		map[string]any{"objectIds": []string{"a"}})
+	if err == nil {
+		t.Fatal("want an error for HTTP 403")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error should name the status, got %v", err)
 	}
 }

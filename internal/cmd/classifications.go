@@ -228,6 +228,19 @@ var commandClass = map[string]string{
 	"jc devices settings password-sync get": ClassReadOnly,
 	"jc devices settings password-sync set": ClassMutating,
 
+	// password-policies — org password requirements (KLA-485). delete is
+	// destructive: removing a policy silently re-governs everyone it covered
+	// under whatever policy applies next. set-precedence only reorders
+	// existing policies, so it is mutating rather than destructive.
+	"jc password-policies list":           ClassReadOnly,
+	"jc password-policies get":            ClassReadOnly,
+	"jc password-policies for-user":       ClassReadOnly,
+	"jc password-policies for-group":      ClassReadOnly,
+	"jc password-policies create":         ClassMutating,
+	"jc password-policies update":         ClassMutating,
+	"jc password-policies set-precedence": ClassMutating,
+	"jc password-policies delete":         ClassDestructive,
+
 	// directories — unified read-only view of all directory
 	// integrations (incl. OAuth health).
 	"jc directories list": ClassReadOnly,
