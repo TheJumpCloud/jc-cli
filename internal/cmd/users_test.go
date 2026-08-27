@@ -258,6 +258,10 @@ func setupUsersTest(t *testing.T) {
 	t.Setenv("JC_ORG_ID", "")
 	t.Setenv("JC_PROFILE", "")
 	t.Setenv("JC_OUTPUT", "")
+	// Keep the name→ID resolver cache inside the test's temp dir. Without
+	// this, tests write their fixture IDs into the developer's real
+	// ~/.cache/jc and leak them into unrelated tests.
+	t.Setenv("XDG_CACHE_HOME", tmp)
 
 	_ = os.MkdirAll(dir, 0700)
 	_ = os.WriteFile(cfgPath, []byte("active_profile: default\nprofiles:\n  default:\n    api_key: test-key-1234\n"), 0600)

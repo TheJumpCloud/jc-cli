@@ -391,6 +391,21 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"password_policies_update",
 		"password_policies_delete",
 		"password_policies_set_precedence",
+
+		// workflows (KLA-485)
+		"workflows_list",
+		"workflows_get",
+		"workflows_runs_list",
+		"workflows_runs_get",
+		"workflows_templates_list",
+		"workflows_templates_show",
+		"workflows_templates_init",
+		"workflows_validate",
+		"workflows_explain",
+		"workflows_create",
+		"workflows_update",
+		"workflows_delete",
+		"workflows_trigger",
 		// System Insights
 		"system_insights_list_table", "system_insights_tables",
 		// RADIUS
@@ -487,8 +502,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 299 {
-		t.Errorf("expected 299 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 312 {
+		t.Errorf("expected 312 tools, got %d", len(result.Tools))
 	}
 }
 

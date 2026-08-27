@@ -1,0 +1,1146 @@
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/workflow"
+)
+
+func newWorkflowsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "workflows",
+		Aliases: []string{"workflow", "wf"},
+		Short:   "Manage JumpCloud Workflows (server-side event automation)",
+		Long: `List, inspect, author, validate, create, and run JumpCloud Workflows.
+
+A workflow is a DSL document that JumpCloud runs server-side when a Directory
+Insights event fires, on a schedule, or when triggered through the API. This is
+distinct from ` + "`jc recipe`" + `, which runs multi-step jc commands locally.
+
+The OpenAPI spec describes the DSL only as "object", so authoring by hand is
+guesswork and mistakes surface at run time. The intended loop is:
+
+  jc workflows templates list                  # 12 templates, served live
+  jc workflows templates init <id> > wf.json   # fillable copy
+  # edit wf.json
+  jc workflows validate wf.json                # locally, before anything ships
+  jc workflows explain wf.json                 # what it will actually do
+  jc workflows create --file wf.json --role "<role>" --plan
+
+Workflows run as a role you choose, and can send email and call external
+connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` and
+` + "`explain`" + `.`,
+	}
+
+	cmd.AddCommand(newWorkflowsListCmd())
+	cmd.AddCommand(newWorkflowsGetCmd())
+	cmd.AddCommand(newWorkflowsCreateCmd())
+	cmd.AddCommand(newWorkflowsUpdateCmd())
+	cmd.AddCommand(newWorkflowsDeleteCmd())
+	cmd.AddCommand(newWorkflowsTriggerCmd())
+	cmd.AddCommand(newWorkflowsRunsCmd())
+	cmd.AddCommand(newWorkflowsTemplatesCmd())
+	cmd.AddCommand(newWorkflowsValidateCmd())
+	cmd.AddCommand(newWorkflowsExplainCmd())
+
+	return cmd
+}
+
+// resolveWorkflow maps a workflow name or ID to an ID. Workflow IDs are opaque
+// strings rather than 24-hex, so the generic resolver's ID heuristic does not
+// apply; an exact ID match against the list is what disambiguates.
+func resolveWorkflow(ctx context.Context, client *api.V2Client, identifier string) (string, error) {
+	raw, err := client.Get(ctx, workflow.Endpoint)
+	if err != nil {
+		return "", err
+	}
+	rows, err := workflow.ParseList(raw)
+	if err != nil {
+		return "", err
+	}
+
+	var byName []workflow.Workflow
+	for _, r := range rows {
+		w, err := workflow.ParseWorkflow(r)
+		if err != nil {
+			continue
+		}
+		if w.ID == identifier {
+			return w.ID, nil
+		}
+		if strings.EqualFold(w.Name, identifier) {
+			byName = append(byName, w)
+		}
+	}
+
+	switch len(byName) {
+	case 0:
+		return "", fmt.Errorf("workflow %q not found", identifier)
+	case 1:
+		return byName[0].ID, nil
+	default:
+		ids := make([]string, 0, len(byName))
+		for _, w := range byName {
+			ids = append(ids, w.ID)
+		}
+		return "", fmt.Errorf("workflow name %q is ambiguous (%d share it: %s); use an ID",
+			identifier, len(byName), strings.Join(ids, ", "))
+	}
+}
+
+// ---------- list / get ----------
+
+func newWorkflowsListCmd() *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List workflows",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			endpoint := workflow.Endpoint
+			if limit > 0 {
+				endpoint = fmt.Sprintf("%s?limit=%d", endpoint, limit)
+			}
+			raw, err := client.Get(cmd.Context(), endpoint)
+			if err != nil {
+				return err
+			}
+			rows, err := workflow.ParseList(raw)
+			if err != nil {
+				return err
+			}
+			opts := output.CurrentOptions()
+			opts.DefaultFields = workflow.ListDefaultFields
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of results to return (0 = all)")
+	return cmd
+}
+
+func newWorkflowsGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <name-or-id>",
+		Short: "Get a workflow by name or ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			id, err := resolveWorkflow(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), workflow.WorkflowEndpoint(id))
+			if err != nil {
+				return err
+			}
+			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+		},
+	}
+}
+
+// ---------- runs ----------
+
+func newWorkflowsRunsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "runs",
+		Short: "Inspect workflow runs",
+		Long: `List and inspect workflow runs.
+
+Runs outlive the workflow they came from: a run whose workflow was deleted
+still lists, carrying workflowDeletedAt. Runs are the audit trail, so this is
+not scoped under a workflow.`,
+	}
+
+	var workflowFilter string
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List workflow runs",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			endpoint := workflow.RunsEndpoint
+			if workflowFilter != "" {
+				id, err := resolveWorkflow(cmd.Context(), client, workflowFilter)
+				if err != nil {
+					// The workflow may have been deleted while its runs
+					// remain, so fall back to the raw value.
+					id = workflowFilter
+				}
+				endpoint = fmt.Sprintf("%s?workflow_id=%s", endpoint, id)
+			}
+			raw, err := client.Get(cmd.Context(), endpoint)
+			if err != nil {
+				return err
+			}
+			rows, err := workflow.ParseList(raw)
+			if err != nil {
+				return err
+			}
+			opts := output.CurrentOptions()
+			opts.DefaultFields = workflow.RunDefaultFields
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+			}
+			return nil
+		},
+	}
+	list.Flags().StringVar(&workflowFilter, "workflow", "", "Only runs of this workflow (name or ID)")
+
+	var trace bool
+	get := &cobra.Command{
+		Use:   "get <run-id>",
+		Short: "Get a workflow run by ID",
+		Long: `Get one workflow run.
+
+A completed run carries a per-step execution trace: what each step called, the
+HTTP status it got back, and which step failed. Use --trace for a readable
+summary of that instead of the full document.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), workflow.RunEndpoint(args[0]))
+			if err != nil {
+				return err
+			}
+			if !trace {
+				return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+			}
+			run, err := workflow.ParseRun(raw)
+			if err != nil {
+				return err
+			}
+			return writeRunTrace(cmd, run)
+		},
+	}
+	get.Flags().BoolVar(&trace, "trace", false, "Show the per-step execution trace instead of the full run")
+
+	cmd.AddCommand(list, get)
+	return cmd
+}
+
+// ---------- templates ----------
+
+func newWorkflowsTemplatesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "templates",
+		Aliases: []string{"template"},
+		Short:   "Browse the workflow template catalog",
+		Long: `Browse the workflow templates JumpCloud serves.
+
+The catalog is the practical starting point for authoring: the DSL has no
+published schema, so a working template is the most reliable specification
+available. Templates ship with REPLACE_WITH_* markers for the values only you
+can supply.`,
+	}
+
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List workflow templates",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), workflow.TemplatesEndpoint)
+			if err != nil {
+				return err
+			}
+			templates, err := workflow.ParseTemplates(raw)
+			if err != nil {
+				return err
+			}
+			// Re-encode without the DSL: a full catalog is ~40KB of nested
+			// documents, which is not a list view.
+			rows := make([]json.RawMessage, 0, len(templates))
+			for _, t := range templates {
+				b, err := json.Marshal(map[string]any{
+					"id": t.ID, "name": t.Name, "category": t.Category, "description": t.Description,
+				})
+				if err != nil {
+					return err
+				}
+				rows = append(rows, b)
+			}
+			opts := output.CurrentOptions()
+			opts.DefaultFields = workflow.TemplateDefaultFields
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+			}
+			return nil
+		},
+	}
+
+	show := &cobra.Command{
+		Use:   "show <template-id-or-name>",
+		Short: "Show one workflow template in full, including its DSL",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			t, err := findTemplate(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			raw, err := json.Marshal(t)
+			if err != nil {
+				return err
+			}
+			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+		},
+	}
+
+	var initName, initDescription string
+	initCmd := &cobra.Command{
+		Use:   "init <template-id-or-name>",
+		Short: "Emit a fillable workflow file from a template",
+		Long: `Emit a template as a workflow file ready to edit and create.
+
+Every REPLACE_WITH_* marker is left in place: those are the values only you can
+supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain.
+
+  jc workflows templates init <id> > wf.json
+  # edit, then:
+  jc workflows validate wf.json`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			t, err := findTemplate(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+
+			name := initName
+			if name == "" {
+				name = t.Name
+			}
+			description := initDescription
+			if description == "" {
+				description = t.Description
+			}
+			doc := map[string]any{
+				"name":        name,
+				"description": description,
+				"status":      workflow.StatusInactive,
+				"dsl":         t.DSL,
+			}
+			out, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+
+			// Report what still needs filling to stderr, so the JSON on
+			// stdout stays pipeable.
+			if res := workflow.ValidateRaw(t.DSL); !res.OK() {
+				markers := map[string]bool{}
+				for _, p := range mustParseDSL(t.DSL).Placeholders() {
+					markers[p.Marker] = true
+				}
+				if len(markers) > 0 {
+					names := make([]string, 0, len(markers))
+					for m := range markers {
+						names = append(names, m)
+					}
+					sort.Strings(names)
+					fmt.Fprintf(cmd.ErrOrStderr(), "\n%d placeholder(s) to fill: %s\n",
+						len(names), strings.Join(names, ", "))
+				}
+			}
+			return nil
+		},
+	}
+	initCmd.Flags().StringVar(&initName, "name", "", "Override the workflow name (defaults to the template's)")
+	initCmd.Flags().StringVar(&initDescription, "description", "", "Override the description")
+
+	cmd.AddCommand(list, show, initCmd)
+	return cmd
+}
+
+// findTemplate resolves a template by ID or name against the served catalog.
+func findTemplate(ctx context.Context, client *api.V2Client, identifier string) (workflow.Template, error) {
+	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
+	if err != nil {
+		return workflow.Template{}, err
+	}
+	templates, err := workflow.ParseTemplates(raw)
+	if err != nil {
+		return workflow.Template{}, err
+	}
+	for _, t := range templates {
+		if t.ID == identifier {
+			return t, nil
+		}
+	}
+	for _, t := range templates {
+		if strings.EqualFold(t.Name, identifier) {
+			return t, nil
+		}
+	}
+	return workflow.Template{}, fmt.Errorf("workflow template %q not found (try: jc workflows templates list)", identifier)
+}
+
+func mustParseDSL(raw json.RawMessage) workflow.DSL {
+	d, _ := workflow.ParseDSL(raw)
+	return d
+}
+
+// ---------- validate / explain ----------
+
+// workflowDoc is the file format create, update, validate, and explain share:
+// the workflow's metadata plus its DSL, which is what `templates init` emits.
+type workflowDoc struct {
+	Name        string          `json:"name,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	DSL         json.RawMessage `json:"dsl,omitempty"`
+}
+
+// loadWorkflowDoc reads a workflow file, accepting either the full document
+// {name, dsl, …} or a bare DSL, so a hand-written DSL fragment still works.
+func loadWorkflowDoc(cmd *cobra.Command, path string) (workflowDoc, error) {
+	raw, err := readJSONFileArg(cmd, path, "--file")
+	if err != nil {
+		return workflowDoc{}, err
+	}
+	var doc workflowDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return workflowDoc{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if len(doc.DSL) == 0 {
+		// No "dsl" key: treat the whole file as the DSL itself.
+		if _, err := workflow.ParseDSL(raw); err != nil {
+			return workflowDoc{}, fmt.Errorf("%s has no \"dsl\" key and is not a DSL document: %w", path, err)
+		}
+		doc.DSL = raw
+	}
+	return doc, nil
+}
+
+func newWorkflowsValidateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "validate <file>",
+		Short: "Validate a workflow DSL file locally",
+		Long: `Check a workflow file before it reaches the API.
+
+JumpCloud accepts a malformed DSL and fails only when the workflow runs, so
+these checks are the difference between an error now and a workflow that
+silently never works. Validation covers the trigger, task structure, control
+flow, pagination, every Expr expression (compiled with the same engine), and
+every operationId (against JumpCloud's own OpenAPI operations).
+
+Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			doc, err := loadWorkflowDoc(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			res := workflow.ValidateRaw(doc.DSL)
+			writeValidationReport(cmd, res)
+			if !res.OK() {
+				return fmt.Errorf("%s is not a valid workflow", args[0])
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+// writeValidationReport prints findings and the side-effect summary. Machine
+// output gets the whole Result; humans get a readable report.
+func writeValidationReport(cmd *cobra.Command, res workflow.Result) {
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		raw, err := json.MarshalIndent(res, "", "  ")
+		if err == nil {
+			fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+			return
+		}
+	}
+
+	w := cmd.ErrOrStderr()
+	for _, f := range res.Findings {
+		fmt.Fprintf(w, "%s\n", f.String())
+	}
+	if len(res.SideEffects) > 0 {
+		fmt.Fprintf(w, "\nSide effects (%d) — these reach outside JumpCloud:\n", len(res.SideEffects))
+		for _, se := range res.SideEffects {
+			fmt.Fprintf(w, "  %s: %s\n", se.Task, se.What)
+			for _, tg := range se.Targets {
+				fmt.Fprintf(w, "      → %s\n", tg)
+			}
+		}
+	}
+	if res.OK() {
+		msg := "Workflow is valid"
+		if res.TriggerType != "" {
+			msg += fmt.Sprintf(" (trigger: %s)", res.TriggerType)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s.\n", msg)
+	}
+}
+
+func newWorkflowsExplainCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "explain <file-or-workflow>",
+		Short: "Explain in plain English what a workflow does",
+		Long: `Render a workflow as prose: when it fires, what each step calls, and
+which steps reach outside JumpCloud.
+
+Each jc_operation step is resolved through JumpCloud's own OpenAPI operations,
+so a reader sees "POST /api/runCommand — Run a command" rather than an opaque
+operationId. Accepts a local file, or the name or ID of an existing workflow.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dsl, title, err := loadDSLFromFileOrAPI(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			return explainWorkflow(cmd, title, dsl)
+		},
+	}
+	return cmd
+}
+
+// loadDSLFromFileOrAPI accepts a path or an existing workflow's name/ID, so
+// `explain` works both while authoring and when reviewing what is deployed.
+func loadDSLFromFileOrAPI(cmd *cobra.Command, arg string) (json.RawMessage, string, error) {
+	if doc, err := loadWorkflowDoc(cmd, arg); err == nil {
+		title := doc.Name
+		if title == "" {
+			title = arg
+		}
+		return doc.DSL, title, nil
+	}
+
+	client, err := newV2Client()
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := resolveWorkflow(cmd.Context(), client, arg)
+	if err != nil {
+		return nil, "", fmt.Errorf("%q is neither a readable file nor a known workflow: %w", arg, err)
+	}
+	raw, err := client.Get(cmd.Context(), workflow.WorkflowEndpoint(id))
+	if err != nil {
+		return nil, "", err
+	}
+	w, err := workflow.ParseWorkflow(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	title := w.Name
+	if title == "" {
+		title = w.ID
+	}
+	return w.DSL, title, nil
+}
+
+func explainWorkflow(cmd *cobra.Command, title string, raw json.RawMessage) error {
+	d, err := workflow.ParseDSL(raw)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "%s\n\n", title)
+
+	trigger, err := d.Trigger()
+	if err != nil {
+		fmt.Fprintf(out, "Trigger: (invalid) %v\n", err)
+	} else {
+		fmt.Fprintf(out, "Trigger: %s\n", describeTrigger(trigger))
+		if trigger.Condition != "" {
+			fmt.Fprintf(out, "  only when: %s\n", trigger.Condition)
+		}
+	}
+
+	fmt.Fprintf(out, "\nSteps:\n")
+	for _, t := range d.Tasks() {
+		indent := "  "
+		if t.Depth > 0 {
+			indent = "      "
+		}
+		fmt.Fprintf(out, "%s%s\n", indent, describeTask(t))
+		if cond, ok := t.Body["if"].(string); ok {
+			fmt.Fprintf(out, "%s    if: %s\n", indent, cond)
+		}
+	}
+
+	res := workflow.Validate(d)
+	if len(res.SideEffects) > 0 {
+		fmt.Fprintf(out, "\nReaches outside JumpCloud:\n")
+		for _, se := range res.SideEffects {
+			fmt.Fprintf(out, "  %s — %s\n", se.Task, se.What)
+			for _, tg := range se.Targets {
+				fmt.Fprintf(out, "      → %s\n", tg)
+			}
+		}
+	}
+	if !res.OK() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "\n%d validation problem(s); run `jc workflows validate` for detail.\n",
+			len(res.Errors()))
+	}
+	return nil
+}
+
+func describeTrigger(t workflow.TriggerStyle) string {
+	switch {
+	case t.Frequency != "":
+		return fmt.Sprintf("runs %s on a schedule", t.Frequency)
+	case t.Source == workflow.TriggerEvents:
+		return fmt.Sprintf("on the Directory Insights event %q", t.EventType)
+	case t.Source == workflow.TriggerExternal:
+		return "manual — started through the API (jc workflows trigger)"
+	}
+	return "(none)"
+}
+
+func describeTask(t workflow.Task) string {
+	name := t.Name
+	if _, isLoop := t.Body["for"]; isLoop {
+		loop, _ := t.Body["for"].(map[string]any)
+		each, _ := loop["each"].(string)
+		in, _ := loop["in"].(string)
+		return fmt.Sprintf("%s: for each %s in %s", name, each, in)
+	}
+	if _, isSwitch := t.Body["switch"]; isSwitch {
+		return fmt.Sprintf("%s: branch", name)
+	}
+
+	switch t.Call() {
+	case workflow.CallJCOperation:
+		id := t.OperationID()
+		if op, ok := workflow.LookupOperation(id); ok {
+			return fmt.Sprintf("%s: %s", name, op.Describe())
+		}
+		return fmt.Sprintf("%s: %s (unknown operation)", name, id)
+	case workflow.CallEmailAddresses, workflow.CallEmailChannel:
+		return fmt.Sprintf("%s: send email", name)
+	case workflow.CallConnector:
+		with := t.With()
+		method, _ := with["httpMethod"].(string)
+		path, _ := with["endpointPath"].(string)
+		return fmt.Sprintf("%s: external connector %s %s", name, method, path)
+	}
+	return fmt.Sprintf("%s: (no action)", name)
+}
+
+// ---------- create / update / delete / trigger ----------
+
+// adminRoleHint marks roles that grant broad privilege. A workflow runs
+// unattended with its role's permissions, so binding one of these is a
+// standing grant worth naming out loud rather than burying in a field.
+func adminRoleHint(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "administrator") || strings.Contains(n, "super admin")
+}
+
+// resolveExecutionRole maps a role name or ID to an ID, and reports the name
+// back so the plan and the confirmation can say which role was chosen.
+func resolveExecutionRole(ctx context.Context, client *api.V2Client, identifier string) (id, name string, err error) {
+	r := resolve.NewV2Resolver(client)
+	id, err = r.Resolve(ctx, identifier, resolve.RoleConfig)
+	if err != nil {
+		return "", "", err
+	}
+	name = identifier
+	if raw, gerr := client.Get(ctx, "/roles/"+id); gerr == nil {
+		var role struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &role) == nil && role.Name != "" {
+			name = role.Name
+		}
+	}
+	return id, name, nil
+}
+
+// checkSideEffects blocks a create or update whose DSL reaches outside
+// JumpCloud unless the caller opted in explicitly.
+func checkSideEffects(cmd *cobra.Command, res workflow.Result, allow bool) error {
+	if len(res.SideEffects) == 0 || allow {
+		return nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "this workflow reaches outside JumpCloud (%d step%s):", len(res.SideEffects), plural(len(res.SideEffects)))
+	for _, se := range res.SideEffects {
+		fmt.Fprintf(&b, "\n  %s — %s", se.Task, se.What)
+		for _, tg := range se.Targets {
+			fmt.Fprintf(&b, "\n      → %s", tg)
+		}
+	}
+	b.WriteString("\n\nRe-run with --allow-side-effects to create it anyway.")
+	return fmt.Errorf("%s", b.String())
+}
+
+func newWorkflowsCreateCmd() *cobra.Command {
+	var (
+		file, role, name, description, status string
+		allowSideEffects                      bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create --file <file> --role <name-or-id>",
+		Short: "Create a workflow from a file",
+		Long: `Create a workflow from a file produced by ` + "`jc workflows templates init`" + `
+or written by hand.
+
+The DSL is validated locally first, so a malformed workflow fails here with a
+JSON path rather than at run time with an opaque message.
+
+--role sets the execution role, which decides what JumpCloud API operations the
+workflow may call. Choose the least privilege the workflow needs: it runs
+unattended.
+
+New workflows are created inactive unless --status active is given.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			doc, err := loadWorkflowDoc(cmd, file)
+			if err != nil {
+				return err
+			}
+			if name != "" {
+				doc.Name = name
+			}
+			if description != "" {
+				doc.Description = description
+			}
+			if doc.Name == "" {
+				return fmt.Errorf("workflow needs a name: set it in the file or pass --name")
+			}
+
+			doc.Status = status
+			if doc.Status == "" {
+				doc.Status = workflow.StatusInactive
+			}
+			if doc.Status != workflow.StatusActive && doc.Status != workflow.StatusInactive {
+				return fmt.Errorf("--status must be active or inactive, got %q", doc.Status)
+			}
+
+			res := workflow.ValidateRaw(doc.DSL)
+			if err := res.Err(); err != nil {
+				return err
+			}
+			if err := checkSideEffects(cmd, res, allowSideEffects); err != nil {
+				return err
+			}
+
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			roleID, roleName, err := resolveExecutionRole(cmd.Context(), client, role)
+			if err != nil {
+				return err
+			}
+
+			effects := []string{
+				fmt.Sprintf("trigger: %s", res.TriggerType),
+				fmt.Sprintf("status: %s", doc.Status),
+				fmt.Sprintf("runs as role: %s", roleName),
+			}
+			if adminRoleHint(roleName) {
+				effects = append(effects, "WARNING: an administrator role is a broad standing grant")
+			}
+			for _, se := range res.SideEffects {
+				effects = append(effects, fmt.Sprintf("%s: %s", se.Task, se.What))
+			}
+
+			if viper.GetBool("plan") {
+				return renderPlan(cmd, &plan.Plan{
+					Action: "create", Resource: "workflow", Target: doc.Name,
+					Effects: effects, Reversible: true,
+				})
+			}
+
+			raw, err := client.Create(cmd.Context(), workflow.Endpoint, workflow.CreateBody(workflow.Workflow{
+				Name: doc.Name, Description: doc.Description, DSL: doc.DSL,
+				Status: doc.Status, ExecutionRoleID: roleID,
+			}))
+			if err != nil {
+				return err
+			}
+			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+		},
+	}
+
+	cmd.Flags().StringVar(&file, "file", "", "Workflow file (use - for stdin)")
+	cmd.Flags().StringVar(&role, "role", "", "Execution role name or ID")
+	cmd.Flags().StringVar(&name, "name", "", "Override the workflow name")
+	cmd.Flags().StringVar(&description, "description", "", "Override the description")
+	cmd.Flags().StringVar(&status, "status", "", "active or inactive (default inactive)")
+	cmd.Flags().BoolVar(&allowSideEffects, "allow-side-effects", false,
+		"Permit a DSL that sends email or calls external connectors")
+	_ = cmd.MarkFlagRequired("file")
+	_ = cmd.MarkFlagRequired("role")
+
+	return cmd
+}
+
+func newWorkflowsUpdateCmd() *cobra.Command {
+	var (
+		file, role, name, description, status string
+		allowSideEffects                      bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <name-or-id>",
+		Short: "Update a workflow",
+		Long: `Update a workflow.
+
+The current workflow is read first and sent back complete with the changes
+applied, because this API's PUT is full-replace. A new DSL is validated locally
+before it is sent.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if file == "" && name == "" && description == "" && status == "" && role == "" {
+				return fmt.Errorf("no changes requested: pass --file, --name, --description, --status, or --role")
+			}
+
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			id, err := resolveWorkflow(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			curRaw, err := client.Get(cmd.Context(), workflow.WorkflowEndpoint(id))
+			if err != nil {
+				return err
+			}
+			cur, err := workflow.ParseWorkflow(curRaw)
+			if err != nil {
+				return err
+			}
+
+			next := cur
+			var effects []string
+
+			if file != "" {
+				doc, err := loadWorkflowDoc(cmd, file)
+				if err != nil {
+					return err
+				}
+				next.DSL = doc.DSL
+				effects = append(effects, "replace the DSL from "+file)
+			}
+			if name != "" {
+				next.Name = name
+				effects = append(effects, "name: "+cur.Name+" -> "+name)
+			}
+			if description != "" {
+				next.Description = description
+				effects = append(effects, "description updated")
+			}
+			if status != "" {
+				if status != workflow.StatusActive && status != workflow.StatusInactive {
+					return fmt.Errorf("--status must be active or inactive, got %q", status)
+				}
+				next.Status = status
+				effects = append(effects, "status: "+cur.Status+" -> "+status)
+			}
+			if role != "" {
+				roleID, roleName, err := resolveExecutionRole(cmd.Context(), client, role)
+				if err != nil {
+					return err
+				}
+				next.ExecutionRoleID = roleID
+				effects = append(effects, "execution role: "+roleName)
+				if adminRoleHint(roleName) {
+					effects = append(effects, "WARNING: an administrator role is a broad standing grant")
+				}
+			}
+
+			res := workflow.ValidateRaw(next.DSL)
+			if err := res.Err(); err != nil {
+				return err
+			}
+			if file != "" {
+				if err := checkSideEffects(cmd, res, allowSideEffects); err != nil {
+					return err
+				}
+			}
+			for _, se := range res.SideEffects {
+				effects = append(effects, fmt.Sprintf("%s: %s", se.Task, se.What))
+			}
+
+			target := cur.Name
+			if target == "" {
+				target = id
+			}
+			if viper.GetBool("plan") {
+				return renderPlan(cmd, &plan.Plan{
+					Action: "update", Resource: "workflow", Target: target,
+					Effects: effects, Reversible: true,
+				})
+			}
+
+			raw, err := client.Update(cmd.Context(), workflow.WorkflowEndpoint(id), workflow.UpdateBody(next))
+			if err != nil {
+				return err
+			}
+			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+		},
+	}
+
+	cmd.Flags().StringVar(&file, "file", "", "Replace the DSL from this file (use - for stdin)")
+	cmd.Flags().StringVar(&role, "role", "", "Change the execution role")
+	cmd.Flags().StringVar(&name, "name", "", "Rename the workflow")
+	cmd.Flags().StringVar(&description, "description", "", "Change the description")
+	cmd.Flags().StringVar(&status, "status", "", "active or inactive")
+	cmd.Flags().BoolVar(&allowSideEffects, "allow-side-effects", false,
+		"Permit a DSL that sends email or calls external connectors")
+
+	return cmd
+}
+
+func newWorkflowsDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <name-or-id>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a workflow",
+		Long: `Delete a workflow.
+
+Its runs are not deleted: they remain listed with workflowDeletedAt set, so the
+audit trail survives.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			id, err := resolveWorkflow(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), workflow.WorkflowEndpoint(id))
+			if err != nil {
+				return err
+			}
+			w, err := workflow.ParseWorkflow(raw)
+			if err != nil {
+				return err
+			}
+
+			label := w.Name
+			if label == "" {
+				label = id
+			}
+			effects := []string{
+				fmt.Sprintf("status was %s, trigger %s", w.Status, w.TriggerType),
+				"past runs are kept and stay listed",
+			}
+
+			if viper.GetBool("plan") {
+				return renderPlan(cmd, &plan.Plan{
+					Action: "delete", Resource: "workflow", Target: label, Effects: effects,
+				})
+			}
+			if mustAbortWithoutTTY() {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+				return nil
+			}
+			if shouldConfirm() {
+				ok, err := askYesNo(cmd, fmt.Sprintf("Delete workflow %q?", label))
+				if err != nil {
+					return err
+				}
+				if !ok {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+					return nil
+				}
+			}
+
+			if _, err := client.Delete(cmd.Context(), workflow.WorkflowEndpoint(id)); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Workflow %q deleted.\n", label)
+			return nil
+		},
+	}
+}
+
+func newWorkflowsTriggerCmd() *cobra.Command {
+	var dataFlag string
+
+	cmd := &cobra.Command{
+		Use:   "trigger <name-or-id>",
+		Short: "Start a manual run of an external-trigger workflow",
+		Long: `Start a workflow run.
+
+This only does anything for workflows whose trigger source is "external"; the
+command refuses others rather than posting a call that silently does nothing.
+
+The workflow then executes for real, with whatever privileges its execution
+role grants — it may run commands on devices, change users, send email, or call
+external systems. The resolved steps are shown before confirmation.
+
+--data supplies the run input, which the workflow reads as ${ input.<field> }.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data := map[string]any{}
+			if dataFlag != "" {
+				if err := json.Unmarshal([]byte(dataFlag), &data); err != nil {
+					return fmt.Errorf("invalid --data JSON: %w", err)
+				}
+			}
+
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			id, err := resolveWorkflow(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), workflow.WorkflowEndpoint(id))
+			if err != nil {
+				return err
+			}
+			w, err := workflow.ParseWorkflow(raw)
+			if err != nil {
+				return err
+			}
+
+			if w.TriggerType != "" && w.TriggerType != workflow.TriggerExternal {
+				return fmt.Errorf(
+					"workflow %q has a %s trigger, so a manual run does nothing; only external-trigger workflows can be started this way",
+					args[0], w.TriggerType)
+			}
+
+			label := w.Name
+			if label == "" {
+				label = id
+			}
+
+			d, derr := workflow.ParseDSL(w.DSL)
+			var effects []string
+			if derr == nil {
+				for _, t := range d.Tasks() {
+					effects = append(effects, describeTask(t))
+				}
+				for _, se := range workflow.Validate(d).SideEffects {
+					effects = append(effects, fmt.Sprintf("REACHES OUTSIDE JUMPCLOUD — %s: %s", se.Task, se.What))
+				}
+			}
+			if w.Status != workflow.StatusActive {
+				effects = append(effects, fmt.Sprintf("NOTE: workflow status is %q", w.Status))
+			}
+
+			if viper.GetBool("plan") {
+				return renderPlan(cmd, &plan.Plan{
+					Action: "trigger", Resource: "workflow", Target: label, Effects: effects,
+				})
+			}
+			if mustAbortWithoutTTY() {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled (no TTY for confirmation prompt). Use --force to skip.")
+				return nil
+			}
+			if shouldConfirm() {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Running %q will execute:\n", label)
+				for _, e := range effects {
+					fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", e)
+				}
+				ok, err := askYesNo(cmd, "Start this workflow run?")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled.")
+					return nil
+				}
+			}
+
+			out, err := client.Create(cmd.Context(), workflow.TriggerEndpoint(id), workflow.TriggerBody(data))
+			if err != nil {
+				return err
+			}
+			return output.WriteSingle(cmd.OutOrStdout(), out, output.CurrentOptions())
+		},
+	}
+
+	cmd.Flags().StringVar(&dataFlag, "data", "", "Run input as a JSON object, readable in the DSL as ${ input.<field> }")
+	return cmd
+}
+
+// writeRunTrace renders a run's per-step execution trace, which is where a
+// failed run's cause actually shows up.
+func writeRunTrace(cmd *cobra.Command, run workflow.Run) error {
+	out := cmd.OutOrStdout()
+	name := run.Name
+	if name == "" {
+		name = run.WorkflowID
+	}
+	fmt.Fprintf(out, "%s — %s\n", name, run.Status)
+	fmt.Fprintf(out, "  run %s  started %s", run.ID, run.StartedAt)
+	if run.CompletedAt != "" {
+		fmt.Fprintf(out, "  completed %s", run.CompletedAt)
+	}
+	fmt.Fprintln(out)
+	if run.WorkflowDeletedAt != "" {
+		fmt.Fprintf(out, "  (the workflow was deleted %s; this run is retained)\n", run.WorkflowDeletedAt)
+	}
+	if run.Error != "" {
+		fmt.Fprintf(out, "  error: %s\n", run.Error)
+	}
+
+	nodes := run.ExecutionDetails.Nodes
+	if len(nodes) == 0 {
+		fmt.Fprintln(cmd.ErrOrStderr(), "\nNo execution trace on this run.")
+		return nil
+	}
+	fmt.Fprintln(out, "\nSteps:")
+	for _, n := range nodes {
+		fmt.Fprintf(out, "  %s\n", n.Describe())
+	}
+	if failed, ok := run.FailedNode(); ok {
+		fmt.Fprintf(out, "\nFirst failure: %s\n", failed.Name)
+	}
+	return nil
+}
