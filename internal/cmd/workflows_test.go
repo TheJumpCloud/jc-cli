@@ -640,3 +640,30 @@ func TestResolvePlaceholderValue_PassesThroughIDsAndFreeText(t *testing.T) {
 		t.Errorf("free text should be taken literally: %q %v", got, err)
 	}
 }
+
+// The file's status must survive when --status is not passed. Assigning the
+// flag unconditionally discarded it, and the workflow then failed to trigger
+// with "workflow is not active" and nothing pointing back at the cause.
+func TestWorkflows_CreateHonoursStatusFromFile(t *testing.T) {
+	setupUsersTest(t)
+	srv := startWFServer(t)
+	overrideV2Client(t, srv.URL)
+
+	path := writeTemp(t, `{"name":"probe","status":"active","dsl":`+probeDSL+`}`)
+	if _, _, err := runWFCmd(t, "workflows", "create", "--file", path, "--role", "Read Only", "--force"); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if srv.lastBody["status"] != "active" {
+		t.Errorf("status = %v; the file's value must survive when --status is absent", srv.lastBody["status"])
+	}
+
+	// The flag still wins when both are given.
+	srv.lastBody = nil
+	if _, _, err := runWFCmd(t, "workflows", "create", "--file", path,
+		"--role", "Read Only", "--status", "inactive", "--force"); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if srv.lastBody["status"] != "inactive" {
+		t.Errorf("status = %v; --status must override the file", srv.lastBody["status"])
+	}
+}

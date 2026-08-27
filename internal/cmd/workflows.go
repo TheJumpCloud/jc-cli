@@ -829,7 +829,13 @@ New workflows are created inactive unless --status active is given.`,
 				return fmt.Errorf("workflow needs a name: set it in the file or pass --name")
 			}
 
-			doc.Status = status
+			// The flag overrides the file; the file is used when the flag is
+			// absent. Assigning unconditionally silently discarded a status
+			// set in the document, which then failed later as "workflow is
+			// not active" with nothing pointing back at the cause.
+			if status != "" {
+				doc.Status = status
+			}
 			if doc.Status == "" {
 				doc.Status = workflow.StatusInactive
 			}

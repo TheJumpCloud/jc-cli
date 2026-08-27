@@ -6,11 +6,18 @@ import (
 	"strings"
 )
 
-// goOperatorRE finds the C-style boolean operators. The DSL's guide names
-// these as the most common cause of "invalid runtime expression format" and
-// recommends the keyword forms, so they are worth flagging even though a given
-// expression may happen to parse.
-var goOperatorRE = regexp.MustCompile(`&&|\|\||(^|[^!<>=])!([^=])`)
+// The DSL guide recommends the keyword forms (and / or / not) over C-style
+// && / || / !, naming them as the usual cause of "invalid runtime expression
+// format". This package used to warn on that.
+//
+// It no longer does. All 12 shipped templates write their trigger conditions
+// with &&, and a live experiment on 2026-08-27 settled it: two workflows
+// identical but for the operator, in BOTH positions the operators appear —
+// a task-level `if` and an external trigger condition — executed identically,
+// all four runs completing with the guarded step running. The guide's advice
+// is conservative, and warning on it flagged every shipped template for a
+// non-issue, which is worse than silence. Whatever produces "invalid runtime
+// expression format" is not this.
 
 // actionsRefRE finds ${ actions.<name> } references, which must resolve to a
 // task defined earlier in the document.
@@ -156,12 +163,6 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 		// it would also fail to compile, which is noise.
 		if placeholderRE.MatchString(e.Source) {
 			continue
-		}
-
-		if m := goOperatorRE.FindString(e.Source); m != "" {
-			add(Warning, e.Path,
-				fmt.Sprintf("expression uses %q", strings.TrimSpace(m)),
-				"prefer the keyword forms and / or / not; the C-style operators are the usual cause of \"invalid runtime expression format\"")
 		}
 
 		if err := compileExpr(e.Source, e.Kind); err != nil {
