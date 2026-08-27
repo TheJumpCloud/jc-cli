@@ -810,3 +810,29 @@ func validateIdentifier(id string) error {
 	}
 	return nil
 }
+
+// WorkflowPlaceholderConfig binds one workflow placeholder kind to the
+// resolver that finds it by name.
+//
+// Keyed by the kind as a plain string rather than by a constant from
+// internal/workflow: that package classifies placeholders and deliberately
+// knows nothing about resolvers, and keeping the key untyped avoids an import
+// that would only exist to name six strings.
+type WorkflowPlaceholderConfig struct {
+	Config ResourceConfig
+	// V1 marks resolvers whose list endpoint is on the V1 API. Getting this
+	// wrong is silent until it 404s — the V2 client would request
+	// /api/v2/commands, which does not exist.
+	V1 bool
+}
+
+// WorkflowPlaceholderConfigs maps a workflow placeholder kind to its resolver,
+// shared by the CLI and the MCP server so the two cannot disagree about which
+// API a placeholder resolves against.
+var WorkflowPlaceholderConfigs = map[string]WorkflowPlaceholderConfig{
+	"command":      {Config: CommandConfig, V1: true},
+	"user-group":   {Config: UserGroupConfig},
+	"device-group": {Config: DeviceGroupConfig},
+	"policy":       {Config: PolicyConfig},
+	"apple-mdm":    {Config: AppleMDMConfig},
+}

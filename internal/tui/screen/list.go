@@ -33,6 +33,10 @@ type ListScreen struct {
 	spinner    spinner.Model
 	fetcher    *fetch.Fetcher
 	generation int64
+
+	// onSelect, when set, makes this list a picker: Enter answers the caller
+	// with the chosen row instead of pushing a detail screen.
+	onSelect   func(id, name string) tea.Cmd
 	loading    bool
 	err        string
 	allFields  bool
@@ -319,11 +323,26 @@ func (l *ListScreen) openDetail() tea.Cmd {
 
 	name := component.ExtractName(row, l.entry.Schema.NameField)
 
+	// When a caller has taken this list over as a picker, selecting a row
+	// answers them instead of drilling into a detail view. This is what lets
+	// any existing list stand in as a chooser without a parallel screen.
+	if l.onSelect != nil {
+		return l.onSelect(id, name)
+	}
+
 	return func() tea.Msg {
 		return tui.PushScreenMsg{
 			Screen: NewDetailScreen(l.entry, id, name),
 		}
 	}
+}
+
+// AsPicker turns the list into a chooser: Enter calls fn with the selected
+// row's ID and name rather than opening the detail screen. fn is expected to
+// pop this screen itself, so the caller controls where selection returns to.
+func (l *ListScreen) AsPicker(fn func(id, name string) tea.Cmd) *ListScreen {
+	l.onSelect = fn
+	return l
 }
 
 func (l *ListScreen) cycleSort() {

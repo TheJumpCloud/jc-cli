@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/tui/component"
 	"github.com/klaassen-consulting/jc/internal/tui/fetch"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
+	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
 // DetailScreen shows all fields of a single resource.
@@ -248,6 +249,18 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "d":
 			if d.data != nil && hasVerb(d.entry.Schema.Verbs, "delete") {
 				d.confirming = true
+			}
+
+		case msg.String() == "n" && d.entry.Key == "workflow-templates":
+			// Authoring starts from a template, which is where the DSL's only
+			// worked examples live. See workflow_authoring.go.
+			if d.data != nil {
+				var t workflow.Template
+				if err := json.Unmarshal(d.data, &t); err == nil && len(t.DSL) > 0 {
+					return d, func() tea.Msg {
+						return tui.PushScreenMsg{Screen: NewWorkflowAuthoringScreen(t)}
+					}
+				}
 			}
 
 		case msg.String() == "E":
@@ -597,7 +610,14 @@ func (d *DetailScreen) View() string {
 		title += " / " + d.id
 	}
 	sb.WriteString(style.Subtitle.Render(title))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
+	// The app-level help line is fixed by nav depth, so a screen-specific key
+	// has to advertise itself here or nobody finds it.
+	if d.entry.Key == "workflow-templates" && d.data != nil {
+		sb.WriteString(style.Subtitle.Render("n  create a workflow from this template"))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
 
 	if d.loading {
 		sb.WriteString(d.spinner.View())
