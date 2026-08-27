@@ -347,6 +347,18 @@ func (l *ListScreen) openDetail() tea.Cmd {
 	}
 }
 
+// HelpKeys advertises this list's own keys in the status bar. n has always
+// worked on any list with the create verb, and was never shown anywhere.
+func (l *ListScreen) HelpKeys() string {
+	var keys []string
+	if l.entry.Key == "workflow-templates" {
+		keys = append(keys, "n:new workflow")
+	} else if hasVerb(l.entry.Schema.Verbs, "create") {
+		keys = append(keys, "n:new")
+	}
+	return strings.Join(keys, "  ")
+}
+
 // AsPicker turns the list into a chooser: Enter calls fn with the selected
 // row's ID and name rather than opening the detail screen. fn is expected to
 // pop this screen itself, so the caller controls where selection returns to.
@@ -485,14 +497,6 @@ func (l *ListScreen) View() string {
 	}
 	sb.WriteString(header)
 	sb.WriteString("\n")
-	// The app-level help line is fixed by nav depth, so a screen-specific key
-	// has to advertise itself here or nobody finds it.
-	if l.entry.Key == "workflow-templates" {
-		sb.WriteString(style.Subtitle.Render(
-			"Enter  open a template · n  new workflow from a blank scaffold"))
-		sb.WriteString("\n")
-	}
-
 	// Filter bar.
 	filterView := l.filterBar.View()
 	if filterView != "" {

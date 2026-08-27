@@ -326,9 +326,10 @@ func TestList_NKeyOnTemplatesStartsBlankAuthoring(t *testing.T) {
 		t.Errorf("a blank start should carry no template name, got %q", author.template.Name)
 	}
 
-	// And the key must be advertised, or nobody finds it.
-	if !strings.Contains(l.View(), "n  new workflow from a blank scaffold") {
-		t.Errorf("the templates list should advertise the key:\n%s", l.View())
+	// And the key must reach the status bar, which is where an operator
+	// looks for keys. A hint buried in the screen body is not discoverable.
+	if got := l.HelpKeys(); !strings.Contains(got, "n:new workflow") {
+		t.Errorf("HelpKeys = %q; the templates list must advertise n", got)
 	}
 }
 
@@ -348,7 +349,7 @@ func TestList_NKeyStaysInertElsewhere(t *testing.T) {
 			t.Error("n must not start workflow authoring from an unrelated list")
 		}
 	}
-	if strings.Contains(l.View(), "blank scaffold") {
-		t.Error("an unrelated list must not advertise the key")
+	if got := l.HelpKeys(); strings.Contains(got, "new workflow") {
+		t.Errorf("an unrelated list must not advertise the key, HelpKeys = %q", got)
 	}
 }

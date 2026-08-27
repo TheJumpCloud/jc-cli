@@ -88,6 +88,17 @@ func NewDeviceSettingsScreen() *DeviceSettingsScreen {
 
 func (s *DeviceSettingsScreen) Title() string { return "Device Settings" }
 
+// HelpKeys puts this screen's editing keys in the status bar.
+func (s *DeviceSettingsScreen) HelpKeys() string {
+	if s.stage == dsStageConfirm {
+		return "y:save  n:back"
+	}
+	if s.stage == dsStageBrowse {
+		return "space:toggle  ctrl+s:save  r:reload"
+	}
+	return ""
+}
+
 func (s *DeviceSettingsScreen) Init() tea.Cmd {
 	return tea.Batch(s.spinner.Tick, s.loadCmd())
 }

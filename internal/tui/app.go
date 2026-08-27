@@ -175,9 +175,17 @@ func (a *App) View() string {
 }
 
 func (a *App) helpText() string {
-	depth := a.nav.Depth()
-	if depth <= 1 {
-		return "q:quit  d:dashboard  b:bookmark  /:filter  enter:open  ?:help"
+	base := "esc:back  /:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+	if a.nav.Depth() <= 1 {
+		base = "q:quit  d:dashboard  b:bookmark  /:filter  enter:open  ?:help"
 	}
-	return "esc:back  /:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+
+	// A screen's own keys come first: they are the ones the operator cannot
+	// guess from the standard set.
+	if hp, ok := a.nav.Current().(HelpProvider); ok {
+		if extra := hp.HelpKeys(); extra != "" {
+			return extra + "  ·  " + base
+		}
+	}
+	return base
 }

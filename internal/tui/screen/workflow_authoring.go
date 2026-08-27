@@ -192,6 +192,27 @@ func (s *WorkflowAuthoringScreen) TextInputActive() bool {
 	return s.stage == wfAuthorStageName || s.stage == wfAuthorStageFreeText
 }
 
+// HelpKeys mirrors the stage footer into the status bar, so the keys are in
+// both places an operator might look.
+func (s *WorkflowAuthoringScreen) HelpKeys() string {
+	switch s.stage {
+	case wfAuthorStageName:
+		return "enter:continue  esc:cancel"
+	case wfAuthorStageFill:
+		return "enter:choose  c:continue"
+	case wfAuthorStageFreeText:
+		return "enter:accept  esc:back"
+	case wfAuthorStageReview:
+		if s.result.OK() {
+			return "enter:create  e:edit raw DSL"
+		}
+		return "e:edit raw DSL"
+	case wfAuthorStageConfirmRisk:
+		return "y:create anyway  n:back"
+	}
+	return ""
+}
+
 func (s *WorkflowAuthoringScreen) Init() tea.Cmd {
 	s.input.Focus()
 	return tea.Batch(s.spinner.Tick, textinput.Blink)
