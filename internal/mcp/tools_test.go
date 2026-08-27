@@ -381,6 +381,16 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"ad_translation_rules_preview",
 		"devices_settings_get", "devices_settings_signin_set",
 		"devices_settings_password_sync_set",
+
+		// password policies (KLA-485)
+		"password_policies_list",
+		"password_policies_get",
+		"password_policies_for_user",
+		"password_policies_for_group",
+		"password_policies_create",
+		"password_policies_update",
+		"password_policies_delete",
+		"password_policies_set_precedence",
 		// System Insights
 		"system_insights_list_table", "system_insights_tables",
 		// RADIUS
@@ -477,8 +487,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 291 {
-		t.Errorf("expected 291 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 299 {
+		t.Errorf("expected 299 tools, got %d", len(result.Tools))
 	}
 }
 

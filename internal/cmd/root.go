@@ -128,8 +128,8 @@ interface.`,
 	// Security & Policies
 	addToGroup(rootCmd, "security",
 		newPoliciesCmd(), newPolicyGroupsCmd(), newPolicyTemplatesCmd(),
-		newBundleCmd(), newIPListsCmd(), newRADIUSCmd(), newDuoCmd(),
-		newCustomEmailsCmd(), newRolesCmd(),
+		newPasswordPoliciesCmd(), newBundleCmd(), newIPListsCmd(),
+		newRADIUSCmd(), newDuoCmd(), newCustomEmailsCmd(), newRolesCmd(),
 	)
 
 	// Directory Integrations
