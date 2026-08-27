@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,11 @@ func startWFServer(t *testing.T) *wfServer {
 				name = "Administrator"
 			}
 			json.NewEncoder(w).Encode(map[string]any{"id": id, "name": name})
+
+		case p == "/systemgroups" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{
+				{"id": "dg-1", "name": "Staging Devices", "type": "system_group"},
+			}})
 
 		case p == "/roles" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{
@@ -220,9 +226,17 @@ func TestWorkflows_TemplatesInitReportsPlaceholders(t *testing.T) {
 	if doc["status"] != "inactive" {
 		t.Errorf("an initialised workflow must start inactive, got %v", doc["status"])
 	}
-	// The placeholder report goes to stderr so stdout stays pipeable.
-	if !strings.Contains(errOut, "REPLACE_WITH_COMMAND_ID") {
+	// The placeholder report goes to stderr so stdout stays pipeable, and
+	// names each marker's KIND — that is what makes --set usable without
+	// going and reading the template.
+	if !strings.Contains(errOut, "COMMAND_ID") {
 		t.Errorf("init should report what still needs filling, stderr was: %s", errOut)
+	}
+	if !strings.Contains(errOut, "a JumpCloud command") {
+		t.Errorf("the report should say what the marker expects, stderr was: %s", errOut)
+	}
+	if !strings.Contains(errOut, "--set accepts a name") {
+		t.Errorf("a resolvable marker should say so, stderr was: %s", errOut)
 	}
 	if strings.Contains(out, "placeholder(s) to fill") {
 		t.Error("the placeholder report must not pollute stdout")
@@ -531,4 +545,98 @@ func writeTemp(t *testing.T, content string) string {
 		t.Fatalf("writing temp file: %v", err)
 	}
 	return path
+}
+
+func TestParseSetFlags(t *testing.T) {
+	got, err := parseSetFlags([]string{
+		"COMMAND_ID=abc",
+		"REPLACE_WITH_DEVICE_GROUP_ID=def",
+	})
+	if err != nil {
+		t.Fatalf("parseSetFlags: %v", err)
+	}
+	// Both the bare and the full form must land on the same key.
+	if got["REPLACE_WITH_COMMAND_ID"] != "abc" {
+		t.Errorf("bare marker not normalized: %#v", got)
+	}
+	if got["REPLACE_WITH_DEVICE_GROUP_ID"] != "def" {
+		t.Errorf("full marker not kept: %#v", got)
+	}
+
+	// A value containing '=' is legitimate and must survive.
+	got, err = parseSetFlags([]string{"HEADER_VALUE=a=b"})
+	if err != nil {
+		t.Fatalf("parseSetFlags: %v", err)
+	}
+	if got["REPLACE_WITH_HEADER_VALUE"] != "a=b" {
+		t.Errorf("only the first = separates: %#v", got)
+	}
+
+	if _, err := parseSetFlags([]string{"no-equals"}); err == nil {
+		t.Error("want an error for a --set without =")
+	}
+}
+
+func TestWorkflows_TemplatesInitSetFillsPlaceholder(t *testing.T) {
+	setupUsersTest(t)
+	srv := startWFServer(t)
+	overrideV2Client(t, srv.URL)
+	overrideV1Client(t, srv.URL)
+
+	// The template's marker is REPLACE_WITH_COMMAND_ID; a 24-hex value needs
+	// no resolution and must pass straight through.
+	out, errOut, err := runWFCmd(t, "workflows", "templates", "init", "tmpl-1",
+		"--set", "COMMAND_ID=6139919b03c9b24d0b8f3ef1")
+	if err != nil {
+		t.Fatalf("Execute error: %v (stderr %s)", err, errOut)
+	}
+	if strings.Contains(out, "REPLACE_WITH_") {
+		t.Errorf("the placeholder should be filled:\n%s", out)
+	}
+	if !strings.Contains(out, "6139919b03c9b24d0b8f3ef1") {
+		t.Errorf("the value should be substituted:\n%s", out)
+	}
+	// Nothing left, so nothing to report.
+	if strings.Contains(errOut, "still to fill") {
+		t.Errorf("no placeholders should remain, stderr: %s", errOut)
+	}
+}
+
+func TestWorkflows_TemplatesInitSetRejectsUnknownMarker(t *testing.T) {
+	setupUsersTest(t)
+	overrideV2Client(t, startWFServer(t).URL)
+
+	_, _, err := runWFCmd(t, "workflows", "templates", "init", "tmpl-1", "--set", "NOPE=x")
+	if err == nil {
+		t.Fatal("want an error for a marker this template does not have")
+	}
+	// The error must say what IS available, or the fix is guesswork.
+	if !strings.Contains(err.Error(), "REPLACE_WITH_COMMAND_ID") {
+		t.Errorf("error should list the real markers: %v", err)
+	}
+}
+
+func TestResolvePlaceholderValue_PassesThroughIDsAndFreeText(t *testing.T) {
+	setupUsersTest(t)
+	srv := startWFServer(t)
+	overrideV2Client(t, srv.URL)
+
+	client, err := newV2Client()
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+
+	// A 24-hex ID needs no lookup.
+	got, err := resolvePlaceholderValue(context.Background(), client,
+		"REPLACE_WITH_COMMAND_ID", "6139919b03c9b24d0b8f3ef1")
+	if err != nil || got != "6139919b03c9b24d0b8f3ef1" {
+		t.Errorf("an ID should pass through untouched: %q %v", got, err)
+	}
+
+	// Free text is literal, never resolved.
+	got, err = resolvePlaceholderValue(context.Background(), client,
+		"REPLACE_WITH_IT_OPS_EMAIL", "ops@example.com")
+	if err != nil || got != "ops@example.com" {
+		t.Errorf("free text should be taken literally: %q %v", got, err)
+	}
 }

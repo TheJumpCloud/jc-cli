@@ -194,6 +194,39 @@ func (t Task) OperationID() string {
 	return id
 }
 
+// Describe renders the task as one line: a jc_operation resolved to the real
+// endpoint it calls, and the other call types named for what they do. Shared
+// so the CLI's `explain` and the TUI's review cannot describe a step
+// differently.
+func (t Task) Describe() string {
+	if _, isLoop := t.Body["for"]; isLoop {
+		loop, _ := t.Body["for"].(map[string]any)
+		each, _ := loop["each"].(string)
+		in, _ := loop["in"].(string)
+		return fmt.Sprintf("%s: for each %s in %s", t.Name, each, in)
+	}
+	if _, isSwitch := t.Body["switch"]; isSwitch {
+		return fmt.Sprintf("%s: branch", t.Name)
+	}
+
+	switch t.Call() {
+	case CallJCOperation:
+		id := t.OperationID()
+		if op, ok := LookupOperation(id); ok {
+			return fmt.Sprintf("%s: %s", t.Name, op.Describe())
+		}
+		return fmt.Sprintf("%s: %s (unknown operation)", t.Name, id)
+	case CallEmailAddresses, CallEmailChannel:
+		return fmt.Sprintf("%s: send email", t.Name)
+	case CallConnector:
+		with := t.With()
+		method, _ := with["httpMethod"].(string)
+		path, _ := with["endpointPath"].(string)
+		return fmt.Sprintf("%s: external connector %s %s", t.Name, method, path)
+	}
+	return fmt.Sprintf("%s: (no action)", t.Name)
+}
+
 // Tasks flattens the `do` list into tasks in document order, descending one
 // level into for-loop bodies. Nested loops are not supported by the engine, so
 // depth never exceeds 1 in a valid document; a deeper nesting is still

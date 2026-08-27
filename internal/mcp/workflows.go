@@ -29,6 +29,11 @@ type wfTemplateInput struct {
 	Identifier string `json:"identifier" jsonschema:"Workflow template ID or name"`
 }
 
+type wfTemplateInitInput struct {
+	Identifier string            `json:"identifier" jsonschema:"Workflow template ID or name"`
+	Set        map[string]string `json:"set,omitempty" jsonschema:"Fill placeholders: marker name to value. Resolvable markers accept a name (a command name, a group name) and are looked up; a 24-character ID passes through. Call without this first to see each marker's kind."`
+}
+
 type wfValidateInput struct {
 	DSL map[string]any `json:"dsl" jsonschema:"The workflow DSL document to validate"`
 }
@@ -144,6 +149,42 @@ func dslRaw(m map[string]any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("encoding dsl: %w", err)
 	}
 	return raw, nil
+}
+
+// resolveWorkflowPlaceholder turns a supplied value into the ID the DSL needs.
+// The kind-to-resolver binding is shared with the CLI through
+// resolve.WorkflowPlaceholderConfigs so the two surfaces cannot disagree about
+// which API a placeholder resolves against.
+func resolveWorkflowPlaceholder(ctx context.Context, client *api.V2Client, marker, value string) (string, error) {
+	kind := workflow.ClassifyPlaceholder(marker)
+	if !kind.Resolvable || resolve.IsID(value) {
+		return value, nil
+	}
+	if kind.Kind == workflow.KindWorkflow {
+		return resolveWorkflowID(ctx, client, value)
+	}
+	pr, ok := resolve.WorkflowPlaceholderConfigs[kind.Kind]
+	if !ok {
+		return value, nil
+	}
+
+	var (
+		id  string
+		err error
+	)
+	if pr.V1 {
+		v1, cerr := newV1ClientFunc()
+		if cerr != nil {
+			return "", cerr
+		}
+		id, err = resolve.NewResolver(v1).Resolve(ctx, value, pr.Config)
+	} else {
+		id, err = resolve.NewV2Resolver(client).Resolve(ctx, value, pr.Config)
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s: resolving %s %q: %w", marker, kind.Describe, value, err)
+	}
+	return id, nil
 }
 
 // sideEffectRefusal builds the message that blocks an ungated create or update.
@@ -291,8 +332,8 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_templates_init", "Turn a JumpCloud Workflow template into a fillable workflow document. Returns the document plus the list of REPLACE_WITH_* placeholders that must be filled before it can be created — those are the values only the operator can supply.",
-		func(ctx context.Context, req *mcp.CallToolRequest, args wfTemplateInput) (*mcp.CallToolResult, any, error) {
+	addTypedTool(s, "workflows_templates_init", "Turn a JumpCloud Workflow template into a workflow document ready to create. Returns the document plus, for every REPLACE_WITH_* placeholder, what that placeholder expects — a command, a user group, a device group, a policy, or free text. Pass `set` to fill them: resolvable kinds accept a NAME and are looked up, so you do not need to find IDs first. Call once without `set` to see the kinds, then again with them filled.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfTemplateInitInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
@@ -301,21 +342,46 @@ func (s *Server) registerWorkflowTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			d, _ := workflow.ParseDSL(t.DSL)
-			seen := map[string]bool{}
-			var markers []string
-			for _, p := range d.Placeholders() {
-				if !seen[p.Marker] {
-					seen[p.Marker] = true
-					markers = append(markers, p.Marker)
+			d, err := workflow.ParseDSL(t.DSL)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+
+			dsl := t.DSL
+			if len(args.Set) > 0 {
+				values := make(map[string]string, len(args.Set))
+				for marker, raw := range args.Set {
+					// Resolve before filling so a bad name fails naming the
+					// marker, rather than producing a workflow with a name
+					// where an ID belongs.
+					resolved, err := resolveWorkflowPlaceholder(ctx, client, workflow.NormalizeMarker(marker), raw)
+					if err != nil {
+						return errorResult(err.Error()), nil, nil
+					}
+					values[marker] = resolved
+				}
+				dsl, err = d.Fill(values)
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
 				}
 			}
+
+			filled := workflow.DSL{}
+			if parsed, perr := workflow.ParseDSL(dsl); perr == nil {
+				filled = parsed
+			}
+			kinds := map[string]any{}
+			for marker, k := range filled.PlaceholderKinds() {
+				kinds[marker] = k
+			}
+
 			res, err := jsonResult(map[string]any{
-				"name":         t.Name,
-				"description":  t.Description,
-				"status":       workflow.StatusInactive,
-				"dsl":          t.DSL,
-				"placeholders": markers,
+				"name":              t.Name,
+				"description":       t.Description,
+				"status":            workflow.StatusInactive,
+				"dsl":               dsl,
+				"placeholders":      filled.PlaceholderMarkers(),
+				"placeholder_kinds": kinds,
 			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil

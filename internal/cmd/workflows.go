@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -332,17 +331,24 @@ can supply.`,
 	}
 
 	var initName, initDescription string
+	var initSet []string
 	initCmd := &cobra.Command{
 		Use:   "init <template-id-or-name>",
 		Short: "Emit a fillable workflow file from a template",
-		Long: `Emit a template as a workflow file ready to edit and create.
+		Long: `Emit a template as a workflow file ready to create.
 
-Every REPLACE_WITH_* marker is left in place: those are the values only you can
-supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain.
+Templates ship with REPLACE_WITH_* markers for the values only you can supply.
+Fill them with --set, by name rather than by ID:
 
-  jc workflows templates init <id> > wf.json
-  # edit, then:
-  jc workflows validate wf.json`,
+  jc workflows templates init <id> \
+      --set COMMAND_ID="Restart Printer Spooler" \
+      --set DEVICE_GROUP_ID="Staging Devices" > wf.json
+
+Names resolve the same way --role does; a 24-character ID passes through
+untouched. With no --set the markers are left in place and listed on stderr
+with what each one expects, so stdout stays pipeable either way.
+
+` + "`jc workflows validate`" + ` refuses to create while any marker remains.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := newV2Client()
@@ -352,6 +358,33 @@ supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain
 			t, err := findTemplate(cmd.Context(), client, args[0])
 			if err != nil {
 				return err
+			}
+
+			d, err := workflow.ParseDSL(t.DSL)
+			if err != nil {
+				return err
+			}
+
+			dsl := t.DSL
+			if len(initSet) > 0 {
+				values, err := parseSetFlags(initSet)
+				if err != nil {
+					return err
+				}
+				// Resolve before filling, so a bad name fails with the marker
+				// named rather than producing a workflow with a name where an
+				// ID belongs.
+				for marker, raw := range values {
+					resolved, err := resolvePlaceholderValue(cmd.Context(), client, marker, raw)
+					if err != nil {
+						return err
+					}
+					values[marker] = resolved
+				}
+				dsl, err = d.Fill(values)
+				if err != nil {
+					return err
+				}
 			}
 
 			name := initName
@@ -366,7 +399,7 @@ supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain
 				"name":        name,
 				"description": description,
 				"status":      workflow.StatusInactive,
-				"dsl":         t.DSL,
+				"dsl":         dsl,
 			}
 			out, err := json.MarshalIndent(doc, "", "  ")
 			if err != nil {
@@ -374,21 +407,21 @@ supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Report what still needs filling to stderr, so the JSON on
-			// stdout stays pipeable.
-			if res := workflow.ValidateRaw(t.DSL); !res.OK() {
-				markers := map[string]bool{}
-				for _, p := range mustParseDSL(t.DSL).Placeholders() {
-					markers[p.Marker] = true
-				}
-				if len(markers) > 0 {
-					names := make([]string, 0, len(markers))
-					for m := range markers {
-						names = append(names, m)
+			// Report what still needs filling to stderr, so stdout stays
+			// pipeable. Naming each marker's kind is what makes this usable
+			// without going and reading the template.
+			filled := mustParseDSL(dsl)
+			if markers := filled.PlaceholderMarkers(); len(markers) > 0 {
+				kinds := filled.PlaceholderKinds()
+				fmt.Fprintf(cmd.ErrOrStderr(), "\n%d placeholder(s) still to fill:\n", len(markers))
+				for _, m := range markers {
+					k := kinds[m]
+					hint := ""
+					if k.Resolvable {
+						hint = "  (--set accepts a name)"
 					}
-					sort.Strings(names)
-					fmt.Fprintf(cmd.ErrOrStderr(), "\n%d placeholder(s) to fill: %s\n",
-						len(names), strings.Join(names, ", "))
+					fmt.Fprintf(cmd.ErrOrStderr(), "  %-44s %s%s\n",
+						strings.TrimPrefix(m, "REPLACE_WITH_"), k.Describe, hint)
 				}
 			}
 			return nil
@@ -396,6 +429,8 @@ supply, and ` + "`jc workflows validate`" + ` refuses to create while any remain
 	}
 	initCmd.Flags().StringVar(&initName, "name", "", "Override the workflow name (defaults to the template's)")
 	initCmd.Flags().StringVar(&initDescription, "description", "", "Override the description")
+	initCmd.Flags().StringArrayVar(&initSet, "set", nil,
+		"Fill a placeholder: MARKER=VALUE, repeatable. Resolvable markers accept a name")
 
 	cmd.AddCommand(list, show, initCmd)
 	return cmd
@@ -422,6 +457,68 @@ func findTemplate(ctx context.Context, client *api.V2Client, identifier string) 
 		}
 	}
 	return workflow.Template{}, fmt.Errorf("workflow template %q not found (try: jc workflows templates list)", identifier)
+}
+
+// resolvePlaceholderValue turns what the operator typed into the ID the DSL
+// needs. A 24-hex ID passes straight through, a name is looked up, and free
+// text is taken literally — the same contract --role already has.
+func resolvePlaceholderValue(ctx context.Context, client *api.V2Client, marker, value string) (string, error) {
+	kind := workflow.ClassifyPlaceholder(marker)
+	if !kind.Resolvable || resolve.IsID(value) {
+		return value, nil
+	}
+
+	// Workflows are not resolvable through the generic resolver: their IDs are
+	// not 24-hex and the list is keyed differently.
+	if kind.Kind == workflow.KindWorkflow {
+		return resolveWorkflow(ctx, client, value)
+	}
+
+	pr, ok := resolve.WorkflowPlaceholderConfigs[kind.Kind]
+	if !ok {
+		return value, nil
+	}
+
+	var (
+		id  string
+		err error
+	)
+	if pr.V1 {
+		v1, cerr := newV1Client()
+		if cerr != nil {
+			return "", cerr
+		}
+		id, err = resolve.NewResolver(v1).Resolve(ctx, value, pr.Config)
+	} else {
+		id, err = resolve.NewV2Resolver(client).Resolve(ctx, value, pr.Config)
+	}
+	if err != nil {
+		// Deliberately %v rather than %w: the CLI error renderer unwraps to
+		// the typed resolve.ResolveError and shows only its message, which
+		// would drop the marker — the one detail that says WHICH --set is
+		// wrong when several are in play.
+		return "", fmt.Errorf("--set %s: could not resolve %s %q (%v)",
+			strings.TrimPrefix(marker, "REPLACE_WITH_"), kind.Describe, value, err)
+	}
+	return id, nil
+}
+
+// parseSetFlags turns repeated --set MARKER=VALUE into a map, accepting either
+// the bare marker name or its full REPLACE_WITH_ form.
+func parseSetFlags(pairs []string) (map[string]string, error) {
+	out := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		name, value, ok := strings.Cut(p, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid --set %q: expected MARKER=VALUE", p)
+		}
+		marker := workflow.NormalizeMarker(name)
+		if marker == "" {
+			return nil, fmt.Errorf("invalid --set %q: empty marker", p)
+		}
+		out[marker] = value
+	}
+	return out, nil
 }
 
 func mustParseDSL(raw json.RawMessage) workflow.DSL {
@@ -605,7 +702,7 @@ func explainWorkflow(cmd *cobra.Command, title string, raw json.RawMessage) erro
 		if t.Depth > 0 {
 			indent = "      "
 		}
-		fmt.Fprintf(out, "%s%s\n", indent, describeTask(t))
+		fmt.Fprintf(out, "%s%s\n", indent, t.Describe())
 		if cond, ok := t.Body["if"].(string); ok {
 			fmt.Fprintf(out, "%s    if: %s\n", indent, cond)
 		}
@@ -638,36 +735,6 @@ func describeTrigger(t workflow.TriggerStyle) string {
 		return "manual — started through the API (jc workflows trigger)"
 	}
 	return "(none)"
-}
-
-func describeTask(t workflow.Task) string {
-	name := t.Name
-	if _, isLoop := t.Body["for"]; isLoop {
-		loop, _ := t.Body["for"].(map[string]any)
-		each, _ := loop["each"].(string)
-		in, _ := loop["in"].(string)
-		return fmt.Sprintf("%s: for each %s in %s", name, each, in)
-	}
-	if _, isSwitch := t.Body["switch"]; isSwitch {
-		return fmt.Sprintf("%s: branch", name)
-	}
-
-	switch t.Call() {
-	case workflow.CallJCOperation:
-		id := t.OperationID()
-		if op, ok := workflow.LookupOperation(id); ok {
-			return fmt.Sprintf("%s: %s", name, op.Describe())
-		}
-		return fmt.Sprintf("%s: %s (unknown operation)", name, id)
-	case workflow.CallEmailAddresses, workflow.CallEmailChannel:
-		return fmt.Sprintf("%s: send email", name)
-	case workflow.CallConnector:
-		with := t.With()
-		method, _ := with["httpMethod"].(string)
-		path, _ := with["endpointPath"].(string)
-		return fmt.Sprintf("%s: external connector %s %s", name, method, path)
-	}
-	return fmt.Sprintf("%s: (no action)", name)
 }
 
 // ---------- create / update / delete / trigger ----------
@@ -736,6 +803,14 @@ JSON path rather than at run time with an opaque message.
 --role sets the execution role, which decides what JumpCloud API operations the
 workflow may call. Choose the least privilege the workflow needs: it runs
 unattended.
+
+The API enforces two things at create time, both worth knowing before you pick:
+
+  * the role must cover every operation the DSL calls — a workflow that runs a
+    command needs a role with command scopes, and JumpCloud names the missing
+    scopes in the error;
+  * your own API key must be permitted to ASSIGN that role, which is a separate
+    check and can fail even when the role itself would be correct.
 
 New workflows are created inactive unless --status active is given.`,
 		Args: cobra.NoArgs,
@@ -1063,7 +1138,7 @@ external systems. The resolved steps are shown before confirmation.
 			var effects []string
 			if derr == nil {
 				for _, t := range d.Tasks() {
-					effects = append(effects, describeTask(t))
+					effects = append(effects, t.Describe())
 				}
 				for _, se := range workflow.Validate(d).SideEffects {
 					effects = append(effects, fmt.Sprintf("REACHES OUTSIDE JUMPCLOUD — %s: %s", se.Task, se.What))
