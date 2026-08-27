@@ -291,7 +291,9 @@ func TestBuildRegistry_SearchEndpoints(t *testing.T) {
 		{"users", "/search/systemusers", 4},
 		{"devices", "/search/systems", 3},
 		{"policies", "", 0},
-		{"commands", "", 0},
+		// commands gained search with the KLA-485 search area (2 of the four
+		// /search/* endpoints were already wired here).
+		{"commands", "/search/commands", 2},
 	}
 
 	for _, tt := range tests {
