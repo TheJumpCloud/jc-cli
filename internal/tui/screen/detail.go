@@ -253,6 +253,18 @@ func (d *DetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.confirming = true
 			}
 
+		case msg.String() == "t" && d.entry.Key == "ad":
+			// Translation rules live under an AD instance
+			// (/activedirectories/{id}/translation-rules) and only make sense
+			// scoped to one, so they are reached from here rather than as a
+			// top-level entry. The generic pivot cannot express this: it goes
+			// list -> detail, and this is detail -> a parameterized list.
+			if d.id != "" {
+				return d, func() tea.Msg {
+					return tui.PushScreenMsg{Screen: NewListScreen(adTranslationRulesEntry(d.id, d.name))}
+				}
+			}
+
 		case msg.String() == "n" && d.entry.Key == "workflow-templates":
 			// Authoring starts from a template, which is where the DSL's only
 			// worked examples live. See workflow_authoring.go.
@@ -617,6 +629,10 @@ func (d *DetailScreen) View() string {
 	// has to advertise itself here or nobody finds it.
 	if d.entry.Key == "workflow-templates" && d.data != nil {
 		sb.WriteString(style.Subtitle.Render("n  create a workflow from this template"))
+		sb.WriteString("\n")
+	}
+	if d.entry.Key == "ad" && d.data != nil {
+		sb.WriteString(style.Subtitle.Render("t  translation rules for this directory"))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
