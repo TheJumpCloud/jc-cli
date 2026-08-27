@@ -130,6 +130,20 @@ type WorkflowAuthoringScreen struct {
 	width, height int
 }
 
+// NewBlankWorkflowAuthoringScreen starts the same flow from a scaffold rather
+// than a shipped template, for a workflow that no template expresses.
+//
+// It is the same screen: the scaffold is simply a template with nothing to
+// fill in, so the flow skips straight to the role and then to review, where
+// `e` opens the DSL in $EDITOR to write the real thing.
+func NewBlankWorkflowAuthoringScreen() *WorkflowAuthoringScreen {
+	return NewWorkflowAuthoringScreen(workflow.Template{
+		Name:        "",
+		Description: "",
+		DSL:         workflow.ScaffoldDSL(),
+	})
+}
+
 func NewWorkflowAuthoringScreen(t workflow.Template) *WorkflowAuthoringScreen {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -641,7 +655,11 @@ func (s *WorkflowAuthoringScreen) View() string {
 // fillView lists every marker with what it wants and what has been chosen.
 func (s *WorkflowAuthoringScreen) fillView() string {
 	var b strings.Builder
-	fmt.Fprintln(&b, style.Subtitle.Render("From template: "+s.template.Name))
+	origin := "From template: " + s.template.Name
+	if s.template.Name == "" {
+		origin = "From a blank scaffold — press e at the review step to write the DSL"
+	}
+	fmt.Fprintln(&b, style.Subtitle.Render(origin))
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, style.SectionHeader.Render("Values to supply"))
 

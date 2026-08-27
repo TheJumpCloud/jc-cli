@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/klaassen-consulting/jc/internal/schema"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
@@ -243,5 +244,111 @@ func TestWorkflowAuthoring_FreeTextMarkerPromptsInstead(t *testing.T) {
 	}
 	if s.stage != wfAuthorStageFill {
 		t.Errorf("accepting should return to the fill list, got %v", s.stage)
+	}
+}
+
+// A blank start must be usable immediately: the scaffold validates, so the
+// operator's first screen is not an error they did not cause.
+func TestBlankWorkflowAuthoring_StartsFromAValidScaffold(t *testing.T) {
+	s := NewBlankWorkflowAuthoringScreen()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+
+	if len(s.rows) != 0 {
+		t.Errorf("a scaffold has nothing to fill in, got %d rows", len(s.rows))
+	}
+	s.validate()
+	if !s.result.OK() {
+		t.Fatalf("the scaffold must validate: %v", s.result.Errors())
+	}
+	if len(s.result.SideEffects) != 0 {
+		t.Errorf("an unedited scaffold must not reach outside JumpCloud: %+v", s.result.SideEffects)
+	}
+}
+
+// With nothing to fill, naming should go straight to the role picker rather
+// than showing an empty fill list.
+func TestBlankWorkflowAuthoring_NameSkipsToRole(t *testing.T) {
+	s := NewBlankWorkflowAuthoringScreen()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+
+	s.input.SetValue("From Scratch")
+	s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if s.stage != wfAuthorStageRole {
+		t.Errorf("with no placeholders the flow should go to the role picker, got stage %v", s.stage)
+	}
+	if s.name != "From Scratch" {
+		t.Errorf("name = %q", s.name)
+	}
+}
+
+// The header must say where the DSL came from, so a blank start does not look
+// like a template with a missing name.
+func TestBlankWorkflowAuthoring_HeaderSaysScaffold(t *testing.T) {
+	s := NewBlankWorkflowAuthoringScreen()
+	s.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	s.stage = wfAuthorStageFill
+
+	view := s.View()
+	if !strings.Contains(view, "blank scaffold") {
+		t.Errorf("the header should say this is a blank start:\n%s", view)
+	}
+	// And it should point at the escape hatch, which is the whole point.
+	if !strings.Contains(view, "press e at the review step") {
+		t.Errorf("the header should point at $EDITOR:\n%s", view)
+	}
+}
+
+// Press the KEY, not just the constructor — the lesson from the AD binding
+// that shipped uncalled.
+func TestList_NKeyOnTemplatesStartsBlankAuthoring(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:         "workflow-templates",
+		DisplayName: "Workflow Templates",
+		Schema:      schema.ResourceSchema{Resource: "workflow-templates", Verbs: []string{"list", "get"}},
+	}
+	l := NewListScreen(entry)
+	l.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+
+	_, cmd := l.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("n on the templates list must start a blank workflow")
+	}
+	push, ok := cmd().(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected a screen push, got %T", cmd())
+	}
+	author, ok := push.Screen.(*WorkflowAuthoringScreen)
+	if !ok {
+		t.Fatalf("expected the authoring screen, got %T", push.Screen)
+	}
+	if author.template.Name != "" {
+		t.Errorf("a blank start should carry no template name, got %q", author.template.Name)
+	}
+
+	// And the key must be advertised, or nobody finds it.
+	if !strings.Contains(l.View(), "n  new workflow from a blank scaffold") {
+		t.Errorf("the templates list should advertise the key:\n%s", l.View())
+	}
+}
+
+// n on a list/get resource that is NOT workflow templates must stay inert,
+// rather than opening a workflow authoring screen from an unrelated list.
+func TestList_NKeyStaysInertElsewhere(t *testing.T) {
+	entry := tui.ResourceEntry{
+		Key:         "workflow-runs",
+		DisplayName: "Workflow Runs",
+		Schema:      schema.ResourceSchema{Resource: "workflow-runs", Verbs: []string{"list", "get"}},
+	}
+	l := NewListScreen(entry)
+	l.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+
+	if _, cmd := l.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}); cmd != nil {
+		if _, isPush := cmd().(tui.PushScreenMsg); isPush {
+			t.Error("n must not start workflow authoring from an unrelated list")
+		}
+	}
+	if strings.Contains(l.View(), "blank scaffold") {
+		t.Error("an unrelated list must not advertise the key")
 	}
 }

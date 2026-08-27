@@ -182,3 +182,42 @@ func TestPlaceholderMarkers_Sorted(t *testing.T) {
 		t.Errorf("markers should be sorted for stable output, got %v", got)
 	}
 }
+
+// The scaffold is what a from-scratch author starts from, so it has to be
+// valid on its own — otherwise the first thing they see is an error they did
+// not cause.
+func TestScaffoldDSL_IsValidAndHarmless(t *testing.T) {
+	raw := ScaffoldDSL()
+	d, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("the scaffold must parse: %v", err)
+	}
+
+	res := Validate(d)
+	if !res.OK() {
+		t.Fatalf("the scaffold must validate cleanly: %v", res.Errors())
+	}
+	if res.TriggerType != TriggerExternal {
+		t.Errorf("trigger = %q; external is the one style a person can start by hand", res.TriggerType)
+	}
+	if len(res.SideEffects) != 0 {
+		t.Errorf("an unedited scaffold must not reach outside JumpCloud: %+v", res.SideEffects)
+	}
+	if len(d.PlaceholderMarkers()) != 0 {
+		t.Errorf("the scaffold has nothing to fill in, got %v", d.PlaceholderMarkers())
+	}
+
+	// Its single step must be a read, so creating and running it unedited
+	// cannot change anything.
+	tasks := d.Tasks()
+	if len(tasks) != 1 {
+		t.Fatalf("expected one step, got %d", len(tasks))
+	}
+	op, ok := LookupOperation(tasks[0].OperationID())
+	if !ok {
+		t.Fatalf("the scaffold's operationId must be real: %q", tasks[0].OperationID())
+	}
+	if op.Method != "GET" {
+		t.Errorf("the scaffold's step should be a read, got %s %s", op.Method, op.Path)
+	}
+}

@@ -280,6 +280,16 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case msg.String() == "n":
+			// Workflow templates are list/get, so the generic create form
+			// does not apply — but "new" should still mean new here. Starting
+			// from the catalog without picking a template authors from a
+			// scaffold instead. Opening a template first and pressing n there
+			// seeds the same flow from that template.
+			if l.entry.Key == "workflow-templates" {
+				return l, func() tea.Msg {
+					return tui.PushScreenMsg{Screen: NewBlankWorkflowAuthoringScreen()}
+				}
+			}
 			if hasVerb(l.entry.Schema.Verbs, "create") {
 				form := NewFormScreen(l.entry, "create", nil)
 				form.SetFetcher(l.fetcher)
@@ -475,6 +485,13 @@ func (l *ListScreen) View() string {
 	}
 	sb.WriteString(header)
 	sb.WriteString("\n")
+	// The app-level help line is fixed by nav depth, so a screen-specific key
+	// has to advertise itself here or nobody finds it.
+	if l.entry.Key == "workflow-templates" {
+		sb.WriteString(style.Subtitle.Render(
+			"Enter  open a template · n  new workflow from a blank scaffold"))
+		sb.WriteString("\n")
+	}
 
 	// Filter bar.
 	filterView := l.filterBar.View()
