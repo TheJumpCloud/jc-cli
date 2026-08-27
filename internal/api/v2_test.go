@@ -1248,3 +1248,24 @@ func TestV2Client_DeleteWithBody_PropagatesError(t *testing.T) {
 		t.Errorf("error should name the status, got %v", err)
 	}
 }
+
+func TestV2Client_Create_Accepts202(t *testing.T) {
+	// Starting a workflow run answers 202 Accepted with the run object.
+	// Create rejected it before, so a trigger that actually worked was
+	// reported to the user as an API error.
+	const runBody = `{"id":"run-1","status":"running","workflowId":"w1"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(runBody))
+	}))
+	defer srv.Close()
+
+	body, err := newTestV2Client(srv.URL).Create(context.Background(), "/workflows/w1/runs",
+		map[string]any{"data": map[string]any{}})
+	if err != nil {
+		t.Fatalf("202 should be success, got %v", err)
+	}
+	if string(body) != runBody {
+		t.Errorf("response body = %q", body)
+	}
+}

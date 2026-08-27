@@ -228,6 +228,25 @@ var commandClass = map[string]string{
 	"jc devices settings password-sync get": ClassReadOnly,
 	"jc devices settings password-sync set": ClassMutating,
 
+	// workflows — JumpCloud server-side event automation (KLA-485).
+	// trigger is destructive rather than merely mutating: its blast radius is
+	// whatever the DSL says, and the shipped templates run commands on
+	// devices, erase them, and email people. jc cannot bound that, so it gets
+	// the strongest friction. validate and explain are local-only.
+	"jc workflows list":           ClassReadOnly,
+	"jc workflows get":            ClassReadOnly,
+	"jc workflows runs list":      ClassReadOnly,
+	"jc workflows runs get":       ClassReadOnly,
+	"jc workflows templates list": ClassReadOnly,
+	"jc workflows templates show": ClassReadOnly,
+	"jc workflows templates init": ClassReadOnly,
+	"jc workflows validate":       ClassReadOnly,
+	"jc workflows explain":        ClassReadOnly,
+	"jc workflows create":         ClassMutating,
+	"jc workflows update":         ClassMutating,
+	"jc workflows delete":         ClassDestructive,
+	"jc workflows trigger":        ClassDestructive,
+
 	// password-policies — org password requirements (KLA-485). delete is
 	// destructive: removing a policy silently re-governs everyone it covered
 	// under whatever policy applies next. set-precedence only reorders

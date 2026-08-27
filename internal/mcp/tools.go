@@ -600,6 +600,7 @@ func (s *Server) registerTools() {
 	s.registerADTranslationRuleTools()
 	s.registerDeviceSettingsTools()
 	s.registerPasswordPolicyTools()
+	s.registerWorkflowTools()
 
 	// --- Organization tools ---
 	s.registerOrgTools()

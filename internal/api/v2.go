@@ -237,7 +237,11 @@ func (c *V2Client) Create(ctx context.Context, endpoint string, reqBody any) (js
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+	// 202 Accepted is how the async endpoints answer — starting a workflow run
+	// returns the run object with 202, not 201 — so a successful trigger would
+	// otherwise be reported as a failure.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated &&
+		resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
 		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
 	}
 
