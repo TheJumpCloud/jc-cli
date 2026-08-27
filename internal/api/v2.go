@@ -269,7 +269,10 @@ func (c *V2Client) Update(ctx context.Context, endpoint string, reqBody any) (js
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	// Some V2 endpoints (e.g. the org device-settings singletons) answer a
+	// successful PUT with 204 and an empty body. Create and Delete already
+	// accept 204; Update must too, or those endpoints look like failures.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
 	}
 
@@ -329,7 +332,7 @@ func (c *V2Client) Patch(ctx context.Context, endpoint string, reqBody any) (jso
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return nil, NewAPIError(resp.StatusCode, endpoint, respBody)
 	}
 
