@@ -195,3 +195,54 @@ func TestParseDSL_RejectsUnknownTopLevelKey(t *testing.T) {
 		t.Errorf("error should name the offending key, got %v", err)
 	}
 }
+
+func TestRunNode_Describe(t *testing.T) {
+	ok := RunNode{Name: "getUser", IsExecuted: true, Success: true, Message: "Task completed."}
+	ok.NodeOutput = &struct {
+		Method string `json:"method"`
+		Status int    `json:"status"`
+		URL    string `json:"url"`
+		Body   any    `json:"body"`
+	}{Method: "GET", Status: 200, URL: "https://example.com/api/systemusers"}
+	if got := ok.Describe(); !strings.Contains(got, "[ok]") || !strings.Contains(got, "GET https://example.com/api/systemusers → 200") {
+		t.Errorf("Describe = %q", got)
+	}
+
+	failed := RunNode{Name: "boom", IsExecuted: true, Success: false}
+	if got := failed.Describe(); !strings.Contains(got, "FAILED") {
+		t.Errorf("a failed step must be marked: %q", got)
+	}
+
+	skipped := RunNode{Name: "never", IsExecuted: false}
+	if got := skipped.Describe(); !strings.Contains(got, "skipped") {
+		t.Errorf("an unexecuted step must be marked skipped: %q", got)
+	}
+
+	// A paginated step aggregates several requests and reports no single
+	// status; rendering "→ 0" would invent one.
+	paginated := RunNode{Name: "listAll", IsExecuted: true, Success: true, Message: "Task completed."}
+	paginated.NodeOutput = &struct {
+		Method string `json:"method"`
+		Status int    `json:"status"`
+		URL    string `json:"url"`
+		Body   any    `json:"body"`
+	}{}
+	if got := paginated.Describe(); strings.Contains(got, "→ 0") {
+		t.Errorf("a paginated step must not report a status of 0: %q", got)
+	}
+}
+
+func TestRun_FailedNode(t *testing.T) {
+	r := Run{ExecutionDetails: ExecutionDetails{Nodes: []RunNode{
+		{Name: "a", IsExecuted: true, Success: true},
+		{Name: "b", IsExecuted: true, Success: false},
+		{Name: "c", IsExecuted: true, Success: false},
+	}}}
+	n, ok := r.FailedNode()
+	if !ok || n.Name != "b" {
+		t.Errorf("FailedNode should return the FIRST failure, got %+v %v", n, ok)
+	}
+	if _, ok := (Run{}).FailedNode(); ok {
+		t.Error("a run with no trace has no failed node")
+	}
+}

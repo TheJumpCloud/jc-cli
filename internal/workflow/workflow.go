@@ -5,8 +5,8 @@
 //
 // The OpenAPI spec declares a workflow's DSL as a bare `dsl: object` — no
 // schema, no field list. The real specification is JumpCloud's public
-// "Workflows Public API & DSL Guide"; every validation rule in validate.go
-// cites a documented statement from it. What follows is what live probing
+// "Workflows Public API & DSL Guide", vendored at docs/reference/workflows-dsl.md;
+// every validation rule in validate.go cites a documented statement from it. What follows is what live probing
 // against org 5ec71e8e96bfda0611fc6c5b on 2026-08-27 established beyond, or
 // against, both documents:
 //
@@ -154,7 +154,9 @@ func (n RunNode) Describe() string {
 		mark = "FAILED"
 	}
 	s := fmt.Sprintf("[%s] %s", mark, n.Name)
-	if n.NodeOutput != nil {
+	// A paginated step aggregates several requests, so it reports no single
+	// method/URL/status; printing "→ 0" there would invent one.
+	if n.NodeOutput != nil && n.NodeOutput.Status != 0 {
 		s += fmt.Sprintf("  %s %s → %d", n.NodeOutput.Method, n.NodeOutput.URL, n.NodeOutput.Status)
 	}
 	if n.Message != "" {
