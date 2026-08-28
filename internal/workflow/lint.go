@@ -53,7 +53,11 @@ type LintSubject struct {
 	// a DSL that will not parse cannot be validated, and reporting that as
 	// "clean" would be worse than saying nothing.
 	Skipped string `json:"skipped,omitempty"`
-	Result  Result `json:"result"`
+	// CorrectedBy names jc's repaired copy, when this subject has findings
+	// and a correction exists. Reporting a defect without naming the fix
+	// leaves the operator exactly where they started.
+	CorrectedBy string `json:"corrected_by,omitempty"`
+	Result      Result `json:"result"`
 }
 
 // Errors and Warnings count this subject's findings by severity.

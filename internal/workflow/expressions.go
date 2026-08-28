@@ -228,6 +228,10 @@ func isPaginationExpr(path string) bool {
 	return strings.Contains(path, ".pagination.") || strings.HasSuffix(path, ".with.extract")
 }
 
+// eq200RE finds the specific form `actions.X.status == 200`, which is worse
+// than a merely-dead test: it can suppress a task that succeeded with 201.
+var eq200RE = regexp.MustCompile(`\bactions\.[A-Za-z_][A-Za-z0-9_]*\.status\s*==\s*200\b`)
+
 // statusGuardRE finds a reference to a prior step's HTTP status.
 var statusGuardRE = regexp.MustCompile(`\bactions\.([A-Za-z_][A-Za-z0-9_]*)\.status\b`)
 
@@ -278,11 +282,27 @@ func checkDeadStatusGuards(d DSL, add func(Severity, string, string, string)) {
 			if !known || !fallible[ref] || refPos >= here {
 				continue
 			}
+			// Equality against 200 is the dangerous form. Because a non-2xx
+			// already halted the run, the only thing this test can still do
+			// is come out FALSE on a successful 201 or 204 and silently skip
+			// the task. Proven live: a task guarded on `status == 200` after
+			// a create returning 201 reported "Skipping — if condition did
+			// not match", while `>= 200 && < 300` in the same run executed.
+			if eq200RE.MatchString(e.Source) {
+				add(Warning, e.Path,
+					fmt.Sprintf("this guard tests actions.%s.status == 200, which cannot detect failure and CAN silently skip this task: "+
+						"a non-2xx from %q already halted the run, so the only remaining effect is to come out false on a successful 201 or 204",
+						ref, ref),
+					fmt.Sprintf("delete the `actions.%s.status == 200 &&` conjunct and keep the rest of the guard, which is doing the real work. "+
+						"If you genuinely need a status test, use >= 200 && < 300 — verified live, where == 200 skipped a task after a 201 and the range did not",
+						ref))
+				continue
+			}
 			add(Warning, e.Path,
 				fmt.Sprintf("this guard tests actions.%s.status, but a non-2xx from %q halts the run before this task is reached",
 					ref, ref),
-				"the failure branch this appears to handle is unreachable — branch with switch/when BEFORE the fallible call, "+
-					"or accept that the run fails. JumpCloud's shipped templates use this idiom too; it does not work there either")
+				fmt.Sprintf("the failure branch this appears to handle is unreachable — delete the actions.%s.status conjunct and keep the rest of the guard, "+
+					"or branch with switch/when BEFORE the fallible call. JumpCloud's shipped templates use this idiom too; it does not work there either", ref))
 		}
 	}
 }

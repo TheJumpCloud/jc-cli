@@ -272,6 +272,8 @@ Use --trace for a readable summary instead of the full document.`,
 // ---------- templates ----------
 
 func newWorkflowsTemplatesCmd() *cobra.Command {
+	var correctedOnly, withCorrected bool
+
 	cmd := &cobra.Command{
 		Use:     "templates",
 		Aliases: []string{"template"},
@@ -290,29 +292,53 @@ can supply.`,
 		Short:   "List workflow templates",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := newV2Client()
-			if err != nil {
-				return err
-			}
-			raw, err := client.Get(cmd.Context(), workflow.TemplatesEndpoint)
-			if err != nil {
-				return err
-			}
-			templates, err := workflow.ParseTemplates(raw)
-			if err != nil {
-				return err
-			}
 			// Re-encode without the DSL: a full catalog is ~40KB of nested
 			// documents, which is not a list view.
-			rows := make([]json.RawMessage, 0, len(templates))
-			for _, t := range templates {
-				b, err := json.Marshal(map[string]any{
-					"id": t.ID, "name": t.Name, "category": t.Category, "description": t.Description,
-				})
+			rows := make([]json.RawMessage, 0, 16)
+
+			if correctedOnly || withCorrected {
+				for _, ct := range workflow.CorrectedTemplates() {
+					b, err := json.Marshal(map[string]any{
+						"id": ct.ID, "name": ct.Name, "category": ct.Category,
+						"description": ct.Description, "source": "jc",
+						"corrects": ct.Corrects, "changes": ct.Changes,
+					})
+					if err != nil {
+						return err
+					}
+					rows = append(rows, b)
+				}
+			}
+
+			if !correctedOnly {
+				client, err := newV2Client()
 				if err != nil {
 					return err
 				}
-				rows = append(rows, b)
+				raw, err := client.Get(cmd.Context(), workflow.TemplatesEndpoint)
+				if err != nil {
+					return err
+				}
+				templates, err := workflow.ParseTemplates(raw)
+				if err != nil {
+					return err
+				}
+				for _, t := range templates {
+					row := map[string]any{
+						"id": t.ID, "name": t.Name, "category": t.Category,
+						"description": t.Description, "source": "jumpcloud",
+					}
+					// Say so on the original, not only on the replacement:
+					// this list is where someone picks what to copy.
+					if ct, ok := workflow.CorrectionFor(t.Name); ok {
+						row["corrected_by"] = ct.ID
+					}
+					b, err := json.Marshal(row)
+					if err != nil {
+						return err
+					}
+					rows = append(rows, b)
+				}
 			}
 			opts := output.CurrentOptions()
 			opts.DefaultFields = workflow.TemplateDefaultFields
@@ -457,6 +483,11 @@ with what each one expects, so stdout stays pipeable either way.
 	initCmd.Flags().StringArrayVar(&initSet, "set", nil,
 		"Fill a placeholder: MARKER=VALUE, repeatable. Resolvable markers accept a name")
 
+	list.Flags().BoolVar(&correctedOnly, "corrected", false,
+		"List only jc's corrected copies of the templates that ship with a defect")
+	list.Flags().BoolVar(&withCorrected, "with-corrected", false,
+		"List the corrected copies alongside JumpCloud's catalog")
+
 	cmd.AddCommand(list, show, initCmd)
 	return cmd
 }
@@ -476,11 +507,29 @@ func reportTemplateFindings(cmd *cobra.Command, name string, res workflow.Result
 	for _, f := range real {
 		fmt.Fprintf(w, "  %s\n", f.String())
 	}
+	if ct, ok := workflow.CorrectionFor(name); ok {
+		fmt.Fprintf(w, "\nA corrected copy of this template is available:\n  jc workflows templates init %s\n  (%s)\n",
+			ct.ID, ct.Changes)
+		return
+	}
 	fmt.Fprintf(w, "\nRun: jc workflows validate --template %q\n", name)
 }
 
 // findTemplate resolves a template by ID or name against the served catalog.
 func findTemplate(ctx context.Context, client *api.V2Client, identifier string) (workflow.Template, error) {
+	// jc's corrected copies resolve first, and only by their "jc:" ID. A
+	// corrected template shares its NAME with the JumpCloud original, so
+	// matching on name here would silently swap one for the other — the
+	// operator must ask for the correction explicitly.
+	if workflow.IsCorrectedID(identifier) {
+		ct, ok := workflow.FindCorrected(identifier)
+		if !ok {
+			return workflow.Template{}, fmt.Errorf("no corrected template %q (try: jc workflows templates list --corrected)", identifier)
+		}
+		return workflow.Template{ID: ct.ID, Name: ct.Name, Description: ct.Description,
+			Category: ct.Category, DSL: ct.DSL}, nil
+	}
+
 	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
 	if err != nil {
 		return workflow.Template{}, err
@@ -1833,6 +1882,11 @@ func lintTemplates(ctx context.Context, client *api.V2Client) ([]workflow.LintSu
 		// Placeholders are expected in a template, so they are not counted
 		// against it — see WithoutPlaceholderFindings.
 		sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
+		// Naming a defect without naming the fix leaves the operator where
+		// they started, since this catalog is what they were going to copy.
+		if ct, ok := workflow.CorrectionFor(t.Name); ok && len(sub.Result.Findings) > 0 {
+			sub.CorrectedBy = ct.ID
+		}
 		subjects = append(subjects, sub)
 	}
 	return subjects, nil
@@ -1882,6 +1936,10 @@ func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
 		}
 		for _, f := range sub.Result.Findings {
 			fmt.Fprintf(out, "    %s\n", f.String())
+		}
+		if sub.CorrectedBy != "" {
+			fmt.Fprintf(out, "    %s\n", style.Subtitle.Render(
+				"a corrected copy is available: jc workflows templates init "+sub.CorrectedBy))
 		}
 	}
 

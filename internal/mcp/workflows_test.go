@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
 const wfProbeDSLJSON = `{
@@ -130,11 +132,74 @@ func TestMCPWorkflows_TemplatesListOmitsDSL(t *testing.T) {
 	out := getResultText(t, callTool(t, cs, "workflows_templates_list", map[string]any{}))
 	var rows []map[string]any
 	json.Unmarshal([]byte(out), &rows)
-	if len(rows) != 1 {
-		t.Fatalf("expected 1 template: %s", out)
+
+	// The served catalog (one, from the fixture) plus jc's corrected copies,
+	// which are embedded and so are always present.
+	var served, jc []map[string]any
+	for _, r := range rows {
+		if r["source"] == "jc" {
+			jc = append(jc, r)
+		} else {
+			served = append(served, r)
+		}
 	}
-	if _, hasDSL := rows[0]["dsl"]; hasDSL {
-		t.Error("the list view must omit DSL bodies — the catalog is far too large otherwise")
+	if len(served) != 1 {
+		t.Fatalf("expected 1 served template: %s", out)
+	}
+	if len(jc) != len(workflow.CorrectedTemplates()) {
+		t.Errorf("expected every corrected copy to be listed, got %d", len(jc))
+	}
+	for _, r := range rows {
+		if _, hasDSL := r["dsl"]; hasDSL {
+			t.Error("the list view must omit DSL bodies — the catalog is far too large otherwise")
+		}
+		if r["source"] == nil {
+			t.Errorf("every row must say where it came from: %v", r)
+		}
+	}
+}
+
+// A defective template must point at its replacement here, because this list
+// is where a caller decides what to copy.
+func TestMCPWorkflows_TemplatesListNamesTheCorrection(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	out := getResultText(t, callTool(t, cs, "workflows_templates_list", map[string]any{}))
+	var rows []map[string]any
+	json.Unmarshal([]byte(out), &rows)
+
+	corrected := workflow.CorrectedTemplates()[0]
+	for _, r := range rows {
+		if r["source"] == "jc" && r["id"] == corrected.ID {
+			if r["corrects"] != corrected.Corrects {
+				t.Errorf("the corrected copy must name what it replaces: %v", r)
+			}
+			return
+		}
+	}
+	t.Errorf("the corrected catalog is not listed: %s", out)
+}
+
+// The corrected copies must be reachable by their jc: id, or shipping them
+// accomplishes nothing.
+func TestMCPWorkflows_TemplatesShowResolvesCorrected(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	want := workflow.CorrectedTemplates()[0]
+	out := getResultText(t, callTool(t, cs, "workflows_templates_show",
+		map[string]any{"identifier": want.ID}))
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("show returned no document: %s", out)
+	}
+	if got["id"] != want.ID {
+		t.Errorf("show(%q) returned %v", want.ID, got["id"])
+	}
+	if got["dsl"] == nil {
+		t.Error("show must include the DSL — that is the point of it")
 	}
 }
 

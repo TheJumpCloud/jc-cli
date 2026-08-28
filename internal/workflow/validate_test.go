@@ -706,7 +706,7 @@ func TestValidate_DeadStatusGuardWarns(t *testing.T) {
 	  "do": [
 	    {"fetch": {"call": "jc_operation", "with": {"operationId": "getApiSystemusersById",
 	        "version": 1, "pathParams": {"id": "${ input.id }"}}}},
-	    {"guarded": {"if": "${ actions.fetch.status == 200 }", "call": "jc_operation",
+	    {"guarded": {"if": "${ actions.fetch.status != 500 }", "call": "jc_operation",
 	        "with": {"operationId": "getApiSystemusers", "version": 1}}}
 	  ]}`)
 
@@ -724,6 +724,45 @@ func TestValidate_DeadStatusGuardWarns(t *testing.T) {
 	}
 	if !strings.Contains(f.Hint, "BEFORE the fallible call") {
 		t.Errorf("hint should name the working pattern: %q", f.Hint)
+	}
+	// The fix is a deletion, not a restructure. Every shipped template ANDs
+	// the dead status test with a live check that must survive.
+	if !strings.Contains(f.Hint, "keep the rest of the guard") {
+		t.Errorf("hint should say to delete the conjunct and keep the rest: %q", f.Hint)
+	}
+}
+
+// `status == 200` is worse than merely dead, and gets its own message.
+//
+// A non-2xx already halted the run, so the only thing the test can still do is
+// come out FALSE on a successful 201 or 204 and silently skip the task.
+// Verified live in one run: a task guarded on `status == 200` after a create
+// that returned 201 reported "Skipping — if condition did not match", while
+// `>= 200 && < 300` on the same call executed.
+func TestValidate_StatusEquals200CanSilentlySkip(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"create": {"call": "jc_operation", "with": {"operationId": "postApiV2Usergroups",
+	        "version": 2, "bodyParams": {"name": "x"}}}},
+	    {"guarded": {"if": "${ actions.create.status == 200 && input.go }", "call": "jc_operation",
+	        "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+
+	f, ok := findingAt(r, "guarded.if")
+	if !ok {
+		t.Fatalf("== 200 after a fallible call must be flagged: %v", r.Findings)
+	}
+	if !strings.Contains(f.Message, "silently skip") {
+		t.Errorf("the message should lead with the suppression risk, not redundancy: %q", f.Message)
+	}
+	if !strings.Contains(f.Message, "201") {
+		t.Errorf("the message should name the status that triggers it: %q", f.Message)
+	}
+	if !strings.Contains(f.Hint, "delete the `actions.create.status == 200 &&` conjunct") {
+		t.Errorf("the hint should name the exact text to delete: %q", f.Hint)
+	}
+	if !strings.Contains(f.Hint, ">= 200 && < 300") {
+		t.Errorf("the hint should give the safe form for a real status test: %q", f.Hint)
 	}
 }
 

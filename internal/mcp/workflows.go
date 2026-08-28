@@ -129,6 +129,18 @@ func resolveWorkflowID(ctx context.Context, client *api.V2Client, identifier str
 }
 
 func findWorkflowTemplate(ctx context.Context, client *api.V2Client, identifier string) (workflow.Template, error) {
+	// jc's corrected copies resolve first, and only by their "jc:" ID. A
+	// corrected copy shares its NAME with the JumpCloud original, so matching
+	// on name would silently swap one for the other.
+	if workflow.IsCorrectedID(identifier) {
+		ct, ok := workflow.FindCorrected(identifier)
+		if !ok {
+			return workflow.Template{}, fmt.Errorf("no corrected template %q", identifier)
+		}
+		return workflow.Template{ID: ct.ID, Name: ct.Name, Description: ct.Description,
+			Category: ct.Category, DSL: ct.DSL}, nil
+	}
+
 	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
 	if err != nil {
 		return workflow.Template{}, err
@@ -322,7 +334,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_templates_list", "List the JumpCloud Workflow templates. The DSL has no published schema, so these server-served templates are the most reliable specification available — start here when authoring. Returns id, name, category, and description without the DSL bodies.",
+	addTypedTool(s, "workflows_templates_list", "List the JumpCloud Workflow templates. The DSL has no published schema, so these server-served templates are the most reliable specification available — start here when authoring. Returns id, name, category, description, and source, without the DSL bodies. IMPORTANT: four of JumpCloud's templates ship with a defect — they open a task guard with `actions.X.status == 200 &&`, which cannot detect failure (a non-2xx already halted the run) and CAN silently skip the task when the call returns 201 instead of 200. Those carry corrected_by naming jc's repaired copy, whose id starts with \"jc:\"; prefer that copy when authoring, and pass its id to workflows_templates_show or workflows_templates_init exactly as given.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -336,11 +348,23 @@ func (s *Server) registerWorkflowTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			summaries := make([]map[string]any, 0, len(templates))
-			for _, t := range templates {
+			summaries := make([]map[string]any, 0, len(templates)+4)
+			for _, ct := range workflow.CorrectedTemplates() {
 				summaries = append(summaries, map[string]any{
-					"id": t.ID, "name": t.Name, "category": t.Category, "description": t.Description,
+					"id": ct.ID, "name": ct.Name, "category": ct.Category,
+					"description": ct.Description, "source": "jc",
+					"corrects": ct.Corrects, "changes": ct.Changes,
 				})
+			}
+			for _, t := range templates {
+				row := map[string]any{
+					"id": t.ID, "name": t.Name, "category": t.Category,
+					"description": t.Description, "source": "jumpcloud",
+				}
+				if ct, ok := workflow.CorrectionFor(t.Name); ok {
+					row["corrected_by"] = ct.ID
+				}
+				summaries = append(summaries, row)
 			}
 			res, err := jsonResult(summaries)
 			if err != nil {
