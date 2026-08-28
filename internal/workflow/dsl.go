@@ -65,6 +65,46 @@ type DSL struct {
 	Do       []map[string]any `json:"do"`
 }
 
+// ScaffoldDSL returns a minimal workflow to author from when starting without
+// a template.
+//
+// It is deliberately not an empty document. The DSL has no published schema,
+// so a blank start is where people get it wrong; a scaffold that already
+// validates shows the required shape — exactly one trigger, a non-empty `do`,
+// a jc_operation carrying operationId and the matching version — and can be
+// created as-is, then edited.
+//
+// The trigger is external because that is the one style a person can start by
+// hand (jc workflows trigger), and the single step is a read-only list, so an
+// unedited scaffold cannot change anything.
+func ScaffoldDSL() json.RawMessage {
+	return json.RawMessage(`{
+  "schedule": {
+    "on": {
+      "one": {
+        "with": {
+          "source": "external"
+        }
+      }
+    }
+  },
+  "do": [
+    {
+      "listOneUser": {
+        "call": "jc_operation",
+        "with": {
+          "operationId": "getApiSystemusers",
+          "version": 1,
+          "queryParams": {
+            "limit": 1
+          }
+        }
+      }
+    }
+  ]
+}`)
+}
+
 // ParseDSL decodes a DSL document, rejecting unknown top-level keys so a
 // misplaced field is reported rather than silently ignored by the server.
 func ParseDSL(raw json.RawMessage) (DSL, error) {

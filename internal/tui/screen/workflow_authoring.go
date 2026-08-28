@@ -130,6 +130,20 @@ type WorkflowAuthoringScreen struct {
 	width, height int
 }
 
+// NewBlankWorkflowAuthoringScreen starts the same flow from a scaffold rather
+// than a shipped template, for a workflow that no template expresses.
+//
+// It is the same screen: the scaffold is simply a template with nothing to
+// fill in, so the flow skips straight to the role and then to review, where
+// `e` opens the DSL in $EDITOR to write the real thing.
+func NewBlankWorkflowAuthoringScreen() *WorkflowAuthoringScreen {
+	return NewWorkflowAuthoringScreen(workflow.Template{
+		Name:        "",
+		Description: "",
+		DSL:         workflow.ScaffoldDSL(),
+	})
+}
+
 func NewWorkflowAuthoringScreen(t workflow.Template) *WorkflowAuthoringScreen {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -176,6 +190,27 @@ func (s *WorkflowAuthoringScreen) Title() string { return "New workflow" }
 
 func (s *WorkflowAuthoringScreen) TextInputActive() bool {
 	return s.stage == wfAuthorStageName || s.stage == wfAuthorStageFreeText
+}
+
+// HelpKeys mirrors the stage footer into the status bar, so the keys are in
+// both places an operator might look.
+func (s *WorkflowAuthoringScreen) HelpKeys() string {
+	switch s.stage {
+	case wfAuthorStageName:
+		return "enter:continue  esc:cancel"
+	case wfAuthorStageFill:
+		return "enter:choose  c:continue"
+	case wfAuthorStageFreeText:
+		return "enter:accept  esc:back"
+	case wfAuthorStageReview:
+		if s.result.OK() {
+			return "enter:create  e:edit raw DSL"
+		}
+		return "e:edit raw DSL"
+	case wfAuthorStageConfirmRisk:
+		return "y:create anyway  n:back"
+	}
+	return ""
 }
 
 func (s *WorkflowAuthoringScreen) Init() tea.Cmd {
@@ -641,7 +676,11 @@ func (s *WorkflowAuthoringScreen) View() string {
 // fillView lists every marker with what it wants and what has been chosen.
 func (s *WorkflowAuthoringScreen) fillView() string {
 	var b strings.Builder
-	fmt.Fprintln(&b, style.Subtitle.Render("From template: "+s.template.Name))
+	origin := "From template: " + s.template.Name
+	if s.template.Name == "" {
+		origin = "From a blank scaffold — press e at the review step to write the DSL"
+	}
+	fmt.Fprintln(&b, style.Subtitle.Render(origin))
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, style.SectionHeader.Render("Values to supply"))
 

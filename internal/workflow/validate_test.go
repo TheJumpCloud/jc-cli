@@ -249,17 +249,33 @@ func TestValidate_ExpressionMustCompile(t *testing.T) {
 	}
 }
 
-func TestValidate_GoOperatorsWarn(t *testing.T) {
+// && is accepted, and must not be flagged.
+//
+// Every shipped template writes its trigger conditions with &&. A live
+// experiment on 2026-08-27 ran two workflows differing only in the operator,
+// in both positions operators appear — a task-level `if` and an external
+// trigger condition — and all four runs completed with the guarded step
+// executing. Warning on this flagged the entire shipped catalogue for a
+// non-issue.
+func TestValidate_GoOperatorsAreAccepted(t *testing.T) {
 	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
 	  "do": [{"a": {"if": "${ input.x == 1 && input.y == 2 }", "call": "jc_operation",
 	     "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
-	// && parses fine in Expr, so this is advice, not an error.
 	if !r.OK() {
-		t.Errorf("&& should warn, not block: %v", r.Errors())
+		t.Errorf("&& must not be an error: %v", r.Errors())
 	}
-	f, ok := findingAt(r, ".if")
-	if !ok || f.Severity != Warning || !strings.Contains(f.Hint, "and / or / not") {
-		t.Errorf("expected a keyword-operator warning, got %+v", f)
+	for _, f := range r.Findings {
+		if strings.Contains(f.Message, "&&") || strings.Contains(f.Hint, "and / or / not") {
+			t.Errorf("&& must not be flagged at all, got %+v", f)
+		}
+	}
+
+	// The keyword form is equally fine; neither is preferred by the linter.
+	r = validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [{"a": {"if": "${ input.x == 1 and input.y == 2 }", "call": "jc_operation",
+	     "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+	if len(r.Findings) != 0 {
+		t.Errorf("the keyword form should produce no findings either: %v", r.Findings)
 	}
 }
 

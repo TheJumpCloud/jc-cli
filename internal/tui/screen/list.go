@@ -280,6 +280,16 @@ func (l *ListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case msg.String() == "n":
+			// Workflow templates are list/get, so the generic create form
+			// does not apply — but "new" should still mean new here. Starting
+			// from the catalog without picking a template authors from a
+			// scaffold instead. Opening a template first and pressing n there
+			// seeds the same flow from that template.
+			if l.entry.Key == "workflow-templates" {
+				return l, func() tea.Msg {
+					return tui.PushScreenMsg{Screen: NewBlankWorkflowAuthoringScreen()}
+				}
+			}
 			if hasVerb(l.entry.Schema.Verbs, "create") {
 				form := NewFormScreen(l.entry, "create", nil)
 				form.SetFetcher(l.fetcher)
@@ -335,6 +345,18 @@ func (l *ListScreen) openDetail() tea.Cmd {
 			Screen: NewDetailScreen(l.entry, id, name),
 		}
 	}
+}
+
+// HelpKeys advertises this list's own keys in the status bar. n has always
+// worked on any list with the create verb, and was never shown anywhere.
+func (l *ListScreen) HelpKeys() string {
+	var keys []string
+	if l.entry.Key == "workflow-templates" {
+		keys = append(keys, "n:new workflow")
+	} else if hasVerb(l.entry.Schema.Verbs, "create") {
+		keys = append(keys, "n:new")
+	}
+	return strings.Join(keys, "  ")
 }
 
 // AsPicker turns the list into a chooser: Enter calls fn with the selected
@@ -475,7 +497,6 @@ func (l *ListScreen) View() string {
 	}
 	sb.WriteString(header)
 	sb.WriteString("\n")
-
 	// Filter bar.
 	filterView := l.filterBar.View()
 	if filterView != "" {

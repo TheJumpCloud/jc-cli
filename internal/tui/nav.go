@@ -8,6 +8,19 @@ type Screen interface {
 	Title() string
 }
 
+// HelpProvider is an optional interface a Screen can implement to contribute
+// its own keys to the status bar.
+//
+// The bar was a fixed string chosen only by nav depth, so a key that exists on
+// one screen — n to create on a list, t for an AD's translation rules — was
+// never advertised anywhere the operator looks. Screens that put a hint in
+// their own body were working around that, and only the ones that remembered.
+type HelpProvider interface {
+	// HelpKeys returns "key:action" pairs for this screen, already joined.
+	// Empty means the screen adds nothing.
+	HelpKeys() string
+}
+
 // NavStack manages a stack of screens with browser-like navigation.
 type NavStack struct {
 	screens []Screen

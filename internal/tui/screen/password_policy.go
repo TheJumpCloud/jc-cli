@@ -150,6 +150,21 @@ func (s *PasswordPolicyScreen) Title() string { return "Password Policies" }
 
 func (s *PasswordPolicyScreen) TextInputActive() bool { return s.stage == ppStageEditingValue }
 
+// HelpKeys puts this screen's editing keys in the status bar.
+func (s *PasswordPolicyScreen) HelpKeys() string {
+	switch s.stage {
+	case ppStageConfirm:
+		return "y:save  n:back"
+	case ppStageEdit:
+		keys := "space:toggle  enter:edit  ctrl+s:save  r:reload"
+		if len(s.groupPolicies) > 0 {
+			keys = "g:group policies  " + keys
+		}
+		return keys
+	}
+	return ""
+}
+
 func (s *PasswordPolicyScreen) Init() tea.Cmd {
 	return tea.Batch(s.spinner.Tick, s.loadCmd())
 }

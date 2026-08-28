@@ -201,3 +201,45 @@ func TestApp_CtrlCQuitsEvenWhenTextActive(t *testing.T) {
 		t.Fatal("ctrl+c should return quit command")
 	}
 }
+
+// helpfulScreen is a screen that contributes its own keys.
+type helpfulScreen struct {
+	mockScreen
+	keys string
+}
+
+func (h *helpfulScreen) HelpKeys() string { return h.keys }
+
+// The status bar was a fixed string chosen only by nav depth, so a key that
+// existed on one screen was never advertised where an operator looks for keys.
+func TestApp_HelpTextIncludesScreenKeys(t *testing.T) {
+	app := NewApp(&mockScreen{title: "Home"})
+	app.nav.Push(&helpfulScreen{mockScreen: mockScreen{title: "Templates"}, keys: "n:new workflow"})
+
+	got := app.helpText()
+	if !strings.Contains(got, "n:new workflow") {
+		t.Errorf("the screen's own keys must reach the status bar, got %q", got)
+	}
+	// The standard keys must survive alongside them.
+	if !strings.Contains(got, "esc:back") {
+		t.Errorf("the standard keys should still be there, got %q", got)
+	}
+	// Screen-specific keys come first: they are the ones that cannot be
+	// guessed from the standard set.
+	if strings.Index(got, "n:new workflow") > strings.Index(got, "esc:back") {
+		t.Errorf("screen keys should lead, got %q", got)
+	}
+}
+
+// A screen that contributes nothing must not alter the bar.
+func TestApp_HelpTextUnchangedWithoutScreenKeys(t *testing.T) {
+	app := NewApp(&mockScreen{title: "Home"})
+	app.nav.Push(&mockScreen{title: "Plain"})
+	plain := app.helpText()
+
+	app2 := NewApp(&mockScreen{title: "Home"})
+	app2.nav.Push(&helpfulScreen{mockScreen: mockScreen{title: "Empty"}, keys: ""})
+	if got := app2.helpText(); got != plain {
+		t.Errorf("an empty HelpKeys must not change the bar:\n  got  %q\n  want %q", got, plain)
+	}
+}

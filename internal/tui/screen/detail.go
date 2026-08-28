@@ -614,6 +614,26 @@ func (d *DetailScreen) fetchAssoc() tea.Cmd {
 	)
 }
 
+// HelpKeys advertises this detail screen's own keys in the status bar.
+func (d *DetailScreen) HelpKeys() string {
+	var keys []string
+	if d.data != nil {
+		switch d.entry.Key {
+		case "workflow-templates":
+			keys = append(keys, "n:new workflow from this template")
+		case "ad":
+			keys = append(keys, "t:translation rules")
+		}
+		if hasVerb(d.entry.Schema.Verbs, "update") {
+			keys = append(keys, "E:edit")
+		}
+		if hasVerb(d.entry.Schema.Verbs, "delete") {
+			keys = append(keys, "d:delete")
+		}
+	}
+	return strings.Join(keys, "  ")
+}
+
 func (d *DetailScreen) View() string {
 	var sb strings.Builder
 
