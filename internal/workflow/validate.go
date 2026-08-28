@@ -113,6 +113,7 @@ func Validate(d DSL) Result {
 	checkReachability(tasks, add)
 	validateExpressions(d, trigger, tasks, add)
 	checkDeadStatusGuards(d, add)
+	checkInputReferences(d, trigger, add)
 	validatePlaceholders(d, add)
 
 	r.SideEffects = d.SideEffects()

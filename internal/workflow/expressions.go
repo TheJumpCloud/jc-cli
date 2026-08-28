@@ -288,3 +288,92 @@ func taskIndexForPath(tasks []Task, path string) (int, bool) {
 	}
 	return best, found
 }
+
+// inputRefRE finds the top-level field of an ${ input.<field> } reference.
+var inputRefRE = regexp.MustCompile(`\binput\.([A-Za-z_][A-Za-z0-9_]*)`)
+
+// checkInputReferences warns about ${ input.<field> } references the trigger
+// cannot satisfy.
+//
+// Two sources, depending on the trigger:
+//
+//   - external: the workflow declares its own JSON input schema, and the API
+//     enforces it when a run is started. A field the schema does not declare
+//     can never arrive.
+//   - jc_events: the payload shape comes from the field map, built from a
+//     captured trigger payload. That map is a lower bound, so this stays a
+//     warning.
+//
+// Either way a bad reference evaluates false forever, and the workflow simply
+// never matches — the same invisible failure as a mistyped event type, one
+// layer down.
+func checkInputReferences(d DSL, trigger TriggerStyle, add func(Severity, string, string, string)) {
+	var (
+		allowed map[string]bool
+		source  string
+	)
+
+	switch {
+	case trigger.Source == TriggerExternal:
+		fields, declared := d.inputSchemaFields()
+		if !declared {
+			// No schema declared: anything may be posted, nothing to check.
+			return
+		}
+		allowed = map[string]bool{}
+		for _, f := range fields {
+			allowed[f] = true
+		}
+		source = "the declared input schema"
+
+	case trigger.Source == TriggerEvents:
+		allowed = map[string]bool{}
+		for _, f := range EventFields(trigger.EventType) {
+			allowed[f] = true
+		}
+		source = "a " + trigger.EventType + " event payload"
+
+	default:
+		// A scheduled trigger has no input to reference.
+		return
+	}
+
+	reported := map[string]bool{}
+	for _, e := range d.Expressions() {
+		// The trigger condition of an external workflow is evaluated against
+		// the raw data object, not the input context; that case has its own
+		// finding.
+		if strings.HasSuffix(e.Path, "with.condition") {
+			continue
+		}
+		for _, m := range inputRefRE.FindAllStringSubmatch(e.Source, -1) {
+			field := m[1]
+			if allowed[field] || reported[e.Path+field] {
+				continue
+			}
+			reported[e.Path+field] = true
+
+			hint := "a reference the trigger cannot satisfy evaluates false forever, so the workflow silently never matches"
+			if s := suggestField(field, allowed); s != "" {
+				hint = "closest available: " + s + " — " + hint
+			}
+			add(Warning, e.Path,
+				"input."+field+" is not carried by "+source, hint)
+		}
+	}
+}
+
+// suggestField returns the nearest available field name, for the typo case.
+func suggestField(field string, allowed map[string]bool) string {
+	best, bestD := "", 1<<30
+	for f := range allowed {
+		d := levenshtein(strings.ToLower(field), strings.ToLower(f))
+		if d < bestD {
+			best, bestD = f, d
+		}
+	}
+	if bestD > len(field)/2+1 {
+		return ""
+	}
+	return best
+}

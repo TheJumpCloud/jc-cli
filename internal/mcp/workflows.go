@@ -302,7 +302,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. This is the only place a failed run's cause is visible.",
+	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. A switch node also records case_evaluations (every case, its when expression, and whether it matched) and the branch chosen. Each node carries is_output_truncated; the size at which a body is truncated is undocumented, so a very large response may not be a faithful record. This is the only place a failed run's cause is visible.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfRunGetInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -420,7 +420,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring. NOTE the catalog is a lower bound — a live tenant emitted 30 types this documentation does not list, so an absent type is not proof it is invalid.",
+	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring. Each entry also lists payload_fields — what a condition on that event may reference (resource, changes, initiated_by, auth_method, client_ip, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds — a live tenant emitted 30 types this documentation does not list — so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
 			matches := workflow.EventTypes(args.Service, args.Search)
 			names := make([]string, 0, len(matches))
@@ -432,7 +432,15 @@ func (s *Server) registerWorkflowTools() {
 			rows := make([]map[string]any, 0, len(names))
 			for _, n := range names {
 				e := matches[n]
-				row := map[string]any{"event_type": n, "describes": e.Describe}
+				row := map[string]any{
+					"event_type": n,
+					"describes":  e.Describe,
+					// The payload fields a condition on this event may
+					// reference. A condition naming a field the event does
+					// not carry evaluates false forever, so this is the other
+					// half of not-firing-silently.
+					"payload_fields": workflow.EventFields(n),
+				}
 				if e.Service != "" {
 					row["service"] = e.Service
 				}

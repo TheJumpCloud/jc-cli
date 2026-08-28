@@ -231,6 +231,9 @@ therefore directly inspectable — it does not have to be exfiltrated through an
 email step to be seen.
 
 A failing step halts the run: everything after it is reported as not executed.
+A switch node also records which cases were evaluated and which branch was
+chosen. Nodes carry an is_output_truncated flag; the size at which a body is
+truncated is undocumented, so a very large response may not be faithful.
 
 Use --trace for a readable summary instead of the full document.`,
 		Args: cobra.ExactArgs(1),
@@ -1318,6 +1321,8 @@ invalid — which is why validate warns rather than rejects.`,
 				e := matches[n]
 				b, err := json.Marshal(map[string]any{
 					"event_type": n, "service": e.Service, "describes": e.Describe,
+					// What a condition on this event may reference.
+					"payload_fields": workflow.EventFields(n),
 				})
 				if err != nil {
 					return err

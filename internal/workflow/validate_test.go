@@ -725,3 +725,105 @@ func TestValidate_NonStatusGuardIsNotFlagged(t *testing.T) {
 		t.Errorf("a body guard is legitimate — only status guards are dead: %v", r.Findings)
 	}
 }
+
+// A condition naming a field the event does not carry evaluates false forever
+// — the same silent-never-fires failure as a mistyped event type, one layer
+// down.
+func TestValidate_UnknownEventPayloadFieldWarns(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "group_create"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusersById",
+	      "version": 1, "pathParams": {"id": "${ input.resourse.id }"}}}}]}`)
+
+	if !r.OK() {
+		t.Fatalf("the field map is a lower bound, so this must not be an error: %v", r.Errors())
+	}
+	if !hasMessage(r, "input.resourse is not carried by a group_create event payload") {
+		t.Fatalf("the bad field should be flagged: %v", r.Findings)
+	}
+	f, _ := findingAt(r, "pathParams.id")
+	if !strings.Contains(f.Hint, "closest available: resource") {
+		t.Errorf("hint should name the near miss, got %q", f.Hint)
+	}
+	if !strings.Contains(f.Hint, "silently never matches") {
+		t.Errorf("hint should say what goes wrong, got %q", f.Hint)
+	}
+}
+
+// The fields the shipped templates actually use must stay silent.
+func TestValidate_RealEventFieldsAreSilent(t *testing.T) {
+	for _, ref := range []string{
+		"input.resource.id",
+		"input.association.connection.to.object_id",
+		"input.initiated_by.email",
+		"input.auth_method",
+		"input.changes[0].to",
+	} {
+		r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "association_change"}}}},
+		  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers",
+		      "version": 1, "queryParams": {"x": "${ `+ref+` }"}}}}]}`)
+		if hasMessage(r, "is not carried by") {
+			t.Errorf("%s is a real payload field and must not warn: %v", ref, r.Findings)
+		}
+	}
+}
+
+// An external trigger declares its own schema, and the API enforces it, so a
+// field the schema omits can never arrive.
+func TestValidate_InputNotInDeclaredSchemaWarns(t *testing.T) {
+	r := validateJSON(t, `{
+	  "input": {"schema": {"format": "json", "document": {"type": "object",
+	      "required": ["userId"], "properties": {"userId": {"type": "string"}}}}},
+	  "schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusersById",
+	      "version": 1, "pathParams": {"id": "${ input.userIdd }"}}}}]}`)
+
+	if !hasMessage(r, "input.userIdd is not carried by the declared input schema") {
+		t.Fatalf("a field outside the schema should be flagged: %v", r.Findings)
+	}
+	f, _ := findingAt(r, "pathParams.id")
+	if !strings.Contains(f.Hint, "closest available: userId") {
+		t.Errorf("hint should name the near miss, got %q", f.Hint)
+	}
+
+	// The declared field itself is fine.
+	ok := validateJSON(t, `{
+	  "input": {"schema": {"format": "json", "document": {"type": "object",
+	      "properties": {"userId": {"type": "string"}}}}},
+	  "schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusersById",
+	      "version": 1, "pathParams": {"id": "${ input.userId }"}}}}]}`)
+	if hasMessage(ok, "is not carried by") {
+		t.Errorf("a declared field must not warn: %v", ok.Findings)
+	}
+}
+
+// With no schema declared, anything may be posted — there is nothing to check
+// against, and guessing would be noise.
+func TestValidate_NoInputSchemaMeansNoInputChecking(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers",
+	      "version": 1, "queryParams": {"x": "${ input.anythingAtAll }"}}}}]}`)
+	if hasMessage(r, "is not carried by") {
+		t.Errorf("without a declared schema there is nothing to validate against: %v", r.Findings)
+	}
+}
+
+func TestEventFields(t *testing.T) {
+	base := EventFields("user_create")
+	for _, want := range []string{"resource", "changes", "initiated_by", "auth_method", "geoip"} {
+		if !KnownEventField("user_create", want) {
+			t.Errorf("%q missing from the common envelope: %v", want, base)
+		}
+	}
+	// Association events carry the association itself; ordinary ones do not.
+	if !KnownEventField("association_change", "association") {
+		t.Error("association_change should expose association")
+	}
+	if KnownEventField("user_create", "association") {
+		t.Error("a non-association event should not expose association")
+	}
+	// The suffix rule must cover the whole family.
+	if !KnownEventField("access_management_association_change", "association") {
+		t.Error("the suffix match should cover access_management_association_change")
+	}
+}
