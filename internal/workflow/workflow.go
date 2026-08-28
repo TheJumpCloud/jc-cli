@@ -146,24 +146,29 @@ type RunNode struct {
 
 // Describe renders one step of a run trace as a single line.
 func (n RunNode) Describe() string {
-	// is_executed does NOT mean "did its work": a node excluded by a guard
-	// still carries is_executed=true and success=true, and only the message
-	// says so. Observed in a run where a task guarded on `1 == 2` reported
-	// "Skipping — if condition did not match" alongside both flags true.
-	mark := "ok"
-	switch {
-	case !n.IsExecuted, n.Skipped():
-		mark = "skipped"
-	case !n.Success:
-		mark = "FAILED"
-	}
+	// Rendered from State, not from is_executed/success/message, all three of
+	// which are identical between a task that ran and one a branch routed
+	// around. See RunState for how that was established.
+	state, why := n.State()
+	mark := map[RunState]string{
+		RunStateRan:     "ok",
+		RunStateSkipped: "skipped",
+		RunStateFailed:  "FAILED",
+		RunStateUnknown: "unclear",
+	}[state]
+
 	s := fmt.Sprintf("[%s] %s", mark, n.Name)
 	// A paginated step aggregates several requests, so it reports no single
 	// method/URL/status; printing "→ 0" there would invent one.
 	if n.NodeOutput != nil && n.NodeOutput.Status != 0 {
 		s += fmt.Sprintf("  %s %s → %d", n.NodeOutput.Method, n.NodeOutput.URL, n.NodeOutput.Status)
 	}
-	if n.Message != "" {
+	// For a skip, the derived reason is what the operator needs: the upstream
+	// message says "Task completed." on a task that made no call.
+	switch {
+	case state == RunStateSkipped || state == RunStateUnknown:
+		s += "  (" + why + ")"
+	case n.Message != "":
 		s += "  (" + n.Message + ")"
 	}
 	if n.Truncated {

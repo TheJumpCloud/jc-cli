@@ -539,35 +539,37 @@ func TestOperation_PermittedBy(t *testing.T) {
 	}
 }
 
-// A task no branch targets still RUNS, in array order — verified live both
-// between a switch and its target and after it. The hazard is the opposite of
-// the obvious guess: a switch written to route around a step does not.
-func TestValidate_WarnsOnUntargetedTask(t *testing.T) {
+// A task no branch targets NEVER RUNS — execution follows the jump graph, not
+// the order of the do list.
+//
+// This reverses an earlier reading of this repo's, which had it running in
+// array order. That reading came from trusting the run trace, where an
+// untargeted task reports is_executed=true, success=true and "Task completed."
+// exactly like one that ran. Settled instead with an observable outside the
+// trace: a switch jumped past an untargeted task that would have CREATED A
+// USER GROUP, and afterwards the group did not exist, while the jump target's
+// group did. The trace lies here; the tenant does not.
+func TestValidate_UntargetedTaskNeverRuns(t *testing.T) {
 	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
 	  "do": [
-	    {"route": {"switch": [
-	       {"hit": {"when": "${ input.x == 1 }", "then": "handled"}},
-	       {"default": {"then": "handled"}}]}},
+	    {"router": {"switch": [{"always": {"when": "${ 1 == 1 }", "then": "target"}}]}},
 	    {"orphan": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
-	    {"handled": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	    {"target": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
 	  ]}`)
 
-	// Unreachability is a warning: the workflow is well-formed, just partly dead.
-	if !r.OK() {
-		t.Fatalf("unreachability must not make the document invalid: %v", r.Errors())
+	f, ok := findingAt(r, "orphan")
+	if !ok {
+		t.Fatalf("an untargeted task after a jump must be flagged: %v", r.Findings)
 	}
-	if !hasMessage(r, `task "orphan" is not targeted by any then`) {
-		t.Errorf("the un-targeted task should be flagged: %v", r.Findings)
+	if !strings.Contains(f.Message, "silently never run") {
+		t.Errorf("the message must say the task does not run: %q", f.Message)
 	}
-	// The hint must say it still executes. Saying otherwise would tell an
-	// author a destructive step was safely bypassed when it is not.
-	f, _ := findingAt(r, "orphan")
-	if !strings.Contains(f.Hint, "STILL execute") {
-		t.Errorf("hint must state that it runs anyway, got %q", f.Hint)
+	// The opposite claim shipped once and had to be reverted; keep it out.
+	if strings.Contains(f.Message, "array order") || strings.Contains(f.Hint, "STILL execute") {
+		t.Errorf("this is the reverted claim, it must not come back: %q / %q", f.Message, f.Hint)
 	}
-	// A branch target is part of the jump graph and must not be flagged.
-	if hasMessage(r, `task "handled" is not targeted`) {
-		t.Errorf("a jump target must not be flagged: %v", r.Findings)
+	if !strings.Contains(f.Hint, "jump graph") {
+		t.Errorf("the hint should name the real rule: %q", f.Hint)
 	}
 }
 

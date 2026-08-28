@@ -14,23 +14,109 @@ import (
 // a bug in this package's reading of the DSL or a genuine engine behaviour
 // worth recording — and both are worth knowing.
 
-// TraceSkipPrefix is how the engine reports a guard that excluded a task.
+// RunState is what a trace node actually did.
 //
-// The trace does NOT distinguish these with is_executed: a skipped node still
-// carries is_executed=true and success=true, and only the message says what
-// happened. Observed directly in a run where a task guarded on `1 == 2`
-// reported exactly this. Anything deciding "did this task run?" must key on
-// the message, not on is_executed.
+// The trace's own fields cannot answer this. Three states are reachable and
+// two of them lie:
+//
+//	state                       is_executed  success  node_output  message
+//	ran                         true         true     populated    "Task completed."
+//	skipped, branch not taken   true         true     null         "Task completed."
+//	skipped, guard false        true         true     null         "Skipping — …"
+//	skipped, prior task failed  false        true     null         "Not executed — …"
+//	failed                      true         false    populated    descriptive
+//
+// A branch-skipped node is indistinguishable from a successful one on
+// is_executed, success AND message. Only node_output separates them.
+//
+// Settled with an observable outside the trace, because the trace is what was
+// in question: a switch jumped past an untargeted task that would have created
+// a user group. Afterwards the group did not exist, while the jump target's
+// group did — and the skipped node had reported is_executed=true, success=true,
+// "Task completed.". Reading those fields at face value is how this repo
+// previously concluded the opposite.
+type RunState string
+
+const (
+	// RunStateRan means the step did its work.
+	RunStateRan RunState = "ran"
+	// RunStateSkipped means the step was visited but did nothing.
+	RunStateSkipped RunState = "skipped"
+	// RunStateFailed means the step ran and failed, which halts the run.
+	RunStateFailed RunState = "failed"
+	// RunStateUnknown is for node types whose trace shape has not been
+	// observed. Guessing here would repeat the mistake this type exists to
+	// prevent.
+	RunStateUnknown RunState = "unknown"
+)
+
+// Node types seen in real traces.
+const (
+	NodeTypeOperation = "jc_operation"
+	NodeTypeConnector = "connector_operation"
+	NodeTypeSwitch    = "switch"
+	NodeTypeTrigger   = "trigger"
+)
+
+// State classifies what this node did, and why.
+//
+// For a call node the rule is node_output: a step that reached the API always
+// has one, and a step that did not never does. Everything else is either not a
+// call (trigger, switch) or a shape this package has not observed, and is
+// reported as unknown rather than assumed.
+func (n RunNode) State() (RunState, string) {
+	if !n.IsExecuted {
+		return RunStateSkipped, "not reached — the run failed at an earlier task"
+	}
+	if !n.Success {
+		return RunStateFailed, n.Message
+	}
+
+	// A response is positive evidence that a call was made, whatever the node
+	// type. This is the only field that distinguishes a task that ran from one
+	// a branch routed around.
+	if n.NodeOutput != nil {
+		return RunStateRan, n.Message
+	}
+
+	// Neither a trigger nor a switch is a task; both legitimately carry no
+	// response, and both did evaluate.
+	if n.Type == NodeTypeTrigger || n.Type == NodeTypeSwitch {
+		return RunStateRan, n.Message
+	}
+
+	// An explicit skip message is conclusive for any node type.
+	if strings.HasPrefix(strings.TrimSpace(n.Message), TraceSkipPrefix) {
+		return RunStateSkipped, "a guard on this task evaluated false"
+	}
+
+	// A call node with no response made no call, and said nothing about it:
+	// this is the branch-skip case that reports "Task completed."
+	if n.Type == NodeTypeOperation || n.Type == NodeTypeConnector {
+		return RunStateSkipped, "branch not taken — no branch routed to this task"
+	}
+
+	// Anything else — an email task, for instance — has no established shape,
+	// and guessing would repeat the mistake this type exists to prevent.
+	return RunStateUnknown, fmt.Sprintf("node type %q has no established trace shape, "+
+		"so whether it ran cannot be told from the trace", n.Type)
+}
+
+// TraceSkipPrefix is how the engine reports a guard that excluded a task.
+// A branch skip carries no such marker, which is why State does not rely on it
+// alone.
 const TraceSkipPrefix = "Skipping"
 
-// Skipped reports whether a guard or branch excluded this step.
+// Skipped reports whether this step was visited without doing its work.
 func (n RunNode) Skipped() bool {
-	return strings.HasPrefix(strings.TrimSpace(n.Message), TraceSkipPrefix)
+	st, _ := n.State()
+	return st == RunStateSkipped
 }
 
 // Ran reports whether this step actually did its work.
 func (n RunNode) Ran() bool {
-	return n.IsExecuted && !n.Skipped()
+	st, _ := n.State()
+	return st == RunStateRan
 }
 
 // Verdict classifies one task's agreement between plan and run.

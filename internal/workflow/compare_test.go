@@ -6,7 +6,7 @@ import (
 )
 
 func node(name, message string, executed, success bool, status int) RunNode {
-	n := RunNode{Name: name, Type: "task", Message: message, IsExecuted: executed, Success: success}
+	n := RunNode{Name: name, Type: NodeTypeOperation, Message: message, IsExecuted: executed, Success: success}
 	if status != 0 {
 		n.NodeOutput = &struct {
 			Method string `json:"method"`
@@ -23,27 +23,81 @@ func runWith(nodes ...RunNode) Run {
 	return Run{ID: "run-1", ExecutionDetails: ExecutionDetails{Nodes: all}}
 }
 
-// The trace does not distinguish skipped from ran with is_executed — both are
-// true — so anything reading it must key on the message. Getting this wrong
-// would make every skipped task look like it ran.
-func TestRunNode_SkippedKeysOnMessageNotIsExecuted(t *testing.T) {
-	skipped := node("guarded", "Skipping — if condition did not match.", true, true, 0)
-	if !skipped.Skipped() {
-		t.Error("a node whose message says it skipped must report skipped")
+// node_output is the only field that tells the truth about whether a call node
+// did its work. is_executed, success and message are all identical between a
+// task that ran and a task a branch routed around.
+//
+// This is not a style preference. Reading those fields at face value is how
+// this repo previously concluded that untargeted tasks run in array order —
+// they do not. A switch jumped past an untargeted task that would have created
+// a user group; afterwards the group did not exist, while the jump target's
+// group did.
+func TestRunNode_StateUsesNodeOutputNotTheLyingFields(t *testing.T) {
+	// The trap: every field except node_output says this succeeded.
+	branchSkipped := node("orphan", "Task completed.", true, true, 0)
+	if st, why := branchSkipped.State(); st != RunStateSkipped {
+		t.Errorf("State = %q (%s); a call node with no node_output made no call", st, why)
 	}
-	if skipped.Ran() {
-		t.Error("a skipped node did not run, despite is_executed being true")
+	if branchSkipped.Ran() {
+		t.Error("an untargeted task did not run, whatever is_executed and success say")
+	}
+	if _, why := branchSkipped.State(); !strings.Contains(why, "branch not taken") {
+		t.Errorf("the reason should distinguish a branch skip from a guard skip: %q", why)
+	}
+
+	guardSkipped := node("guarded", "Skipping — if condition did not match.", true, true, 0)
+	if !guardSkipped.Skipped() {
+		t.Error("a guard-skipped node must report skipped")
+	}
+	if _, why := guardSkipped.State(); !strings.Contains(why, "guard") {
+		t.Errorf("a guard skip should say so: %q", why)
 	}
 
 	ran := node("fetch", "Task completed.", true, true, 200)
 	if ran.Skipped() || !ran.Ran() {
-		t.Error("a completed node must report as having run")
+		t.Error("a node carrying a response must report as having run")
 	}
 
-	// Describe must agree, or the trace reads as "ok" for a task that
-	// never did anything.
-	if got := skipped.Describe(); !strings.Contains(got, "[skipped]") {
+	// A run that halted leaves later nodes with is_executed=false.
+	notReached := node("after", "Not executed — workflow failed at a prior task.", false, true, 0)
+	if st, why := notReached.State(); st != RunStateSkipped || !strings.Contains(why, "earlier task") {
+		t.Errorf("State = %q (%s), want skipped with the halt named", st, why)
+	}
+
+	failed := node("boom", "Request failed.", true, false, 404)
+	if st, _ := failed.State(); st != RunStateFailed {
+		t.Errorf("State = %q, want failed", st)
+	}
+
+	// Describe must agree, or the trace renders a task that did nothing as ok.
+	if got := branchSkipped.Describe(); !strings.Contains(got, "[skipped]") {
 		t.Errorf("Describe = %q, want it marked skipped", got)
+	}
+}
+
+// A node type this package has not observed must not be guessed at. An email
+// task legitimately carries no node_output, so applying the call-node rule to
+// it would report every sent email as skipped.
+func TestRunNode_UnobservedTypeIsUnknownNotSkipped(t *testing.T) {
+	email := RunNode{Name: "notify", Type: "sendEmailsToAddresses",
+		Message: "Task completed.", IsExecuted: true, Success: true}
+
+	st, why := email.State()
+	if st != RunStateUnknown {
+		t.Errorf("State = %q, want unknown — claiming it skipped would be a fabrication", st)
+	}
+	if !strings.Contains(why, "no established trace shape") {
+		t.Errorf("the reason should admit the gap: %q", why)
+	}
+	if email.Skipped() {
+		t.Error("unknown must not collapse into skipped")
+	}
+
+	// A guard message is still conclusive for any type.
+	skipped := RunNode{Name: "notify", Type: "sendEmailsToAddresses",
+		Message: "Skipping — if condition did not match.", IsExecuted: true, Success: true}
+	if !skipped.Skipped() {
+		t.Error("an explicit skip message is conclusive whatever the node type")
 	}
 }
 

@@ -658,9 +658,9 @@ func checkReachability(tasks []Task, add func(Severity, string, string, string))
 			continue
 		}
 		add(Warning, t.Path,
-			fmt.Sprintf("task %q is not targeted by any then, but %q jumps elsewhere",
+			fmt.Sprintf("task %q is not targeted by any then, but %q jumps elsewhere, so it will silently never run",
 				t.Name, top[i-1].Name),
-			"it will STILL execute, in array order — only tasks named by a branch are skipped when that branch is not chosen. "+
-				"If you meant to route around it, move it out of the do list or give the branch an explicit then past it")
+			"execution follows the jump graph, not the order of the do list. Give some branch an explicit then "+
+				"naming this task, or move it out of the do list")
 	}
 }

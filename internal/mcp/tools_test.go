@@ -88,6 +88,19 @@ func overrideInsightsClientForTest(t *testing.T, serverURL string) {
 func connectToolTestServer(t *testing.T, opts Options) *mcp.ClientSession {
 	t.Helper()
 
+	// Isolate the name-to-ID cache, unless the test seeded one itself. Without
+	// this a tool test resolving a name reads the DEVELOPER'S real
+	// ~/.cache/jc, so a test asserting its mock's "role-1" instead gets
+	// whatever ID that developer last touched a live tenant with. It passes in
+	// CI, where the cache is empty, and fails only on a machine that has done
+	// real work — the worst way to find out.
+	//
+	// The guard matters: several tests pre-populate a cache through this same
+	// variable, and overwriting it would empty the fixture they depend on.
+	if os.Getenv("XDG_CACHE_HOME") == "" {
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	}
+
 	if opts.AuditLogPath == "" {
 		opts.AuditLogPath = filepath.Join(t.TempDir(), "audit.log")
 	}
