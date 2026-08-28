@@ -128,20 +128,92 @@ type ExecutionDetails struct {
 // RunNode is one executed step. The first node is always the synthetic
 // "__trigger" node carrying the run's input.
 type RunNode struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Success     bool   `json:"success"`
-	IsExecuted  bool   `json:"is_executed"`
-	Message     string `json:"message,omitempty"`
-	TriggerType string `json:"trigger_type,omitempty"`
-	Truncated   bool   `json:"is_output_truncated,omitempty"`
-	NodeInput   any    `json:"node_input,omitempty"`
-	NodeOutput  *struct {
-		Method string `json:"method"`
-		Status int    `json:"status"`
-		URL    string `json:"url"`
-		Body   any    `json:"body"`
-	} `json:"node_output,omitempty"`
+	Name        string      `json:"name"`
+	Type        string      `json:"type"`
+	Success     bool        `json:"success"`
+	IsExecuted  bool        `json:"is_executed"`
+	Message     string      `json:"message,omitempty"`
+	TriggerType string      `json:"trigger_type,omitempty"`
+	Truncated   bool        `json:"is_output_truncated,omitempty"`
+	NodeInput   any         `json:"node_input,omitempty"`
+	NodeOutput  *NodeOutput `json:"node_output,omitempty"`
+	// IfCondition is present on a node whose task-level `if` was evaluated,
+	// carrying the expression and its result. It is a stronger skip signal
+	// than the message, being structured rather than English prose.
+	IfCondition *IfCondition `json:"if_condition,omitempty"`
+}
+
+// IfCondition is a task guard as the engine evaluated it.
+type IfCondition struct {
+	Expression string `json:"expression"`
+	Result     bool   `json:"result"`
+}
+
+// NodeOutput is what a step produced. Its shape depends on the node type: a
+// jc_operation reports method/url/status/body, while an email node reports
+// notification_type and a STRING status ("success").
+type NodeOutput struct {
+	Method string `json:"method,omitempty"`
+	// Status is an HTTP status for a jc_operation and a word for an email
+	// node, so it cannot be typed as an int — see TraceStatus.
+	Status TraceStatus `json:"status,omitempty"`
+	URL    string      `json:"url,omitempty"`
+	Body   any         `json:"body,omitempty"`
+	// NotificationType appears on email nodes.
+	NotificationType string `json:"notification_type,omitempty"`
+}
+
+// TraceStatus is a step's status, which the engine reports as a NUMBER for an
+// API call and as a STRING for an email send.
+//
+// Typing this as an int made `jc workflows runs get --trace` fail outright on
+// any run containing an email step — the trace view, which is the only place a
+// failed run's cause is visible, was unusable for exactly the workflows that
+// send notifications. Observed as {"notification_type":"workflows_common",
+// "status":"success"}.
+type TraceStatus struct {
+	// Code is the HTTP status when the engine reported a number, else 0.
+	Code int
+	// Text is the word the engine reported, else empty.
+	Text string
+}
+
+// UnmarshalJSON accepts either form rather than failing on the unexpected one.
+func (s *TraceStatus) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '"' {
+		return json.Unmarshal(b, &s.Text)
+	}
+	return json.Unmarshal(b, &s.Code)
+}
+
+// MarshalJSON round-trips whichever form was received.
+func (s TraceStatus) MarshalJSON() ([]byte, error) {
+	if s.Text != "" {
+		return json.Marshal(s.Text)
+	}
+	return json.Marshal(s.Code)
+}
+
+// String renders the status for a human.
+func (s TraceStatus) String() string {
+	if s.Text != "" {
+		return s.Text
+	}
+	if s.Code != 0 {
+		return fmt.Sprintf("%d", s.Code)
+	}
+	return ""
+}
+
+// OK reports whether the status indicates success, in either form.
+func (s TraceStatus) OK() bool {
+	if s.Text != "" {
+		return s.Text == "success"
+	}
+	return s.Code >= 200 && s.Code < 300
 }
 
 // Describe renders one step of a run trace as a single line.
@@ -160,8 +232,13 @@ func (n RunNode) Describe() string {
 	s := fmt.Sprintf("[%s] %s", mark, n.Name)
 	// A paginated step aggregates several requests, so it reports no single
 	// method/URL/status; printing "→ 0" there would invent one.
-	if n.NodeOutput != nil && n.NodeOutput.Status != 0 {
-		s += fmt.Sprintf("  %s %s → %d", n.NodeOutput.Method, n.NodeOutput.URL, n.NodeOutput.Status)
+	if n.NodeOutput != nil && n.NodeOutput.Status.String() != "" {
+		if n.NodeOutput.URL != "" {
+			s += fmt.Sprintf("  %s %s → %s", n.NodeOutput.Method, n.NodeOutput.URL, n.NodeOutput.Status)
+		} else {
+			// An email node has a status but no method or URL.
+			s += "  → " + n.NodeOutput.Status.String()
+		}
 	}
 	// For a skip, the derived reason is what the operator needs: the upstream
 	// message says "Task completed." on a task that made no call.

@@ -16,8 +16,45 @@ import (
 
 // RunState is what a trace node actually did.
 //
-// The trace's own fields cannot answer this. Three states are reachable and
-// two of them lie:
+// The trace's own fields cannot answer this. A step a branch routed around
+// reports is_executed=true, success=true and "Task completed." — identical in
+// every field to one that ran, except that node_output is null.
+//
+// EVIDENCE. This predicate is derived from a small number of real runs against
+// org 5ec71e8e96bfda0611fc6c5b on 2026-08-28. It is recorded here in full so
+// the next person can falsify it in one read rather than re-deriving it — this
+// repo got the rule wrong twice, and both times the finding travelled as a
+// conclusion with its evidence left behind.
+//
+//	run 0c5c7e6e-3b9f-4807-80a0-0c77ff63b7f4 — the decisive one. A switch
+//	  jumped past an untargeted jc_operation that would have CREATED A USER
+//	  GROUP; afterwards the group did not exist, while the jump target's did.
+//	  Ground truth from outside the trace, because the trace was in question.
+//	    __trigger    type=trigger      node_output=null  "Workflow invoked."
+//	    router       type=switch       node_output=null  "Switch evaluated."
+//	    orphanStep   type=jc_operation node_output=null  "Task completed."   <- did NOT run
+//	    jumpTarget   type=jc_operation node_output=201   "Task completed."   <- ran
+//	run 49770a2e-1cdc-44e5-80f2-5afcd10ed6d6 — guard skips report
+//	  "Skipping — if condition did not match."; references to a skipped task
+//	  evaluate false without erroring.
+//	run c5d40e74-00b3-4269-a26c-ec2c6a4e4cef — a create returned 201, and a
+//	  task guarded on `status == 200` was skipped while `>= 200 && < 300` ran.
+//	run 71db73cc-0221-4fef-8eaa-24f4dc1e788f — email. The engine reports the
+//	  call type as "email", not "sendEmailsToAddresses". A send carries
+//	  node_output {"notification_type":"workflows_common","status":"success"}
+//	  — so the envelope rule holds for email too — and a guarded-off send
+//	  carries a null node_output plus if_condition {expression, result:false}.
+//	  Note the STRING status: typing it as an int made the trace view fail
+//	  outright on any run containing an email step.
+//
+// SCOPE, stated honestly. Observed: jc_operation, switch, trigger, and email
+// (sendEmailsToAddresses). NOT observed in any state: connector_operation, and
+// sendEmailsToChannel — which presumably shares the "email" node type, though
+// that is an assumption, not an observation. Unobserved types return
+// RunStateUnknown; see the note at the fallthrough, which is not merely
+// "nobody has looked yet".
+//
+// State table as observed:
 //
 //	state                       is_executed  success  node_output  message
 //	ran                         true         true     populated    "Task completed."
@@ -25,16 +62,6 @@ import (
 //	skipped, guard false        true         true     null         "Skipping — …"
 //	skipped, prior task failed  false        true     null         "Not executed — …"
 //	failed                      true         false    populated    descriptive
-//
-// A branch-skipped node is indistinguishable from a successful one on
-// is_executed, success AND message. Only node_output separates them.
-//
-// Settled with an observable outside the trace, because the trace is what was
-// in question: a switch jumped past an untargeted task that would have created
-// a user group. Afterwards the group did not exist, while the jump target's
-// group did — and the skipped node had reported is_executed=true, success=true,
-// "Task completed.". Reading those fields at face value is how this repo
-// previously concluded the opposite.
 type RunState string
 
 const (
@@ -56,6 +83,10 @@ const (
 	NodeTypeConnector = "connector_operation"
 	NodeTypeSwitch    = "switch"
 	NodeTypeTrigger   = "trigger"
+	// NodeTypeEmail covers sendEmailsToAddresses — the engine reports the
+	// call type as plain "email". sendEmailsToChannel presumably shares it,
+	// but that has not been observed.
+	NodeTypeEmail = "email"
 )
 
 // State classifies what this node did, and why.
@@ -72,17 +103,29 @@ func (n RunNode) State() (RunState, string) {
 		return RunStateFailed, n.Message
 	}
 
-	// A response is positive evidence that a call was made, whatever the node
-	// type. This is the only field that distinguishes a task that ran from one
-	// a branch routed around.
+	// The ENVELOPE is the evidence, never its body. A 204, or a 200 with an
+	// empty body, is still a call that happened — testing node_output.body
+	// here would invert this predicate exactly the way reading is_executed
+	// did, and would report every empty-bodied success as a skip.
 	if n.NodeOutput != nil {
 		return RunStateRan, n.Message
 	}
 
-	// Neither a trigger nor a switch is a task; both legitimately carry no
-	// response, and both did evaluate.
+	// Neither a trigger nor a switch is a call, so neither ever carries a
+	// node_output, and falling through would mark both unknown forever. Both
+	// did evaluate: the trigger carries node_input, and a switch carries
+	// switch_evaluation with every case, its when expression, whether it
+	// matched, and chosen_next_node_id. Those switch traces were the most
+	// reliable thing in the structure — correct while every other field lied —
+	// so they must not be degraded to unknown.
 	if n.Type == NodeTypeTrigger || n.Type == NodeTypeSwitch {
 		return RunStateRan, n.Message
+	}
+
+	// A recorded guard result is the strongest signal available, and unlike
+	// the message it is structured rather than English prose.
+	if n.IfCondition != nil && !n.IfCondition.Result {
+		return RunStateSkipped, "the task guard evaluated false: " + n.IfCondition.Expression
 	}
 
 	// An explicit skip message is conclusive for any node type.
@@ -92,13 +135,25 @@ func (n RunNode) State() (RunState, string) {
 
 	// A call node with no response made no call, and said nothing about it:
 	// this is the branch-skip case that reports "Task completed."
-	if n.Type == NodeTypeOperation || n.Type == NodeTypeConnector {
+	if n.Type == NodeTypeOperation || n.Type == NodeTypeConnector || n.Type == NodeTypeEmail {
 		return RunStateSkipped, "branch not taken — no branch routed to this task"
 	}
 
-	// Anything else — an email task, for instance — has no established shape,
-	// and guessing would repeat the mistake this type exists to prevent.
-	return RunStateUnknown, fmt.Sprintf("node type %q has no established trace shape, "+
+	// Anything else — connector_operation above all — has never been seen in
+	// a trace here.
+	//
+	// This is NOT merely "unobserved, so assume the jc_operation rule". The
+	// semantics could be TYPE-DEPENDENT: a call type that populates nothing
+	// on success would make a null node_output mean "ran fine", the exact
+	// opposite of what it means for a jc_operation, and collapsing the two
+	// would silently report every success as never happening.
+	//
+	// Email was exactly this hedge until a run settled it, and the hedge was
+	// worth keeping: the type string turned out to be "email" rather than the
+	// DSL call name, so reasoning from the DSL would have got it wrong.
+	// Resolve the rest the same way — run one and read the trace.
+	return RunStateUnknown, fmt.Sprintf("node type %q has never been observed in a trace, and "+
+		"a null node_output may mean something different for it than for a jc_operation, "+
 		"so whether it ran cannot be told from the trace", n.Type)
 }
 
@@ -139,6 +194,12 @@ const (
 	// VerdictUnresolved means the plan could not resolve the step's
 	// parameters, so there is nothing to compare.
 	VerdictUnresolved Verdict = "unresolved-in-plan"
+	// VerdictCannotCompare means the TRACE cannot say whether the step ran,
+	// because its node type has no established shape. This is ranked with the
+	// divergences, not with agreement: treating it as "no disagreement" would
+	// make the tool quietest exactly where its evidence is weakest, which is
+	// the failure mode that produced the bug this comparison exists to catch.
+	VerdictCannotCompare Verdict = "cannot-compare"
 )
 
 // TaskComparison is one task, as planned and as run.
@@ -149,8 +210,9 @@ type TaskComparison struct {
 	Planned SimStatus `json:"planned,omitempty"`
 	// Ran is what the trace shows.
 	Ran bool `json:"ran"`
-	// Status is the HTTP status the step really got, when it made a call.
-	Status int `json:"status,omitempty"`
+	// Status is what the step really reported: an HTTP status for an API
+	// call, or a word like "success" for an email send.
+	Status string `json:"status,omitempty"`
 	// Detail explains the verdict in a sentence.
 	Detail string `json:"detail,omitempty"`
 }
@@ -165,6 +227,10 @@ type Comparison struct {
 	// not evaluate these, so holding them against it inflates the
 	// disagreement and trains the reader to ignore the number.
 	Unresolved int `json:"unresolved"`
+	// CannotCompare counts steps whose trace shape cannot establish whether
+	// they ran. Unlike Unresolved this is NOT a clean bill of health: it
+	// means the comparison has a hole, and it is reported as one.
+	CannotCompare int `json:"cannot_compare"`
 	// RunHalted records that the run stopped early, which explains any
 	// not-in-run verdicts after the failing step rather than leaving them
 	// looking like planner bugs.
@@ -220,12 +286,22 @@ func CompareRun(sim SimResult, run Run) Comparison {
 
 		tc := TaskComparison{Task: name, Planned: step.Status, Ran: node.Ran()}
 		if node.NodeOutput != nil {
-			tc.Status = node.NodeOutput.Status
+			tc.Status = node.NodeOutput.Status.String()
 		}
 
 		plannedToRun := step.Status == SimWouldCall || step.Status == SimStubbed
+		runState, runWhy := node.State()
 
 		switch {
+		case inRun && runState == RunStateUnknown:
+			// Checked before every other case: without this the step would
+			// fall through to a comparison built on node.Ran(), which is
+			// false for an unknown, and be reported as agreement or as a
+			// skip. Both would be assertions the trace does not support.
+			tc.Verdict = VerdictCannotCompare
+			tc.Detail = "the trace cannot establish whether this ran, so the plan cannot be " +
+				"checked against it: " + runWhy
+
 		case inPlan && step.Status == SimUnresolved:
 			tc.Verdict = VerdictUnresolved
 			tc.Detail = "the plan could not resolve this step's parameters, so there is nothing to compare: " + step.Why
@@ -258,6 +334,8 @@ func CompareRun(sim SimResult, run Run) Comparison {
 			c.Agree++
 		case VerdictUnresolved:
 			c.Unresolved++
+		case VerdictCannotCompare:
+			c.CannotCompare++
 		default:
 			c.Diverge++
 		}
@@ -273,10 +351,13 @@ func SortComparison(tasks []TaskComparison) {
 	rank := map[Verdict]int{
 		VerdictRanButPlannedSkip:    0,
 		VerdictSkippedButPlannedRun: 1,
-		VerdictNotInPlan:            2,
-		VerdictNotInRun:             3,
-		VerdictUnresolved:           4,
-		VerdictAgree:                5,
+		// A hole in the evidence sorts among the divergences, above the
+		// merely-unresolved, because it is the tool admitting it cannot see.
+		VerdictCannotCompare: 2,
+		VerdictNotInPlan:     3,
+		VerdictNotInRun:      4,
+		VerdictUnresolved:    5,
+		VerdictAgree:         6,
 	}
 	sort.SliceStable(tasks, func(i, j int) bool {
 		return rank[tasks[i].Verdict] < rank[tasks[j].Verdict]

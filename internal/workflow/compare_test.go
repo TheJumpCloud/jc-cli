@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -8,12 +9,7 @@ import (
 func node(name, message string, executed, success bool, status int) RunNode {
 	n := RunNode{Name: name, Type: NodeTypeOperation, Message: message, IsExecuted: executed, Success: success}
 	if status != 0 {
-		n.NodeOutput = &struct {
-			Method string `json:"method"`
-			Status int    `json:"status"`
-			URL    string `json:"url"`
-			Body   any    `json:"body"`
-		}{Method: "GET", Status: status, URL: "/x"}
+		n.NodeOutput = &NodeOutput{Method: "GET", Status: TraceStatus{Code: status}, URL: "/x"}
 	}
 	return n
 }
@@ -75,29 +71,105 @@ func TestRunNode_StateUsesNodeOutputNotTheLyingFields(t *testing.T) {
 	}
 }
 
-// A node type this package has not observed must not be guessed at. An email
-// task legitimately carries no node_output, so applying the call-node rule to
-// it would report every sent email as skipped.
+// Email nodes, now observed. A send populates node_output — the same envelope
+// rule as a jc_operation — so the guess this test used to hedge against is
+// settled by evidence rather than reasoning.
+//
+// From run 71db73cc-0221-4fef-8eaa-24f4dc1e788f: the engine reports the call
+// type as "email" (NOT "sendEmailsToAddresses"), a send carries
+// {"notification_type":"workflows_common","status":"success"}, and a guarded-off
+// send carries a null node_output with if_condition.result=false.
+func TestRunNode_EmailFollowsTheEnvelopeRule(t *testing.T) {
+	sent := RunNode{Name: "notify", Type: NodeTypeEmail,
+		Message: "Email notification completed.", IsExecuted: true, Success: true,
+		NodeOutput: &NodeOutput{NotificationType: "workflows_common",
+			Status: TraceStatus{Text: "success"}}}
+	if !sent.Ran() {
+		t.Error("a send that populated node_output ran")
+	}
+
+	skipped := RunNode{Name: "notify", Type: NodeTypeEmail,
+		Message: "Skipping — if condition did not match.", IsExecuted: true, Success: true,
+		IfCondition: &IfCondition{Expression: "${ 1 == 2 }", Result: false}}
+	if !skipped.Skipped() {
+		t.Error("a guarded-off send did not run")
+	}
+	// The structured guard result is better evidence than English prose, so
+	// it should be what the reason quotes.
+	if _, why := skipped.State(); !strings.Contains(why, "1 == 2") {
+		t.Errorf("the reason should quote the recorded guard: %q", why)
+	}
+}
+
+// A node type still never seen in any trace must not be guessed at.
+// connector_operation is the remaining one; reporting it as skipped on a null
+// node_output could be exactly backwards, which is the class of error this
+// whole predicate exists to avoid.
 func TestRunNode_UnobservedTypeIsUnknownNotSkipped(t *testing.T) {
-	email := RunNode{Name: "notify", Type: "sendEmailsToAddresses",
+	mystery := RunNode{Name: "webhook", Type: "some_future_call_type",
 		Message: "Task completed.", IsExecuted: true, Success: true}
 
-	st, why := email.State()
+	st, why := mystery.State()
 	if st != RunStateUnknown {
 		t.Errorf("State = %q, want unknown — claiming it skipped would be a fabrication", st)
 	}
-	if !strings.Contains(why, "no established trace shape") {
+	if !strings.Contains(why, "never been observed") {
 		t.Errorf("the reason should admit the gap: %q", why)
 	}
-	if email.Skipped() {
+	if mystery.Skipped() {
 		t.Error("unknown must not collapse into skipped")
 	}
 
-	// A guard message is still conclusive for any type.
-	skipped := RunNode{Name: "notify", Type: "sendEmailsToAddresses",
-		Message: "Skipping — if condition did not match.", IsExecuted: true, Success: true}
-	if !skipped.Skipped() {
-		t.Error("an explicit skip message is conclusive whatever the node type")
+	// A recorded guard result is conclusive whatever the node type.
+	guarded := RunNode{Name: "webhook", Type: "some_future_call_type",
+		Message: "Task completed.", IsExecuted: true, Success: true,
+		IfCondition: &IfCondition{Expression: "${ false }", Result: false}}
+	if !guarded.Skipped() {
+		t.Error("a recorded false guard settles it for any node type")
+	}
+}
+
+// The engine reports a status as a NUMBER for an API call and a STRING for an
+// email send. Typing it as an int made `runs get --trace` fail outright on any
+// run containing an email step.
+func TestTraceStatus_AcceptsBothForms(t *testing.T) {
+	var http TraceStatus
+	if err := json.Unmarshal([]byte(`200`), &http); err != nil {
+		t.Fatalf("numeric status must parse: %v", err)
+	}
+	if http.Code != 200 || http.String() != "200" || !http.OK() {
+		t.Errorf("numeric status wrong: %+v", http)
+	}
+
+	var word TraceStatus
+	if err := json.Unmarshal([]byte(`"success"`), &word); err != nil {
+		t.Fatalf("string status must parse: %v", err)
+	}
+	if word.Text != "success" || word.String() != "success" || !word.OK() {
+		t.Errorf("string status wrong: %+v", word)
+	}
+
+	if failed := (TraceStatus{Code: 404}); failed.OK() {
+		t.Error("404 is not OK")
+	}
+
+	// A whole trace containing both must parse, which is the actual bug.
+	raw := `{"executionDetails":{"nodes":[
+	  {"name":"call","type":"jc_operation","is_executed":true,"success":true,
+	   "node_output":{"method":"GET","status":200,"url":"/x"}},
+	  {"name":"mail","type":"email","is_executed":true,"success":true,
+	   "node_output":{"notification_type":"workflows_common","status":"success"}}]}}`
+	run, err := ParseRun([]byte(raw))
+	if err != nil {
+		t.Fatalf("a run mixing both status forms must parse: %v", err)
+	}
+	if len(run.ExecutionDetails.Nodes) != 2 {
+		t.Fatalf("got %d nodes", len(run.ExecutionDetails.Nodes))
+	}
+	for _, n := range run.ExecutionDetails.Nodes {
+		if !n.Ran() {
+			t.Errorf("%s should read as having run", n.Name)
+		}
 	}
 }
 
@@ -137,8 +209,8 @@ func TestCompareRun_RanButPlannedSkipIsRankedFirst(t *testing.T) {
 	if got.Tasks[0].Verdict != VerdictRanButPlannedSkip {
 		t.Fatalf("the understated case must sort first, got %+v", got.Tasks)
 	}
-	if got.Tasks[0].Status != 201 {
-		t.Errorf("the real status should be carried through, got %d", got.Tasks[0].Status)
+	if got.Tasks[0].Status != "201" {
+		t.Errorf("the real status should be carried through, got %q", got.Tasks[0].Status)
 	}
 	if !strings.Contains(got.Tasks[0].Detail, "guard looked false") {
 		t.Errorf("the detail should quote the plan's reasoning: %q", got.Tasks[0].Detail)

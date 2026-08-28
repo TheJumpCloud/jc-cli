@@ -1998,8 +1998,8 @@ func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) e
 	out := cmd.OutOrStdout()
 	for _, tc := range cmp.Tasks {
 		line := fmt.Sprintf("  [%-23s] %-24s", tc.Verdict, tc.Task)
-		if tc.Status != 0 {
-			line += fmt.Sprintf(" → %d", tc.Status)
+		if tc.Status != "" {
+			line += " → " + tc.Status
 		}
 		if tc.Verdict == workflow.VerdictAgree {
 			fmt.Fprintln(out, line)
@@ -2012,8 +2012,8 @@ func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) e
 	}
 
 	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "\n── %d agree, %d diverge, %d unresolved in the plan ──\n",
-		cmp.Agree, cmp.Diverge, cmp.Unresolved)
+	fmt.Fprintf(w, "\n── %d agree, %d diverge, %d unresolved in the plan, %d not checkable from the trace ──\n",
+		cmp.Agree, cmp.Diverge, cmp.Unresolved, cmp.CannotCompare)
 	if cmp.RunHalted {
 		fmt.Fprintf(w, "The run halted at %q; tasks after it were never reached.\n", cmp.HaltedAt)
 	}
