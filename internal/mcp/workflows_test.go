@@ -442,3 +442,59 @@ func TestMCPWorkflows_CreatePlanReportsScopeGaps(t *testing.T) {
 		t.Error("plan mode must not write")
 	}
 }
+
+// The catalog is 341 entries and the payload field list is ~16 per entry.
+// Returning both unfiltered was ~174KB in a single tool result — roughly 45k
+// tokens — which is not a reasonable thing to hand a model.
+func TestMCPWorkflows_EventTypesOmitsFieldsOnABroadBrowse(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	type row struct {
+		EventType     string   `json:"event_type"`
+		PayloadFields []string `json:"payload_fields"`
+	}
+	type resp struct {
+		Matched    int    `json:"matched"`
+		Note       string `json:"note"`
+		EventTypes []row  `json:"event_types"`
+	}
+	decode := func(s string) resp {
+		t.Helper()
+		var r resp
+		if err := json.Unmarshal([]byte(s), &r); err != nil {
+			t.Fatalf("not a listing: %v", err)
+		}
+		return r
+	}
+
+	broadRaw := getResultText(t, callTool(t, cs, "workflows_event_types", map[string]any{}))
+	broad := decode(broadRaw)
+	for _, r := range broad.EventTypes {
+		if len(r.PayloadFields) > 0 {
+			t.Fatalf("an unfiltered browse must not carry per-event field lists (%d bytes total)", len(broadRaw))
+		}
+	}
+	// And it must say why, and how to get them.
+	if !strings.Contains(broad.Note, "Narrow with service or search") {
+		t.Errorf("note = %q", broad.Note)
+	}
+
+	// Narrowing returns the fields, which are the point of asking.
+	narrowRaw := getResultText(t, callTool(t, cs, "workflows_event_types", map[string]any{
+		"service": "access_management",
+	}))
+	narrow := decode(narrowRaw)
+	if len(narrow.EventTypes) == 0 {
+		t.Fatal("expected matches for access_management")
+	}
+	if len(narrow.EventTypes[0].PayloadFields) == 0 {
+		t.Error("a narrowed query should carry the fields")
+	}
+	if narrow.Note != "" {
+		t.Errorf("a narrowed query should not carry the omission note: %q", narrow.Note)
+	}
+	if len(narrowRaw) >= len(broadRaw) {
+		t.Errorf("a narrowed query should be smaller: narrow=%d broad=%d", len(narrowRaw), len(broadRaw))
+	}
+}

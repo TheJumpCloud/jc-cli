@@ -446,7 +446,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring. Each entry also lists payload_fields — what a condition on that event may reference (resource, changes, initiated_by, auth_method, client_ip, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds — a live tenant emitted 30 types this documentation does not list — so an absent entry is not proof it is invalid.",
+	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
 			matches := workflow.EventTypes(args.Service, args.Search)
 			names := make([]string, 0, len(matches))
@@ -455,28 +455,39 @@ func (s *Server) registerWorkflowTools() {
 			}
 			sort.Strings(names)
 
+			// The catalog is 341 entries and the payload field list is ~16
+			// per entry. Returning both unfiltered is ~174KB in a single tool
+			// result, which is not a reasonable thing to hand a model. Below
+			// the threshold the caller has narrowed to something specific and
+			// the fields are what they came for; above it, this is a browse
+			// and the names are enough.
+			const detailThreshold = 25
+			detailed := len(names) <= detailThreshold
+
 			rows := make([]map[string]any, 0, len(names))
 			for _, n := range names {
 				e := matches[n]
-				row := map[string]any{
-					"event_type": n,
-					"describes":  e.Describe,
-					// The payload fields a condition on this event may
-					// reference. A condition naming a field the event does
-					// not carry evaluates false forever, so this is the other
-					// half of not-firing-silently.
-					"payload_fields": workflow.EventFields(n),
-				}
+				row := map[string]any{"event_type": n, "describes": e.Describe}
 				if e.Service != "" {
 					row["service"] = e.Service
 				}
+				if detailed {
+					row["payload_fields"] = workflow.EventFields(n)
+				}
 				rows = append(rows, row)
 			}
-			res, err := jsonResult(map[string]any{
+
+			out := map[string]any{
 				"total_in_catalog": workflow.EventTypeCount(),
 				"matched":          len(rows),
 				"event_types":      rows,
-			})
+			}
+			if !detailed {
+				out["note"] = fmt.Sprintf(
+					"payload_fields omitted: %d matches exceeds %d. Narrow with service or search to get the fields a condition may reference.",
+					len(rows), detailThreshold)
+			}
+			res, err := jsonResult(out)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
