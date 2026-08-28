@@ -1,0 +1,41 @@
+{
+  "id": "dc39d61b-60c5-40de-835a-0f2789c0b1ee",
+  "status": "completed",
+  "executionDetails": {
+    "nodes": [
+      {
+        "name": "__trigger",
+        "type": "trigger",
+        "success": true,
+        "is_executed": true,
+        "message": "Workflow invoked."
+      },
+      {
+        "name": "router",
+        "type": "switch",
+        "success": true,
+        "is_executed": true,
+        "message": "Switch evaluated."
+      },
+      {
+        "name": "orphanStep",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": true,
+        "message": "Task completed."
+      },
+      {
+        "name": "stepC",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": true,
+        "message": "Task completed.",
+        "node_output": {
+          "method": "GET",
+          "status": 200,
+          "url": "https://console.jumpcloud.com/api/systemusers?limit=1"
+        }
+      }
+    ]
+  }
+}

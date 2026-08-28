@@ -140,3 +140,81 @@ func TestParity_SummaryCountsBySource(t *testing.T) {
 		t.Errorf("breakdown sums to %d but %d were checked", total, got.Checked)
 	}
 }
+
+// The next pair named by the work order: what workflows_get says about a
+// workflow versus what workflows_lint says about the same one.
+//
+// The work order calls this "currently untestable only because the tenant has
+// zero workflows". That is true from the MCP side and is exactly the weak
+// evidence it warns about — so the pair is tested here instead, against a
+// constructed workflow, where no tenant is needed and the check runs in CI.
+//
+// These two are NOT the same object: get returns the workflow, lint returns a
+// verdict about it. The contract is therefore not equal field sets but agreement
+// on every field they SHARE — a lint subject that renamed `status`, or reported
+// a different id, would send a caller correlating the two to the wrong row.
+func TestParity_WorkflowGetVersusLint(t *testing.T) {
+	w := Workflow{
+		ID: "6a91dbe9b09eb80001cdd2f6", Name: "probe", Status: StatusActive,
+		TriggerType: TriggerEvents, ExecutionRoleID: "role-1",
+		DSL: json.RawMessage(`{"schedule":{"on":{"one":{"with":{"source":"jc_events","type":"user_create"}}}},
+		  "do":[{"a":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}}]}`),
+	}
+
+	sub, _, ok := LintWorkflow(w)
+	if !ok {
+		t.Fatalf("the workflow should lint: %s", sub.Skipped)
+	}
+
+	// Shared fields must agree in NAME and in VALUE.
+	for _, c := range []struct {
+		field     string
+		get, lint any
+	}{
+		{"id", w.ID, sub.ID},
+		{"name", w.Name, sub.Name},
+		{"status", w.Status, sub.Status},
+	} {
+		if c.get != c.lint {
+			t.Errorf("%s: workflows_get says %v, lint says %v", c.field, c.get, c.lint)
+		}
+	}
+
+	// The lint subject's JSON must spell those fields the way the workflow
+	// does, or correlating the two means translating between vocabularies —
+	// the defect that made lint say kind "template (jc corrected)" while the
+	// template list said source "jc".
+	subKeys := map[string]bool{}
+	for _, k := range keysOf(t, sub) {
+		subKeys[k] = true
+	}
+	for _, shared := range []string{"id", "name", "status"} {
+		if !subKeys[shared] {
+			t.Errorf("lint does not emit %q, so a caller cannot correlate it with workflows_get", shared)
+		}
+	}
+
+	// And a workflow is not a template: it must claim no template source.
+	if sub.Source != "" {
+		t.Errorf("a workflow has no template source, got %q", sub.Source)
+	}
+	if sub.Kind != "workflow" {
+		t.Errorf("kind = %q, want workflow", sub.Kind)
+	}
+}
+
+// An unparseable workflow must be reported, never silently counted as clean —
+// the same rule the summary already enforces, asserted at the constructor.
+func TestParity_UnparseableWorkflowIsSkippedNotClean(t *testing.T) {
+	sub, _, ok := LintWorkflow(Workflow{ID: "w1", Name: "broken", Status: StatusActive,
+		DSL: json.RawMessage(`{"do": "not a list"}`)})
+	if ok {
+		t.Fatal("a DSL that cannot be parsed must not report as linted")
+	}
+	if sub.Skipped == "" {
+		t.Error("the subject must say why it was not checked")
+	}
+	if got := Summarize([]LintSubject{sub}); got.Clean != 0 || got.Skipped != 1 {
+		t.Errorf("clean=%d skipped=%d, want 0 and 1", got.Clean, got.Skipped)
+	}
+}

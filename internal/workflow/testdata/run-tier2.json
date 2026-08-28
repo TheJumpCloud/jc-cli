@@ -1,0 +1,41 @@
+{
+  "id": "6b10726f-c9cb-407f-9e76-f7eadd46123e",
+  "status": "failed",
+  "executionDetails": {
+    "nodes": [
+      {
+        "name": "__trigger",
+        "type": "trigger",
+        "success": true,
+        "is_executed": true,
+        "message": "Workflow invoked."
+      },
+      {
+        "name": "expectFailure",
+        "type": "jc_operation",
+        "success": false,
+        "is_executed": true,
+        "message": "Action 'expectFailure' failed: request to https://console.jumpcloud.com/api/systemusers/000000000000000000000000 failed with 404 Not Found",
+        "node_output": {
+          "method": "GET",
+          "status": 404,
+          "url": "https://console.jumpcloud.com/api/systemusers/000000000000000000000000"
+        }
+      },
+      {
+        "name": "unguardedNextStep",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": false,
+        "message": "Not executed \u2014 workflow failed at a prior task."
+      },
+      {
+        "name": "guardedNextStep",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": false,
+        "message": "Not executed \u2014 workflow failed at a prior task."
+      }
+    ]
+  }
+}
