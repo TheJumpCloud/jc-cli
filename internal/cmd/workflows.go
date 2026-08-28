@@ -223,9 +223,14 @@ not scoped under a workflow.`,
 		Short: "Get a workflow run by ID",
 		Long: `Get one workflow run.
 
-A completed run carries a per-step execution trace: what each step called, the
-HTTP status it got back, and which step failed. Use --trace for a readable
-summary of that instead of the full document.`,
+A completed run carries a full per-step execution trace: the method, URL and
+status each step called, AND the complete response body. Intermediate state is
+therefore directly inspectable — it does not have to be exfiltrated through an
+email step to be seen.
+
+A failing step halts the run: everything after it is reported as not executed.
+
+Use --trace for a readable summary instead of the full document.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := newV2Client()

@@ -507,3 +507,75 @@ func TestOperation_PermittedBy(t *testing.T) {
 		t.Error("an unrelated scope must not permit it")
 	}
 }
+
+// A task after a switch that no branch targets never runs. Confirmed live:
+// such a task did not appear in the run trace at all, which is
+// indistinguishable from a step whose condition simply did not match.
+func TestValidate_WarnsOnUnreachableTask(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"route": {"switch": [
+	       {"hit": {"when": "${ input.x == 1 }", "then": "handled"}},
+	       {"default": {"then": "handled"}}]}},
+	    {"orphan": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
+	    {"handled": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+
+	// Unreachability is a warning: the workflow is well-formed, just partly dead.
+	if !r.OK() {
+		t.Fatalf("unreachability must not make the document invalid: %v", r.Errors())
+	}
+	if !hasMessage(r, `task "orphan" is unreachable`) {
+		t.Errorf("the orphan should be flagged: %v", r.Findings)
+	}
+	// The task the switch DOES target must not be flagged.
+	if hasMessage(r, `task "handled" is unreachable`) {
+		t.Errorf("a jump target is reachable: %v", r.Findings)
+	}
+}
+
+// Plain sequential tasks fall through and are all reachable.
+func TestValidate_SequentialTasksAreReachable(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"first": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
+	    {"second": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
+	    {"third": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+	if hasMessage(r, "unreachable") {
+		t.Errorf("fall-through tasks are reachable: %v", r.Findings)
+	}
+}
+
+// A then chain that reaches every task must not warn — the check is
+// conservative on purpose, and a false unreachability warning is worse than
+// none.
+func TestValidate_ThenChainIsReachable(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "b"}},
+	    {"b": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+	if hasMessage(r, "unreachable") {
+		t.Errorf("a then target is reachable: %v", r.Findings)
+	}
+}
+
+// Every shipped template must stay silent: they are the only worked examples,
+// and warning on them would train people to ignore the warning.
+func TestValidate_ReachabilityQuietOnRealTemplateShapes(t *testing.T) {
+	// The shape used by "Wipe Device and Reset Asset Status": a switch whose
+	// branches target the tasks that follow it, in order.
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "association_change"}}}},
+	  "do": [
+	    {"route": {"switch": [
+	       {"isMac": {"when": "${ input.os == \"mac\" }", "then": "macPath"}},
+	       {"default": {"then": "otherPath"}}]}},
+	    {"macPath": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "common"}},
+	    {"otherPath": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "common"}},
+	    {"common": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+	if hasMessage(r, "unreachable") {
+		t.Errorf("a normal switch-and-converge shape must not warn: %v", r.Findings)
+	}
+}

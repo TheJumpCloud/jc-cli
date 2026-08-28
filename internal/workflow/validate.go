@@ -110,6 +110,7 @@ func Validate(d DSL) Result {
 
 	tasks := d.Tasks()
 	validateTasks(d, tasks, add)
+	checkReachability(tasks, add)
 	validateExpressions(d, trigger, tasks, add)
 	validatePlaceholders(d, add)
 
@@ -560,4 +561,83 @@ func ValidateWithRole(d DSL, roleName string, roleScopes []string) Result {
 		})
 	}
 	return r
+}
+
+// checkReachability warns about tasks nothing can reach.
+//
+// Execution follows the jump graph, not array order: a switch that routes past
+// its neighbours skips them entirely. That was confirmed live — a task
+// positioned after a switch, targeted by no branch, never appeared in the run
+// trace at all. Such a task validates clean today and silently never runs,
+// which is indistinguishable from a step whose condition simply did not match.
+//
+// The rule is deliberately conservative, flagging only what is definitely
+// unreachable: a task that is not first, is the target of no jump, and whose
+// predecessor unconditionally jumps elsewhere. Anything subtler is left alone
+// rather than risk warning about a task that does run.
+func checkReachability(tasks []Task, add func(Severity, string, string, string)) {
+	// Only reason about top-level tasks. Loop bodies have their own ordering
+	// and no jumps into them.
+	var top []Task
+	for _, t := range tasks {
+		if t.Depth == 0 {
+			top = append(top, t)
+		}
+	}
+	if len(top) < 2 {
+		return
+	}
+
+	targeted := map[string]bool{}
+	for _, t := range top {
+		if t.Body == nil {
+			continue
+		}
+		if then, ok := t.Body["then"].(string); ok && !ControlTargets[then] {
+			targeted[then] = true
+		}
+		if branches, ok := t.Body["switch"].([]any); ok {
+			for _, rawBranch := range branches {
+				branch, ok := rawBranch.(map[string]any)
+				if !ok {
+					continue
+				}
+				for _, rawCase := range branch {
+					c, ok := rawCase.(map[string]any)
+					if !ok {
+						continue
+					}
+					if then, ok := c["then"].(string); ok && !ControlTargets[then] {
+						targeted[then] = true
+					}
+				}
+			}
+		}
+	}
+
+	// jumpsAway reports whether a task always transfers control elsewhere, so
+	// the task after it is never reached by fall-through.
+	jumpsAway := func(t Task) bool {
+		if t.Body == nil {
+			return false
+		}
+		if _, ok := t.Body["switch"]; ok {
+			return true
+		}
+		if then, ok := t.Body["then"].(string); ok {
+			return then != "" && then != "continue"
+		}
+		return false
+	}
+
+	for i := 1; i < len(top); i++ {
+		t := top[i]
+		if targeted[t.Name] || !jumpsAway(top[i-1]) {
+			continue
+		}
+		add(Warning, t.Path,
+			fmt.Sprintf("task %q is unreachable: %q jumps elsewhere and no then targets it",
+				t.Name, top[i-1].Name),
+			"give it a then target, or move it — execution follows the jump graph, not array order, so it will silently never run")
+	}
 }
