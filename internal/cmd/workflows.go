@@ -1482,7 +1482,7 @@ invalid — which is why validate warns rather than rejects.`,
 }
 
 func newWorkflowsSimulateCmd() *cobra.Command {
-	var dataFlag string
+	var dataFlag, compareRun string
 
 	cmd := &cobra.Command{
 		Use:   "simulate <file>",
@@ -1500,7 +1500,16 @@ it is usable with read-only access.
 
 It is a plan, NOT a prediction of engine behaviour. Branch selection,
 halt-on-error and expression semantics here are this tool's reading of the DSL,
-not observations of JumpCloud's runtime. Verify behaviour with a real run.`,
+not observations of JumpCloud's runtime.
+
+--compare-run <run-id> is how you check that reading against reality. It holds
+the plan next to a real run's trace and reports, per task, where the two agree
+and where they do not. The direction worth acting on is "ran-but-planned-skip":
+the workflow touched something the plan said it would not.
+
+Divergence is not automatically a bug here. A guard that reads a prior step's
+response body cannot be evaluated without one, and the plan reports that as
+unresolved rather than guessing — those are excluded from the divergence count.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			doc, err := loadWorkflowDoc(cmd, args[0])
@@ -1517,6 +1526,10 @@ not observations of JumpCloud's runtime. Verify behaviour with a real run.`,
 			res, err := workflow.SimulateRaw(doc.DSL, input)
 			if err != nil {
 				return err
+			}
+
+			if compareRun != "" {
+				return compareSimToRun(cmd, res, compareRun)
 			}
 
 			opts := output.CurrentOptions()
@@ -1553,7 +1566,10 @@ not observations of JumpCloud's runtime. Verify behaviour with a real run.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dataFlag, "data", "", "Trigger input as a JSON object, referenced in the DSL as ${ input.<field> }")
+	cmd.Flags().StringVar(&compareRun, "compare-run", "",
+		"Compare this plan against a real run's trace, by run ID")
+	cmd.Flags().StringVar(&dataFlag, "data", "",
+		"Input to resolve ${ input.<field> } against, as a JSON object")
 	return cmd
 }
 
@@ -1945,5 +1961,62 @@ func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d checked: %d clean, %d with errors, %d with warnings, %d not checked ──\n",
 		summary.Checked, summary.Clean, summary.Errors, summary.Warnings, summary.Skipped)
+	return nil
+}
+
+// compareSimToRun measures a plan against a real run and reports the diff.
+func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	raw, err := client.Get(cmd.Context(), workflow.RunEndpoint(runID))
+	if err != nil {
+		return fmt.Errorf("reading run %s: %w", runID, err)
+	}
+	run, err := workflow.ParseRun(raw)
+	if err != nil {
+		return err
+	}
+	if len(run.ExecutionDetails.Nodes) == 0 {
+		return fmt.Errorf("run %s carries no execution trace, so there is nothing to compare "+
+			"(a run still in progress has none yet)", runID)
+	}
+
+	cmp := workflow.CompareRun(sim, run)
+
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		out, err := json.MarshalIndent(cmp, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	for _, tc := range cmp.Tasks {
+		line := fmt.Sprintf("  [%-23s] %-24s", tc.Verdict, tc.Task)
+		if tc.Status != 0 {
+			line += fmt.Sprintf(" → %d", tc.Status)
+		}
+		if tc.Verdict == workflow.VerdictAgree {
+			fmt.Fprintln(out, line)
+			continue
+		}
+		fmt.Fprintln(out, style.Error.Render(line))
+		if tc.Detail != "" {
+			fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(tc.Detail))
+		}
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n── %d agree, %d diverge, %d unresolved in the plan ──\n",
+		cmp.Agree, cmp.Diverge, cmp.Unresolved)
+	if cmp.RunHalted {
+		fmt.Fprintf(w, "The run halted at %q; tasks after it were never reached.\n", cmp.HaltedAt)
+	}
+	fmt.Fprintf(w, "%s\n", cmp.Caveat)
 	return nil
 }

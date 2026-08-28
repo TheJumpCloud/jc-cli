@@ -676,6 +676,49 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
+	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. NOTE the run trace does not mark skipped steps with is_executed (a skipped node still carries is_executed=true and success=true); only the message distinguishes them, and this tool reads it correctly. Read-only: it fetches one run and runs nothing.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfCompareRunInput) (*mcp.CallToolResult, any, error) {
+			raw, err := dslRaw(args.DSL)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if len(raw) == 0 {
+				return errorResult("no dsl given"), nil, nil
+			}
+			if args.RunID == "" {
+				return errorResult("run_id is required"), nil, nil
+			}
+
+			sim, err := workflow.SimulateRaw(raw, args.Input)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			rawRun, err := client.Get(ctx, workflow.RunEndpoint(args.RunID))
+			if err != nil {
+				return errorResult(fmt.Sprintf("reading run %s: %v", args.RunID, err)), nil, nil
+			}
+			run, err := workflow.ParseRun(rawRun)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if len(run.ExecutionDetails.Nodes) == 0 {
+				return errorResult(fmt.Sprintf("run %s carries no execution trace, so there is nothing to "+
+					"compare (a run still in progress has none yet)", args.RunID)), nil, nil
+			}
+
+			res, jerr := jsonResult(workflow.CompareRun(sim, run))
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
 	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
 			matches := workflow.EventTypes(args.Service, args.Search)
@@ -1116,4 +1159,10 @@ var roleScopesFunc = func(ctx context.Context, roleID string) (string, []string,
 		role.Name = roleID
 	}
 	return role.Name, role.Scopes, nil
+}
+
+type wfCompareRunInput struct {
+	DSL   map[string]any `json:"dsl" jsonschema:"The workflow DSL document to plan"`
+	RunID string         `json:"run_id" jsonschema:"The id of a completed run to compare the plan against"`
+	Input map[string]any `json:"input,omitempty" jsonschema:"Input to resolve ${ input.<field> } against"`
 }

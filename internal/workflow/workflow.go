@@ -146,9 +146,13 @@ type RunNode struct {
 
 // Describe renders one step of a run trace as a single line.
 func (n RunNode) Describe() string {
+	// is_executed does NOT mean "did its work": a node excluded by a guard
+	// still carries is_executed=true and success=true, and only the message
+	// says so. Observed in a run where a task guarded on `1 == 2` reported
+	// "Skipping — if condition did not match" alongside both flags true.
 	mark := "ok"
 	switch {
-	case !n.IsExecuted:
+	case !n.IsExecuted, n.Skipped():
 		mark = "skipped"
 	case !n.Success:
 		mark = "FAILED"

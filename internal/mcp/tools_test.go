@@ -404,6 +404,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"workflows_simulate",
 		"workflows_health",
 		"workflows_lint",
+		"workflows_compare_run",
 		"workflows_validate",
 		"workflows_explain",
 		"workflows_create",
@@ -506,8 +507,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 316 {
-		t.Errorf("expected 316 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 317 {
+		t.Errorf("expected 317 tools, got %d", len(result.Tools))
 	}
 }
 
