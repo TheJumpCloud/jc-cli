@@ -56,6 +56,7 @@ connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` a
 	cmd.AddCommand(newWorkflowsEventTypesCmd())
 	cmd.AddCommand(newWorkflowsSimulateCmd())
 	cmd.AddCommand(newWorkflowsHealthCmd())
+	cmd.AddCommand(newWorkflowsLintCmd())
 	cmd.AddCommand(newWorkflowsValidateCmd())
 	cmd.AddCommand(newWorkflowsExplainCmd())
 
@@ -440,6 +441,14 @@ with what each one expects, so stdout stays pipeable either way.
 						strings.TrimPrefix(m, "REPLACE_WITH_"), k.Describe, hint)
 				}
 			}
+
+			// Validate what was just emitted. A template is the only worked
+			// example most operators will see, so handing one over without
+			// saying it has problems teaches the problems. Findings go to
+			// stderr and do not fail the command: the file is still the right
+			// starting point, and the markers left in it produce findings of
+			// their own that would otherwise drown the real ones.
+			reportTemplateFindings(cmd, t.Name, workflow.Validate(filled))
 			return nil
 		},
 	}
@@ -450,6 +459,24 @@ with what each one expects, so stdout stays pipeable either way.
 
 	cmd.AddCommand(list, show, initCmd)
 	return cmd
+}
+
+// reportTemplateFindings prints what is wrong with a template that was just
+// emitted, ignoring the findings that only exist because markers are still in
+// place. Those are expected at this point and would bury the ones that are
+// not — a template's own defects, which the operator is about to inherit.
+func reportTemplateFindings(cmd *cobra.Command, name string, res workflow.Result) {
+	real := workflow.WithoutPlaceholderFindings(res).Findings
+	if len(real) == 0 {
+		return
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n%d finding(s) in the template itself, which you are about to inherit:\n", len(real))
+	for _, f := range real {
+		fmt.Fprintf(w, "  %s\n", f.String())
+	}
+	fmt.Fprintf(w, "\nRun: jc workflows validate --template %q\n", name)
 }
 
 // findTemplate resolves a template by ID or name against the served catalog.
@@ -575,11 +602,11 @@ func loadWorkflowDoc(cmd *cobra.Command, path string) (workflowDoc, error) {
 }
 
 func newWorkflowsValidateCmd() *cobra.Command {
-	var roleFlag string
+	var roleFlag, templateFlag string
 
 	cmd := &cobra.Command{
-		Use:   "validate <file>",
-		Short: "Validate a workflow DSL file locally",
+		Use:   "validate [file]",
+		Short: "Validate a workflow DSL file, a template, or a saved workflow",
 		Long: `Check a workflow file before it reaches the API.
 
 JumpCloud accepts a malformed DSL and fails only when the workflow runs, so
@@ -596,10 +623,39 @@ may call it, so a destructive operationId passes silently.
 Scope findings are warnings, not errors: the spec's scope list is a lower
 bound, and the API has been observed to accept a scope the spec omits.
 
-Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
-		Args: cobra.ExactArgs(1),
+Use "-" to read from stdin. With --template, a template from the served
+catalog is validated instead of a file — worth doing before copying one,
+since the templates are the only worked examples of a DSL that has no
+published schema.
+
+Exits non-zero when the workflow is invalid. To check everything on the
+tenant at once, use "jc workflows lint".`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			doc, err := loadWorkflowDoc(cmd, args[0])
+			source := ""
+			var doc workflowDoc
+			var err error
+
+			switch {
+			case templateFlag != "" && len(args) > 0:
+				return fmt.Errorf("give either a file or --template, not both")
+			case templateFlag != "":
+				client, cerr := newV2Client()
+				if cerr != nil {
+					return cerr
+				}
+				t, terr := findTemplate(cmd.Context(), client, templateFlag)
+				if terr != nil {
+					return terr
+				}
+				source = "template " + t.Name
+				doc = workflowDoc{Name: t.Name, DSL: t.DSL}
+			case len(args) == 0:
+				return fmt.Errorf("give a workflow file, or --template <name-or-id>")
+			default:
+				source = args[0]
+				doc, err = loadWorkflowDoc(cmd, args[0])
+			}
 			if err != nil {
 				return err
 			}
@@ -617,9 +673,28 @@ Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
 				res = workflow.ValidateWithRole(d, name, scopes)
 			}
 
+			if templateFlag != "" {
+				// A template is SUPPOSED to have placeholders, so counting
+				// them as errors would call every template invalid — and
+				// would contradict "jc workflows lint --templates", which
+				// does not. Report them as work to do, not as defects.
+				markers := d.PlaceholderMarkers()
+				res = workflow.WithoutPlaceholderFindings(res)
+				writeValidationReport(cmd, res)
+				if len(markers) > 0 && output.CurrentOptions().Format != "json" {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"\n%d placeholder(s) to fill before this can be created; "+
+							"\"jc workflows templates init\" lists what each expects.\n", len(markers))
+				}
+				if !res.OK() {
+					return fmt.Errorf("template %s has validation errors", doc.Name)
+				}
+				return nil
+			}
+
 			writeValidationReport(cmd, res)
 			if !res.OK() {
-				return fmt.Errorf("%s is not a valid workflow", args[0])
+				return fmt.Errorf("%s is not a valid workflow", source)
 			}
 			return nil
 		},
@@ -627,6 +702,8 @@ Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
 
 	cmd.Flags().StringVar(&roleFlag, "role", "",
 		"Also check each step against this role's API scopes (name or ID)")
+	cmd.Flags().StringVar(&templateFlag, "template", "",
+		"Validate a template from the served catalog instead of a file (name or ID)")
 
 	return cmd
 }
@@ -1591,5 +1668,224 @@ func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d workflows over %d days; %d never fired despite their event occurring ──\n",
 		len(reports), days, broken)
+	return nil
+}
+
+func newWorkflowsLintCmd() *cobra.Command {
+	var (
+		templatesOnly bool
+		includeAll    bool
+		checkScopes   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "lint",
+		Short: "Validate every workflow on the tenant, and the template catalog",
+		Long: `Run the full validator across everything at once.
+
+"jc workflows validate <file>" answers "is this one right?". On a live tenant
+the more useful question is "which of the things already running are wrong?",
+and nobody asks it, because answering it by hand means exporting every
+workflow and validating each in turn.
+
+With --templates, the served template catalog is linted instead. That matters
+more than it sounds: the DSL has no published schema, so templates are the
+only worked examples, and an idiom that appears in one gets copied into real
+workflows. Linting the catalog says which examples are actually safe to copy.
+
+With --scopes, each workflow is additionally checked against ITS OWN execution
+role — the role it will really run as, not one named on the command line.
+
+This catches drift, not typos. The API does reject a workflow at CREATE time
+if its role lacks a scope ("The Read Only role does not have sufficient
+permissions ... requires one of: users, users.delete"), so a newly created
+workflow is already consistent. What nothing rechecks is what happens
+afterwards: a role edited to drop a scope leaves every workflow running under
+it silently broken, and it will fail at run time instead.
+
+Exits non-zero if anything has an error.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+
+			var subjects []workflow.LintSubject
+			if !templatesOnly || includeAll {
+				subs, err := lintWorkflows(cmd.Context(), client, checkScopes)
+				if err != nil {
+					return err
+				}
+				subjects = append(subjects, subs...)
+			}
+			if templatesOnly || includeAll {
+				subs, err := lintTemplates(cmd.Context(), client)
+				if err != nil {
+					return err
+				}
+				subjects = append(subjects, subs...)
+			}
+
+			summary := workflow.Summarize(subjects)
+			if err := writeLintReport(cmd, summary); err != nil {
+				return err
+			}
+			if summary.Errors > 0 {
+				return fmt.Errorf("%d of %d have validation errors", summary.Errors, summary.Checked)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&templatesOnly, "templates", false,
+		"Lint the served template catalog instead of the tenant's workflows")
+	cmd.Flags().BoolVar(&includeAll, "all", false, "Lint both the workflows and the templates")
+	cmd.Flags().BoolVar(&checkScopes, "scopes", false,
+		"Also check each workflow against its own execution role's API scopes")
+
+	return cmd
+}
+
+func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) ([]workflow.LintSubject, error) {
+	raw, err := client.Get(ctx, workflow.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := workflow.ParseList(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	// Roles are cached across workflows: several commonly share one, and each
+	// lookup is a live request.
+	type roleInfo struct {
+		name   string
+		scopes []string
+	}
+	roles := map[string]roleInfo{}
+
+	subjects := make([]workflow.LintSubject, 0, len(rows))
+	for _, row := range rows {
+		w, err := workflow.ParseWorkflow(row)
+		if err != nil {
+			subjects = append(subjects, workflow.LintSubject{
+				Kind: "workflow", Skipped: "workflow could not be parsed: " + err.Error()})
+			continue
+		}
+
+		sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
+		d, err := workflow.ParseDSL(w.DSL)
+		if err != nil {
+			sub.Skipped = "dsl could not be parsed: " + err.Error()
+			subjects = append(subjects, sub)
+			continue
+		}
+
+		sub.Result = workflow.Validate(d)
+		if checkScopes && w.ExecutionRoleID != "" {
+			info, ok := roles[w.ExecutionRoleID]
+			if !ok {
+				name, scopes, rerr := lookupRoleScopes(ctx, w.ExecutionRoleID)
+				if rerr != nil {
+					// A role that cannot be read is worth saying so about,
+					// but it must not abort the sweep — the other workflows
+					// still have findings worth having.
+					sub.Result.Findings = append(sub.Result.Findings, workflow.Finding{
+						Severity: workflow.Warning,
+						Path:     "execution_role_id",
+						Message:  "could not read the execution role, so its scopes were not checked",
+						Hint:     rerr.Error(),
+					})
+					subjects = append(subjects, sub)
+					continue
+				}
+				info = roleInfo{name: name, scopes: scopes}
+				roles[w.ExecutionRoleID] = info
+			}
+			sub.Role = info.name
+			sub.Result = workflow.ValidateWithRole(d, info.name, info.scopes)
+		}
+		subjects = append(subjects, sub)
+	}
+	return subjects, nil
+}
+
+func lintTemplates(ctx context.Context, client *api.V2Client) ([]workflow.LintSubject, error) {
+	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	templates, err := workflow.ParseTemplates(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	subjects := make([]workflow.LintSubject, 0, len(templates))
+	for _, t := range templates {
+		sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
+		d, err := workflow.ParseDSL(t.DSL)
+		if err != nil {
+			sub.Skipped = "dsl could not be parsed: " + err.Error()
+			subjects = append(subjects, sub)
+			continue
+		}
+		// Placeholders are expected in a template, so they are not counted
+		// against it — see WithoutPlaceholderFindings.
+		sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
+		subjects = append(subjects, sub)
+	}
+	return subjects, nil
+}
+
+func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		raw, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	if summary.Checked == 0 {
+		fmt.Fprintln(out, "Nothing to lint.")
+		return nil
+	}
+
+	for _, sub := range summary.Subjects {
+		name := sub.Name
+		if name == "" {
+			name = sub.ID
+		}
+		head := fmt.Sprintf("%s %s", sub.Kind, name)
+		if sub.Status != "" {
+			head += " (" + sub.Status + ")"
+		}
+		if sub.Role != "" {
+			head += " as " + sub.Role
+		}
+
+		switch {
+		case sub.Skipped != "":
+			fmt.Fprintf(out, "%s — %s\n", head, style.Subtitle.Render("not checked: "+sub.Skipped))
+			continue
+		case sub.Errors() > 0:
+			fmt.Fprintln(out, style.Error.Render(head))
+		case sub.Warnings() > 0:
+			fmt.Fprintln(out, head)
+		default:
+			fmt.Fprintf(out, "%s — %s\n", head, style.Subtitle.Render("clean"))
+			continue
+		}
+		for _, f := range sub.Result.Findings {
+			fmt.Fprintf(out, "    %s\n", f.String())
+		}
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d checked: %d clean, %d with errors, %d with warnings, %d not checked ──\n",
+		summary.Checked, summary.Clean, summary.Errors, summary.Warnings, summary.Skipped)
 	return nil
 }

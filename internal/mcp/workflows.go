@@ -552,6 +552,106 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
+	addTypedTool(s, "workflows_lint", "Validate EVERY workflow on the tenant at once, and optionally the served template catalog. workflows_validate answers \"is this one document right?\"; this answers \"which of the things already running are wrong?\" — the question nobody asks, because by hand it means exporting every workflow and checking each in turn. JumpCloud accepts a malformed DSL and fails only at run time, so a broken workflow sits there looking healthy. Set templates to lint the catalog instead: the DSL has no published schema, so templates are the only worked examples, and an idiom that appears in one gets copied into real workflows — linting them says which examples are safe to copy. Set scopes to also check each workflow against ITS OWN execution role, the role it will really run as — this catches DRIFT rather than typos, since the API already rejects a scope-short workflow at create time, but nothing rechecks after a role is edited to drop a scope, which leaves every workflow under it failing at run time. Results are ordered worst-first. Read-only.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfLintInput) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+
+			var subjects []workflow.LintSubject
+
+			if !args.Templates || args.All {
+				raw, gerr := client.Get(ctx, workflow.Endpoint)
+				if gerr != nil {
+					return errorResult(fmt.Sprintf("listing workflows: %v", gerr)), nil, nil
+				}
+				rows, perr := workflow.ParseList(raw)
+				if perr != nil {
+					return errorResult(perr.Error()), nil, nil
+				}
+
+				// Roles are cached: several workflows commonly share one.
+				type roleInfo struct {
+					name   string
+					scopes []string
+				}
+				roles := map[string]roleInfo{}
+
+				for _, row := range rows {
+					w, werr := workflow.ParseWorkflow(row)
+					if werr != nil {
+						subjects = append(subjects, workflow.LintSubject{
+							Kind: "workflow", Skipped: "workflow could not be parsed: " + werr.Error()})
+						continue
+					}
+					sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
+					d, derr := workflow.ParseDSL(w.DSL)
+					if derr != nil {
+						sub.Skipped = "dsl could not be parsed: " + derr.Error()
+						subjects = append(subjects, sub)
+						continue
+					}
+					sub.Result = workflow.Validate(d)
+
+					if args.Scopes && w.ExecutionRoleID != "" {
+						info, ok := roles[w.ExecutionRoleID]
+						if !ok {
+							name, scopes, rerr := roleScopesFunc(ctx, w.ExecutionRoleID)
+							if rerr != nil {
+								// One unreadable role must not abort the
+								// sweep; the other findings still matter.
+								sub.Result.Findings = append(sub.Result.Findings, workflow.Finding{
+									Severity: workflow.Warning,
+									Path:     "execution_role_id",
+									Message:  "could not read the execution role, so its scopes were not checked",
+									Hint:     rerr.Error(),
+								})
+								subjects = append(subjects, sub)
+								continue
+							}
+							info = roleInfo{name: name, scopes: scopes}
+							roles[w.ExecutionRoleID] = info
+						}
+						sub.Role = info.name
+						sub.Result = workflow.ValidateWithRole(d, info.name, info.scopes)
+					}
+					subjects = append(subjects, sub)
+				}
+			}
+
+			if args.Templates || args.All {
+				raw, gerr := client.Get(ctx, workflow.TemplatesEndpoint)
+				if gerr != nil {
+					return errorResult(fmt.Sprintf("listing templates: %v", gerr)), nil, nil
+				}
+				templates, perr := workflow.ParseTemplates(raw)
+				if perr != nil {
+					return errorResult(perr.Error()), nil, nil
+				}
+				for _, t := range templates {
+					sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
+					d, derr := workflow.ParseDSL(t.DSL)
+					if derr != nil {
+						sub.Skipped = "dsl could not be parsed: " + derr.Error()
+						subjects = append(subjects, sub)
+						continue
+					}
+					// Placeholders are expected in a template, so they are
+					// not counted against it.
+					sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
+					subjects = append(subjects, sub)
+				}
+			}
+
+			res, jerr := jsonResult(workflow.Summarize(subjects))
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
 	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
 			matches := workflow.EventTypes(args.Service, args.Search)
@@ -962,4 +1062,34 @@ func (s *Server) registerWorkflowTools() {
 
 type wfHealthInput struct {
 	Days int `json:"days,omitempty" jsonschema:"How many days of event history to compare against (default 7)"`
+}
+
+type wfLintInput struct {
+	Templates bool `json:"templates,omitempty" jsonschema:"Lint the served template catalog instead of the tenant's workflows"`
+	All       bool `json:"all,omitempty" jsonschema:"Lint both the workflows and the templates"`
+	Scopes    bool `json:"scopes,omitempty" jsonschema:"Also check each workflow against its own execution role's API scopes"`
+}
+
+// roleScopesFunc reads a role's name and scopes. Indirected so tests can
+// supply scopes without a live roles endpoint.
+var roleScopesFunc = func(ctx context.Context, roleID string) (string, []string, error) {
+	client, err := newV2ClientFunc()
+	if err != nil {
+		return "", nil, err
+	}
+	raw, err := client.Get(ctx, "/roles/"+roleID)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading role %s: %w", roleID, err)
+	}
+	var role struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil {
+		return "", nil, fmt.Errorf("decoding role: %w", err)
+	}
+	if role.Name == "" {
+		role.Name = roleID
+	}
+	return role.Name, role.Scopes, nil
 }

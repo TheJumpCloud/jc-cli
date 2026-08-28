@@ -243,6 +243,7 @@ var commandClass = map[string]string{
 	"jc workflows event-types":    ClassReadOnly,
 	"jc workflows simulate":       ClassReadOnly,
 	"jc workflows health":         ClassReadOnly,
+	"jc workflows lint":           ClassReadOnly,
 	"jc workflows validate":       ClassReadOnly,
 	"jc workflows explain":        ClassReadOnly,
 	"jc workflows create":         ClassMutating,
