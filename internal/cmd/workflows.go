@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/tui/style"
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
@@ -52,6 +53,7 @@ connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` a
 	cmd.AddCommand(newWorkflowsRunsCmd())
 	cmd.AddCommand(newWorkflowsTemplatesCmd())
 	cmd.AddCommand(newWorkflowsEventTypesCmd())
+	cmd.AddCommand(newWorkflowsSimulateCmd())
 	cmd.AddCommand(newWorkflowsValidateCmd())
 	cmd.AddCommand(newWorkflowsExplainCmd())
 
@@ -1346,5 +1348,81 @@ invalid — which is why validate warns rather than rejects.`,
 	cmd.Flags().StringVar(&service, "service", "", "Only this Directory Insights service")
 	cmd.Flags().StringVar(&search, "search", "", "Substring matched against the name and description")
 
+	return cmd
+}
+
+func newWorkflowsSimulateCmd() *cobra.Command {
+	var dataFlag string
+
+	cmd := &cobra.Command{
+		Use:   "simulate <file>",
+		Short: "Plan what a workflow would call, without running it",
+		Long: `Work out which objects a workflow would touch, and with what parameters,
+without creating it or running it.
+
+Conditions are evaluated with the same Expr engine the DSL uses and ${ }
+references are resolved against --data, so each step is reported with its real
+parameters. Reads are reported as would-call; writes, emails and connector
+calls are reported as stubbed and are never performed. Nothing is sent.
+
+This needs no created workflow, no active status and no write-capable role, so
+it is usable with read-only access.
+
+It is a plan, NOT a prediction of engine behaviour. Branch selection,
+halt-on-error and expression semantics here are this tool's reading of the DSL,
+not observations of JumpCloud's runtime. Verify behaviour with a real run.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			doc, err := loadWorkflowDoc(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			input := map[string]any{}
+			if dataFlag != "" {
+				if err := json.Unmarshal([]byte(dataFlag), &input); err != nil {
+					return fmt.Errorf("invalid --data JSON: %w", err)
+				}
+			}
+
+			res, err := workflow.SimulateRaw(doc.DSL, input)
+			if err != nil {
+				return err
+			}
+
+			opts := output.CurrentOptions()
+			if opts.Format == "json" {
+				raw, err := json.MarshalIndent(res, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+				return nil
+			}
+
+			out := cmd.OutOrStdout()
+			for _, s := range res.Steps {
+				line := fmt.Sprintf("  [%-11s] %-24s", s.Status, s.Task)
+				if s.Operation != "" {
+					line += " " + s.Operation
+				} else if s.Call != "" {
+					line += " " + s.Call
+				}
+				fmt.Fprintln(out, line)
+				if s.Why != "" {
+					fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(s.Why))
+				}
+				for _, block := range []string{"pathParams", "queryParams", "bodyParams", "recipients"} {
+					if v, ok := s.Params[block]; ok {
+						b, _ := json.Marshal(v)
+						fmt.Fprintf(out, "      %s %s\n", block+":", string(b))
+					}
+				}
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n%s\n", res.Caveat)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&dataFlag, "data", "", "Trigger input as a JSON object, referenced in the DSL as ${ input.<field> }")
 	return cmd
 }

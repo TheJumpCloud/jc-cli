@@ -40,6 +40,11 @@ type wfTemplateInitInput struct {
 	Set        map[string]string `json:"set,omitempty" jsonschema:"Fill placeholders: marker name to value. Resolvable markers accept a name (a command name, a group name) and are looked up; a 24-character ID passes through. Call without this first to see each marker's kind."`
 }
 
+type wfSimulateInput struct {
+	DSL   map[string]any `json:"dsl" jsonschema:"The workflow DSL document to plan"`
+	Input map[string]any `json:"input,omitempty" jsonschema:"Trigger input, referenced in the DSL as ${ input.<field> }"`
+}
+
 type wfValidateInput struct {
 	DSL  map[string]any `json:"dsl" jsonschema:"The workflow DSL document to validate"`
 	Role string         `json:"role,omitempty" jsonschema:"Optionally also check each step against this role's API scopes (name or ID). The execution role is the only thing between an unattended workflow and the API, so without this a destructive operationId validates silently."`
@@ -415,6 +420,27 @@ func (s *Server) registerWorkflowTools() {
 			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "workflows_simulate", "Plan what a JumpCloud workflow WOULD call, without creating or running it. Conditions are evaluated with the same Expr engine the DSL uses and ${ } references are resolved against the supplied input, so each step is reported with its real resolved parameters. Reads are reported as would-call; writes, emails and connector_operation calls are reported as stubbed and are NEVER performed — nothing is sent. Needs no created workflow, no active status and no write-capable role, so it works with read-only access. IMPORTANT: this is a plan, not a prediction of engine behaviour. Branch selection, halt-on-error and expression semantics here are this tool's reading of the DSL, not observations of JumpCloud's runtime; verify behaviour with a real run.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfSimulateInput) (*mcp.CallToolResult, any, error) {
+			raw, err := dslRaw(args.DSL)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if len(raw) == 0 {
+				return errorResult("no dsl given"), nil, nil
+			}
+			sim, err := workflow.SimulateRaw(raw, args.Input)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			res, jerr := jsonResult(sim)
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
 			}
 			return res, nil, nil
 		},

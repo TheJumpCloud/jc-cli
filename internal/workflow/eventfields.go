@@ -18,6 +18,23 @@ import (
 // 2026-08-28, plus the association fields the shipped templates rely on. It is
 // therefore a LOWER BOUND like every other catalog here — an unrecognised
 // field is a warning, never an error.
+//
+// DO NOT source this from Directory Insights. It is the obvious shortcut —
+// DI is the event stream, and `jc insights query` returns events by type
+// without touching the tenant — but the two projections differ. Compared
+// live on the same group_create event, only 10 of about 20 fields are shared:
+//
+//	DI only:      asn, error_message, id, is_out_of_bound, mfa,
+//	              target_resource, jc_application_name, jc_organization_name,
+//	              jc_initiated_by_email, jc_initiated_by_username
+//	trigger only: resource, changes, auth_method, testing_event,
+//	              jc_transformation_ts
+//
+// Most damaging: DI names it target_resource while the trigger names it
+// resource. A map built from DI would warn on input.resource — the field
+// JumpCloud's own templates use — and accept input.target_resource, which the
+// trigger does not carry. Extending this map means capturing a real trigger
+// payload for the event family, which costs a workflow run.
 
 // commonEventFields are the envelope fields observed on a real Directory
 // Insights trigger payload. Every jc_events trigger should carry these.
