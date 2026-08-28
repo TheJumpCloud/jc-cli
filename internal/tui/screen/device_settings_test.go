@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/klaassen-consulting/jc/internal/tui"
 )
 
 // startDeviceSettingsSrv stubs both singletons faithfully: the live PUTs answer
@@ -241,5 +243,65 @@ func TestADTranslationRulesEntry(t *testing.T) {
 		if v != "list" && v != "get" {
 			t.Errorf("translation rules are read-only in the TUI; got verb %q", v)
 		}
+	}
+}
+
+// TestDetail_ADKeyOpensTranslationRules exercises the KEY BINDING, not just
+// the entry helper.
+//
+// This exists because the binding was missing from the commit that claimed to
+// add it: the edit anchored on a line another branch introduced, silently did
+// nothing, and the only test at the time called adTranslationRulesEntry
+// directly — so the helper was covered while nothing reached it. A test that
+// presses the key is the one that would have failed.
+func TestDetail_ADKeyOpensTranslationRules(t *testing.T) {
+	d := NewDetailScreen(tui.ResourceEntry{
+		Key:         "ad",
+		DisplayName: "Active Directory",
+		Schema:      schema.ResourceSchema{Resource: "ad", IDField: "id", NameField: "domain"},
+	}, "ad-1", "example.com")
+	d.data = json.RawMessage(`{"id":"ad-1","domain":"example.com"}`)
+
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if cmd == nil {
+		t.Fatal("t on an AD detail screen must open its translation rules")
+	}
+	push, ok := cmd().(tui.PushScreenMsg)
+	if !ok {
+		t.Fatalf("expected a screen push, got %T", cmd())
+	}
+	list, ok := push.Screen.(*ListScreen)
+	if !ok {
+		t.Fatalf("expected a list screen, got %T", push.Screen)
+	}
+	if got := list.entry.ListEndpoint; got != "/activedirectories/ad-1/translation-rules" {
+		t.Errorf("endpoint = %q — the parent's ID must be in the path", got)
+	}
+	if list.entry.ResponseKey != "rules" {
+		t.Errorf("ResponseKey = %q, want rules", list.entry.ResponseKey)
+	}
+
+	// The hint has to be rendered too, or the key is undiscoverable: the
+	// app-level help line is fixed by nav depth.
+	if !strings.Contains(d.View(), "t  translation rules for this directory") {
+		t.Errorf("the AD detail view should advertise the key:\n%s", d.View())
+	}
+}
+
+// The key is specific to AD; it must not fire on unrelated detail screens.
+func TestDetail_ADKeyIsScopedToAD(t *testing.T) {
+	d := NewDetailScreen(tui.ResourceEntry{
+		Key:    "users",
+		Schema: schema.ResourceSchema{Resource: "users", IDField: "_id"},
+	}, "u-1", "alice")
+	d.data = json.RawMessage(`{"_id":"u-1"}`)
+
+	if _, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}); cmd != nil {
+		if _, isPush := cmd().(tui.PushScreenMsg); isPush {
+			t.Error("t must not open translation rules from a non-AD detail screen")
+		}
+	}
+	if strings.Contains(d.View(), "translation rules") {
+		t.Error("an unrelated detail screen must not advertise the AD key")
 	}
 }
