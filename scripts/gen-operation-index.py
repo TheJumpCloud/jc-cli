@@ -53,11 +53,20 @@ def main():
                 continue
             if op_id in index:
                 sys.exit(f"duplicate operationId {op_id!r} — the index assumes uniqueness")
-            index[op_id] = {
+            entry = {
                 "m": method.upper(),
                 "p": path,
                 "s": (op.get("summary") or "").strip()[:SUMMARY_MAX],
             }
+            # x-scopes lists the API scopes that permit the operation. The
+            # workflow execution role is the only thing standing between an
+            # unattended workflow and the API, so carrying these lets
+            # `jc workflows validate --role` catch a scope mismatch at author
+            # time instead of at run time.
+            scopes = op.get("x-scopes")
+            if scopes:
+                entry["sc"] = sorted(scopes)
+            index[op_id] = entry
 
     if not index:
         sys.exit("no operationIds found — wrong file?")
@@ -67,7 +76,9 @@ def main():
         f.write("\n")
 
     v2 = sum(1 for v in index.values() if v["p"].startswith("/api/v2"))
-    print(f"wrote {OUT} — {len(index)} operationIds ({v2} v2, {len(index) - v2} v1)")
+    scoped = sum(1 for v in index.values() if v.get("sc"))
+    print(f"wrote {OUT} — {len(index)} operationIds ({v2} v2, {len(index) - v2} v1), "
+          f"{scoped} with declared scopes")
 
 
 if __name__ == "__main__":

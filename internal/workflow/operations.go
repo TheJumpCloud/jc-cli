@@ -24,6 +24,26 @@ type Operation struct {
 	Method  string `json:"m"`
 	Path    string `json:"p"`
 	Summary string `json:"s"`
+	// Scopes are the API scopes that permit this operation, from the spec's
+	// x-scopes extension. Holding ANY one of them is sufficient.
+	//
+	// Treat this as a lower bound, not the whole truth: the live API rejected
+	// postApiRuncommand under a role lacking these and named a fourth scope
+	// ("systems") that the spec does not list. So a role holding one of these
+	// definitely works, while a role holding none of them may still work.
+	// That asymmetry is why the scope check warns rather than blocks.
+	Scopes []string `json:"sc,omitempty"`
+}
+
+// PermittedBy reports whether a set of role scopes covers this operation.
+// Holding any single declared scope is enough.
+func (o Operation) PermittedBy(held map[string]bool) bool {
+	for _, s := range o.Scopes {
+		if held[s] {
+			return true
+		}
+	}
+	return false
 }
 
 // APIVersion returns the JumpCloud API version the operation lives under.

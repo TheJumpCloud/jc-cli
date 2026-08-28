@@ -491,3 +491,73 @@ func compileExpr(src string, kind ExprKind) error {
 	_, err := expr.Compile(src, opts...)
 	return err
 }
+
+// ScopeGap is one step whose operation no held scope permits.
+type ScopeGap struct {
+	// Task is the step's name.
+	Task string `json:"task"`
+	// OperationID is what it calls.
+	OperationID string `json:"operation_id"`
+	// Describe renders the operation as METHOD /path.
+	Describe string `json:"describe"`
+	// Needs are the scopes that would permit it; any one suffices.
+	Needs []string `json:"needs"`
+}
+
+// CheckScopes reports the steps a role's scopes do not obviously permit.
+//
+// The execution role is the only thing between an unattended workflow and the
+// API — validation otherwise checks that an operation EXISTS, not that the
+// workflow may call it, so deleteApiSystemusersById passes silently. Comparing
+// the DSL's operations against a named role's scopes moves that from a run-time
+// surprise to an author-time finding.
+//
+// A gap is advisory, not disqualifying. The spec's x-scopes is a lower bound:
+// the live API accepted a scope for postApiRuncommand that the spec omits, so
+// a role holding none of the declared scopes may still be permitted. Reporting
+// a gap as an error would block workflows that actually work.
+func CheckScopes(d DSL, roleScopes []string) []ScopeGap {
+	held := make(map[string]bool, len(roleScopes))
+	for _, s := range roleScopes {
+		held[s] = true
+	}
+
+	var gaps []ScopeGap
+	seen := map[string]bool{}
+	for _, t := range d.Tasks() {
+		id := t.OperationID()
+		if id == "" || seen[t.Name] {
+			continue
+		}
+		seen[t.Name] = true
+
+		op, ok := LookupOperation(id)
+		if !ok || len(op.Scopes) == 0 {
+			continue
+		}
+		if op.PermittedBy(held) {
+			continue
+		}
+		gaps = append(gaps, ScopeGap{
+			Task: t.Name, OperationID: id, Describe: op.Describe(), Needs: op.Scopes,
+		})
+	}
+	return gaps
+}
+
+// ValidateWithRole runs Validate and adds a scope finding per step the role
+// does not obviously permit. roleName is used only in the message.
+func ValidateWithRole(d DSL, roleName string, roleScopes []string) Result {
+	r := Validate(d)
+	for _, g := range CheckScopes(d, roleScopes) {
+		r.Findings = append(r.Findings, Finding{
+			Severity: Warning,
+			Path:     "dsl.do." + g.Task,
+			Message: fmt.Sprintf("role %q may not permit %s (%s)",
+				roleName, g.OperationID, g.Describe),
+			Hint: "needs one of: " + strings.Join(g.Needs, ", ") +
+				" — the API is the authority; the spec's scope list is a lower bound",
+		})
+	}
+	return r
+}

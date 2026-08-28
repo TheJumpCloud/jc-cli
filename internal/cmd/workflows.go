@@ -559,6 +559,8 @@ func loadWorkflowDoc(cmd *cobra.Command, path string) (workflowDoc, error) {
 }
 
 func newWorkflowsValidateCmd() *cobra.Command {
+	var roleFlag string
+
 	cmd := &cobra.Command{
 		Use:   "validate <file>",
 		Short: "Validate a workflow DSL file locally",
@@ -570,6 +572,14 @@ silently never works. Validation covers the trigger, task structure, control
 flow, pagination, every Expr expression (compiled with the same engine), and
 every operationId (against JumpCloud's own OpenAPI operations).
 
+With --role, each step is also checked against that role's API scopes. The
+execution role is the only thing between an unattended workflow and the API —
+without this, validation confirms an operation EXISTS, not that the workflow
+may call it, so a destructive operationId passes silently.
+
+Scope findings are warnings, not errors: the spec's scope list is a lower
+bound, and the API has been observed to accept a scope the spec omits.
+
 Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -577,7 +587,20 @@ Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
 			if err != nil {
 				return err
 			}
-			res := workflow.ValidateRaw(doc.DSL)
+			d, err := workflow.ParseDSL(doc.DSL)
+			if err != nil {
+				return err
+			}
+
+			res := workflow.Validate(d)
+			if roleFlag != "" {
+				name, scopes, err := lookupRoleScopes(cmd.Context(), roleFlag)
+				if err != nil {
+					return err
+				}
+				res = workflow.ValidateWithRole(d, name, scopes)
+			}
+
 			writeValidationReport(cmd, res)
 			if !res.OK() {
 				return fmt.Errorf("%s is not a valid workflow", args[0])
@@ -585,7 +608,38 @@ Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&roleFlag, "role", "",
+		"Also check each step against this role's API scopes (name or ID)")
+
 	return cmd
+}
+
+// lookupRoleScopes resolves a role and returns its name and scope list.
+func lookupRoleScopes(ctx context.Context, identifier string) (string, []string, error) {
+	client, err := newV2Client()
+	if err != nil {
+		return "", nil, err
+	}
+	id, err := resolve.NewV2Resolver(client).Resolve(ctx, identifier, resolve.RoleConfig)
+	if err != nil {
+		return "", nil, err
+	}
+	raw, err := client.Get(ctx, "/roles/"+id)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading role %s: %w", identifier, err)
+	}
+	var role struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil {
+		return "", nil, fmt.Errorf("decoding role: %w", err)
+	}
+	if role.Name == "" {
+		role.Name = identifier
+	}
+	return role.Name, role.Scopes, nil
 }
 
 // writeValidationReport prints findings and the side-effect summary. Machine

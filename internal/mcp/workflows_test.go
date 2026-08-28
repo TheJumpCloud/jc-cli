@@ -71,6 +71,15 @@ func startWorkflowV2Server(t *testing.T) *wfMock {
 			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{
 				{"id": "role-1", "name": "Read Only"}}})
 
+		case strings.HasPrefix(p, "/roles/") && r.Method == http.MethodGet:
+			// users.readonly only. That permits getApiSystemusers (which
+			// lists it) but NOT deleteApiSystemusersById (which needs
+			// "users" or "users.delete") — the asymmetry the scope check
+			// exists to catch.
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": "role-1", "name": "Read Only",
+				"scopes": []string{"users.readonly"}})
+
 		case p == "/workflows/wf-1" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(external)
 
@@ -367,4 +376,69 @@ func mustDecode(t *testing.T, doc string) map[string]any {
 		t.Fatalf("bad test DSL: %v", err)
 	}
 	return m
+}
+
+// The scope check is the reason this exists: without it, validation confirms
+// an operation exists, not that the role may call it, so a destructive
+// operationId passes silently.
+func TestMCPWorkflows_ValidateWithRoleFlagsScopeGaps(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	destructive := mustDecode(t, `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	  "do":[{"destroy":{"call":"jc_operation","with":{"operationId":"deleteApiSystemusersById",
+	     "version":1,"pathParams":{"id":"x"}}}}]}`)
+
+	// Without a role, the destructive step draws no comment at all.
+	out := getResultText(t, callTool(t, cs, "workflows_validate", map[string]any{"dsl": destructive}))
+	if strings.Contains(out, "may not permit") {
+		t.Errorf("no role was given, so no scope finding is possible:\n%s", out)
+	}
+
+	// With one, it is named.
+	out = getResultText(t, callTool(t, cs, "workflows_validate", map[string]any{
+		"dsl": destructive, "role": "Read Only",
+	}))
+	if !strings.Contains(out, "deleteApiSystemusersById") || !strings.Contains(out, "may not permit") {
+		t.Errorf("the scope gap should be reported:\n%s", out)
+	}
+	// Advisory only — the spec's scope list is a lower bound.
+	var res struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Message  string `json:"message"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("result is not a validation report: %v\n%s", err, out)
+	}
+	for _, f := range res.Findings {
+		if strings.Contains(f.Message, "may not permit") && f.Severity != "warning" {
+			t.Errorf("a scope gap must be a warning, got %q", f.Severity)
+		}
+	}
+}
+
+// create already resolves a role, so the gaps belong in its plan — the last
+// point before a run-time permission failure.
+func TestMCPWorkflows_CreatePlanReportsScopeGaps(t *testing.T) {
+	srv := startWorkflowV2Server(t)
+	overrideV2ClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	out := getResultText(t, callTool(t, cs, "workflows_create", map[string]any{
+		"name": "destroyer", "role": "Read Only",
+		"dsl": mustDecode(t, `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+		  "do":[{"destroy":{"call":"jc_operation","with":{"operationId":"deleteApiSystemusersById",
+		     "version":1,"pathParams":{"id":"x"}}}}]}`),
+	}))
+	if !strings.Contains(out, "scope_gaps") {
+		t.Errorf("the plan should carry the scope gaps:\n%s", out)
+	}
+	if !strings.Contains(out, "the API will reject the create if so") {
+		t.Errorf("the plan should say what happens next:\n%s", out)
+	}
+	if srv.lastBody != nil {
+		t.Error("plan mode must not write")
+	}
 }

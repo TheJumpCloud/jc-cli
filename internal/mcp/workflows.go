@@ -35,7 +35,8 @@ type wfTemplateInitInput struct {
 }
 
 type wfValidateInput struct {
-	DSL map[string]any `json:"dsl" jsonschema:"The workflow DSL document to validate"`
+	DSL  map[string]any `json:"dsl" jsonschema:"The workflow DSL document to validate"`
+	Role string         `json:"role,omitempty" jsonschema:"Optionally also check each step against this role's API scopes (name or ID). The execution role is the only thing between an unattended workflow and the API, so without this a destructive operationId validates silently."`
 }
 
 type wfExplainInput struct {
@@ -149,6 +150,29 @@ func dslRaw(m map[string]any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("encoding dsl: %w", err)
 	}
 	return raw, nil
+}
+
+// roleScopes resolves a role and returns its name and scope list.
+func roleScopes(ctx context.Context, client *api.V2Client, identifier string) (string, []string, error) {
+	id, err := resolve.NewV2Resolver(client).Resolve(ctx, identifier, resolve.RoleConfig)
+	if err != nil {
+		return "", nil, err
+	}
+	raw, err := client.Get(ctx, "/roles/"+id)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading role %s: %w", identifier, err)
+	}
+	var role struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil {
+		return "", nil, fmt.Errorf("decoding role: %w", err)
+	}
+	if role.Name == "" {
+		role.Name = identifier
+	}
+	return role.Name, role.Scopes, nil
 }
 
 // resolveWorkflowPlaceholder turns a supplied value into the ID the DSL needs.
@@ -399,7 +423,24 @@ func (s *Server) registerWorkflowTools() {
 			if len(raw) == 0 {
 				return errorResult("no dsl given"), nil, nil
 			}
-			res, err := jsonResult(workflow.ValidateRaw(raw))
+
+			result := workflow.ValidateRaw(raw)
+			if args.Role != "" {
+				d, perr := workflow.ParseDSL(raw)
+				if perr != nil {
+					return errorResult(perr.Error()), nil, nil
+				}
+				client, cerr := newV2ClientFunc()
+				if cerr != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", cerr)), nil, nil
+				}
+				name, scopes, rerr := roleScopes(ctx, client, args.Role)
+				if rerr != nil {
+					return errorResult(rerr.Error()), nil, nil
+				}
+				result = workflow.ValidateWithRole(d, name, scopes)
+			}
+			res, err := jsonResult(result)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
@@ -512,13 +553,30 @@ func (s *Server) registerWorkflowTools() {
 				return errorResult(err.Error()), nil, nil
 			}
 
+			// The role is already resolved here, so the scope gaps cost
+			// nothing extra and belong in the plan: this is the last point
+			// before a run-time permission failure.
+			var scopeGaps []workflow.ScopeGap
+			if d, perr := workflow.ParseDSL(dsl); perr == nil {
+				if _, scopes, rerr := roleScopes(ctx, client, args.Role); rerr == nil {
+					scopeGaps = workflow.CheckScopes(d, scopes)
+				}
+			}
+
 			if !args.Execute {
-				return planResult("create", "workflow", args.Name, "", map[string]any{
+				plan := map[string]any{
 					"trigger":      res.TriggerType,
 					"status":       status,
 					"role":         args.Role,
 					"side_effects": res.SideEffects,
-				})
+				}
+				if len(scopeGaps) > 0 {
+					plan["scope_gaps"] = scopeGaps
+					plan["scope_warning"] = fmt.Sprintf(
+						"role %q may not permit %d of this workflow's operations; the API will reject the create if so",
+						args.Role, len(scopeGaps))
+				}
+				return planResult("create", "workflow", args.Name, "", plan)
 			}
 
 			raw, err := client.Create(ctx, workflow.Endpoint, workflow.CreateBody(workflow.Workflow{

@@ -421,3 +421,89 @@ func TestResult_ErrIsNilWhenOnlyWarnings(t *testing.T) {
 		t.Errorf("Err should carry the messages: %v", r.Err())
 	}
 }
+
+// The execution role is the security model: validation otherwise confirms an
+// operation exists, not that the workflow may call it, so a destructive
+// operationId passes silently. This is what turns that into an author-time
+// finding.
+func TestCheckScopes_FlagsWhatTheRoleCannotDo(t *testing.T) {
+	d, err := ParseDSL(json.RawMessage(`{
+	  "schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"read": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
+	    {"destroy": {"call": "jc_operation", "with": {"operationId": "deleteApiSystemusersById",
+	        "version": 1, "pathParams": {"id": "x"}}}}
+	  ]}`))
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	// A read-only scope set: permits the list, not the delete.
+	gaps := CheckScopes(d, []string{"users.readonly"})
+	if len(gaps) != 1 {
+		t.Fatalf("expected exactly the delete to be flagged, got %+v", gaps)
+	}
+	if gaps[0].Task != "destroy" || gaps[0].OperationID != "deleteApiSystemusersById" {
+		t.Errorf("wrong step flagged: %+v", gaps[0])
+	}
+	if len(gaps[0].Needs) == 0 {
+		t.Error("a gap must say which scopes would permit it")
+	}
+
+	// Holding ANY one declared scope is sufficient.
+	if gaps := CheckScopes(d, []string{"users.readonly", "users.delete"}); len(gaps) != 0 {
+		t.Errorf("users.delete should permit the delete, got %+v", gaps)
+	}
+
+	// No scopes at all flags everything with declared scopes.
+	if gaps := CheckScopes(d, nil); len(gaps) != 2 {
+		t.Errorf("an empty role should flag both steps, got %d", len(gaps))
+	}
+}
+
+// A gap is a warning, never an error: the spec's x-scopes is a lower bound —
+// the live API accepted a scope for postApiRuncommand that the spec omits — so
+// blocking on it would reject workflows that actually run.
+func TestValidateWithRole_GapsAreAdvisory(t *testing.T) {
+	d, _ := ParseDSL(json.RawMessage(`{
+	  "schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [{"destroy": {"call": "jc_operation", "with": {"operationId": "deleteApiSystemusersById",
+	      "version": 1, "pathParams": {"id": "x"}}}}]}`))
+
+	r := ValidateWithRole(d, "Read Only", []string{"users.readonly"})
+	if !r.OK() {
+		t.Errorf("a scope gap must not make the workflow invalid: %v", r.Errors())
+	}
+
+	var found bool
+	for _, f := range r.Findings {
+		if strings.Contains(f.Message, "Read Only") && strings.Contains(f.Message, "deleteApiSystemusersById") {
+			found = true
+			if f.Severity != Warning {
+				t.Errorf("severity = %v, want warning", f.Severity)
+			}
+			if !strings.Contains(f.Hint, "lower bound") {
+				t.Errorf("the hint should say the spec list is not authoritative: %q", f.Hint)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no scope finding produced: %+v", r.Findings)
+	}
+}
+
+func TestOperation_PermittedBy(t *testing.T) {
+	op, ok := LookupOperation("postApiRuncommand")
+	if !ok {
+		t.Fatal("postApiRuncommand missing")
+	}
+	if len(op.Scopes) == 0 {
+		t.Fatal("the index must carry x-scopes")
+	}
+	if !op.PermittedBy(map[string]bool{"commands": true}) {
+		t.Error("holding a declared scope must permit the operation")
+	}
+	if op.PermittedBy(map[string]bool{"unrelated.scope": true}) {
+		t.Error("an unrelated scope must not permit it")
+	}
+}
