@@ -350,21 +350,11 @@ func (s *Server) registerWorkflowTools() {
 			}
 			summaries := make([]map[string]any, 0, len(templates)+4)
 			for _, ct := range workflow.CorrectedTemplates() {
-				summaries = append(summaries, map[string]any{
-					"id": ct.ID, "name": ct.Name, "category": ct.Category,
-					"description": ct.Description, "source": "jc",
-					"corrects": ct.Corrects, "changes": ct.Changes,
-				})
+				summaries = append(summaries, workflow.CorrectedTemplateRow(ct))
 			}
 			for _, t := range templates {
-				row := map[string]any{
-					"id": t.ID, "name": t.Name, "category": t.Category,
-					"description": t.Description, "source": "jumpcloud",
-				}
-				if ct, ok := workflow.CorrectionFor(t.Name); ok {
-					row["corrected_by"] = ct.ID
-				}
-				summaries = append(summaries, row)
+				summaries = append(summaries,
+					workflow.ServedTemplateRow(t.ID, t.Name, t.Category, t.Description))
 			}
 			res, err := jsonResult(summaries)
 			if err != nil {

@@ -43,10 +43,17 @@ func WithoutPlaceholderFindings(r Result) Result {
 
 // LintSubject is one thing that was linted.
 type LintSubject struct {
-	// Kind is "workflow" or "template".
+	// Kind is "workflow" or "template" — WHAT the subject is.
 	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	// Source is "jumpcloud" or "jc" — WHO wrote it. It uses the same
+	// vocabulary as workflows_templates_list deliberately: encoding one
+	// distinction two ways (there: source, here: a "(jc corrected)" suffix on
+	// kind) made a caller consuming both tools learn two vocabularies for the
+	// same fact. Presentation may still render it prettily; the DATA says it
+	// once.
+	Source string `json:"source,omitempty"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
 	// Status and Role are set for workflows; a template has neither.
 	Status string `json:"status,omitempty"`
 	Role   string `json:"execution_role,omitempty"`
@@ -86,6 +93,10 @@ type LintSummary struct {
 	Errors   int `json:"with_errors"`
 	Warnings int `json:"with_warnings"`
 	Skipped  int `json:"skipped"`
+	// CheckedBySource breaks the total down, because a bare "16 checked" over
+	// a 12-template catalog reads as though the catalog grew. Four of those
+	// are jc's corrected duplicates of four of the twelve.
+	CheckedBySource map[string]int `json:"checked_by_source,omitempty"`
 }
 
 // Summarize computes the totals and orders subjects worst-first, so the
@@ -93,6 +104,12 @@ type LintSummary struct {
 func Summarize(subjects []LintSubject) LintSummary {
 	s := LintSummary{Subjects: subjects, Checked: len(subjects)}
 	for _, sub := range subjects {
+		if sub.Source != "" {
+			if s.CheckedBySource == nil {
+				s.CheckedBySource = map[string]int{}
+			}
+			s.CheckedBySource[sub.Source]++
+		}
 		switch {
 		case sub.Skipped != "":
 			s.Skipped++
@@ -153,7 +170,7 @@ func lintRank(s LintSubject) int {
 // reader where they started, and this sweep is where they were choosing what to
 // copy.
 func LintTemplate(id, name string, dsl json.RawMessage) LintSubject {
-	sub := LintSubject{Kind: "template", ID: id, Name: name}
+	sub := LintSubject{Kind: "template", Source: SourceJumpCloud, ID: id, Name: name}
 	d, err := ParseDSL(dsl)
 	if err != nil {
 		sub.Skipped = "dsl could not be parsed: " + err.Error()
@@ -176,7 +193,7 @@ func LintCorrected() []LintSubject {
 	all := CorrectedTemplates()
 	subjects := make([]LintSubject, 0, len(all))
 	for _, ct := range all {
-		sub := LintSubject{Kind: "template (jc corrected)", ID: ct.ID, Name: ct.Name, Corrects: ct.Corrects}
+		sub := LintSubject{Kind: "template", Source: SourceJC, ID: ct.ID, Name: ct.Name, Corrects: ct.Corrects}
 		d, err := ParseDSL(ct.DSL)
 		if err != nil {
 			sub.Skipped = "dsl could not be parsed: " + err.Error()
