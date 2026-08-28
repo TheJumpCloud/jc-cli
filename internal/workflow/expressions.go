@@ -217,3 +217,74 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 func isPaginationExpr(path string) bool {
 	return strings.Contains(path, ".pagination.") || strings.HasSuffix(path, ".with.extract")
 }
+
+// statusGuardRE finds a reference to a prior step's HTTP status.
+var statusGuardRE = regexp.MustCompile(`\bactions\.([A-Za-z_][A-Za-z0-9_]*)\.status\b`)
+
+// checkDeadStatusGuards warns about conditions that test a prior step's HTTP
+// status in a position that can never see a failure.
+//
+// A non-2xx from any jc_operation halts the whole run: verified live, where a
+// deliberate 404 on step one left both following tasks reporting
+// "Not executed — workflow failed at a prior task". So an `if` that asks
+// whether an earlier call succeeded is only ever evaluated when it did — the
+// failure branch it appears to handle is unreachable.
+//
+// This flags JumpCloud's own templates, which is correct: every one of them
+// guards downstream steps this way, and the idiom cannot work. The message
+// says so, because a warning that contradicts the only worked examples needs
+// to explain itself or it reads as a bug in the linter.
+//
+// A `when` inside a switch placed BEFORE the fallible call is the working
+// pattern and is deliberately not flagged: at that point nothing has failed.
+func checkDeadStatusGuards(d DSL, add func(Severity, string, string, string)) {
+	tasks := d.Tasks()
+
+	// Which tasks make a fallible call, and in what order.
+	position := map[string]int{}
+	fallible := map[string]bool{}
+	for i, t := range tasks {
+		if _, seen := position[t.Name]; !seen {
+			position[t.Name] = i
+		}
+		if t.Call() == CallJCOperation || t.Call() == CallConnector {
+			fallible[t.Name] = true
+		}
+	}
+
+	for _, e := range d.Expressions() {
+		// Only task-level `if` guards are dead. A switch `when` may sit
+		// before the call it guards, which is the pattern that works.
+		if !strings.HasSuffix(e.Path, ".if") {
+			continue
+		}
+		here, ok := taskIndexForPath(tasks, e.Path)
+		if !ok {
+			continue
+		}
+		for _, m := range statusGuardRE.FindAllStringSubmatch(e.Source, -1) {
+			ref := m[1]
+			refPos, known := position[ref]
+			if !known || !fallible[ref] || refPos >= here {
+				continue
+			}
+			add(Warning, e.Path,
+				fmt.Sprintf("this guard tests actions.%s.status, but a non-2xx from %q halts the run before this task is reached",
+					ref, ref),
+				"the failure branch this appears to handle is unreachable — branch with switch/when BEFORE the fallible call, "+
+					"or accept that the run fails. JumpCloud's shipped templates use this idiom too; it does not work there either")
+		}
+	}
+}
+
+// taskIndexForPath resolves an expression path to the innermost task holding
+// it. Longest match wins, as a path inside a loop body is prefixed by both.
+func taskIndexForPath(tasks []Task, path string) (int, bool) {
+	best, bestLen, found := 0, -1, false
+	for i, t := range tasks {
+		if (strings.HasPrefix(path, t.Path+".") || path == t.Path) && len(t.Path) > bestLen {
+			best, bestLen, found = i, len(t.Path), true
+		}
+	}
+	return best, found
+}

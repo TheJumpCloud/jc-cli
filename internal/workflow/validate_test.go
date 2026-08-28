@@ -508,10 +508,10 @@ func TestOperation_PermittedBy(t *testing.T) {
 	}
 }
 
-// A task after a switch that no branch targets never runs. Confirmed live:
-// such a task did not appear in the run trace at all, which is
-// indistinguishable from a step whose condition simply did not match.
-func TestValidate_WarnsOnUnreachableTask(t *testing.T) {
+// A task no branch targets still RUNS, in array order — verified live both
+// between a switch and its target and after it. The hazard is the opposite of
+// the obvious guess: a switch written to route around a step does not.
+func TestValidate_WarnsOnUntargetedTask(t *testing.T) {
 	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
 	  "do": [
 	    {"route": {"switch": [
@@ -525,12 +525,18 @@ func TestValidate_WarnsOnUnreachableTask(t *testing.T) {
 	if !r.OK() {
 		t.Fatalf("unreachability must not make the document invalid: %v", r.Errors())
 	}
-	if !hasMessage(r, `task "orphan" is unreachable`) {
-		t.Errorf("the orphan should be flagged: %v", r.Findings)
+	if !hasMessage(r, `task "orphan" is not targeted by any then`) {
+		t.Errorf("the un-targeted task should be flagged: %v", r.Findings)
 	}
-	// The task the switch DOES target must not be flagged.
-	if hasMessage(r, `task "handled" is unreachable`) {
-		t.Errorf("a jump target is reachable: %v", r.Findings)
+	// The hint must say it still executes. Saying otherwise would tell an
+	// author a destructive step was safely bypassed when it is not.
+	f, _ := findingAt(r, "orphan")
+	if !strings.Contains(f.Hint, "STILL execute") {
+		t.Errorf("hint must state that it runs anyway, got %q", f.Hint)
+	}
+	// A branch target is part of the jump graph and must not be flagged.
+	if hasMessage(r, `task "handled" is not targeted`) {
+		t.Errorf("a jump target must not be flagged: %v", r.Findings)
 	}
 }
 
@@ -542,7 +548,7 @@ func TestValidate_SequentialTasksAreReachable(t *testing.T) {
 	    {"second": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
 	    {"third": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
 	  ]}`)
-	if hasMessage(r, "unreachable") {
+	if hasMessage(r, "not targeted by any then") {
 		t.Errorf("fall-through tasks are reachable: %v", r.Findings)
 	}
 }
@@ -556,7 +562,7 @@ func TestValidate_ThenChainIsReachable(t *testing.T) {
 	    {"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "b"}},
 	    {"b": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
 	  ]}`)
-	if hasMessage(r, "unreachable") {
+	if hasMessage(r, "not targeted by any then") {
 		t.Errorf("a then target is reachable: %v", r.Findings)
 	}
 }
@@ -575,7 +581,7 @@ func TestValidate_ReachabilityQuietOnRealTemplateShapes(t *testing.T) {
 	    {"otherPath": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "common"}},
 	    {"common": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
 	  ]}`)
-	if hasMessage(r, "unreachable") {
+	if hasMessage(r, "not targeted by any then") {
 		t.Errorf("a normal switch-and-converge shape must not warn: %v", r.Findings)
 	}
 }
@@ -657,5 +663,65 @@ func TestSuggestEventType(t *testing.T) {
 	// Nonsense should not produce confident noise.
 	if got := SuggestEventType("zzzzzzzzzzzzzzzzzzzz", 3); len(got) != 0 {
 		t.Errorf("an invented name should suggest nothing, got %v", got)
+	}
+}
+
+// A non-2xx halts the whole run — verified live, where a deliberate 404 left
+// both following tasks reporting "Not executed — workflow failed at a prior
+// task". So an `if` testing whether an earlier call succeeded only ever runs
+// when it did: the failure branch it appears to handle is unreachable.
+func TestValidate_DeadStatusGuardWarns(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"fetch": {"call": "jc_operation", "with": {"operationId": "getApiSystemusersById",
+	        "version": 1, "pathParams": {"id": "${ input.id }"}}}},
+	    {"guarded": {"if": "${ actions.fetch.status == 200 }", "call": "jc_operation",
+	        "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+
+	if !r.OK() {
+		t.Fatalf("the DSL is well-formed, just built on a broken idiom: %v", r.Errors())
+	}
+	if !hasMessage(r, "halts the run before this task is reached") {
+		t.Fatalf("the dead guard should be flagged: %v", r.Findings)
+	}
+	f, _ := findingAt(r, "guarded.if")
+	// The message must own the fact that it contradicts the shipped
+	// templates, or it reads as a bug in the linter.
+	if !strings.Contains(f.Hint, "shipped templates use this idiom too") {
+		t.Errorf("hint should acknowledge the templates do this: %q", f.Hint)
+	}
+	if !strings.Contains(f.Hint, "BEFORE the fallible call") {
+		t.Errorf("hint should name the working pattern: %q", f.Hint)
+	}
+}
+
+// A switch placed BEFORE the fallible call is the pattern that works, and must
+// not be flagged.
+func TestValidate_SwitchBeforeTheCallIsNotFlagged(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"lookup": {"call": "jc_operation", "with": {"operationId": "postApiSearchSystemusers",
+	        "version": 1, "bodyParams": {"filter": {}}}}},
+	    {"route": {"switch": [
+	        {"found": {"when": "${ len(actions.lookup.body.results) > 0 }", "then": "detail"}},
+	        {"default": {"then": "detail"}}]}},
+	    {"detail": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+	if hasMessage(r, "halts the run before this task") {
+		t.Errorf("branching on a body BEFORE the fallible call is the working pattern: %v", r.Findings)
+	}
+}
+
+// Guarding on something other than a status is unrelated and must stay silent.
+func TestValidate_NonStatusGuardIsNotFlagged(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "external"}}}},
+	  "do": [
+	    {"fetch": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}},
+	    {"guarded": {"if": "${ actions.fetch.body.totalCount > 0 }", "call": "jc_operation",
+	        "with": {"operationId": "getApiSystemusers", "version": 1}}}
+	  ]}`)
+	if hasMessage(r, "halts the run before this task") {
+		t.Errorf("a body guard is legitimate — only status guards are dead: %v", r.Findings)
 	}
 }

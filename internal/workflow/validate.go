@@ -112,6 +112,7 @@ func Validate(d DSL) Result {
 	validateTasks(d, tasks, add)
 	checkReachability(tasks, add)
 	validateExpressions(d, trigger, tasks, add)
+	checkDeadStatusGuards(d, add)
 	validatePlaceholders(d, add)
 
 	r.SideEffects = d.SideEffects()
@@ -577,18 +578,23 @@ func ValidateWithRole(d DSL, roleName string, roleScopes []string) Result {
 	return r
 }
 
-// checkReachability warns about tasks nothing can reach.
+// checkReachability warns about tasks no jump targets.
 //
-// Execution follows the jump graph, not array order: a switch that routes past
-// its neighbours skips them entirely. That was confirmed live — a task
-// positioned after a switch, targeted by no branch, never appeared in the run
-// trace at all. Such a task validates clean today and silently never runs,
-// which is indistinguishable from a step whose condition simply did not match.
+// The execution model, established by live probing on 2026-08-28 with two
+// probes differing only in where the task sat relative to a switch's target:
 //
-// The rule is deliberately conservative, flagging only what is definitely
-// unreachable: a task that is not first, is the target of no jump, and whose
-// predecessor unconditionally jumps elsewhere. Anything subtler is left alone
-// rather than risk warning about a task that does run.
+//   - A task named by a `then` or a switch branch belongs to the jump graph.
+//     Only the chosen branch's target runs; the others are skipped. A switch's
+//     unchosen default target did not appear in its run trace at all.
+//   - A task named by NOTHING is not part of that graph. It executes in array
+//     order regardless of any switch around it — verified both between a
+//     switch and its target, and after it.
+//
+// So an un-targeted task is the dangerous case, and dangerous in the opposite
+// direction to the obvious guess: someone who writes a switch to route AROUND
+// a step finds it running anyway. This warns about exactly that, and the hint
+// says so — an earlier version asserted the reverse and would have told an
+// author a destructive step was safely bypassed when it was not.
 func checkReachability(tasks []Task, add func(Severity, string, string, string)) {
 	// Only reason about top-level tasks. Loop bodies have their own ordering
 	// and no jumps into them.
@@ -650,8 +656,9 @@ func checkReachability(tasks []Task, add func(Severity, string, string, string))
 			continue
 		}
 		add(Warning, t.Path,
-			fmt.Sprintf("task %q is unreachable: %q jumps elsewhere and no then targets it",
+			fmt.Sprintf("task %q is not targeted by any then, but %q jumps elsewhere",
 				t.Name, top[i-1].Name),
-			"give it a then target, or move it — execution follows the jump graph, not array order, so it will silently never run")
+			"it will STILL execute, in array order — only tasks named by a branch are skipped when that branch is not chosen. "+
+				"If you meant to route around it, move it out of the do list or give the branch an explicit then past it")
 	}
 }
