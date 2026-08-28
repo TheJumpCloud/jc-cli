@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -339,12 +340,23 @@ func TestInsightsClient_QueryEvents_WithFilter(t *testing.T) {
 		t.Fatalf("QueryEvents error: %v", err)
 	}
 
-	stf, ok := capturedBody["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This assertion used to require search_term_filter, a key Directory
+	// Insights does not read — so it passed while the filter did nothing.
+	// A test that pins the wrong wire shape protects the bug.
+	if _, dead := capturedBody["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := capturedBody["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 
@@ -454,12 +466,23 @@ func TestInsightsClient_CountEvents_WithFilter(t *testing.T) {
 		t.Errorf("count = %d, want 5", count)
 	}
 
-	stf, ok := capturedBody["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This assertion used to require search_term_filter, a key Directory
+	// Insights does not read — so it passed while the filter did nothing.
+	// A test that pins the wrong wire shape protects the bug.
+	if _, dead := capturedBody["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := capturedBody["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 
@@ -1068,5 +1091,79 @@ func TestInsightsClient_ConcurrentQuery(t *testing.T) {
 
 	for err := range errs {
 		t.Errorf("concurrent query error: %v", err)
+	}
+}
+
+// jc sent {"search_term_filter": {"event_type": "x"}}. Directory Insights has
+// no such key and ignores it SILENTLY, so every filtered Insights query — CLI,
+// MCP and TUI alike — returned unfiltered results that looked correct.
+// Verified live 2026-08-28: counts for group_create, user_create and an
+// invented event type were all identical to the unfiltered count of 977.
+//
+// This pins the wire shape rather than the Go call, because the failure was
+// invisible at the Go level: the field was set, marshalled, and sent — to a
+// key nothing reads.
+func TestInsights_SearchTermUsesTheAPIShape(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"count":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewInsightsClientWithKey("test-key")
+	c.BaseURL = srv.URL
+	if _, err := c.CountEvents(context.Background(), InsightsQuery{
+		Service:          "all",
+		StartTime:        "2026-01-01T00:00:00Z",
+		SearchTermFilter: map[string]any{"event_type": "group_create"},
+	}); err != nil {
+		t.Fatalf("CountEvents: %v", err)
+	}
+
+	if _, dead := body["search_term_filter"]; dead {
+		t.Error("search_term_filter is not a key the API reads; sending it filters nothing")
+	}
+	st, ok := body["search_term"].(map[string]any)
+	if !ok {
+		t.Fatalf("no search_term in body: %v", body)
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "group_create" || term["operator"] != "eq" {
+		t.Errorf("term = %v, want {field:event_type, operator:eq, value:group_create}", term)
+	}
+}
+
+// A list of accepted values is a membership test, not equality.
+func TestBuildSearchTerm_ListsUseIn(t *testing.T) {
+	st := buildSearchTerm(map[string]any{"event_type": []string{"a", "b"}})
+	term := st["and"].([]map[string]any)[0]
+	if term["operator"] != "in" {
+		t.Errorf("operator = %v, want in", term["operator"])
+	}
+}
+
+// Several fields become several ANDed terms, in a stable order so the same
+// filter always produces the same body.
+func TestBuildSearchTerm_MultipleFieldsAreStable(t *testing.T) {
+	st := buildSearchTerm(map[string]any{"service": "sso", "event_type": "x"})
+	terms := st["and"].([]map[string]any)
+	if len(terms) != 2 {
+		t.Fatalf("expected 2 terms, got %v", terms)
+	}
+	if terms[0]["field"] != "event_type" || terms[1]["field"] != "service" {
+		t.Errorf("terms should be field-sorted for determinism, got %v", terms)
+	}
+}
+
+func TestBuildSearchTerm_EmptyIsNil(t *testing.T) {
+	if buildSearchTerm(nil) != nil || buildSearchTerm(map[string]any{}) != nil {
+		t.Error("an empty filter must not add a search_term to the body")
 	}
 }

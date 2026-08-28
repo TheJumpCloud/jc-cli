@@ -20,11 +20,12 @@ func startInsightsServer(t *testing.T, events []map[string]any) *httptest.Server
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/insights/directory/v1/events":
-			// Basic body parse to honor the search_term_filter for tests that
-			// exercise event_type/user filtering.
+			// Decode the search_term shape the API actually reads. This mock
+			// previously honoured search_term_filter, which the API ignores —
+			// so it faithfully modelled the bug instead of the contract.
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			filter, _ := body["search_term_filter"].(map[string]any)
+			filter := searchTermToFilter(body)
 
 			filtered := events
 			if len(filter) > 0 {
@@ -53,7 +54,7 @@ func startInsightsServer(t *testing.T, events []map[string]any) *httptest.Server
 		case "/insights/directory/v1/events/count":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			filter, _ := body["search_term_filter"].(map[string]any)
+			filter := searchTermToFilter(body)
 			filtered := events
 			if len(filter) > 0 {
 				filtered = nil
@@ -287,4 +288,30 @@ func TestInsightsResource_ServesHTMLWithInjection(t *testing.T) {
 	if !strings.Contains(c.Text, "Directory Insights") {
 		t.Error("served HTML missing page title")
 	}
+}
+
+// searchTermToFilter flattens the API's search_term shape back into a
+// field→value map, so the mock can filter with it. Mirrors the encoding in
+// api.buildSearchTerm.
+func searchTermToFilter(body map[string]any) map[string]any {
+	st, ok := body["search_term"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	and, ok := st["and"].([]any)
+	if !ok {
+		return nil
+	}
+	out := map[string]any{}
+	for _, raw := range and {
+		term, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		field, _ := term["field"].(string)
+		if field != "" {
+			out[field] = term["value"]
+		}
+	}
+	return out
 }
