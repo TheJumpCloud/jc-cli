@@ -294,3 +294,101 @@ func TestCompareRun_IgnoresTriggerNode(t *testing.T) {
 		t.Errorf("the trigger node must not be compared: %+v", got.Tasks)
 	}
 }
+
+// A failed step RAN. "The workflow never touched this" and "the workflow
+// touched this and got a 404" are opposite facts for anyone auditing a run.
+//
+// Regression for a defect found by replaying run
+// 6b10726f-c9cb-407f-9e76-f7eadd46123e, where expectFailure reported
+// ran:false on a row that printed status 404 — a node carrying method, url,
+// status and a body. The predicate had been keying on success rather than on
+// node_output: the same conflation as reading is_executed, one axis over.
+func TestRunNode_FailedStepRan(t *testing.T) {
+	failed := node("expectFailure", "Request failed.", true, false, 404)
+
+	if !failed.Ran() {
+		t.Error("a step that made a call and got 404 ran; success is the outcome, not the evidence")
+	}
+	if failed.Skipped() {
+		t.Error("failed is not skipped")
+	}
+	if !failed.Failed() {
+		t.Error("Failed() should report the outcome")
+	}
+	if st, _ := failed.State(); st != RunStateFailed {
+		t.Errorf("State = %q, want failed", st)
+	}
+
+	// The distinction that matters: no response at all is a different thing.
+	noCall := node("orphan", "Task completed.", true, true, 0)
+	if noCall.Ran() {
+		t.Error("a node with no node_output made no call")
+	}
+}
+
+// The plan must not call a routing switch "skipped". This landed in
+// ran-but-planned-skip — the verdict the tool itself names as the one worth
+// acting on — giving it a systematic false positive on every DSL containing a
+// switch, which is most non-trivial ones.
+func TestCompareRun_SwitchThatRoutesAgrees(t *testing.T) {
+	sim := SimResult{Steps: []SimStep{
+		{Task: "router", Status: SimSwitched, Why: "chose stepC (case always matched)"},
+		{Task: "stepC", Status: SimWouldCall},
+	}}
+	got := CompareRun(sim, runWith(
+		RunNode{Name: "router", Type: NodeTypeSwitch, Message: "Switch evaluated.",
+			IsExecuted: true, Success: true},
+		node("stepC", "Task completed.", true, true, 200),
+	))
+
+	for _, tc := range got.Tasks {
+		if tc.Verdict != VerdictAgree {
+			t.Errorf("%s = %q, want agree: %s", tc.Task, tc.Verdict, tc.Detail)
+		}
+	}
+	if got.Diverge != 0 {
+		t.Errorf("Diverge = %d, want 0", got.Diverge)
+	}
+}
+
+// A step the run never reached because it halted earlier is not the planner
+// being wrong, and the detail must not read as though it were.
+func TestCompareRun_PostHaltSkipBlamesTheHalt(t *testing.T) {
+	sim := SimResult{Steps: []SimStep{
+		{Task: "boom", Status: SimWouldCall},
+		{Task: "after", Status: SimWouldCall},
+	}}
+	got := CompareRun(sim, runWith(
+		node("boom", "Request failed.", true, false, 404),
+		RunNode{Name: "after", Type: NodeTypeOperation,
+			Message: "Not executed — workflow failed at a prior task.", IsExecuted: false, Success: true},
+	))
+
+	var after TaskComparison
+	for _, tc := range got.Tasks {
+		if tc.Task == "after" {
+			after = tc
+		}
+	}
+	if !strings.Contains(after.Detail, "halted at") {
+		t.Errorf("the detail must name the halt, not imply the plan was wrong: %q", after.Detail)
+	}
+	// And the detail must never quote the node's own misleading message.
+	if strings.Contains(after.Detail, "Task completed.") {
+		t.Errorf("the node's reported message is misleading and must not be echoed: %q", after.Detail)
+	}
+}
+
+// A skipped step's detail must not append the node's own message, which reads
+// "the engine skipped it — Task completed." and contradicts itself.
+func TestCompareRun_SkipDetailUsesDerivedReason(t *testing.T) {
+	sim := SimResult{Steps: []SimStep{{Task: "orphan", Status: SimWouldCall}}}
+	got := CompareRun(sim, runWith(node("orphan", "Task completed.", true, true, 0)))
+
+	if strings.Contains(got.Tasks[0].Detail, "Task completed.") {
+		t.Errorf("self-contradictory detail: %q", got.Tasks[0].Detail)
+	}
+	if !strings.Contains(got.Tasks[0].Detail, "branch not taken") {
+		t.Errorf("the detail should give the derived reason: %q", got.Tasks[0].Detail)
+	}
+}

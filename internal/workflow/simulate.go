@@ -37,6 +37,9 @@ const (
 	SimStubbed SimStatus = "stubbed"
 	// SimSkipped is a step a guard or branch excluded.
 	SimSkipped SimStatus = "skipped"
+	// SimSwitched is a switch node, which evaluates its cases and routes. It
+	// is a form of running, not of being skipped.
+	SimSwitched SimStatus = "switched"
 	// SimUnresolved is a step whose parameters could not be resolved,
 	// usually because they reference a prior step's response body that a dry
 	// run does not have.
@@ -99,9 +102,17 @@ func Simulate(d DSL, input map[string]any) SimResult {
 
 	env := map[string]any{"input": input, "actions": map[string]any{}}
 
-	// A switch names the next node explicitly, and the branch targets it did
-	// not choose are skipped; tasks named by no branch still run in array
-	// order. Both verified live 2026-08-28.
+	// A switch names the next node explicitly. Branch targets it did not
+	// choose are skipped, and so are tasks NO branch targets that sit after a
+	// task which jumps away — execution follows the jump graph, not the order
+	// of the do list.
+	//
+	// This comment previously said such tasks "still run in array order,
+	// verified live". That was wrong and has been reverted; see
+	// UnreachableTasks for the ground truth that settled it. The planner
+	// shares that analysis with the validator now, so the two cannot drift
+	// again — while they disagreed, comparing a plan against a real run
+	// reported a divergence that was only the planner's blind spot.
 	branchTargets := map[string]bool{}
 	for _, t := range d.Tasks() {
 		if branches, ok := t.Body["switch"].([]any); ok {
@@ -117,9 +128,20 @@ func Simulate(d DSL, input map[string]any) SimResult {
 		}
 	}
 
+	unreachable := UnreachableTasks(d.Tasks())
+
 	chosen := map[string]bool{}
 	for _, t := range d.Tasks() {
 		step := SimStep{Task: t.Name, Call: t.Call()}
+
+		// A task the jump graph never reaches does not run, whatever its
+		// position in the do list.
+		if unreachable[t.Name] {
+			step.Status = SimSkipped
+			step.Why = "unreachable: no branch targets it and the preceding task jumps elsewhere"
+			res.Steps = append(res.Steps, step)
+			continue
+		}
 
 		// A branch target runs only if some switch selected it.
 		if branchTargets[t.Name] && !chosen[t.Name] {
@@ -130,12 +152,21 @@ func Simulate(d DSL, input map[string]any) SimResult {
 		}
 
 		if branches, ok := t.Body["switch"].([]any); ok {
-			step.Status = SimSkipped
+			// A switch that routes has RUN. Choosing a branch is what a switch
+			// does when it executes; what it routes TO is the branch decision,
+			// and is not a statement about the switch itself.
+			//
+			// Marking it skipped put every DSL containing a switch — which is
+			// most non-trivial ones — into ran-but-planned-skip, the very
+			// verdict this tool names as the one worth acting on. A systematic
+			// false positive there teaches people to ignore it, which defeats
+			// the tool.
+			step.Status = SimSwitched
 			if target, why := pickBranch(branches, env); target != "" {
 				chosen[target] = true
 				step.Why = "chose " + target + " (" + why + ")"
 			} else {
-				step.Why = "no branch matched"
+				step.Why = "no branch matched, so nothing downstream was selected"
 			}
 			res.Steps = append(res.Steps, step)
 			continue

@@ -2001,7 +2001,10 @@ func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) e
 		if tc.Status != "" {
 			line += " → " + tc.Status
 		}
-		if tc.Verdict == workflow.VerdictAgree {
+		if tc.Failed {
+			line += "  (call failed)"
+		}
+		if tc.Verdict == workflow.VerdictAgree && !tc.Failed {
 			fmt.Fprintln(out, line)
 			continue
 		}
