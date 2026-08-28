@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -446,6 +447,111 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
+	addTypedTool(s, "workflows_health", "Find event-triggered JumpCloud workflows that SHOULD have fired and did not. Nothing in the product can tell you this: a workflow whose trigger event type is mistyped or never emitted saves, activates, and then silently never runs — and there is no match counter, no last-evaluated timestamp, and no error anywhere to distinguish it from an event that simply has not happened yet. This holds both halves of the comparison, asking Directory Insights how often each trigger's event ACTUALLY occurred and the runs list how often the workflow ran, and reports one of: never-fired (the event occurred and the workflow did not run — the failure with no other signal), firing, or unverifiable (the event did not occur in the window, so nothing can be concluded either way). Fewer runs than events is NOT reported as a fault, because a trigger condition legitimately filters. Read-only: it lists and counts, and creates, activates or runs nothing.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfHealthInput) (*mcp.CallToolResult, any, error) {
+			days := args.Days
+			if days == 0 {
+				days = 7
+			}
+			if days < 0 {
+				return errorResult("days must be positive"), nil, nil
+			}
+
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			raw, err := client.Get(ctx, workflow.Endpoint)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing workflows: %v", err)), nil, nil
+			}
+			rows, err := workflow.ParseList(raw)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			rawRuns, err := client.Get(ctx, workflow.RunsEndpoint)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing runs: %v", err)), nil, nil
+			}
+			runs, err := workflow.ParseRuns(rawRuns)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+
+			now := nowFunc().UTC()
+			since := now.AddDate(0, 0, -days)
+
+			// Counts are cached per (event type, window start) rather than
+			// per event type alone: workflows younger than the window are
+			// judged over a shorter one, so they need their own count.
+			counts := map[string]int{}
+			reports := make([]workflow.HealthReport, 0, len(rows))
+
+			for _, row := range rows {
+				w, werr := workflow.ParseWorkflow(row)
+				if werr != nil {
+					continue
+				}
+
+				eventType := ""
+				if d, derr := workflow.ParseDSL(w.DSL); derr == nil {
+					if t, terr := d.Trigger(); terr == nil {
+						eventType = t.EventType
+					}
+				}
+
+				start := workflow.EffectiveSince(w, since)
+
+				events := 0
+				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
+					key := eventType + "@" + start.Format(time.RFC3339)
+					n, ok := counts[key]
+					if !ok {
+						ic, ierr := newInsightsClientFunc()
+						if ierr != nil {
+							return errorResult(fmt.Sprintf("creating Insights client: %v", ierr)), nil, nil
+						}
+						n, ierr = ic.CountEvents(ctx, api.InsightsQuery{
+							Service:          "all",
+							StartTime:        start.Format(time.RFC3339),
+							EndTime:          now.Format(time.RFC3339),
+							SearchTermFilter: map[string]any{"event_type": eventType},
+						})
+						if ierr != nil {
+							return errorResult(fmt.Sprintf("counting %s events: %v", eventType, ierr)), nil, nil
+						}
+						counts[key] = n
+					}
+					events = n
+				}
+
+				reports = append(reports, workflow.AssessHealth(w, events,
+					workflow.RunsWithin(runs, w.ID, start), start))
+			}
+
+			workflow.SortHealth(reports)
+
+			neverFired := 0
+			for _, r := range reports {
+				if r.Verdict == workflow.HealthNeverFired {
+					neverFired++
+				}
+			}
+
+			res, jerr := jsonResult(map[string]any{
+				"window_days": days,
+				"since":       since.Format(time.RFC3339),
+				"workflows":   len(reports),
+				"never_fired": neverFired,
+				"reports":     reports,
+			})
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
 	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
 			matches := workflow.EventTypes(args.Service, args.Search)
@@ -852,4 +958,8 @@ func (s *Server) registerWorkflowTools() {
 			return textResult(string(out)), nil, nil
 		},
 	)
+}
+
+type wfHealthInput struct {
+	Days int `json:"days,omitempty" jsonschema:"How many days of event history to compare against (default 7)"`
 }

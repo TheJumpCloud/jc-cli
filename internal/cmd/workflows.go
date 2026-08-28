@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -54,6 +55,7 @@ connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` a
 	cmd.AddCommand(newWorkflowsTemplatesCmd())
 	cmd.AddCommand(newWorkflowsEventTypesCmd())
 	cmd.AddCommand(newWorkflowsSimulateCmd())
+	cmd.AddCommand(newWorkflowsHealthCmd())
 	cmd.AddCommand(newWorkflowsValidateCmd())
 	cmd.AddCommand(newWorkflowsExplainCmd())
 
@@ -1427,4 +1429,167 @@ not observations of JumpCloud's runtime. Verify behaviour with a real run.`,
 
 	cmd.Flags().StringVar(&dataFlag, "data", "", "Trigger input as a JSON object, referenced in the DSL as ${ input.<field> }")
 	return cmd
+}
+
+func newWorkflowsHealthCmd() *cobra.Command {
+	var days int
+
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Find event-triggered workflows that should have fired and did not",
+		Long: `Cross-reference each active jc_events workflow against the event stream it
+listens to.
+
+A workflow with a mistyped or never-emitted event type saves, activates, and
+silently never fires. Nothing surfaces that: a workflow that can never match
+and one whose event has not happened yet look identical — there is no match
+counter and no last-evaluated timestamp anywhere in the product.
+
+This can tell them apart, because it holds both halves. Directory Insights
+knows how often the event actually occurred; the runs list knows how often the
+workflow ran. Three outcomes:
+
+  never-fired    the event occurred and the workflow did not run — the
+                 failure with no other signal
+  firing         the event occurred and the workflow ran
+  unverifiable   the event did not occur, so nothing can be concluded
+
+Fewer runs than events is NOT reported as a fault: a trigger condition
+legitimately filters, and saying otherwise would make this untrustworthy.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if days <= 0 {
+				return fmt.Errorf("--days must be positive")
+			}
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+
+			raw, err := client.Get(cmd.Context(), workflow.Endpoint)
+			if err != nil {
+				return err
+			}
+			rows, err := workflow.ParseList(raw)
+			if err != nil {
+				return err
+			}
+
+			rawRuns, err := client.Get(cmd.Context(), workflow.RunsEndpoint)
+			if err != nil {
+				return err
+			}
+			runs, err := workflow.ParseRuns(rawRuns)
+			if err != nil {
+				return err
+			}
+
+			now := time.Now().UTC()
+			since := now.AddDate(0, 0, -days)
+
+			// Counts are cached per (event type, window start) rather than per
+			// event type alone: workflows younger than the window are judged
+			// over a shorter one, so they need their own count. Workflows
+			// older than the window — the common case — all share a key.
+			counts := map[string]int{}
+			reports := make([]workflow.HealthReport, 0, len(rows))
+
+			for _, row := range rows {
+				w, err := workflow.ParseWorkflow(row)
+				if err != nil {
+					continue
+				}
+
+				eventType := ""
+				if d, derr := workflow.ParseDSL(w.DSL); derr == nil {
+					if t, terr := d.Trigger(); terr == nil {
+						eventType = t.EventType
+					}
+				}
+
+				start := workflow.EffectiveSince(w, since)
+
+				events := 0
+				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
+					key := eventType + "@" + start.Format(time.RFC3339)
+					n, ok := counts[key]
+					if !ok {
+						n, err = countEvents(cmd.Context(), eventType, start, now)
+						if err != nil {
+							return fmt.Errorf("counting %s events: %w", eventType, err)
+						}
+						counts[key] = n
+					}
+					events = n
+				}
+
+				reports = append(reports, workflow.AssessHealth(w, events,
+					workflow.RunsWithin(runs, w.ID, start), start))
+			}
+
+			workflow.SortHealth(reports)
+			return writeHealthReport(cmd, reports, days)
+		},
+	}
+
+	cmd.Flags().IntVar(&days, "days", 7, "How many days of event history to compare against")
+	return cmd
+}
+
+// countEvents asks Directory Insights how often one event type occurred.
+func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, error) {
+	client, err := newInsightsClient()
+	if err != nil {
+		return 0, err
+	}
+	return client.CountEvents(ctx, api.InsightsQuery{
+		Service:          "all",
+		StartTime:        start.UTC().Format(time.RFC3339),
+		EndTime:          end.UTC().Format(time.RFC3339),
+		SearchTermFilter: map[string]any{"event_type": eventType},
+	})
+}
+
+func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days int) error {
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		raw, err := json.MarshalIndent(reports, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	if len(reports) == 0 {
+		fmt.Fprintln(out, "No workflows.")
+		return nil
+	}
+
+	broken := 0
+	for _, r := range reports {
+		if r.Verdict == workflow.HealthNeverFired {
+			broken++
+		}
+		label := string(r.Verdict)
+		name := r.Name
+		if name == "" {
+			name = r.WorkflowID
+		}
+		line := fmt.Sprintf("  [%-12s] %-34s", label, name)
+		if r.EventType != "" {
+			line += fmt.Sprintf(" %-34s events=%-5d runs=%d", r.EventType, r.Events, r.Runs)
+		}
+		if r.Verdict == workflow.HealthNeverFired {
+			fmt.Fprintln(out, style.Error.Render(line))
+		} else {
+			fmt.Fprintln(out, line)
+		}
+		fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(r.Detail))
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d workflows over %d days; %d never fired despite their event occurring ──\n",
+		len(reports), days, broken)
+	return nil
 }

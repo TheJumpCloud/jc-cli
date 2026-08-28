@@ -31,6 +31,15 @@ func hasMessage(r Result, substr string) bool {
 	return false
 }
 
+func hasHint(r Result, substr string) bool {
+	for _, f := range r.Findings {
+		if strings.Contains(f.Hint, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 // validExternal is a minimal valid external-trigger workflow, used as the base
 // for the negative cases so each test changes exactly one thing.
 const validExternal = `{
@@ -220,6 +229,28 @@ func TestValidate_ThenTargetMustExist(t *testing.T) {
 	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}, "then": "nope"}}]}`)
 	if r.OK() || !hasMessage(r, "is not a task in this workflow") {
 		t.Errorf("an unknown then target must be rejected: %v", r.Findings)
+	}
+}
+
+// The same binding rule holds for jc_events. Proven live: creating a workflow
+// whose group_create trigger tested `input.resource.name` was rejected with
+// "failed to compile expression: unknown name input". Every shipped template
+// agrees, writing association.op / changes / userId with no prefix at all.
+func TestValidate_EventConditionMustNotUseInputPrefix(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "group_create", "condition": "input.resource.name != \"\""}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+	if r.OK() || !hasMessage(r, "input.<field> is never bound") {
+		t.Errorf("input. in an event trigger condition must be rejected: %v", r.Findings)
+	}
+	if !hasHint(r, "resource.name") {
+		t.Errorf("the hint should show the event-payload form, not the external one: %v", r.Findings)
+	}
+
+	// The unprefixed form is what the server accepts.
+	good := `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "group_create", "condition": "resource.name != \"\""}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`
+	if r := validateJSON(t, good); !r.OK() {
+		t.Errorf("a bare field reference is correct here: %v", r.Findings)
 	}
 }
 

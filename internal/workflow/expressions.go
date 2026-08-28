@@ -199,15 +199,25 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 		}
 	}
 
-	// The external trigger's condition is evaluated against the raw request
-	// data, not the workflow context, so `input.` there is silently wrong.
-	// The guide calls this out twice; it is the area's sharpest footgun.
-	if trigger.Source == TriggerExternal && trigger.Condition != "" {
-		if strings.Contains(mustUnwrap(trigger.Condition), "input.") {
-			add(Error, "dsl.schedule.on.one.with.condition",
-				"an external trigger condition is evaluated against the posted data object, so input.<field> is never bound",
-				"drop the input. prefix — write userId, not input.userId")
+	// A trigger condition is evaluated against the event or request payload
+	// itself, with the payload's fields bound at the TOP LEVEL — so `input.`
+	// there is never bound. The guide calls this out for external triggers;
+	// a live create proved the same holds for jc_events, which rejected
+	//   input.resource.name == "..."
+	// with `failed to compile expression: unknown name input`. JumpCloud's own
+	// templates confirm the shape: they write association.op, changes, userId
+	// and workflow.id with no prefix at all.
+	if trigger.Condition != "" && strings.Contains(mustUnwrap(trigger.Condition), "input.") {
+		what := "the posted data object"
+		example := "write userId, not input.userId"
+		if trigger.Source == TriggerEvents {
+			what = "the event payload"
+			example = "write resource.name, not input.resource.name"
 		}
+		add(Error, "dsl.schedule.on.one.with.condition",
+			"a trigger condition is evaluated against "+what+
+				", whose fields are bound at the top level, so input.<field> is never bound",
+			"drop the input. prefix — "+example)
 	}
 }
 
