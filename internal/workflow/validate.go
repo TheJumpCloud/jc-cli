@@ -237,7 +237,8 @@ func validateTask(t Task, index int, position map[string]int, add func(Severity,
 		add(Error, t.Path, "task does nothing: no call, for, or switch", "")
 	case !KnownCalls[call]:
 		add(Error, t.Path+".call", fmt.Sprintf("unknown call type %q", call),
-			"one of: jc_operation, sendEmailsToAddresses, sendEmailsToChannel, connector_operation")
+			"one of: jc_operation, sendEmailsToAddresses, sendEmailsToChannel, connector_operation "+
+				"(sendEmailsToChannel is documented but appears in none of the shipped templates)")
 	default:
 		validateCall(t, add)
 	}

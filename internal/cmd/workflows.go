@@ -234,8 +234,10 @@ email step to be seen.
 
 A failing step halts the run: everything after it is reported as not executed.
 A switch node also records which cases were evaluated and which branch was
-chosen. Nodes carry an is_output_truncated flag; the size at which a body is
-truncated is undocumented, so a very large response may not be faithful.
+chosen. Nodes carry an is_output_truncated flag; the size at which the ENGINE
+truncates a step's body is undocumented and is a different ceiling from the MCP
+server's own result limit, so a very large step response may not be faithful
+even when the trace itself returns fine.
 
 Use --trace for a readable summary instead of the full document.`,
 		Args: cobra.ExactArgs(1),
