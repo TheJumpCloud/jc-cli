@@ -5541,7 +5541,38 @@ func addTypedToolWithPreFlight[In any](s *Server, name, description string, preF
 }
 
 // textResult creates a simple text result.
+// maxResultBytes caps what any tool may return in one call.
+//
+// This is a session-integrity guard, not a politeness limit. An oversized
+// response does not merely fail itself: observed 2026-08-28, a 174KB result
+// poisoned the whole MCP session, and EVERY subsequent tool call carrying a
+// real payload timed out afterwards. jc_ping kept answering throughout, which
+// masked the cause and made one bad response look like several unrelated
+// broken tools.
+//
+// So a call that would exceed this fails loudly and alone, which is strictly
+// better than succeeding and breaking everything after it. The bound comes
+// from that session: 51KB was fine, 174KB was fatal.
+const maxResultBytes = 100 * 1024
+
+// guardResultSize returns an error result when text is too large to return
+// safely, and nil otherwise.
+func guardResultSize(text string) *mcp.CallToolResult {
+	if len(text) <= maxResultBytes {
+		return nil
+	}
+	return errorResult(fmt.Sprintf(
+		"result too large: %d bytes exceeds the %d byte limit. This call was refused rather than "+
+			"returned, because an oversized response has been observed to break every later call in "+
+			"the session rather than failing on its own. Narrow the request — add a filter, a search "+
+			"term, or a smaller limit — and try again.",
+		len(text), maxResultBytes))
+}
+
 func textResult(text string) *mcp.CallToolResult {
+	if tooBig := guardResultSize(text); tooBig != nil {
+		return tooBig
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: text},
@@ -7679,6 +7710,9 @@ func jsonResult(v any) (*mcp.CallToolResult, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshaling result: %w", err)
+	}
+	if tooBig := guardResultSize(string(data)); tooBig != nil {
+		return tooBig, nil
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{

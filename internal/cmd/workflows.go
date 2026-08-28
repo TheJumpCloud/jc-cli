@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -13,6 +15,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/tui/style"
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
@@ -50,6 +53,10 @@ connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` a
 	cmd.AddCommand(newWorkflowsTriggerCmd())
 	cmd.AddCommand(newWorkflowsRunsCmd())
 	cmd.AddCommand(newWorkflowsTemplatesCmd())
+	cmd.AddCommand(newWorkflowsEventTypesCmd())
+	cmd.AddCommand(newWorkflowsSimulateCmd())
+	cmd.AddCommand(newWorkflowsHealthCmd())
+	cmd.AddCommand(newWorkflowsLintCmd())
 	cmd.AddCommand(newWorkflowsValidateCmd())
 	cmd.AddCommand(newWorkflowsExplainCmd())
 
@@ -223,9 +230,19 @@ not scoped under a workflow.`,
 		Short: "Get a workflow run by ID",
 		Long: `Get one workflow run.
 
-A completed run carries a per-step execution trace: what each step called, the
-HTTP status it got back, and which step failed. Use --trace for a readable
-summary of that instead of the full document.`,
+A completed run carries a full per-step execution trace: the method, URL and
+status each step called, AND the complete response body. Intermediate state is
+therefore directly inspectable — it does not have to be exfiltrated through an
+email step to be seen.
+
+A failing step halts the run: everything after it is reported as not executed.
+A switch node also records which cases were evaluated and which branch was
+chosen. Nodes carry an is_output_truncated flag; the size at which the ENGINE
+truncates a step's body is undocumented and is a different ceiling from the MCP
+server's own result limit, so a very large step response may not be faithful
+even when the trace itself returns fine.
+
+Use --trace for a readable summary instead of the full document.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := newV2Client()
@@ -255,6 +272,8 @@ summary of that instead of the full document.`,
 // ---------- templates ----------
 
 func newWorkflowsTemplatesCmd() *cobra.Command {
+	var correctedOnly, withCorrected bool
+
 	cmd := &cobra.Command{
 		Use:     "templates",
 		Aliases: []string{"template"},
@@ -273,29 +292,53 @@ can supply.`,
 		Short:   "List workflow templates",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := newV2Client()
-			if err != nil {
-				return err
-			}
-			raw, err := client.Get(cmd.Context(), workflow.TemplatesEndpoint)
-			if err != nil {
-				return err
-			}
-			templates, err := workflow.ParseTemplates(raw)
-			if err != nil {
-				return err
-			}
 			// Re-encode without the DSL: a full catalog is ~40KB of nested
 			// documents, which is not a list view.
-			rows := make([]json.RawMessage, 0, len(templates))
-			for _, t := range templates {
-				b, err := json.Marshal(map[string]any{
-					"id": t.ID, "name": t.Name, "category": t.Category, "description": t.Description,
-				})
+			rows := make([]json.RawMessage, 0, 16)
+
+			if correctedOnly || withCorrected {
+				for _, ct := range workflow.CorrectedTemplates() {
+					b, err := json.Marshal(map[string]any{
+						"id": ct.ID, "name": ct.Name, "category": ct.Category,
+						"description": ct.Description, "source": "jc",
+						"corrects": ct.Corrects, "changes": ct.Changes,
+					})
+					if err != nil {
+						return err
+					}
+					rows = append(rows, b)
+				}
+			}
+
+			if !correctedOnly {
+				client, err := newV2Client()
 				if err != nil {
 					return err
 				}
-				rows = append(rows, b)
+				raw, err := client.Get(cmd.Context(), workflow.TemplatesEndpoint)
+				if err != nil {
+					return err
+				}
+				templates, err := workflow.ParseTemplates(raw)
+				if err != nil {
+					return err
+				}
+				for _, t := range templates {
+					row := map[string]any{
+						"id": t.ID, "name": t.Name, "category": t.Category,
+						"description": t.Description, "source": "jumpcloud",
+					}
+					// Say so on the original, not only on the replacement:
+					// this list is where someone picks what to copy.
+					if ct, ok := workflow.CorrectionFor(t.Name); ok {
+						row["corrected_by"] = ct.ID
+					}
+					b, err := json.Marshal(row)
+					if err != nil {
+						return err
+					}
+					rows = append(rows, b)
+				}
 			}
 			opts := output.CurrentOptions()
 			opts.DefaultFields = workflow.TemplateDefaultFields
@@ -424,6 +467,14 @@ with what each one expects, so stdout stays pipeable either way.
 						strings.TrimPrefix(m, "REPLACE_WITH_"), k.Describe, hint)
 				}
 			}
+
+			// Validate what was just emitted. A template is the only worked
+			// example most operators will see, so handing one over without
+			// saying it has problems teaches the problems. Findings go to
+			// stderr and do not fail the command: the file is still the right
+			// starting point, and the markers left in it produce findings of
+			// their own that would otherwise drown the real ones.
+			reportTemplateFindings(cmd, t.Name, workflow.Validate(filled))
 			return nil
 		},
 	}
@@ -432,12 +483,53 @@ with what each one expects, so stdout stays pipeable either way.
 	initCmd.Flags().StringArrayVar(&initSet, "set", nil,
 		"Fill a placeholder: MARKER=VALUE, repeatable. Resolvable markers accept a name")
 
+	list.Flags().BoolVar(&correctedOnly, "corrected", false,
+		"List only jc's corrected copies of the templates that ship with a defect")
+	list.Flags().BoolVar(&withCorrected, "with-corrected", false,
+		"List the corrected copies alongside JumpCloud's catalog")
+
 	cmd.AddCommand(list, show, initCmd)
 	return cmd
 }
 
+// reportTemplateFindings prints what is wrong with a template that was just
+// emitted, ignoring the findings that only exist because markers are still in
+// place. Those are expected at this point and would bury the ones that are
+// not — a template's own defects, which the operator is about to inherit.
+func reportTemplateFindings(cmd *cobra.Command, name string, res workflow.Result) {
+	real := workflow.WithoutPlaceholderFindings(res).Findings
+	if len(real) == 0 {
+		return
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n%d finding(s) in the template itself, which you are about to inherit:\n", len(real))
+	for _, f := range real {
+		fmt.Fprintf(w, "  %s\n", f.String())
+	}
+	if ct, ok := workflow.CorrectionFor(name); ok {
+		fmt.Fprintf(w, "\nA corrected copy of this template is available:\n  jc workflows templates init %s\n  (%s)\n",
+			ct.ID, ct.Changes)
+		return
+	}
+	fmt.Fprintf(w, "\nRun: jc workflows validate --template %q\n", name)
+}
+
 // findTemplate resolves a template by ID or name against the served catalog.
 func findTemplate(ctx context.Context, client *api.V2Client, identifier string) (workflow.Template, error) {
+	// jc's corrected copies resolve first, and only by their "jc:" ID. A
+	// corrected template shares its NAME with the JumpCloud original, so
+	// matching on name here would silently swap one for the other — the
+	// operator must ask for the correction explicitly.
+	if workflow.IsCorrectedID(identifier) {
+		ct, ok := workflow.FindCorrected(identifier)
+		if !ok {
+			return workflow.Template{}, fmt.Errorf("no corrected template %q (try: jc workflows templates list --corrected)", identifier)
+		}
+		return workflow.Template{ID: ct.ID, Name: ct.Name, Description: ct.Description,
+			Category: ct.Category, DSL: ct.DSL}, nil
+	}
+
 	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
 	if err != nil {
 		return workflow.Template{}, err
@@ -559,9 +651,11 @@ func loadWorkflowDoc(cmd *cobra.Command, path string) (workflowDoc, error) {
 }
 
 func newWorkflowsValidateCmd() *cobra.Command {
+	var roleFlag, templateFlag string
+
 	cmd := &cobra.Command{
-		Use:   "validate <file>",
-		Short: "Validate a workflow DSL file locally",
+		Use:   "validate [file]",
+		Short: "Validate a workflow DSL file, a template, or a saved workflow",
 		Long: `Check a workflow file before it reaches the API.
 
 JumpCloud accepts a malformed DSL and fails only when the workflow runs, so
@@ -570,22 +664,124 @@ silently never works. Validation covers the trigger, task structure, control
 flow, pagination, every Expr expression (compiled with the same engine), and
 every operationId (against JumpCloud's own OpenAPI operations).
 
-Use "-" to read from stdin. Exits non-zero when the workflow is invalid.`,
-		Args: cobra.ExactArgs(1),
+With --role, each step is also checked against that role's API scopes. The
+execution role is the only thing between an unattended workflow and the API —
+without this, validation confirms an operation EXISTS, not that the workflow
+may call it, so a destructive operationId passes silently.
+
+Scope findings are warnings, not errors: the spec's scope list is a lower
+bound, and the API has been observed to accept a scope the spec omits.
+
+Use "-" to read from stdin. With --template, a template from the served
+catalog is validated instead of a file — worth doing before copying one,
+since the templates are the only worked examples of a DSL that has no
+published schema.
+
+Exits non-zero when the workflow is invalid. To check everything on the
+tenant at once, use "jc workflows lint".`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			doc, err := loadWorkflowDoc(cmd, args[0])
+			source := ""
+			var doc workflowDoc
+			var err error
+
+			switch {
+			case templateFlag != "" && len(args) > 0:
+				return fmt.Errorf("give either a file or --template, not both")
+			case templateFlag != "":
+				client, cerr := newV2Client()
+				if cerr != nil {
+					return cerr
+				}
+				t, terr := findTemplate(cmd.Context(), client, templateFlag)
+				if terr != nil {
+					return terr
+				}
+				source = "template " + t.Name
+				doc = workflowDoc{Name: t.Name, DSL: t.DSL}
+			case len(args) == 0:
+				return fmt.Errorf("give a workflow file, or --template <name-or-id>")
+			default:
+				source = args[0]
+				doc, err = loadWorkflowDoc(cmd, args[0])
+			}
 			if err != nil {
 				return err
 			}
-			res := workflow.ValidateRaw(doc.DSL)
+			d, err := workflow.ParseDSL(doc.DSL)
+			if err != nil {
+				return err
+			}
+
+			res := workflow.Validate(d)
+			if roleFlag != "" {
+				name, scopes, err := lookupRoleScopes(cmd.Context(), roleFlag)
+				if err != nil {
+					return err
+				}
+				res = workflow.ValidateWithRole(d, name, scopes)
+			}
+
+			if templateFlag != "" {
+				// A template is SUPPOSED to have placeholders, so counting
+				// them as errors would call every template invalid — and
+				// would contradict "jc workflows lint --templates", which
+				// does not. Report them as work to do, not as defects.
+				markers := d.PlaceholderMarkers()
+				res = workflow.WithoutPlaceholderFindings(res)
+				writeValidationReport(cmd, res)
+				if len(markers) > 0 && output.CurrentOptions().Format != "json" {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"\n%d placeholder(s) to fill before this can be created; "+
+							"\"jc workflows templates init\" lists what each expects.\n", len(markers))
+				}
+				if !res.OK() {
+					return fmt.Errorf("template %s has validation errors", doc.Name)
+				}
+				return nil
+			}
+
 			writeValidationReport(cmd, res)
 			if !res.OK() {
-				return fmt.Errorf("%s is not a valid workflow", args[0])
+				return fmt.Errorf("%s is not a valid workflow", source)
 			}
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&roleFlag, "role", "",
+		"Also check each step against this role's API scopes (name or ID)")
+	cmd.Flags().StringVar(&templateFlag, "template", "",
+		"Validate a template from the served catalog instead of a file (name or ID)")
+
 	return cmd
+}
+
+// lookupRoleScopes resolves a role and returns its name and scope list.
+func lookupRoleScopes(ctx context.Context, identifier string) (string, []string, error) {
+	client, err := newV2Client()
+	if err != nil {
+		return "", nil, err
+	}
+	id, err := resolve.NewV2Resolver(client).Resolve(ctx, identifier, resolve.RoleConfig)
+	if err != nil {
+		return "", nil, err
+	}
+	raw, err := client.Get(ctx, "/roles/"+id)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading role %s: %w", identifier, err)
+	}
+	var role struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil {
+		return "", nil, fmt.Errorf("decoding role: %w", err)
+	}
+	if role.Name == "" {
+		role.Name = identifier
+	}
+	return role.Name, role.Scopes, nil
 }
 
 // writeValidationReport prints findings and the side-effect summary. Machine
@@ -1223,5 +1419,604 @@ func writeRunTrace(cmd *cobra.Command, run workflow.Run) error {
 	if failed, ok := run.FailedNode(); ok {
 		fmt.Fprintf(out, "\nFirst failure: %s\n", failed.Name)
 	}
+	return nil
+}
+
+func newWorkflowsEventTypesCmd() *cobra.Command {
+	var service, search string
+
+	cmd := &cobra.Command{
+		Use:     "event-types",
+		Aliases: []string{"events"},
+		Short:   "List the Directory Insights event types a jc_events trigger can use",
+		Long: `List the event types a jc_events workflow trigger can listen for.
+
+This is the vocabulary for the trigger's "type" field, and nothing in the
+workflows API validates it: a mistyped type saves, activates, and then silently
+never fires — indistinguishable from an event that has not happened yet, with
+no run to inspect because no run ever starts.
+
+The catalog is a lower bound. A live tenant emitted 30 types this
+documentation does not list, so a type missing here is not proof it is
+invalid — which is why validate warns rather than rejects.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			matches := workflow.EventTypes(service, search)
+			names := make([]string, 0, len(matches))
+			for n := range matches {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+
+			rows := make([]json.RawMessage, 0, len(names))
+			for _, n := range names {
+				e := matches[n]
+				b, err := json.Marshal(map[string]any{
+					"event_type": n, "service": e.Service, "describes": e.Describe,
+					// What a condition on this event may reference.
+					"payload_fields": workflow.EventFields(n),
+				})
+				if err != nil {
+					return err
+				}
+				rows = append(rows, b)
+			}
+
+			opts := output.CurrentOptions()
+			opts.DefaultFields = []string{"event_type", "service", "describes"}
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d event types ──\n",
+					len(rows), workflow.EventTypeCount())
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&service, "service", "", "Only this Directory Insights service")
+	cmd.Flags().StringVar(&search, "search", "", "Substring matched against the name and description")
+
+	return cmd
+}
+
+func newWorkflowsSimulateCmd() *cobra.Command {
+	var dataFlag, compareRun string
+
+	cmd := &cobra.Command{
+		Use:   "simulate <file>",
+		Short: "Plan what a workflow would call, without running it",
+		Long: `Work out which objects a workflow would touch, and with what parameters,
+without creating it or running it.
+
+Conditions are evaluated with the same Expr engine the DSL uses and ${ }
+references are resolved against --data, so each step is reported with its real
+parameters. Reads are reported as would-call; writes, emails and connector
+calls are reported as stubbed and are never performed. Nothing is sent.
+
+This needs no created workflow, no active status and no write-capable role, so
+it is usable with read-only access.
+
+It is a plan, NOT a prediction of engine behaviour. Branch selection,
+halt-on-error and expression semantics here are this tool's reading of the DSL,
+not observations of JumpCloud's runtime.
+
+--compare-run <run-id> is how you check that reading against reality. It holds
+the plan next to a real run's trace and reports, per task, where the two agree
+and where they do not. The direction worth acting on is "ran-but-planned-skip":
+the workflow touched something the plan said it would not.
+
+Divergence is not automatically a bug here. A guard that reads a prior step's
+response body cannot be evaluated without one, and the plan reports that as
+unresolved rather than guessing — those are excluded from the divergence count.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			doc, err := loadWorkflowDoc(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			input := map[string]any{}
+			if dataFlag != "" {
+				if err := json.Unmarshal([]byte(dataFlag), &input); err != nil {
+					return fmt.Errorf("invalid --data JSON: %w", err)
+				}
+			}
+
+			res, err := workflow.SimulateRaw(doc.DSL, input)
+			if err != nil {
+				return err
+			}
+
+			if compareRun != "" {
+				return compareSimToRun(cmd, res, compareRun)
+			}
+
+			opts := output.CurrentOptions()
+			if opts.Format == "json" {
+				raw, err := json.MarshalIndent(res, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+				return nil
+			}
+
+			out := cmd.OutOrStdout()
+			for _, s := range res.Steps {
+				line := fmt.Sprintf("  [%-11s] %-24s", s.Status, s.Task)
+				if s.Operation != "" {
+					line += " " + s.Operation
+				} else if s.Call != "" {
+					line += " " + s.Call
+				}
+				fmt.Fprintln(out, line)
+				if s.Why != "" {
+					fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(s.Why))
+				}
+				for _, block := range []string{"pathParams", "queryParams", "bodyParams", "recipients"} {
+					if v, ok := s.Params[block]; ok {
+						b, _ := json.Marshal(v)
+						fmt.Fprintf(out, "      %s %s\n", block+":", string(b))
+					}
+				}
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n%s\n", res.Caveat)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&compareRun, "compare-run", "",
+		"Compare this plan against a real run's trace, by run ID")
+	cmd.Flags().StringVar(&dataFlag, "data", "",
+		"Input to resolve ${ input.<field> } against, as a JSON object")
+	return cmd
+}
+
+func newWorkflowsHealthCmd() *cobra.Command {
+	var days int
+
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Find event-triggered workflows that should have fired and did not",
+		Long: `Cross-reference each active jc_events workflow against the event stream it
+listens to.
+
+A workflow with a mistyped or never-emitted event type saves, activates, and
+silently never fires. Nothing surfaces that: a workflow that can never match
+and one whose event has not happened yet look identical — there is no match
+counter and no last-evaluated timestamp anywhere in the product.
+
+This can tell them apart, because it holds both halves. Directory Insights
+knows how often the event actually occurred; the runs list knows how often the
+workflow ran. Three outcomes:
+
+  never-fired    the event occurred and the workflow did not run — the
+                 failure with no other signal
+  firing         the event occurred and the workflow ran
+  unverifiable   the event did not occur, so nothing can be concluded
+
+Fewer runs than events is NOT reported as a fault: a trigger condition
+legitimately filters, and saying otherwise would make this untrustworthy.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if days <= 0 {
+				return fmt.Errorf("--days must be positive")
+			}
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+
+			raw, err := client.Get(cmd.Context(), workflow.Endpoint)
+			if err != nil {
+				return err
+			}
+			rows, err := workflow.ParseList(raw)
+			if err != nil {
+				return err
+			}
+
+			rawRuns, err := client.Get(cmd.Context(), workflow.RunsEndpoint)
+			if err != nil {
+				return err
+			}
+			runs, err := workflow.ParseRuns(rawRuns)
+			if err != nil {
+				return err
+			}
+
+			now := time.Now().UTC()
+			since := now.AddDate(0, 0, -days)
+
+			// Counts are cached per (event type, window start) rather than per
+			// event type alone: workflows younger than the window are judged
+			// over a shorter one, so they need their own count. Workflows
+			// older than the window — the common case — all share a key.
+			counts := map[string]int{}
+			reports := make([]workflow.HealthReport, 0, len(rows))
+
+			for _, row := range rows {
+				w, err := workflow.ParseWorkflow(row)
+				if err != nil {
+					continue
+				}
+
+				eventType := ""
+				if d, derr := workflow.ParseDSL(w.DSL); derr == nil {
+					if t, terr := d.Trigger(); terr == nil {
+						eventType = t.EventType
+					}
+				}
+
+				start := workflow.EffectiveSince(w, since)
+
+				events := 0
+				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
+					key := eventType + "@" + start.Format(time.RFC3339)
+					n, ok := counts[key]
+					if !ok {
+						n, err = countEvents(cmd.Context(), eventType, start, now)
+						if err != nil {
+							return fmt.Errorf("counting %s events: %w", eventType, err)
+						}
+						counts[key] = n
+					}
+					events = n
+				}
+
+				reports = append(reports, workflow.AssessHealth(w, events,
+					workflow.RunsWithin(runs, w.ID, start), start))
+			}
+
+			workflow.SortHealth(reports)
+			return writeHealthReport(cmd, reports, days)
+		},
+	}
+
+	cmd.Flags().IntVar(&days, "days", 7, "How many days of event history to compare against")
+	return cmd
+}
+
+// countEvents asks Directory Insights how often one event type occurred.
+func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, error) {
+	client, err := newInsightsClient()
+	if err != nil {
+		return 0, err
+	}
+	return client.CountEvents(ctx, api.InsightsQuery{
+		Service:          "all",
+		StartTime:        start.UTC().Format(time.RFC3339),
+		EndTime:          end.UTC().Format(time.RFC3339),
+		SearchTermFilter: map[string]any{"event_type": eventType},
+	})
+}
+
+func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days int) error {
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		raw, err := json.MarshalIndent(reports, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	if len(reports) == 0 {
+		fmt.Fprintln(out, "No workflows.")
+		return nil
+	}
+
+	broken := 0
+	for _, r := range reports {
+		if r.Verdict == workflow.HealthNeverFired {
+			broken++
+		}
+		label := string(r.Verdict)
+		name := r.Name
+		if name == "" {
+			name = r.WorkflowID
+		}
+		line := fmt.Sprintf("  [%-12s] %-34s", label, name)
+		if r.EventType != "" {
+			line += fmt.Sprintf(" %-34s events=%-5d runs=%d", r.EventType, r.Events, r.Runs)
+		}
+		if r.Verdict == workflow.HealthNeverFired {
+			fmt.Fprintln(out, style.Error.Render(line))
+		} else {
+			fmt.Fprintln(out, line)
+		}
+		fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(r.Detail))
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d workflows over %d days; %d never fired despite their event occurring ──\n",
+		len(reports), days, broken)
+	return nil
+}
+
+func newWorkflowsLintCmd() *cobra.Command {
+	var (
+		templatesOnly bool
+		includeAll    bool
+		checkScopes   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "lint",
+		Short: "Validate every workflow on the tenant, and the template catalog",
+		Long: `Run the full validator across everything at once.
+
+"jc workflows validate <file>" answers "is this one right?". On a live tenant
+the more useful question is "which of the things already running are wrong?",
+and nobody asks it, because answering it by hand means exporting every
+workflow and validating each in turn.
+
+With --templates, the served template catalog is linted instead. That matters
+more than it sounds: the DSL has no published schema, so templates are the
+only worked examples, and an idiom that appears in one gets copied into real
+workflows. Linting the catalog says which examples are actually safe to copy.
+
+With --scopes, each workflow is additionally checked against ITS OWN execution
+role — the role it will really run as, not one named on the command line.
+
+This catches drift, not typos. The API does reject a workflow at CREATE time
+if its role lacks a scope ("The Read Only role does not have sufficient
+permissions ... requires one of: users, users.delete"), so a newly created
+workflow is already consistent. What nothing rechecks is what happens
+afterwards: a role edited to drop a scope leaves every workflow running under
+it silently broken, and it will fail at run time instead.
+
+Exits non-zero if anything has an error.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+
+			var subjects []workflow.LintSubject
+			if !templatesOnly || includeAll {
+				subs, err := lintWorkflows(cmd.Context(), client, checkScopes)
+				if err != nil {
+					return err
+				}
+				subjects = append(subjects, subs...)
+			}
+			if templatesOnly || includeAll {
+				subs, err := lintTemplates(cmd.Context(), client)
+				if err != nil {
+					return err
+				}
+				subjects = append(subjects, subs...)
+			}
+
+			summary := workflow.Summarize(subjects)
+			if err := writeLintReport(cmd, summary); err != nil {
+				return err
+			}
+			if summary.Errors > 0 {
+				return fmt.Errorf("%d of %d have validation errors", summary.Errors, summary.Checked)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&templatesOnly, "templates", false,
+		"Lint the served template catalog instead of the tenant's workflows")
+	cmd.Flags().BoolVar(&includeAll, "all", false, "Lint both the workflows and the templates")
+	cmd.Flags().BoolVar(&checkScopes, "scopes", false,
+		"Also check each workflow against its own execution role's API scopes")
+
+	return cmd
+}
+
+func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) ([]workflow.LintSubject, error) {
+	raw, err := client.Get(ctx, workflow.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := workflow.ParseList(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	// Roles are cached across workflows: several commonly share one, and each
+	// lookup is a live request.
+	type roleInfo struct {
+		name   string
+		scopes []string
+	}
+	roles := map[string]roleInfo{}
+
+	subjects := make([]workflow.LintSubject, 0, len(rows))
+	for _, row := range rows {
+		w, err := workflow.ParseWorkflow(row)
+		if err != nil {
+			subjects = append(subjects, workflow.LintSubject{
+				Kind: "workflow", Skipped: "workflow could not be parsed: " + err.Error()})
+			continue
+		}
+
+		sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
+		d, err := workflow.ParseDSL(w.DSL)
+		if err != nil {
+			sub.Skipped = "dsl could not be parsed: " + err.Error()
+			subjects = append(subjects, sub)
+			continue
+		}
+
+		sub.Result = workflow.Validate(d)
+		if checkScopes && w.ExecutionRoleID != "" {
+			info, ok := roles[w.ExecutionRoleID]
+			if !ok {
+				name, scopes, rerr := lookupRoleScopes(ctx, w.ExecutionRoleID)
+				if rerr != nil {
+					// A role that cannot be read is worth saying so about,
+					// but it must not abort the sweep — the other workflows
+					// still have findings worth having.
+					sub.Result.Findings = append(sub.Result.Findings, workflow.Finding{
+						Severity: workflow.Warning,
+						Path:     "execution_role_id",
+						Message:  "could not read the execution role, so its scopes were not checked",
+						Hint:     rerr.Error(),
+					})
+					subjects = append(subjects, sub)
+					continue
+				}
+				info = roleInfo{name: name, scopes: scopes}
+				roles[w.ExecutionRoleID] = info
+			}
+			sub.Role = info.name
+			sub.Result = workflow.ValidateWithRole(d, info.name, info.scopes)
+		}
+		subjects = append(subjects, sub)
+	}
+	return subjects, nil
+}
+
+func lintTemplates(ctx context.Context, client *api.V2Client) ([]workflow.LintSubject, error) {
+	raw, err := client.Get(ctx, workflow.TemplatesEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	templates, err := workflow.ParseTemplates(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	subjects := make([]workflow.LintSubject, 0, len(templates))
+	for _, t := range templates {
+		sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
+		d, err := workflow.ParseDSL(t.DSL)
+		if err != nil {
+			sub.Skipped = "dsl could not be parsed: " + err.Error()
+			subjects = append(subjects, sub)
+			continue
+		}
+		// Placeholders are expected in a template, so they are not counted
+		// against it — see WithoutPlaceholderFindings.
+		sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
+		// Naming a defect without naming the fix leaves the operator where
+		// they started, since this catalog is what they were going to copy.
+		if ct, ok := workflow.CorrectionFor(t.Name); ok && len(sub.Result.Findings) > 0 {
+			sub.CorrectedBy = ct.ID
+		}
+		subjects = append(subjects, sub)
+	}
+	return subjects, nil
+}
+
+func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		raw, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(raw))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	if summary.Checked == 0 {
+		fmt.Fprintln(out, "Nothing to lint.")
+		return nil
+	}
+
+	for _, sub := range summary.Subjects {
+		name := sub.Name
+		if name == "" {
+			name = sub.ID
+		}
+		head := fmt.Sprintf("%s %s", sub.Kind, name)
+		if sub.Status != "" {
+			head += " (" + sub.Status + ")"
+		}
+		if sub.Role != "" {
+			head += " as " + sub.Role
+		}
+
+		switch {
+		case sub.Skipped != "":
+			fmt.Fprintf(out, "%s — %s\n", head, style.Subtitle.Render("not checked: "+sub.Skipped))
+			continue
+		case sub.Errors() > 0:
+			fmt.Fprintln(out, style.Error.Render(head))
+		case sub.Warnings() > 0:
+			fmt.Fprintln(out, head)
+		default:
+			fmt.Fprintf(out, "%s — %s\n", head, style.Subtitle.Render("clean"))
+			continue
+		}
+		for _, f := range sub.Result.Findings {
+			fmt.Fprintf(out, "    %s\n", f.String())
+		}
+		if sub.CorrectedBy != "" {
+			fmt.Fprintf(out, "    %s\n", style.Subtitle.Render(
+				"a corrected copy is available: jc workflows templates init "+sub.CorrectedBy))
+		}
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d checked: %d clean, %d with errors, %d with warnings, %d not checked ──\n",
+		summary.Checked, summary.Clean, summary.Errors, summary.Warnings, summary.Skipped)
+	return nil
+}
+
+// compareSimToRun measures a plan against a real run and reports the diff.
+func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) error {
+	client, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	raw, err := client.Get(cmd.Context(), workflow.RunEndpoint(runID))
+	if err != nil {
+		return fmt.Errorf("reading run %s: %w", runID, err)
+	}
+	run, err := workflow.ParseRun(raw)
+	if err != nil {
+		return err
+	}
+	if len(run.ExecutionDetails.Nodes) == 0 {
+		return fmt.Errorf("run %s carries no execution trace, so there is nothing to compare "+
+			"(a run still in progress has none yet)", runID)
+	}
+
+	cmp := workflow.CompareRun(sim, run)
+
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		out, err := json.MarshalIndent(cmp, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	for _, tc := range cmp.Tasks {
+		line := fmt.Sprintf("  [%-23s] %-24s", tc.Verdict, tc.Task)
+		if tc.Status != "" {
+			line += " → " + tc.Status
+		}
+		if tc.Verdict == workflow.VerdictAgree {
+			fmt.Fprintln(out, line)
+			continue
+		}
+		fmt.Fprintln(out, style.Error.Render(line))
+		if tc.Detail != "" {
+			fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(tc.Detail))
+		}
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n── %d agree, %d diverge, %d unresolved in the plan, %d not checkable from the trace ──\n",
+		cmp.Agree, cmp.Diverge, cmp.Unresolved, cmp.CannotCompare)
+	if cmp.RunHalted {
+		fmt.Fprintf(w, "The run halted at %q; tasks after it were never reached.\n", cmp.HaltedAt)
+	}
+	fmt.Fprintf(w, "%s\n", cmp.Caveat)
 	return nil
 }

@@ -199,15 +199,25 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 		}
 	}
 
-	// The external trigger's condition is evaluated against the raw request
-	// data, not the workflow context, so `input.` there is silently wrong.
-	// The guide calls this out twice; it is the area's sharpest footgun.
-	if trigger.Source == TriggerExternal && trigger.Condition != "" {
-		if strings.Contains(mustUnwrap(trigger.Condition), "input.") {
-			add(Error, "dsl.schedule.on.one.with.condition",
-				"an external trigger condition is evaluated against the posted data object, so input.<field> is never bound",
-				"drop the input. prefix — write userId, not input.userId")
+	// A trigger condition is evaluated against the event or request payload
+	// itself, with the payload's fields bound at the TOP LEVEL — so `input.`
+	// there is never bound. The guide calls this out for external triggers;
+	// a live create proved the same holds for jc_events, which rejected
+	//   input.resource.name == "..."
+	// with `failed to compile expression: unknown name input`. JumpCloud's own
+	// templates confirm the shape: they write association.op, changes, userId
+	// and workflow.id with no prefix at all.
+	if trigger.Condition != "" && strings.Contains(mustUnwrap(trigger.Condition), "input.") {
+		what := "the posted data object"
+		example := "write userId, not input.userId"
+		if trigger.Source == TriggerEvents {
+			what = "the event payload"
+			example = "write resource.name, not input.resource.name"
 		}
+		add(Error, "dsl.schedule.on.one.with.condition",
+			"a trigger condition is evaluated against "+what+
+				", whose fields are bound at the top level, so input.<field> is never bound",
+			"drop the input. prefix — "+example)
 	}
 }
 
@@ -216,4 +226,184 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 // the sibling extract.
 func isPaginationExpr(path string) bool {
 	return strings.Contains(path, ".pagination.") || strings.HasSuffix(path, ".with.extract")
+}
+
+// eq200RE finds the specific form `actions.X.status == 200`, which is worse
+// than a merely-dead test: it can suppress a task that succeeded with 201.
+var eq200RE = regexp.MustCompile(`\bactions\.[A-Za-z_][A-Za-z0-9_]*\.status\s*==\s*200\b`)
+
+// statusGuardRE finds a reference to a prior step's HTTP status.
+var statusGuardRE = regexp.MustCompile(`\bactions\.([A-Za-z_][A-Za-z0-9_]*)\.status\b`)
+
+// checkDeadStatusGuards warns about conditions that test a prior step's HTTP
+// status in a position that can never see a failure.
+//
+// A non-2xx from any jc_operation halts the whole run: verified live, where a
+// deliberate 404 on step one left both following tasks reporting
+// "Not executed — workflow failed at a prior task". So an `if` that asks
+// whether an earlier call succeeded is only ever evaluated when it did — the
+// failure branch it appears to handle is unreachable.
+//
+// This flags JumpCloud's own templates, which is correct: every one of them
+// guards downstream steps this way, and the idiom cannot work. The message
+// says so, because a warning that contradicts the only worked examples needs
+// to explain itself or it reads as a bug in the linter.
+//
+// A `when` inside a switch placed BEFORE the fallible call is the working
+// pattern and is deliberately not flagged: at that point nothing has failed.
+func checkDeadStatusGuards(d DSL, add func(Severity, string, string, string)) {
+	tasks := d.Tasks()
+
+	// Which tasks make a fallible call, and in what order.
+	position := map[string]int{}
+	fallible := map[string]bool{}
+	for i, t := range tasks {
+		if _, seen := position[t.Name]; !seen {
+			position[t.Name] = i
+		}
+		if t.Call() == CallJCOperation || t.Call() == CallConnector {
+			fallible[t.Name] = true
+		}
+	}
+
+	for _, e := range d.Expressions() {
+		// Only task-level `if` guards are dead. A switch `when` may sit
+		// before the call it guards, which is the pattern that works.
+		if !strings.HasSuffix(e.Path, ".if") {
+			continue
+		}
+		here, ok := taskIndexForPath(tasks, e.Path)
+		if !ok {
+			continue
+		}
+		for _, m := range statusGuardRE.FindAllStringSubmatch(e.Source, -1) {
+			ref := m[1]
+			refPos, known := position[ref]
+			if !known || !fallible[ref] || refPos >= here {
+				continue
+			}
+			// Equality against 200 is the dangerous form. Because a non-2xx
+			// already halted the run, the only thing this test can still do
+			// is come out FALSE on a successful 201 or 204 and silently skip
+			// the task. Proven live: a task guarded on `status == 200` after
+			// a create returning 201 reported "Skipping — if condition did
+			// not match", while `>= 200 && < 300` in the same run executed.
+			if eq200RE.MatchString(e.Source) {
+				add(Warning, e.Path,
+					fmt.Sprintf("this guard tests actions.%s.status == 200, which cannot detect failure and CAN silently skip this task: "+
+						"a non-2xx from %q already halted the run, so the only remaining effect is to come out false on a successful 201 or 204",
+						ref, ref),
+					fmt.Sprintf("delete the `actions.%s.status == 200 &&` conjunct and keep the rest of the guard, which is doing the real work. "+
+						"If you genuinely need a status test, use >= 200 && < 300 — verified live, where == 200 skipped a task after a 201 and the range did not",
+						ref))
+				continue
+			}
+			add(Warning, e.Path,
+				fmt.Sprintf("this guard tests actions.%s.status, but a non-2xx from %q halts the run before this task is reached",
+					ref, ref),
+				fmt.Sprintf("the failure branch this appears to handle is unreachable — delete the actions.%s.status conjunct and keep the rest of the guard, "+
+					"or branch with switch/when BEFORE the fallible call. JumpCloud's shipped templates use this idiom too; it does not work there either", ref))
+		}
+	}
+}
+
+// taskIndexForPath resolves an expression path to the innermost task holding
+// it. Longest match wins, as a path inside a loop body is prefixed by both.
+func taskIndexForPath(tasks []Task, path string) (int, bool) {
+	best, bestLen, found := 0, -1, false
+	for i, t := range tasks {
+		if (strings.HasPrefix(path, t.Path+".") || path == t.Path) && len(t.Path) > bestLen {
+			best, bestLen, found = i, len(t.Path), true
+		}
+	}
+	return best, found
+}
+
+// inputRefRE finds the top-level field of an ${ input.<field> } reference.
+var inputRefRE = regexp.MustCompile(`\binput\.([A-Za-z_][A-Za-z0-9_]*)`)
+
+// checkInputReferences warns about ${ input.<field> } references the trigger
+// cannot satisfy.
+//
+// Two sources, depending on the trigger:
+//
+//   - external: the workflow declares its own JSON input schema, and the API
+//     enforces it when a run is started. A field the schema does not declare
+//     can never arrive.
+//   - jc_events: the payload shape comes from the field map, built from a
+//     captured trigger payload. That map is a lower bound, so this stays a
+//     warning.
+//
+// Either way a bad reference evaluates false forever, and the workflow simply
+// never matches — the same invisible failure as a mistyped event type, one
+// layer down.
+func checkInputReferences(d DSL, trigger TriggerStyle, add func(Severity, string, string, string)) {
+	var (
+		allowed map[string]bool
+		source  string
+	)
+
+	switch {
+	case trigger.Source == TriggerExternal:
+		fields, declared := d.inputSchemaFields()
+		if !declared {
+			// No schema declared: anything may be posted, nothing to check.
+			return
+		}
+		allowed = map[string]bool{}
+		for _, f := range fields {
+			allowed[f] = true
+		}
+		source = "the declared input schema"
+
+	case trigger.Source == TriggerEvents:
+		allowed = map[string]bool{}
+		for _, f := range EventFields(trigger.EventType) {
+			allowed[f] = true
+		}
+		source = "a " + trigger.EventType + " event payload"
+
+	default:
+		// A scheduled trigger has no input to reference.
+		return
+	}
+
+	reported := map[string]bool{}
+	for _, e := range d.Expressions() {
+		// The trigger condition of an external workflow is evaluated against
+		// the raw data object, not the input context; that case has its own
+		// finding.
+		if strings.HasSuffix(e.Path, "with.condition") {
+			continue
+		}
+		for _, m := range inputRefRE.FindAllStringSubmatch(e.Source, -1) {
+			field := m[1]
+			if allowed[field] || reported[e.Path+field] {
+				continue
+			}
+			reported[e.Path+field] = true
+
+			hint := "a reference the trigger cannot satisfy evaluates false forever, so the workflow silently never matches"
+			if s := suggestField(field, allowed); s != "" {
+				hint = "closest available: " + s + " — " + hint
+			}
+			add(Warning, e.Path,
+				"input."+field+" is not carried by "+source, hint)
+		}
+	}
+}
+
+// suggestField returns the nearest available field name, for the typo case.
+func suggestField(field string, allowed map[string]bool) string {
+	best, bestD := "", 1<<30
+	for f := range allowed {
+		d := levenshtein(strings.ToLower(field), strings.ToLower(f))
+		if d < bestD {
+			best, bestD = f, d
+		}
+	}
+	if bestD > len(field)/2+1 {
+		return ""
+	}
+	return best
 }

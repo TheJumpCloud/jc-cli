@@ -198,12 +198,7 @@ func TestParseDSL_RejectsUnknownTopLevelKey(t *testing.T) {
 
 func TestRunNode_Describe(t *testing.T) {
 	ok := RunNode{Name: "getUser", IsExecuted: true, Success: true, Message: "Task completed."}
-	ok.NodeOutput = &struct {
-		Method string `json:"method"`
-		Status int    `json:"status"`
-		URL    string `json:"url"`
-		Body   any    `json:"body"`
-	}{Method: "GET", Status: 200, URL: "https://example.com/api/systemusers"}
+	ok.NodeOutput = &NodeOutput{Method: "GET", Status: TraceStatus{Code: 200}, URL: "https://example.com/api/systemusers"}
 	if got := ok.Describe(); !strings.Contains(got, "[ok]") || !strings.Contains(got, "GET https://example.com/api/systemusers → 200") {
 		t.Errorf("Describe = %q", got)
 	}
@@ -221,12 +216,7 @@ func TestRunNode_Describe(t *testing.T) {
 	// A paginated step aggregates several requests and reports no single
 	// status; rendering "→ 0" would invent one.
 	paginated := RunNode{Name: "listAll", IsExecuted: true, Success: true, Message: "Task completed."}
-	paginated.NodeOutput = &struct {
-		Method string `json:"method"`
-		Status int    `json:"status"`
-		URL    string `json:"url"`
-		Body   any    `json:"body"`
-	}{}
+	paginated.NodeOutput = &NodeOutput{}
 	if got := paginated.Describe(); strings.Contains(got, "→ 0") {
 		t.Errorf("a paginated step must not report a status of 0: %q", got)
 	}

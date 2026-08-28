@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
 const wfProbeDSLJSON = `{
@@ -71,6 +73,15 @@ func startWorkflowV2Server(t *testing.T) *wfMock {
 			json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{
 				{"id": "role-1", "name": "Read Only"}}})
 
+		case strings.HasPrefix(p, "/roles/") && r.Method == http.MethodGet:
+			// users.readonly only. That permits getApiSystemusers (which
+			// lists it) but NOT deleteApiSystemusersById (which needs
+			// "users" or "users.delete") — the asymmetry the scope check
+			// exists to catch.
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": "role-1", "name": "Read Only",
+				"scopes": []string{"users.readonly"}})
+
 		case p == "/workflows/wf-1" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(external)
 
@@ -121,11 +132,74 @@ func TestMCPWorkflows_TemplatesListOmitsDSL(t *testing.T) {
 	out := getResultText(t, callTool(t, cs, "workflows_templates_list", map[string]any{}))
 	var rows []map[string]any
 	json.Unmarshal([]byte(out), &rows)
-	if len(rows) != 1 {
-		t.Fatalf("expected 1 template: %s", out)
+
+	// The served catalog (one, from the fixture) plus jc's corrected copies,
+	// which are embedded and so are always present.
+	var served, jc []map[string]any
+	for _, r := range rows {
+		if r["source"] == "jc" {
+			jc = append(jc, r)
+		} else {
+			served = append(served, r)
+		}
 	}
-	if _, hasDSL := rows[0]["dsl"]; hasDSL {
-		t.Error("the list view must omit DSL bodies — the catalog is far too large otherwise")
+	if len(served) != 1 {
+		t.Fatalf("expected 1 served template: %s", out)
+	}
+	if len(jc) != len(workflow.CorrectedTemplates()) {
+		t.Errorf("expected every corrected copy to be listed, got %d", len(jc))
+	}
+	for _, r := range rows {
+		if _, hasDSL := r["dsl"]; hasDSL {
+			t.Error("the list view must omit DSL bodies — the catalog is far too large otherwise")
+		}
+		if r["source"] == nil {
+			t.Errorf("every row must say where it came from: %v", r)
+		}
+	}
+}
+
+// A defective template must point at its replacement here, because this list
+// is where a caller decides what to copy.
+func TestMCPWorkflows_TemplatesListNamesTheCorrection(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	out := getResultText(t, callTool(t, cs, "workflows_templates_list", map[string]any{}))
+	var rows []map[string]any
+	json.Unmarshal([]byte(out), &rows)
+
+	corrected := workflow.CorrectedTemplates()[0]
+	for _, r := range rows {
+		if r["source"] == "jc" && r["id"] == corrected.ID {
+			if r["corrects"] != corrected.Corrects {
+				t.Errorf("the corrected copy must name what it replaces: %v", r)
+			}
+			return
+		}
+	}
+	t.Errorf("the corrected catalog is not listed: %s", out)
+}
+
+// The corrected copies must be reachable by their jc: id, or shipping them
+// accomplishes nothing.
+func TestMCPWorkflows_TemplatesShowResolvesCorrected(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	want := workflow.CorrectedTemplates()[0]
+	out := getResultText(t, callTool(t, cs, "workflows_templates_show",
+		map[string]any{"identifier": want.ID}))
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("show returned no document: %s", out)
+	}
+	if got["id"] != want.ID {
+		t.Errorf("show(%q) returned %v", want.ID, got["id"])
+	}
+	if got["dsl"] == nil {
+		t.Error("show must include the DSL — that is the point of it")
 	}
 }
 
@@ -367,4 +441,125 @@ func mustDecode(t *testing.T, doc string) map[string]any {
 		t.Fatalf("bad test DSL: %v", err)
 	}
 	return m
+}
+
+// The scope check is the reason this exists: without it, validation confirms
+// an operation exists, not that the role may call it, so a destructive
+// operationId passes silently.
+func TestMCPWorkflows_ValidateWithRoleFlagsScopeGaps(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	destructive := mustDecode(t, `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	  "do":[{"destroy":{"call":"jc_operation","with":{"operationId":"deleteApiSystemusersById",
+	     "version":1,"pathParams":{"id":"x"}}}}]}`)
+
+	// Without a role, the destructive step draws no comment at all.
+	out := getResultText(t, callTool(t, cs, "workflows_validate", map[string]any{"dsl": destructive}))
+	if strings.Contains(out, "may not permit") {
+		t.Errorf("no role was given, so no scope finding is possible:\n%s", out)
+	}
+
+	// With one, it is named.
+	out = getResultText(t, callTool(t, cs, "workflows_validate", map[string]any{
+		"dsl": destructive, "role": "Read Only",
+	}))
+	if !strings.Contains(out, "deleteApiSystemusersById") || !strings.Contains(out, "may not permit") {
+		t.Errorf("the scope gap should be reported:\n%s", out)
+	}
+	// Advisory only — the spec's scope list is a lower bound.
+	var res struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Message  string `json:"message"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("result is not a validation report: %v\n%s", err, out)
+	}
+	for _, f := range res.Findings {
+		if strings.Contains(f.Message, "may not permit") && f.Severity != "warning" {
+			t.Errorf("a scope gap must be a warning, got %q", f.Severity)
+		}
+	}
+}
+
+// create already resolves a role, so the gaps belong in its plan — the last
+// point before a run-time permission failure.
+func TestMCPWorkflows_CreatePlanReportsScopeGaps(t *testing.T) {
+	srv := startWorkflowV2Server(t)
+	overrideV2ClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	out := getResultText(t, callTool(t, cs, "workflows_create", map[string]any{
+		"name": "destroyer", "role": "Read Only",
+		"dsl": mustDecode(t, `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+		  "do":[{"destroy":{"call":"jc_operation","with":{"operationId":"deleteApiSystemusersById",
+		     "version":1,"pathParams":{"id":"x"}}}}]}`),
+	}))
+	if !strings.Contains(out, "scope_gaps") {
+		t.Errorf("the plan should carry the scope gaps:\n%s", out)
+	}
+	if !strings.Contains(out, "the API will reject the create if so") {
+		t.Errorf("the plan should say what happens next:\n%s", out)
+	}
+	if srv.lastBody != nil {
+		t.Error("plan mode must not write")
+	}
+}
+
+// The catalog is 341 entries and the payload field list is ~16 per entry.
+// Returning both unfiltered was ~174KB in a single tool result — roughly 45k
+// tokens — which is not a reasonable thing to hand a model.
+func TestMCPWorkflows_EventTypesOmitsFieldsOnABroadBrowse(t *testing.T) {
+	overrideV2ClientForTest(t, startWorkflowV2Server(t).URL)
+	cs := connectToolTestServer(t, Options{})
+
+	type row struct {
+		EventType     string   `json:"event_type"`
+		PayloadFields []string `json:"payload_fields"`
+	}
+	type resp struct {
+		Matched    int    `json:"matched"`
+		Note       string `json:"note"`
+		EventTypes []row  `json:"event_types"`
+	}
+	decode := func(s string) resp {
+		t.Helper()
+		var r resp
+		if err := json.Unmarshal([]byte(s), &r); err != nil {
+			t.Fatalf("not a listing: %v", err)
+		}
+		return r
+	}
+
+	broadRaw := getResultText(t, callTool(t, cs, "workflows_event_types", map[string]any{}))
+	broad := decode(broadRaw)
+	for _, r := range broad.EventTypes {
+		if len(r.PayloadFields) > 0 {
+			t.Fatalf("an unfiltered browse must not carry per-event field lists (%d bytes total)", len(broadRaw))
+		}
+	}
+	// And it must say why, and how to get them.
+	if !strings.Contains(broad.Note, "Narrow with service or search") {
+		t.Errorf("note = %q", broad.Note)
+	}
+
+	// Narrowing returns the fields, which are the point of asking.
+	narrowRaw := getResultText(t, callTool(t, cs, "workflows_event_types", map[string]any{
+		"service": "access_management",
+	}))
+	narrow := decode(narrowRaw)
+	if len(narrow.EventTypes) == 0 {
+		t.Fatal("expected matches for access_management")
+	}
+	if len(narrow.EventTypes[0].PayloadFields) == 0 {
+		t.Error("a narrowed query should carry the fields")
+	}
+	if narrow.Note != "" {
+		t.Errorf("a narrowed query should not carry the omission note: %q", narrow.Note)
+	}
+	if len(narrowRaw) >= len(broadRaw) {
+		t.Errorf("a narrowed query should be smaller: narrow=%d broad=%d", len(narrowRaw), len(broadRaw))
+	}
 }

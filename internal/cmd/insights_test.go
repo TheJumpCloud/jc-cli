@@ -289,12 +289,23 @@ func TestInsightsQuery_EventTypeFilter(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	stf, ok := (*captured)["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This required search_term_filter, a key Directory Insights does not
+	// read — so it passed while the filter did nothing. A test pinning the
+	// wrong wire shape protects the bug.
+	if _, dead := (*captured)["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := (*captured)["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 
@@ -774,12 +785,23 @@ func TestInsightsCount_EventTypeFilter(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	stf, ok := (*captured)["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This required search_term_filter, a key Directory Insights does not
+	// read — so it passed while the filter did nothing. A test pinning the
+	// wrong wire shape protects the bug.
+	if _, dead := (*captured)["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := (*captured)["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 
@@ -1111,12 +1133,23 @@ func TestInsightsDistinct_EventTypeFilter(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	stf, ok := (*captured)["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This required search_term_filter, a key Directory Insights does not
+	// read — so it passed while the filter did nothing. A test pinning the
+	// wrong wire shape protects the bug.
+	if _, dead := (*captured)["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := (*captured)["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 
@@ -1711,12 +1744,23 @@ func TestInsightsRun_WithEventType(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	stf, ok := (*captured)["search_term_filter"].(map[string]any)
-	if !ok {
-		t.Fatal("search_term_filter missing from request body")
+	// This required search_term_filter, a key Directory Insights does not
+	// read — so it passed while the filter did nothing. A test pinning the
+	// wrong wire shape protects the bug.
+	if _, dead := (*captured)["search_term_filter"]; dead {
+		t.Error("search_term_filter is ignored by the API; sending it filters nothing")
 	}
-	if stf["event_type"] != "sso_auth_failed" {
-		t.Errorf("event_type filter = %v, want sso_auth_failed", stf["event_type"])
+	st, ok := (*captured)["search_term"].(map[string]any)
+	if !ok {
+		t.Fatal("search_term missing from request body")
+	}
+	and, ok := st["and"].([]any)
+	if !ok || len(and) != 1 {
+		t.Fatalf("search_term.and = %v", st["and"])
+	}
+	term := and[0].(map[string]any)
+	if term["field"] != "event_type" || term["value"] != "sso_auth_failed" {
+		t.Errorf("term = %v, want event_type = sso_auth_failed", term)
 	}
 }
 

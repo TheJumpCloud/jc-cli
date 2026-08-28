@@ -1,0 +1,553 @@
+[
+  {
+    "category": "Security",
+    "changes": "Removed 1 dead `actions.X.status == 200 &&` conjunct from task guards. The rest of each guard is unchanged and still does the real work.",
+    "corrects": "Execute Command on Primary Device After Approval",
+    "corrects_id": "010954e3733692cb27bf9d6c",
+    "description": "Automatically executes a command script on a requester's primary device immediately after an access request is approved. Example: Use this to dynamically install a specific software package or patch right after a manager signs off.",
+    "dsl": {
+      "do": [
+        {
+          "getPrimaryDevice": {
+            "call": "jc_operation",
+            "with": {
+              "bodyParams": {
+                "fields": "_id hostname os osFamily displayName primarySystemUser.id",
+                "filter": {
+                  "and": [
+                    {
+                      "primarySystemUser.id": "${ input.association.connection.to.object_id }"
+                    }
+                  ]
+                }
+              },
+              "operationId": "postApiSearchSystems",
+              "version": 1
+            }
+          }
+        },
+        {
+          "runCommandOnPrimaryDevice": {
+            "call": "jc_operation",
+            "if": "${ len(actions.getPrimaryDevice.body.results) > 0 }",
+            "with": {
+              "bodyParams": {
+                "_id": "REPLACE_WITH_COMMAND_ID",
+                "systemIds": [
+                  "${ actions.getPrimaryDevice.body.results[0]._id }"
+                ]
+              },
+              "operationId": "postApiRuncommand",
+              "version": 1
+            }
+          }
+        }
+      ],
+      "schedule": {
+        "on": {
+          "one": {
+            "with": {
+              "condition": "workflow.id == \"REPLACE_WITH_WORKFLOW_ID\" && any(changes, {.field == \"access_request_state\" && .to != nil && .to == \"granted\"})",
+              "source": "jc_events",
+              "type": "access_management_association_change"
+            }
+          }
+        }
+      }
+    },
+    "id": "jc:execute-command-on-primary-device-after-approval",
+    "name": "Execute Command on Primary Device After Approval"
+  },
+  {
+    "category": "User Management",
+    "changes": "Removed 1 dead `actions.X.status == 200 &&` conjunct from task guards. The rest of each guard is unchanged and still does the real work.",
+    "corrects": "Immediate Account and Device Deprovisioning",
+    "corrects_id": "6459c38e9d8b7a1f5c6b71f0",
+    "description": "On demand, suspends a user account, locks their primary device, and notifies their manager and IT ops. Example: Use this as an offboarding workflow triggered with a user ID from your HR or ticketing system.",
+    "dsl": {
+      "do": [
+        {
+          "suspendUser": {
+            "call": "jc_operation",
+            "with": {
+              "operationId": "postApiSystemusersByIdStateSuspend",
+              "pathParams": {
+                "id": "${ input.userId }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "getUserDetails": {
+            "call": "jc_operation",
+            "with": {
+              "operationId": "getApiSystemusersById",
+              "pathParams": {
+                "id": "${ input.userId }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "getPrimaryDevice": {
+            "call": "jc_operation",
+            "with": {
+              "bodyParams": {
+                "filter": {
+                  "and": [
+                    {
+                      "primarySystemUser.id": "${ input.userId }"
+                    }
+                  ]
+                }
+              },
+              "operationId": "postApiSearchSystems",
+              "version": 1
+            }
+          }
+        },
+        {
+          "deviceLockBranch": {
+            "switch": [
+              {
+                "isMac": {
+                  "then": "lockMacDevice",
+                  "when": "${ len(actions.getPrimaryDevice.body.results) > 0 && actions.getPrimaryDevice.body.results[0].osFamily == \"darwin\" }"
+                }
+              },
+              {
+                "otherDevice": {
+                  "then": "lockOtherDevice",
+                  "when": "${ len(actions.getPrimaryDevice.body.results) > 0 }"
+                }
+              },
+              {
+                "default": {
+                  "then": "getManagerDetails"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "lockMacDevice": {
+            "call": "jc_operation",
+            "then": "getManagerDetails",
+            "with": {
+              "bodyParams": {
+                "pin": "000000"
+              },
+              "operationId": "postApiV2ApplemdmsByAppleMdmIdDevicesByDeviceIdLock",
+              "pathParams": {
+                "apple_mdm_id": "REPLACE_WITH_APPLE_MDM_ID",
+                "device_id": "${ actions.getPrimaryDevice.body.results[0].id }"
+              },
+              "version": 2
+            }
+          }
+        },
+        {
+          "lockOtherDevice": {
+            "call": "jc_operation",
+            "then": "getManagerDetails",
+            "with": {
+              "bodyParams": {},
+              "operationId": "postApiSystemsBySystemIdCommandBuiltinLock",
+              "pathParams": {
+                "system_id": "${ actions.getPrimaryDevice.body.results[0].id }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "getManagerDetails": {
+            "call": "jc_operation",
+            "if": "${ actions.getUserDetails.body.manager != \"\" }",
+            "with": {
+              "operationId": "getApiSystemusersById",
+              "pathParams": {
+                "id": "${ actions.getUserDetails.body.manager }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "emailManager": {
+            "call": "sendEmailsToAddresses",
+            "if": "${ actions.getManagerDetails.body.email != \"\" }",
+            "with": {
+              "message": {
+                "body": "## Offboarding initiated\n\nYour direct report **${ actions.getUserDetails.body.firstname } ${ actions.getUserDetails.body.lastname }** has been offboarded.\n\n### Actions taken\n\n- Account suspended\n- Device lock initiated (if a primary device was found)\n\nIf this is unexpected, contact IT Ops immediately.\n",
+                "subject": "Offboarding Notification: Action Required"
+              },
+              "recipients": {
+                "to_addresses": [
+                  "${ actions.getManagerDetails.body.email }"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "emailITOps": {
+            "call": "sendEmailsToAddresses",
+            "with": {
+              "message": {
+                "body": "## Offboarding initiated (IT Ops)\n\nUser **${ actions.getUserDetails.body.firstname } ${ actions.getUserDetails.body.lastname }** has been offboarded.\n\n### Actions taken\n\n- Account suspended\n- Device lock initiated (if a primary device was found)\n\n### Follow-up\n\n- Confirm device lock status\n- Complete any additional deprovisioning steps required by your policy\n",
+                "subject": "Offboarding Notification: IT Ops"
+              },
+              "recipients": {
+                "to_addresses": [
+                  "REPLACE_WITH_IT_OPS_EMAIL"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "input": {
+        "schema": {
+          "document": {
+            "properties": {
+              "userId": {
+                "description": "A JumpCloud user ID",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId"
+            ],
+            "type": "object"
+          },
+          "format": "json"
+        }
+      },
+      "schedule": {
+        "on": {
+          "one": {
+            "with": {
+              "condition": "userId != \"\"",
+              "source": "external"
+            }
+          }
+        }
+      }
+    },
+    "id": "jc:immediate-account-and-device-deprovisioning",
+    "name": "Immediate Account and Device Deprovisioning"
+  },
+  {
+    "category": "User Management",
+    "changes": "Removed 1 dead `actions.X.status == 200 &&` conjunct from task guards. The rest of each guard is unchanged and still does the real work.",
+    "corrects": "Stage Pre-Hires and Notify Managers",
+    "corrects_id": "319f8478617435bc8dc9f904",
+    "description": "Checks daily for users with an upcoming start date, moves them to a pre-hire staging group, and emails their manager and IT ops with preparation steps. Example: Use this to alert hiring managers and IT a few days before an employee's first day.",
+    "dsl": {
+      "do": [
+        {
+          "findScheduledActivations": {
+            "call": "jc_operation",
+            "with": {
+              "extract": "${ page.response.body }",
+              "operationId": "getApiV2BulkUserstates",
+              "pagination": {
+                "until": "${ len(page.response.body) == 0 }",
+                "update": {
+                  "in": "queryParams",
+                  "key": "skip",
+                  "value": "${ page.request.queryParams.skip + 100 }"
+                }
+              },
+              "queryParams": {
+                "filter": [
+                  "state:eq:ACTIVATED"
+                ],
+                "limit": 100,
+                "skip": 0
+              },
+              "version": 2
+            }
+          }
+        },
+        {
+          "processScheduledUsers": {
+            "do": [
+              {
+                "routeByScheduledDateWindow": {
+                  "switch": [
+                    {
+                      "scheduledSoon": {
+                        "then": "addUserToPreHireGroup",
+                        "when": "${ userState.scheduledDate != nil && (let sd = date(userState.scheduledDate); let window = duration(\"24h\") * 7; sd >= now() && sd < now() + window) }"
+                      }
+                    },
+                    {
+                      "default": {
+                        "then": "continue"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "addUserToPreHireGroup": {
+                  "call": "jc_operation",
+                  "then": "getUserDetails",
+                  "with": {
+                    "bodyParams": {
+                      "id": "${ userState.systemUserId }",
+                      "op": "add",
+                      "type": "user"
+                    },
+                    "operationId": "postApiV2UsergroupsByGroupIdMembers",
+                    "pathParams": {
+                      "group_id": "REPLACE_WITH_PRE_HIRE_GROUP_ID"
+                    },
+                    "version": 2
+                  }
+                }
+              },
+              {
+                "getUserDetails": {
+                  "call": "jc_operation",
+                  "then": "getManagerDetails",
+                  "with": {
+                    "operationId": "getApiSystemusersById",
+                    "pathParams": {
+                      "id": "${ userState.systemUserId }"
+                    },
+                    "version": 1
+                  }
+                }
+              },
+              {
+                "getManagerDetails": {
+                  "call": "jc_operation",
+                  "if": "${ actions.getUserDetails.body.manager != \"\" }",
+                  "with": {
+                    "operationId": "getApiSystemusersById",
+                    "pathParams": {
+                      "id": "${ actions.getUserDetails.body.manager }"
+                    },
+                    "version": 1
+                  }
+                }
+              },
+              {
+                "emailManager": {
+                  "call": "sendEmailsToAddresses",
+                  "if": "${ actions.getManagerDetails.body.email != \"\" }",
+                  "then": "emailITOps",
+                  "with": {
+                    "message": {
+                      "body": "## New hire onboarding\n\nA new hire is scheduled to start soon.\n\n### New hire\n\n- **Name**: ${ actions.getUserDetails.body.firstname } ${ actions.getUserDetails.body.lastname }\n\n### Action required\n\n- Confirm equipment and access are prepared before day one.\n",
+                      "subject": "New Hire Onboarding: Action Required"
+                    },
+                    "recipients": {
+                      "to_addresses": [
+                        "${ actions.getManagerDetails.body.email }"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "emailITOps": {
+                  "call": "sendEmailsToAddresses",
+                  "with": {
+                    "message": {
+                      "body": "## New hire onboarding (IT Ops)\n\nA new hire is scheduled to start soon.\n\n### New hire\n\n- **Name**: ${ actions.getUserDetails.body.firstname } ${ actions.getUserDetails.body.lastname }\n- **User ID**: `${ userState.systemUserId }`\n\n### Checklist\n\n- Provision device(s)\n- Assign required access\n- Validate account readiness\n",
+                      "subject": "New Hire Onboarding: IT Ops Notification"
+                    },
+                    "recipients": {
+                      "to_addresses": [
+                        "REPLACE_WITH_IT_OPS_EMAIL"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "for": {
+              "each": "userState",
+              "in": "${ actions.findScheduledActivations }"
+            }
+          }
+        }
+      ],
+      "schedule": {
+        "frequency": "daily",
+        "interval": 1,
+        "time": "09:00",
+        "timezone": "Etc/UTC"
+      }
+    },
+    "id": "jc:stage-pre-hires-and-notify-managers",
+    "name": "Stage Pre-Hires and Notify Managers"
+  },
+  {
+    "category": "Device Management",
+    "changes": "Removed 2 dead `actions.X.status == 200 &&` conjuncts from task guards. The rest of each guard is unchanged and still does the real work.",
+    "corrects": "Wipe Device and Reset Asset Status",
+    "corrects_id": "d9d5a10f03371923640599ff",
+    "description": "When a suspended user is added to your offboarding group, wipes their primary device and sets asset status to Ready. Example: Use this to secure endpoints and update asset tracking during employee exits.",
+    "dsl": {
+      "do": [
+        {
+          "getUserDetails": {
+            "call": "jc_operation",
+            "with": {
+              "operationId": "getApiSystemusersById",
+              "pathParams": {
+                "id": "${ input.association.connection.to.object_id }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "getPrimaryDevice": {
+            "call": "jc_operation",
+            "if": "${ actions.getUserDetails.body.state == \"SUSPENDED\" }",
+            "with": {
+              "bodyParams": {
+                "fields": "_id hostname os osFamily displayName primarySystemUser.id mdm.internal.deviceId",
+                "filter": {
+                  "and": [
+                    {
+                      "primarySystemUser.id": "${ input.association.connection.to.object_id }"
+                    }
+                  ]
+                }
+              },
+              "operationId": "postApiSearchSystems",
+              "version": 1
+            }
+          }
+        },
+        {
+          "routeByOsFamily": {
+            "switch": [
+              {
+                "isMac": {
+                  "then": "eraseMacDevice",
+                  "when": "${ actions.getUserDetails.body.state == \"SUSPENDED\" && len(actions.getPrimaryDevice.body.results) > 0 && actions.getPrimaryDevice.body.results[0].osFamily == \"darwin\" }"
+                }
+              },
+              {
+                "isOtherOs": {
+                  "then": "eraseOtherDevice",
+                  "when": "${ actions.getUserDetails.body.state == \"SUSPENDED\" && len(actions.getPrimaryDevice.body.results) > 0 }"
+                }
+              },
+              {
+                "default": {
+                  "then": "continue"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "eraseMacDevice": {
+            "call": "jc_operation",
+            "if": "${ actions.getUserDetails.body.state == \"SUSPENDED\" && len(actions.getPrimaryDevice.body.results) > 0 }",
+            "then": "getDeviceAssetByJCSystemID",
+            "with": {
+              "bodyParams": {
+                "pin": "123456"
+              },
+              "operationId": "postApiV2ApplemdmsByAppleMdmIdDevicesByDeviceIdErase",
+              "pathParams": {
+                "apple_mdm_id": "REPLACE_WITH_APPLE_MDM_ID",
+                "device_id": "${ actions.getPrimaryDevice.body.results[0].mdm.internal.deviceId }"
+              },
+              "version": 2
+            }
+          }
+        },
+        {
+          "eraseOtherDevice": {
+            "call": "jc_operation",
+            "if": "${ actions.getUserDetails.body.state == \"SUSPENDED\" && len(actions.getPrimaryDevice.body.results) > 0 }",
+            "then": "getDeviceAssetByJCSystemID",
+            "with": {
+              "bodyParams": {},
+              "operationId": "postApiSystemsBySystemIdCommandBuiltinErase",
+              "pathParams": {
+                "system_id": "${ actions.getPrimaryDevice.body.results[0]._id }"
+              },
+              "version": 1
+            }
+          }
+        },
+        {
+          "getDeviceAssetByJCSystemID": {
+            "call": "jc_operation",
+            "if": "${ actions.getUserDetails.body.state == \"SUSPENDED\" && len(actions.getPrimaryDevice.body.results) > 0 }",
+            "then": "getDeviceAsset",
+            "with": {
+              "operationId": "getApiV2AssetsDevicesJcSystemByJcsystemid",
+              "pathParams": {
+                "jcSystemId": "${ actions.getPrimaryDevice.body.results[0]._id }"
+              },
+              "version": 2
+            }
+          }
+        },
+        {
+          "getDeviceAsset": {
+            "call": "jc_operation",
+            "if": "${ actions.getDeviceAssetByJCSystemID.body.id != \"\" }",
+            "then": "updateAssetStatus",
+            "with": {
+              "operationId": "getApiV2AssetsDevicesById",
+              "pathParams": {
+                "id": "${ actions.getDeviceAssetByJCSystemID.body.id }"
+              },
+              "version": 2
+            }
+          }
+        },
+        {
+          "updateAssetStatus": {
+            "call": "jc_operation",
+            "if": "${ actions.getDeviceAsset.body.fields[\"Name\"].value != \"\" }",
+            "with": {
+              "bodyParams": {
+                "fields": {
+                  "Name": "${ actions.getDeviceAsset.body.fields[\"Name\"].value }",
+                  "Status": {
+                    "id": "REPLACE_WITH_STATUS_ID"
+                  }
+                }
+              },
+              "operationId": "putApiV2AssetsDevicesById",
+              "pathParams": {
+                "id": "${ actions.getDeviceAssetByJCSystemID.body.id }"
+              },
+              "version": 2
+            }
+          }
+        }
+      ],
+      "schedule": {
+        "on": {
+          "one": {
+            "with": {
+              "condition": "association.op == \"add\" && association.connection.from.type == \"user_group\" && association.connection.to.type == \"user\"",
+              "source": "jc_events",
+              "type": "association_change"
+            }
+          }
+        }
+      }
+    },
+    "id": "jc:wipe-device-and-reset-asset-status",
+    "name": "Wipe Device and Reset Asset Status"
+  }
+]

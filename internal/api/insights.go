@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -55,8 +56,10 @@ type InsightsQuery struct {
 	EndTime string `json:"end_time,omitempty"`
 	// Fields is a list of fields to include in the response.
 	Fields []string `json:"fields,omitempty"`
-	// SearchTermFilter is a map of field→value filters to apply.
-	SearchTermFilter map[string]any `json:"search_term_filter,omitempty"`
+	// SearchTermFilter is a map of field→value filters to apply. It is
+	// translated to the API's search_term shape by buildSearchTerm; see there
+	// for why the map form is kept.
+	SearchTermFilter map[string]any `json:"-"`
 	// Sort is the sort order (e.g., "timestamp" or "-timestamp").
 	Sort string `json:"sort,omitempty"`
 	// Limit is the maximum number of events to return per page.
@@ -81,6 +84,46 @@ type InsightsResult struct {
 
 // QueryEvents sends a POST query to the /events endpoint and returns all matching events.
 // Pagination is handled automatically via skip/limit in the request body.
+
+// buildSearchTerm converts the caller-facing field→value map into the shape
+// Directory Insights actually expects.
+//
+// jc previously sent {"search_term_filter": {"event_type": "x"}}. The API has
+// no such key: it takes a search_term object of and/or/not conjunctions, each
+// term a {field, operator, value} triple. An unrecognised key is ignored
+// SILENTLY, so every filtered Insights query in jc — CLI, MCP and TUI alike —
+// was returning unfiltered results that looked correct. Verified 2026-08-28:
+// counts for group_create, user_create and a deliberately invented event type
+// were all identical to the unfiltered count.
+//
+// The map form is kept at the call sites because it reads well and there were
+// ten of them; only the wire encoding changes.
+func buildSearchTerm(filter map[string]any) map[string]any {
+	if len(filter) == 0 {
+		return nil
+	}
+	// Sorted so a given filter always produces the same body, which keeps
+	// responses cacheable and tests deterministic.
+	fields := make([]string, 0, len(filter))
+	for k := range filter {
+		fields = append(fields, k)
+	}
+	sort.Strings(fields)
+
+	terms := make([]map[string]any, 0, len(fields))
+	for _, f := range fields {
+		v := filter[f]
+		op := "eq"
+		// A list of accepted values is a membership test, not equality.
+		switch v.(type) {
+		case []string, []any:
+			op = "in"
+		}
+		terms = append(terms, map[string]any{"field": f, "operator": op, "value": v})
+	}
+	return map[string]any{"and": terms}
+}
+
 func (c *InsightsClient) QueryEvents(ctx context.Context, query InsightsQuery, opts InsightsQueryOptions) (*InsightsResult, error) {
 	pageSize := DefaultPageSize
 	if opts.Limit > 0 && opts.Limit < pageSize {
@@ -165,8 +208,8 @@ func (c *InsightsClient) CountEvents(ctx context.Context, query InsightsQuery) (
 	if query.EndTime != "" {
 		body["end_time"] = query.EndTime
 	}
-	if query.SearchTermFilter != nil {
-		body["search_term_filter"] = query.SearchTermFilter
+	if st := buildSearchTerm(query.SearchTermFilter); st != nil {
+		body["search_term"] = st
 	}
 
 	jsonBody, err := json.Marshal(body)
@@ -217,8 +260,8 @@ func (c *InsightsClient) DistinctEvents(ctx context.Context, query InsightsQuery
 	if query.EndTime != "" {
 		body["end_time"] = query.EndTime
 	}
-	if query.SearchTermFilter != nil {
-		body["search_term_filter"] = query.SearchTermFilter
+	if st := buildSearchTerm(query.SearchTermFilter); st != nil {
+		body["search_term"] = st
 	}
 
 	jsonBody, err := json.Marshal(body)
@@ -301,8 +344,8 @@ func (c *InsightsClient) buildQueryBody(query InsightsQuery, skip, limit int, op
 	if len(query.Fields) > 0 {
 		body["fields"] = query.Fields
 	}
-	if query.SearchTermFilter != nil {
-		body["search_term_filter"] = query.SearchTermFilter
+	if st := buildSearchTerm(query.SearchTermFilter); st != nil {
+		body["search_term"] = st
 	}
 	if opts.Sort != "" {
 		body["sort"] = opts.Sort

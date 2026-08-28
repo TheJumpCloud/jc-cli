@@ -110,7 +110,10 @@ func Validate(d DSL) Result {
 
 	tasks := d.Tasks()
 	validateTasks(d, tasks, add)
+	checkReachability(tasks, add)
 	validateExpressions(d, trigger, tasks, add)
+	checkDeadStatusGuards(d, add)
+	checkInputReferences(d, trigger, add)
 	validatePlaceholders(d, add)
 
 	r.SideEffects = d.SideEffects()
@@ -161,6 +164,20 @@ func validateTrigger(d DSL, add func(Severity, string, string, string)) TriggerS
 		if trigger.EventType == "" {
 			add(Error, "dsl.schedule.on.one.with", "a jc_events trigger needs a type",
 				"set \"type\" to the Directory Insights event to listen for, e.g. \"user_suspended\"")
+			break
+		}
+		// A mistyped event type saves, activates and silently never fires,
+		// which is indistinguishable from an event that has not happened yet.
+		// Warning rather than erroring because the catalog is a lower bound:
+		// a live tenant emitted 30 types the docs do not list.
+		if _, known := LookupEventType(trigger.EventType); !known {
+			hint := "check the spelling; the API is the authority and this catalog is a lower bound"
+			if s := SuggestEventType(trigger.EventType, 3); len(s) > 0 {
+				hint = "closest known: " + strings.Join(s, ", ") +
+					" — the API is the authority and this catalog is a lower bound"
+			}
+			add(Warning, "dsl.schedule.on.one.with.type",
+				fmt.Sprintf("unknown Directory Insights event type %q", trigger.EventType), hint)
 		}
 
 	case trigger.Source == TriggerExternal:
@@ -220,7 +237,8 @@ func validateTask(t Task, index int, position map[string]int, add func(Severity,
 		add(Error, t.Path, "task does nothing: no call, for, or switch", "")
 	case !KnownCalls[call]:
 		add(Error, t.Path+".call", fmt.Sprintf("unknown call type %q", call),
-			"one of: jc_operation, sendEmailsToAddresses, sendEmailsToChannel, connector_operation")
+			"one of: jc_operation, sendEmailsToAddresses, sendEmailsToChannel, connector_operation "+
+				"(sendEmailsToChannel is documented but appears in none of the shipped templates)")
 	default:
 		validateCall(t, add)
 	}
@@ -490,4 +508,159 @@ func compileExpr(src string, kind ExprKind) error {
 	}
 	_, err := expr.Compile(src, opts...)
 	return err
+}
+
+// ScopeGap is one step whose operation no held scope permits.
+type ScopeGap struct {
+	// Task is the step's name.
+	Task string `json:"task"`
+	// OperationID is what it calls.
+	OperationID string `json:"operation_id"`
+	// Describe renders the operation as METHOD /path.
+	Describe string `json:"describe"`
+	// Needs are the scopes that would permit it; any one suffices.
+	Needs []string `json:"needs"`
+}
+
+// CheckScopes reports the steps a role's scopes do not obviously permit.
+//
+// The execution role is the only thing between an unattended workflow and the
+// API — validation otherwise checks that an operation EXISTS, not that the
+// workflow may call it, so deleteApiSystemusersById passes silently. Comparing
+// the DSL's operations against a named role's scopes moves that from a run-time
+// surprise to an author-time finding.
+//
+// A gap is advisory, not disqualifying. The spec's x-scopes is a lower bound:
+// the live API accepted a scope for postApiRuncommand that the spec omits, so
+// a role holding none of the declared scopes may still be permitted. Reporting
+// a gap as an error would block workflows that actually work.
+func CheckScopes(d DSL, roleScopes []string) []ScopeGap {
+	held := make(map[string]bool, len(roleScopes))
+	for _, s := range roleScopes {
+		held[s] = true
+	}
+
+	var gaps []ScopeGap
+	seen := map[string]bool{}
+	for _, t := range d.Tasks() {
+		id := t.OperationID()
+		if id == "" || seen[t.Name] {
+			continue
+		}
+		seen[t.Name] = true
+
+		op, ok := LookupOperation(id)
+		if !ok || len(op.Scopes) == 0 {
+			continue
+		}
+		if op.PermittedBy(held) {
+			continue
+		}
+		gaps = append(gaps, ScopeGap{
+			Task: t.Name, OperationID: id, Describe: op.Describe(), Needs: op.Scopes,
+		})
+	}
+	return gaps
+}
+
+// ValidateWithRole runs Validate and adds a scope finding per step the role
+// does not obviously permit. roleName is used only in the message.
+func ValidateWithRole(d DSL, roleName string, roleScopes []string) Result {
+	r := Validate(d)
+	for _, g := range CheckScopes(d, roleScopes) {
+		r.Findings = append(r.Findings, Finding{
+			Severity: Warning,
+			Path:     "dsl.do." + g.Task,
+			Message: fmt.Sprintf("role %q may not permit %s (%s)",
+				roleName, g.OperationID, g.Describe),
+			Hint: "needs one of: " + strings.Join(g.Needs, ", ") +
+				" — the API is the authority; the spec's scope list is a lower bound",
+		})
+	}
+	return r
+}
+
+// checkReachability warns about tasks no jump targets.
+//
+// The execution model, established by live probing on 2026-08-28 with two
+// probes differing only in where the task sat relative to a switch's target:
+//
+//   - A task named by a `then` or a switch branch belongs to the jump graph.
+//     Only the chosen branch's target runs; the others are skipped. A switch's
+//     unchosen default target did not appear in its run trace at all.
+//   - A task named by NOTHING is not part of that graph. It executes in array
+//     order regardless of any switch around it — verified both between a
+//     switch and its target, and after it.
+//
+// So an un-targeted task is the dangerous case, and dangerous in the opposite
+// direction to the obvious guess: someone who writes a switch to route AROUND
+// a step finds it running anyway. This warns about exactly that, and the hint
+// says so — an earlier version asserted the reverse and would have told an
+// author a destructive step was safely bypassed when it was not.
+func checkReachability(tasks []Task, add func(Severity, string, string, string)) {
+	// Only reason about top-level tasks. Loop bodies have their own ordering
+	// and no jumps into them.
+	var top []Task
+	for _, t := range tasks {
+		if t.Depth == 0 {
+			top = append(top, t)
+		}
+	}
+	if len(top) < 2 {
+		return
+	}
+
+	targeted := map[string]bool{}
+	for _, t := range top {
+		if t.Body == nil {
+			continue
+		}
+		if then, ok := t.Body["then"].(string); ok && !ControlTargets[then] {
+			targeted[then] = true
+		}
+		if branches, ok := t.Body["switch"].([]any); ok {
+			for _, rawBranch := range branches {
+				branch, ok := rawBranch.(map[string]any)
+				if !ok {
+					continue
+				}
+				for _, rawCase := range branch {
+					c, ok := rawCase.(map[string]any)
+					if !ok {
+						continue
+					}
+					if then, ok := c["then"].(string); ok && !ControlTargets[then] {
+						targeted[then] = true
+					}
+				}
+			}
+		}
+	}
+
+	// jumpsAway reports whether a task always transfers control elsewhere, so
+	// the task after it is never reached by fall-through.
+	jumpsAway := func(t Task) bool {
+		if t.Body == nil {
+			return false
+		}
+		if _, ok := t.Body["switch"]; ok {
+			return true
+		}
+		if then, ok := t.Body["then"].(string); ok {
+			return then != "" && then != "continue"
+		}
+		return false
+	}
+
+	for i := 1; i < len(top); i++ {
+		t := top[i]
+		if targeted[t.Name] || !jumpsAway(top[i-1]) {
+			continue
+		}
+		add(Warning, t.Path,
+			fmt.Sprintf("task %q is not targeted by any then, but %q jumps elsewhere, so it will silently never run",
+				t.Name, top[i-1].Name),
+			"execution follows the jump graph, not the order of the do list. Give some branch an explicit then "+
+				"naming this task, or move it out of the do list")
+	}
 }
