@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -50,6 +51,7 @@ connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` a
 	cmd.AddCommand(newWorkflowsTriggerCmd())
 	cmd.AddCommand(newWorkflowsRunsCmd())
 	cmd.AddCommand(newWorkflowsTemplatesCmd())
+	cmd.AddCommand(newWorkflowsEventTypesCmd())
 	cmd.AddCommand(newWorkflowsValidateCmd())
 	cmd.AddCommand(newWorkflowsExplainCmd())
 
@@ -1283,4 +1285,61 @@ func writeRunTrace(cmd *cobra.Command, run workflow.Run) error {
 		fmt.Fprintf(out, "\nFirst failure: %s\n", failed.Name)
 	}
 	return nil
+}
+
+func newWorkflowsEventTypesCmd() *cobra.Command {
+	var service, search string
+
+	cmd := &cobra.Command{
+		Use:     "event-types",
+		Aliases: []string{"events"},
+		Short:   "List the Directory Insights event types a jc_events trigger can use",
+		Long: `List the event types a jc_events workflow trigger can listen for.
+
+This is the vocabulary for the trigger's "type" field, and nothing in the
+workflows API validates it: a mistyped type saves, activates, and then silently
+never fires — indistinguishable from an event that has not happened yet, with
+no run to inspect because no run ever starts.
+
+The catalog is a lower bound. A live tenant emitted 30 types this
+documentation does not list, so a type missing here is not proof it is
+invalid — which is why validate warns rather than rejects.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			matches := workflow.EventTypes(service, search)
+			names := make([]string, 0, len(matches))
+			for n := range matches {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+
+			rows := make([]json.RawMessage, 0, len(names))
+			for _, n := range names {
+				e := matches[n]
+				b, err := json.Marshal(map[string]any{
+					"event_type": n, "service": e.Service, "describes": e.Describe,
+				})
+				if err != nil {
+					return err
+				}
+				rows = append(rows, b)
+			}
+
+			opts := output.CurrentOptions()
+			opts.DefaultFields = []string{"event_type", "service", "describes"}
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d event types ──\n",
+					len(rows), workflow.EventTypeCount())
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&service, "service", "", "Only this Directory Insights service")
+	cmd.Flags().StringVar(&search, "search", "", "Substring matched against the name and description")
+
+	return cmd
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,6 +24,11 @@ type wfRunsListInput struct {
 
 type wfRunGetInput struct {
 	RunID string `json:"run_id" jsonschema:"Workflow run ID"`
+}
+
+type wfEventTypesInput struct {
+	Service string `json:"service,omitempty" jsonschema:"Filter to one Directory Insights service (directory, systems, sso, radius, ldap, mdm, password_manager, software, alert, reports, access_management, asset_management, saas_app_management, notifications, object_storage). Omit or use 'all' for everything."`
+	Search  string `json:"search,omitempty" jsonschema:"Substring matched against the event type name and its description"`
 }
 
 type wfTemplateInput struct {
@@ -406,6 +412,36 @@ func (s *Server) registerWorkflowTools() {
 				"dsl":               dsl,
 				"placeholders":      filled.PlaceholderMarkers(),
 				"placeholder_kinds": kinds,
+			})
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring. NOTE the catalog is a lower bound — a live tenant emitted 30 types this documentation does not list, so an absent type is not proof it is invalid.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
+			matches := workflow.EventTypes(args.Service, args.Search)
+			names := make([]string, 0, len(matches))
+			for n := range matches {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+
+			rows := make([]map[string]any, 0, len(names))
+			for _, n := range names {
+				e := matches[n]
+				row := map[string]any{"event_type": n, "describes": e.Describe}
+				if e.Service != "" {
+					row["service"] = e.Service
+				}
+				rows = append(rows, row)
+			}
+			res, err := jsonResult(map[string]any{
+				"total_in_catalog": workflow.EventTypeCount(),
+				"matched":          len(rows),
+				"event_types":      rows,
 			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil

@@ -579,3 +579,83 @@ func TestValidate_ReachabilityQuietOnRealTemplateShapes(t *testing.T) {
 		t.Errorf("a normal switch-and-converge shape must not warn: %v", r.Findings)
 	}
 }
+
+// A mistyped trigger type saves, activates and silently never fires — the
+// worst failure shape the DSL offers, because it is indistinguishable from an
+// event that has not happened yet.
+func TestValidate_UnknownEventTypeWarnsWithNearMiss(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "user_suspend"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+
+	// A warning, never an error: the catalog is a lower bound, and a live
+	// tenant emitted 30 types the documentation does not list.
+	if !r.OK() {
+		t.Fatalf("an unknown event type must not make the workflow invalid: %v", r.Errors())
+	}
+	if !hasMessage(r, `unknown Directory Insights event type "user_suspend"`) {
+		t.Fatalf("the type should be flagged: %v", r.Findings)
+	}
+	// The realistic failure is a typo, so the near miss is what makes it
+	// actionable.
+	f, _ := findingAt(r, "with.type")
+	if !strings.Contains(f.Hint, "user_suspended") {
+		t.Errorf("hint should name the near miss, got %q", f.Hint)
+	}
+	if !strings.Contains(f.Hint, "lower bound") {
+		t.Errorf("hint must say the catalog is not authoritative, got %q", f.Hint)
+	}
+}
+
+// Every event type JumpCloud's own templates use must stay silent. Warning on
+// the only worked examples anyone has would teach people to ignore it.
+func TestValidate_TemplateEventTypesAreSilent(t *testing.T) {
+	for _, et := range []string{
+		"association_change",
+		"access_management_association_change",
+		"user_activated",
+		"user_create",
+		"user_suspended", // from the DSL guide
+		"system_update",  // from the DSL guide
+	} {
+		r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "`+et+`"}}}},
+		  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+		if hasMessage(r, "unknown Directory Insights event type") {
+			t.Errorf("%s is used by a shipped template or the guide and must not warn: %v", et, r.Findings)
+		}
+	}
+}
+
+func TestEventTypeCatalog(t *testing.T) {
+	if n := EventTypeCount(); n < 300 {
+		t.Fatalf("catalog looks truncated: %d entries", n)
+	}
+	e, ok := LookupEventType("user_suspended")
+	if !ok {
+		t.Fatal("user_suspended missing from the catalog")
+	}
+	if e.Describe == "" {
+		t.Error("an entry must carry what the event means, or the listing is useless")
+	}
+
+	// The service axis lines up with api.ValidInsightsServices.
+	if got := EventTypes("access_management", ""); len(got) == 0 {
+		t.Error("service filter returned nothing for access_management")
+	}
+	// Search matches the description, not only the name.
+	if got := EventTypes("", "suspended"); len(got) == 0 {
+		t.Error("substring search found nothing for 'suspended'")
+	}
+	if got := EventTypes("", "zzz-no-such-thing"); len(got) != 0 {
+		t.Errorf("a nonsense search should match nothing, got %d", len(got))
+	}
+}
+
+func TestSuggestEventType(t *testing.T) {
+	if got := SuggestEventType("user_suspend", 3); len(got) == 0 || got[0] != "user_suspended" {
+		t.Errorf("a one-character typo should suggest the real type first, got %v", got)
+	}
+	// Nonsense should not produce confident noise.
+	if got := SuggestEventType("zzzzzzzzzzzzzzzzzzzz", 3); len(got) != 0 {
+		t.Errorf("an invented name should suggest nothing, got %v", got)
+	}
+}

@@ -240,6 +240,7 @@ var commandClass = map[string]string{
 	"jc workflows templates list": ClassReadOnly,
 	"jc workflows templates show": ClassReadOnly,
 	"jc workflows templates init": ClassReadOnly,
+	"jc workflows event-types":    ClassReadOnly,
 	"jc workflows validate":       ClassReadOnly,
 	"jc workflows explain":        ClassReadOnly,
 	"jc workflows create":         ClassMutating,

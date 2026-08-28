@@ -162,6 +162,20 @@ func validateTrigger(d DSL, add func(Severity, string, string, string)) TriggerS
 		if trigger.EventType == "" {
 			add(Error, "dsl.schedule.on.one.with", "a jc_events trigger needs a type",
 				"set \"type\" to the Directory Insights event to listen for, e.g. \"user_suspended\"")
+			break
+		}
+		// A mistyped event type saves, activates and silently never fires,
+		// which is indistinguishable from an event that has not happened yet.
+		// Warning rather than erroring because the catalog is a lower bound:
+		// a live tenant emitted 30 types the docs do not list.
+		if _, known := LookupEventType(trigger.EventType); !known {
+			hint := "check the spelling; the API is the authority and this catalog is a lower bound"
+			if s := SuggestEventType(trigger.EventType, 3); len(s) > 0 {
+				hint = "closest known: " + strings.Join(s, ", ") +
+					" — the API is the authority and this catalog is a lower bound"
+			}
+			add(Warning, "dsl.schedule.on.one.with.type",
+				fmt.Sprintf("unknown Directory Insights event type %q", trigger.EventType), hint)
 		}
 
 	case trigger.Source == TriggerExternal:
