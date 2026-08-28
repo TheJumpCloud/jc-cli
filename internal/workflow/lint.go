@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 )
@@ -57,7 +58,9 @@ type LintSubject struct {
 	// and a correction exists. Reporting a defect without naming the fix
 	// leaves the operator exactly where they started.
 	CorrectedBy string `json:"corrected_by,omitempty"`
-	Result      Result `json:"result"`
+	// Corrects is set on jc's own corrected copies, naming what they replace.
+	Corrects string `json:"corrects,omitempty"`
+	Result   Result `json:"result"`
 }
 
 // Errors and Warnings count this subject's findings by severity.
@@ -131,4 +134,70 @@ func lintRank(s LintSubject) int {
 	default:
 		return 3
 	}
+}
+
+// The lint subjects below are built HERE rather than in each surface.
+//
+// They were duplicated once, and the copies drifted immediately: the CLI set
+// CorrectedBy on a defective template while the MCP tool did not, so an agent
+// running the sweep saw four defective templates and no pointer to the fix that
+// ships in the same binary. Sharing the construction is the only thing that
+// keeps the two honest.
+
+// LintTemplate validates one template from the served catalog.
+//
+// Placeholders are NOT counted against it: a template is supposed to have them,
+// and counting them reported 10 of 12 as failing while burying the real
+// defects. Where jc ships a corrected copy of a template that has findings, the
+// subject names it — reporting a defect without naming the fix leaves the
+// reader where they started, and this sweep is where they were choosing what to
+// copy.
+func LintTemplate(id, name string, dsl json.RawMessage) LintSubject {
+	sub := LintSubject{Kind: "template", ID: id, Name: name}
+	d, err := ParseDSL(dsl)
+	if err != nil {
+		sub.Skipped = "dsl could not be parsed: " + err.Error()
+		return sub
+	}
+	sub.Result = WithoutPlaceholderFindings(Validate(d))
+	if ct, ok := CorrectionFor(name); ok && len(sub.Result.Findings) > 0 {
+		sub.CorrectedBy = ct.ID
+	}
+	return sub
+}
+
+// LintCorrected validates jc's own corrected copies.
+//
+// They are linted in the SAME sweep that reports the defects they correct, so
+// the output proves the corrections rather than merely asserting them — and so
+// a corrected copy that ever drifted would be caught by the tool it exists to
+// answer.
+func LintCorrected() []LintSubject {
+	all := CorrectedTemplates()
+	subjects := make([]LintSubject, 0, len(all))
+	for _, ct := range all {
+		sub := LintSubject{Kind: "template (jc corrected)", ID: ct.ID, Name: ct.Name, Corrects: ct.Corrects}
+		d, err := ParseDSL(ct.DSL)
+		if err != nil {
+			sub.Skipped = "dsl could not be parsed: " + err.Error()
+			subjects = append(subjects, sub)
+			continue
+		}
+		sub.Result = WithoutPlaceholderFindings(Validate(d))
+		subjects = append(subjects, sub)
+	}
+	return subjects
+}
+
+// LintWorkflow validates one workflow. Scope checking needs a role lookup, so
+// it stays with the caller; ApplyRole folds the result back in.
+func LintWorkflow(w Workflow) (LintSubject, DSL, bool) {
+	sub := LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
+	d, err := ParseDSL(w.DSL)
+	if err != nil {
+		sub.Skipped = "dsl could not be parsed: " + err.Error()
+		return sub, DSL{}, false
+	}
+	sub.Result = Validate(d)
+	return sub, d, true
 }

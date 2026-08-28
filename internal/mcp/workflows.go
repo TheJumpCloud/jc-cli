@@ -576,7 +576,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_lint", "Validate EVERY workflow on the tenant at once, and optionally the served template catalog. workflows_validate answers \"is this one document right?\"; this answers \"which of the things already running are wrong?\" — the question nobody asks, because by hand it means exporting every workflow and checking each in turn. JumpCloud accepts a malformed DSL and fails only at run time, so a broken workflow sits there looking healthy. Set templates to lint the catalog instead: the DSL has no published schema, so templates are the only worked examples, and an idiom that appears in one gets copied into real workflows — linting them says which examples are safe to copy. Set scopes to also check each workflow against ITS OWN execution role, the role it will really run as — this catches DRIFT rather than typos, since the API already rejects a scope-short workflow at create time, but nothing rechecks after a role is edited to drop a scope, which leaves every workflow under it failing at run time. Results are ordered worst-first. Read-only.",
+	addTypedTool(s, "workflows_lint", "Validate EVERY workflow on the tenant at once, and optionally the served template catalog. workflows_validate answers \"is this one document right?\"; this answers \"which of the things already running are wrong?\" — the question nobody asks, because by hand it means exporting every workflow and checking each in turn. JumpCloud accepts a malformed DSL and fails only at run time, so a broken workflow sits there looking healthy. Set templates to lint the catalog instead: the DSL has no published schema, so templates are the only worked examples, and an idiom that appears in one gets copied into real workflows — linting them says which examples are safe to copy. Set scopes to also check each workflow against ITS OWN execution role, the role it will really run as — this catches DRIFT rather than typos, since the API already rejects a scope-short workflow at create time, but nothing rechecks after a role is edited to drop a scope, which leaves every workflow under it failing at run time. Results are ordered worst-first. A defective template carries corrected_by naming jc's repaired copy, and those corrected copies are linted in the SAME sweep, so the output proves them rather than only reporting the defects. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfLintInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -609,14 +609,11 @@ func (s *Server) registerWorkflowTools() {
 							Kind: "workflow", Skipped: "workflow could not be parsed: " + werr.Error()})
 						continue
 					}
-					sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
-					d, derr := workflow.ParseDSL(w.DSL)
-					if derr != nil {
-						sub.Skipped = "dsl could not be parsed: " + derr.Error()
+					sub, d, ok := workflow.LintWorkflow(w)
+					if !ok {
 						subjects = append(subjects, sub)
 						continue
 					}
-					sub.Result = workflow.Validate(d)
 
 					if args.Scopes && w.ExecutionRoleID != "" {
 						info, ok := roles[w.ExecutionRoleID]
@@ -654,18 +651,12 @@ func (s *Server) registerWorkflowTools() {
 					return errorResult(perr.Error()), nil, nil
 				}
 				for _, t := range templates {
-					sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
-					d, derr := workflow.ParseDSL(t.DSL)
-					if derr != nil {
-						sub.Skipped = "dsl could not be parsed: " + derr.Error()
-						subjects = append(subjects, sub)
-						continue
-					}
-					// Placeholders are expected in a template, so they are
-					// not counted against it.
-					sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
-					subjects = append(subjects, sub)
+					subjects = append(subjects, workflow.LintTemplate(t.ID, t.Name, t.DSL))
 				}
+				// jc's corrected copies are linted in the same sweep, so the
+				// output proves the corrections rather than only reporting
+				// the defects they fix.
+				subjects = append(subjects, workflow.LintCorrected()...)
 			}
 
 			res, jerr := jsonResult(workflow.Summarize(subjects))

@@ -1839,15 +1839,12 @@ func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) 
 			continue
 		}
 
-		sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
-		d, err := workflow.ParseDSL(w.DSL)
-		if err != nil {
-			sub.Skipped = "dsl could not be parsed: " + err.Error()
+		sub, d, ok := workflow.LintWorkflow(w)
+		if !ok {
 			subjects = append(subjects, sub)
 			continue
 		}
 
-		sub.Result = workflow.Validate(d)
 		if checkScopes && w.ExecutionRoleID != "" {
 			info, ok := roles[w.ExecutionRoleID]
 			if !ok {
@@ -1886,26 +1883,13 @@ func lintTemplates(ctx context.Context, client *api.V2Client) ([]workflow.LintSu
 		return nil, err
 	}
 
-	subjects := make([]workflow.LintSubject, 0, len(templates))
+	subjects := make([]workflow.LintSubject, 0, len(templates)+4)
 	for _, t := range templates {
-		sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
-		d, err := workflow.ParseDSL(t.DSL)
-		if err != nil {
-			sub.Skipped = "dsl could not be parsed: " + err.Error()
-			subjects = append(subjects, sub)
-			continue
-		}
-		// Placeholders are expected in a template, so they are not counted
-		// against it — see WithoutPlaceholderFindings.
-		sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
-		// Naming a defect without naming the fix leaves the operator where
-		// they started, since this catalog is what they were going to copy.
-		if ct, ok := workflow.CorrectionFor(t.Name); ok && len(sub.Result.Findings) > 0 {
-			sub.CorrectedBy = ct.ID
-		}
-		subjects = append(subjects, sub)
+		subjects = append(subjects, workflow.LintTemplate(t.ID, t.Name, t.DSL))
 	}
-	return subjects, nil
+	// jc's corrected copies are linted in the same sweep, so the output proves
+	// the corrections rather than only reporting the defects.
+	return append(subjects, workflow.LintCorrected()...), nil
 }
 
 func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
@@ -1931,6 +1915,12 @@ func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
 			name = sub.ID
 		}
 		head := fmt.Sprintf("%s %s", sub.Kind, name)
+		// A corrected copy shares its NAME with the template it replaces, so
+		// without the id the two lines are indistinguishable — and the id is
+		// what you would type to use it.
+		if sub.Corrects != "" {
+			head = fmt.Sprintf("%s %s", sub.Kind, sub.ID)
+		}
 		if sub.Status != "" {
 			head += " (" + sub.Status + ")"
 		}
