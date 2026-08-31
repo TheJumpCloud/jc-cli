@@ -81,12 +81,10 @@ const (
 // ListDefaultFields trims the list view. The API returns the full DSL on every
 // row, which dominates the payload and is not a list-view concern.
 //
-// last_ran is deliberately absent: the field was declared and documented but
-// the API never sends it, so it was always omitted and every caller planning
-// around it was writing against nothing. A last-run timestamp would be genuinely
-// useful — it is derivable from workflows_runs_list — but it should exist before
-// it is named.
-var ListDefaultFields = []string{"id", "name", "status", "trigger_type", "updated_at"}
+// last_ran is back, but COMPUTED rather than passed through: the API sends no
+// last-run timestamp, so jc derives it from the runs list on every read. See
+// lastran.go for why that override was worth making.
+var ListDefaultFields = []string{"id", "name", "status", "trigger_type", "last_ran"}
 
 // RunDefaultFields is the default field subset shown for runs.
 var RunDefaultFields = []string{"id", "name", "workflowId", "status", "startedAt", "completedAt"}
