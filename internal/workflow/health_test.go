@@ -22,7 +22,7 @@ func eventsWorkflow(eventType, condition, status string) Workflow {
 // The verdict the product cannot produce: the event happened, repeatedly, and
 // the workflow never ran.
 func TestAssessHealth_NeverFiredIsTheActionableCase(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 47, 0, time.Time{}, time.Time{}, time.Time{})
+	r := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 47, 0, time.Time{}, EventRecency{Known: true})
 	if r.Verdict != HealthNeverFired {
 		t.Fatalf("verdict = %q, want never-fired", r.Verdict)
 	}
@@ -34,7 +34,7 @@ func TestAssessHealth_NeverFiredIsTheActionableCase(t *testing.T) {
 // No events means nothing can be concluded — a typo and a quiet period look
 // identical from here. Claiming health either way would be a lie.
 func TestAssessHealth_NoEventsIsUnverifiable(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 0, 0, time.Time{}, time.Time{}, time.Time{})
+	r := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 0, 0, time.Time{}, EventRecency{Known: true})
 	if r.Verdict != HealthUnverifiable {
 		t.Fatalf("verdict = %q, want unverifiable", r.Verdict)
 	}
@@ -45,7 +45,7 @@ func TestAssessHealth_NoEventsIsUnverifiable(t *testing.T) {
 
 // An unknown event type turns an ambiguous silence into a strong hint.
 func TestAssessHealth_UnknownEventTypeSharpensTheVerdict(t *testing.T) {
-	quiet := AssessHealth(eventsWorkflow("user_creat", "", StatusActive), 0, 0, time.Time{}, time.Time{}, time.Time{})
+	quiet := AssessHealth(eventsWorkflow("user_creat", "", StatusActive), 0, 0, time.Time{}, EventRecency{Known: true})
 	if !quiet.UnknownEventType {
 		t.Error("a type absent from the catalog should be flagged")
 	}
@@ -53,7 +53,7 @@ func TestAssessHealth_UnknownEventTypeSharpensTheVerdict(t *testing.T) {
 		t.Errorf("silence plus an unknown type should point at the spelling: %q", quiet.Detail)
 	}
 
-	fired := AssessHealth(eventsWorkflow("user_creat", "", StatusActive), 5, 0, time.Time{}, time.Time{}, time.Time{})
+	fired := AssessHealth(eventsWorkflow("user_creat", "", StatusActive), 5, 0, time.Time{}, EventRecency{Known: true})
 	if !strings.Contains(fired.Detail, "check the spelling first") {
 		t.Errorf("never-fired plus an unknown type should lead with spelling: %q", fired.Detail)
 	}
@@ -62,7 +62,7 @@ func TestAssessHealth_UnknownEventTypeSharpensTheVerdict(t *testing.T) {
 // A trigger condition legitimately filters, so fewer runs than events is not
 // evidence of a fault. Reporting it as one would make the check untrustworthy.
 func TestAssessHealth_ConditionExplainsFewerRuns(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("user_create", "input.x == 1", StatusActive), 100, 3, time.Time{}, time.Time{}, time.Time{})
+	r := AssessHealth(eventsWorkflow("user_create", "input.x == 1", StatusActive), 100, 3, time.Time{}, EventRecency{Known: true})
 	if r.Verdict != HealthFiring {
 		t.Fatalf("3 runs against 100 events is firing, not broken: %q", r.Verdict)
 	}
@@ -75,7 +75,7 @@ func TestAssessHealth_ConditionExplainsFewerRuns(t *testing.T) {
 
 	// But zero runs with a condition still warrants attention — pointed at
 	// the condition rather than the trigger.
-	none := AssessHealth(eventsWorkflow("user_create", "input.x == 1", StatusActive), 100, 0, time.Time{}, time.Time{}, time.Time{})
+	none := AssessHealth(eventsWorkflow("user_create", "input.x == 1", StatusActive), 100, 0, time.Time{}, EventRecency{Known: true})
 	if none.Verdict != HealthNeverFired {
 		t.Errorf("verdict = %q, want never-fired", none.Verdict)
 	}
@@ -87,14 +87,14 @@ func TestAssessHealth_ConditionExplainsFewerRuns(t *testing.T) {
 // Inactive and non-event workflows are not expected to run, so judging them
 // would be noise.
 func TestAssessHealth_NotApplicableCases(t *testing.T) {
-	inactive := AssessHealth(eventsWorkflow("user_create", "", StatusInactive), 47, 0, time.Time{}, time.Time{}, time.Time{})
+	inactive := AssessHealth(eventsWorkflow("user_create", "", StatusInactive), 47, 0, time.Time{}, EventRecency{Known: true})
 	if inactive.Verdict != HealthNotApplicable {
 		t.Errorf("an inactive workflow is not broken: %q", inactive.Verdict)
 	}
 
 	external := Workflow{ID: "w", Name: "n", Status: StatusActive, TriggerType: TriggerExternal,
 		DSL: json.RawMessage(`{"schedule":{"on":{"one":{"with":{"source":"external"}}}},"do":[]}`)}
-	if got := AssessHealth(external, 0, 0, time.Time{}, time.Time{}, time.Time{}); got.Verdict != HealthNotApplicable {
+	if got := AssessHealth(external, 0, 0, time.Time{}, EventRecency{Known: true}); got.Verdict != HealthNotApplicable {
 		t.Errorf("an external workflow has no event stream to compare: %q", got.Verdict)
 	}
 }
@@ -164,7 +164,7 @@ func TestAssessHealth_NamesTheNarrowedWindow(t *testing.T) {
 	w := eventsWorkflow("user_create", "", StatusActive)
 	w.CreatedAt = start.Format(time.RFC3339)
 
-	r := AssessHealth(w, 0, 0, start, time.Time{}, time.Time{})
+	r := AssessHealth(w, 0, 0, start, EventRecency{Known: true})
 	if !strings.Contains(r.Detail, "covers its lifetime") {
 		t.Errorf("detail should disclose the narrowed window: %q", r.Detail)
 	}
@@ -174,11 +174,11 @@ func TestAssessHealth_NamesTheNarrowedWindow(t *testing.T) {
 }
 
 func TestAssessHealth_CountsReadAsEnglish(t *testing.T) {
-	one := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 1, 0, time.Time{}, time.Time{}, time.Time{})
+	one := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 1, 0, time.Time{}, EventRecency{Known: true})
 	if !strings.Contains(one.Detail, "1 user_create event occurred") {
 		t.Errorf("a single event should not read as \"1 events\": %q", one.Detail)
 	}
-	firing := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 1, 1, time.Time{}, time.Time{}, time.Time{})
+	firing := AssessHealth(eventsWorkflow("user_create", "", StatusActive), 1, 1, time.Time{}, EventRecency{Known: true})
 	if !strings.Contains(firing.Detail, "1 run against 1 user_create event") {
 		t.Errorf("detail = %q", firing.Detail)
 	}
@@ -195,7 +195,7 @@ func TestAssessHealth_CountsReadAsEnglish(t *testing.T) {
 //
 // That window is exactly when someone checks a workflow they just wired up.
 func TestAssessHealth_RunProvesTheEventFiredDespiteIndexingLag(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{}, time.Time{}, time.Time{})
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{}, EventRecency{Known: true})
 
 	if r.Verdict != HealthFiring {
 		t.Fatalf("verdict = %q, want firing — a run cannot happen without the event", r.Verdict)
@@ -214,7 +214,7 @@ func TestAssessHealth_RunProvesTheEventFiredDespiteIndexingLag(t *testing.T) {
 
 // The genuinely ambiguous case is unchanged: no events AND no runs.
 func TestAssessHealth_NoEventsNoRunsStaysUnverifiable(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 0, time.Time{}, time.Time{}, time.Time{})
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 0, time.Time{}, EventRecency{Known: true})
 	if r.Verdict != HealthUnverifiable {
 		t.Errorf("verdict = %q, want unverifiable", r.Verdict)
 	}
@@ -231,7 +231,7 @@ func TestAssessHealth_VerdictTruthTable(t *testing.T) {
 		{5, 0, HealthNeverFired}, // the case the tool exists for
 		{5, 2, HealthFiring},
 	} {
-		got := AssessHealth(eventsWorkflow("group_create", "", StatusActive), c.events, c.runs, time.Time{}, time.Time{}, time.Time{})
+		got := AssessHealth(eventsWorkflow("group_create", "", StatusActive), c.events, c.runs, time.Time{}, EventRecency{Known: true})
 		if got.Verdict != c.want {
 			t.Errorf("events=%d runs=%d → %q, want %q", c.events, c.runs, got.Verdict, c.want)
 		}
@@ -253,13 +253,13 @@ func TestAssessHealth_AllFourVerdictsFromRealShapes(t *testing.T) {
 	// Observed: events=1 runs=0 — real type, condition that cannot match.
 	cannotMatch := AssessHealth(
 		eventsWorkflow("group_create", "resource.name == 'zz-no-such-group-ever'", StatusActive),
-		1, 0, time.Time{}, time.Time{}, time.Time{})
+		1, 0, time.Time{}, EventRecency{Known: true})
 	if cannotMatch.Verdict != HealthNeverFired {
 		t.Errorf("a real event with no run is never-fired, got %q", cannotMatch.Verdict)
 	}
 
 	// Observed: events=0 runs=0 — misspelled type, nothing to count.
-	typo := AssessHealth(eventsWorkflow("group_creat", "", StatusActive), 0, 0, time.Time{}, time.Time{}, time.Time{})
+	typo := AssessHealth(eventsWorkflow("group_creat", "", StatusActive), 0, 0, time.Time{}, EventRecency{Known: true})
 	if typo.Verdict != HealthUnverifiable {
 		t.Errorf("a misspelled type yields no events of that type, so it is unverifiable, got %q",
 			typo.Verdict)
@@ -269,13 +269,13 @@ func TestAssessHealth_AllFourVerdictsFromRealShapes(t *testing.T) {
 	}
 
 	// Observed: events=2 runs=2.
-	firing := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 2, 2, time.Time{}, time.Time{}, time.Time{})
+	firing := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 2, 2, time.Time{}, EventRecency{Known: true})
 	if firing.Verdict != HealthFiring {
 		t.Errorf("verdict = %q, want firing", firing.Verdict)
 	}
 
 	// Observed: events=0 runs=1, inside the DI indexing window.
-	lagging := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{}, time.Time{}, time.Time{})
+	lagging := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{}, EventRecency{Known: true})
 	if lagging.Verdict != HealthFiring {
 		t.Errorf("verdict = %q, want firing on run evidence", lagging.Verdict)
 	}
@@ -285,18 +285,10 @@ func TestAssessHealth_AllFourVerdictsFromRealShapes(t *testing.T) {
 //
 // Observed: workflow created 16:39:36, group created 16:39:53, health called at
 // 16:39:56 and 16:40:10 both said never-fired — and the run started at 16:40:12.
-// It had not failed; it had not got round to it. Trigger latency was ~0.5s on
-// one day and ~19s on another, same event type and DSL shape, so no inference
-// from "no run yet" is safe without a grace window.
-//
-// This is worse than the bug it replaced: unverifiable is vague and admits it,
-// while never-fired is an actionable alarm asserting a falsehood — to the one
-// person least able to dismiss it, who just wired the workflow up.
 func TestAssessHealth_RecentEventIsTooSoonToJudge(t *testing.T) {
-	now := time.Date(2026, 8, 31, 16, 39, 56, 0, time.UTC)
-	justNow := now.Add(-3 * time.Second)
-
-	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 1, 0, time.Time{}, justNow, now)
+	now := time.Now().UTC()
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 1, 0, time.Time{},
+		EventRecency{Known: true, WithinGrace: 1, Newest: now.Add(-3 * time.Second)})
 
 	if r.Verdict != HealthUnverifiable {
 		t.Fatalf("verdict = %q, want unverifiable — the run may still be pending", r.Verdict)
@@ -305,54 +297,67 @@ func TestAssessHealth_RecentEventIsTooSoonToJudge(t *testing.T) {
 		t.Errorf("the detail must say why it is withholding judgement: %q", r.Detail)
 	}
 	if r.GraceSeconds != int(TriggerGrace.Seconds()) {
-		t.Errorf("grace_window_seconds = %d, want %d — a caller re-running later "+
-			"must be able to see why the verdict changed", r.GraceSeconds, int(TriggerGrace.Seconds()))
+		t.Errorf("grace_window_seconds = %d, want %d", r.GraceSeconds, int(TriggerGrace.Seconds()))
 	}
 	if r.NewestEvent == "" {
-		t.Error("the newest event time is the evidence for this verdict and must be reported")
+		t.Error("the newest event inside the window is the evidence and must be reported")
 	}
 }
 
 // Past the window, silence is a fault again — the verdict the tool exists for.
 func TestAssessHealth_OldEventWithNoRunIsStillNeverFired(t *testing.T) {
-	now := time.Now().UTC()
-	old := now.Add(-TriggerGrace - time.Minute)
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 1, 0, time.Time{},
+		EventRecency{Known: true, WithinGrace: 0})
 
-	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 1, 0, time.Time{}, old, now)
 	if r.Verdict != HealthNeverFired {
 		t.Fatalf("verdict = %q, want never-fired", r.Verdict)
 	}
-	if !strings.Contains(r.Detail, "well past") {
+	if !strings.Contains(r.Detail, "none arrived in the last") {
 		t.Errorf("the detail should say the grace window was cleared: %q", r.Detail)
 	}
 }
 
-// The interesting design question, answered deliberately: a CONDITIONED trigger
-// is NOT exempt from the grace window.
+// The third instance of one pattern: a verdict inferred from data that could
+// not be obtained.
 //
-// The tempting argument is that its non-run is expected rather than pending, so
-// it could report never-fired immediately. That is wrong. A condition that DOES
-// match still produces a pending run, so exempting conditioned workflows
-// reintroduces the exact false positive being fixed — and for the harder case,
-// since "the condition filtered it" and "the run has not arrived" are
-// indistinguishable from outside.
-//
-// Withholding judgement for one minute is the honest answer. It costs nothing
-// for the real use case: a workflow broken for days has events far older than
-// any grace window.
-func TestAssessHealth_ConditionedTriggerIsNotExemptFromGrace(t *testing.T) {
-	now := time.Now().UTC()
-	conditioned := eventsWorkflow("group_create", "resource.name == 'no-such-group'", StatusActive)
+// Round 1 read "DI has not indexed it" as "the event did not happen". Round 2
+// read "no run yet" as "it will never run". Round 3 read "recency lookup
+// failed" as "nothing recent", falling through to never-fired with the guard
+// silently skipped. Absent data is not evidence of a negative.
+func TestAssessHealth_UnknownRecencyFailsSafe(t *testing.T) {
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 5, 0, time.Time{},
+		EventRecency{Known: false})
 
-	recent := AssessHealth(conditioned, 1, 0, time.Time{}, now.Add(-5*time.Second), now)
+	if r.Verdict != HealthUnverifiable {
+		t.Fatalf("verdict = %q; a recency lookup that failed must not become an alarm", r.Verdict)
+	}
+	if !strings.Contains(r.Detail, "could not be determined") {
+		t.Errorf("the detail must say the measurement failed, not imply a quiet tenant: %q", r.Detail)
+	}
+	// A window that was never applied must not be advertised as if it were.
+	if r.GraceSeconds != 0 {
+		t.Errorf("grace_window_seconds = %d on a row where the guard could not run", r.GraceSeconds)
+	}
+}
+
+// A conditioned trigger is NOT exempt from the grace window.
+//
+// The tempting argument is that its non-run is expected rather than pending.
+// That is wrong: a condition that DOES match still produces a pending run, so
+// exempting conditioned workflows reintroduces the same false positive for the
+// harder case, where "the condition filtered it" and "the run has not arrived"
+// are indistinguishable from outside.
+func TestAssessHealth_ConditionedTriggerIsNotExemptFromGrace(t *testing.T) {
+	conditioned := eventsWorkflow("group_create", "resource.name == 'no-such-group'", StatusActive)
+	now := time.Now().UTC()
+
+	recent := AssessHealth(conditioned, 1, 0, time.Time{},
+		EventRecency{Known: true, WithinGrace: 1, Newest: now.Add(-5 * time.Second)})
 	if recent.Verdict != HealthUnverifiable {
-		t.Errorf("a conditioned trigger is not exempt: a matching condition still "+
-			"produces a pending run, got %q", recent.Verdict)
+		t.Errorf("a matching condition still produces a pending run, got %q", recent.Verdict)
 	}
 
-	// Past the window it reports never-fired, with the condition caveat that
-	// makes the verdict actionable rather than accusatory.
-	settled := AssessHealth(conditioned, 1, 0, time.Time{}, now.Add(-TriggerGrace-time.Minute), now)
+	settled := AssessHealth(conditioned, 1, 0, time.Time{}, EventRecency{Known: true})
 	if settled.Verdict != HealthNeverFired {
 		t.Fatalf("verdict = %q, want never-fired once the window has passed", settled.Verdict)
 	}
@@ -361,15 +366,23 @@ func TestAssessHealth_ConditionedTriggerIsNotExemptFromGrace(t *testing.T) {
 	}
 }
 
-// Without a timestamp the recency test cannot run, and the check must degrade
-// to its old behaviour rather than silently never reporting a fault.
-func TestAssessHealth_MissingEventTimeStillReportsNeverFired(t *testing.T) {
-	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 3, 0,
-		time.Time{}, time.Time{}, time.Now())
-	if r.Verdict != HealthNeverFired {
-		t.Errorf("verdict = %q; with no timestamp the recency test is skipped, not inverted", r.Verdict)
+// Every row the guard applies to reports the same fields, whichever branch ran.
+// A shape that varies by code path makes a field-set assertion pass or fail by
+// luck — the same defect as records of one response carrying different keys.
+func TestAssessHealth_RowShapeIsUniformAcrossVerdicts(t *testing.T) {
+	w := eventsWorkflow("group_create", "", StatusActive)
+	now := time.Now().UTC()
+
+	rows := []HealthReport{
+		AssessHealth(w, 1, 0, time.Time{}, EventRecency{Known: true, WithinGrace: 1, Newest: now}),
+		AssessHealth(w, 1, 0, time.Time{}, EventRecency{Known: true}),
+		AssessHealth(w, 2, 2, time.Time{}, EventRecency{Known: true}),
+		AssessHealth(w, 0, 0, time.Time{}, EventRecency{Known: true}),
 	}
-	if r.GraceSeconds != 0 {
-		t.Error("a grace window must not be reported when it was not applied")
+	for i, r := range rows {
+		if r.GraceSeconds != int(TriggerGrace.Seconds()) {
+			t.Errorf("row %d omits grace_window_seconds (verdict %q); the guard applied to it",
+				i, r.Verdict)
+		}
 	}
 }

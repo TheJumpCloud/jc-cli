@@ -1639,23 +1639,23 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 				start := workflow.EffectiveSince(w, since)
 
 				events := 0
-				var newestEvent time.Time
+				var recency workflow.EventRecency
 				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
 					key := eventType + "@" + start.Format(time.RFC3339)
 					c, ok := counts[key]
 					if !ok {
-						n, ts, cerr := countEvents(cmd.Context(), eventType, start, now)
+						n, rec, cerr := countEvents(cmd.Context(), eventType, start, now)
 						if cerr != nil {
 							return fmt.Errorf("counting %s events: %w", eventType, cerr)
 						}
-						c = eventCount{n: n, newest: ts}
+						c = eventCount{n: n, recency: rec}
 						counts[key] = c
 					}
-					events, newestEvent = c.n, c.newest
+					events, recency = c.n, c.recency
 				}
 
 				reports = append(reports, workflow.AssessHealth(w, events,
-					workflow.RunsWithin(runs, w.ID, start), start, newestEvent, now))
+					workflow.RunsWithin(runs, w.ID, start), start, recency))
 			}
 
 			workflow.SortHealth(reports)
@@ -1669,14 +1669,17 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 
 // countEvents asks Directory Insights how often one event type occurred.
 // countEvents returns how many times an event type occurred in the window, and
-// WHEN the most recent one was.
+// whether any of them arrived recently enough that silence proves nothing.
 //
-// The timestamp is what separates "this workflow is broken" from "this workflow
-// has not got round to it yet" — see workflow.TriggerGrace.
-func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, time.Time, error) {
+// Recency is asked as a SECOND, narrower query rather than by sorting the
+// first: Directory Insights ignores the sort parameter — the same request with
+// "-timestamp", "timestamp" and no sort returns byte-identical ascending
+// results — so there is no way to ask it for the newest event, and taking the
+// first row returns the oldest.
+func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, workflow.EventRecency, error) {
 	client, err := newInsightsClient()
 	if err != nil {
-		return 0, time.Time{}, err
+		return 0, workflow.EventRecency{}, err
 	}
 	q := api.InsightsQuery{
 		Service:          "all",
@@ -1685,34 +1688,50 @@ func countEvents(ctx context.Context, eventType string, start, end time.Time) (i
 		SearchTermFilter: map[string]any{"event_type": eventType},
 	}
 	n, err := client.CountEvents(ctx, q)
-	if err != nil || n == 0 {
-		return n, time.Time{}, err
+	if err != nil {
+		return 0, workflow.EventRecency{}, err
+	}
+	if n == 0 {
+		// Nothing happened, so nothing can be too recent. Known, and empty.
+		return 0, workflow.EventRecency{Known: true}, nil
 	}
 
-	// Newest first, one row: only its timestamp is needed.
-	res, err := client.QueryEvents(ctx, q, api.InsightsQueryOptions{Limit: 1, Sort: "-timestamp"})
-	if err != nil || res == nil || len(res.Data) == 0 {
-		// A count without a timestamp still supports every verdict except
-		// the recency one, so this degrades rather than fails.
-		return n, time.Time{}, nil
+	// Only the grace window, which keeps the result set small enough to scan
+	// for a genuine newest timestamp.
+	graceStart := end.Add(-workflow.TriggerGrace)
+	if graceStart.Before(start) {
+		graceStart = start
 	}
-	var e struct {
-		Timestamp string `json:"timestamp"`
+	recentQ := q
+	recentQ.StartTime = graceStart.UTC().Format(time.RFC3339)
+
+	res, rerr := client.QueryEvents(ctx, recentQ, api.InsightsQueryOptions{Limit: 200})
+	if rerr != nil || res == nil {
+		// Unknown, NOT zero: the caller must withhold judgement rather than
+		// read a failed lookup as "no recent events".
+		return n, workflow.EventRecency{}, nil
 	}
-	if err := json.Unmarshal(res.Data[0], &e); err != nil {
-		return n, time.Time{}, nil
+
+	recency := workflow.EventRecency{Known: true, WithinGrace: len(res.Data)}
+	for _, raw := range res.Data {
+		var e struct {
+			Timestamp string `json:"timestamp"`
+		}
+		if json.Unmarshal(raw, &e) != nil {
+			continue
+		}
+		ts, perr := time.Parse(time.RFC3339, e.Timestamp)
+		if perr == nil && ts.After(recency.Newest) {
+			recency.Newest = ts
+		}
 	}
-	ts, perr := time.Parse(time.RFC3339, e.Timestamp)
-	if perr != nil {
-		return n, time.Time{}, nil
-	}
-	return n, ts, nil
+	return n, recency, nil
 }
 
-// eventCount pairs a count with the timestamp of its most recent event.
+// eventCount pairs a count with how recently those events arrived.
 type eventCount struct {
-	n      int
-	newest time.Time
+	n       int
+	recency workflow.EventRecency
 }
 
 func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days int) error {

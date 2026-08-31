@@ -461,7 +461,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_health", "Find event-triggered JumpCloud workflows that SHOULD have fired and did not. Nothing in the product can tell you this: a workflow whose trigger event type is mistyped or never emitted saves, activates, and then silently never runs — and there is no match counter, no last-evaluated timestamp, and no error anywhere to distinguish it from an event that simply has not happened yet. This holds both halves of the comparison, asking Directory Insights how often each trigger's event ACTUALLY occurred and the runs list how often the workflow ran, and reports one of: never-fired (the event occurred and the workflow did not run — the failure with no other signal), firing, or unverifiable (the event did not occur in the window, so nothing can be concluded either way). Fewer runs than events is NOT reported as a fault, because a trigger condition legitimately filters. Read-only: it lists and counts, and creates, activates or runs nothing.",
+	addTypedTool(s, "workflows_health", "Find event-triggered JumpCloud workflows that SHOULD have fired and did not. Nothing in the product can tell you this: a workflow whose trigger event type is mistyped or never emitted saves, activates, and then silently never runs — and there is no match counter, no last-evaluated timestamp, and no error anywhere to distinguish it from an event that simply has not happened yet. This holds both halves of the comparison, asking Directory Insights how often each trigger's event ACTUALLY occurred and the runs list how often the workflow ran, and reports one of: never-fired (the event occurred and the workflow did not run — the failure with no other signal), firing, or unverifiable (the event did not occur in the window, so nothing can be concluded either way). Fewer runs than events is NOT reported as a fault, because a trigger condition legitimately filters. Each row carries: verdict, events_in_window, runs_in_window, recent_events_in_grace_window, grace_window_seconds, newest_event (the newest matching event INSIDE the grace window, when there was one — Directory Insights offers no way to ask which event was newest overall), trigger_has_condition, unknown_event_type, window_start, and detail. A verdict of never-fired is withheld while a matching event is still inside the grace window, because runs have been observed lagging their event by up to ~20s. Read-only: it lists and counts, and creates, activates or runs nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfHealthInput) (*mcp.CallToolResult, any, error) {
 			days := args.Days
 			if days == 0 {
@@ -517,7 +517,7 @@ func (s *Server) registerWorkflowTools() {
 				start := workflow.EffectiveSince(w, since)
 
 				events := 0
-				var newestEvent time.Time
+				var recency workflow.EventRecency
 				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
 					key := eventType + "@" + start.Format(time.RFC3339)
 					c, ok := counts[key]
@@ -532,36 +532,51 @@ func (s *Server) registerWorkflowTools() {
 							EndTime:          now.Format(time.RFC3339),
 							SearchTermFilter: map[string]any{"event_type": eventType},
 						}
-						n, ierr := ic.CountEvents(ctx, q)
-						if ierr != nil {
-							return errorResult(fmt.Sprintf("counting %s events: %v", eventType, ierr)), nil, nil
+						n, cerr := ic.CountEvents(ctx, q)
+						if cerr != nil {
+							return errorResult(fmt.Sprintf("counting %s events: %v", eventType, cerr)), nil, nil
 						}
 						c = mcpEventCount{n: n}
-						if n > 0 {
-							// The newest event's time is what separates a
-							// broken workflow from one that has not got
-							// round to it yet. Its absence degrades the
-							// recency verdict, never the others.
-							if res, qerr := ic.QueryEvents(ctx, q,
-								api.InsightsQueryOptions{Limit: 1, Sort: "-timestamp"}); qerr == nil &&
-								res != nil && len(res.Data) > 0 {
-								var e struct {
-									Timestamp string `json:"timestamp"`
-								}
-								if json.Unmarshal(res.Data[0], &e) == nil {
-									if ts, perr := time.Parse(time.RFC3339, e.Timestamp); perr == nil {
-										c.newest = ts
+						if n == 0 {
+							c.recency = workflow.EventRecency{Known: true}
+						} else {
+							// A second, narrower query: Directory Insights
+							// ignores sort, so the newest event cannot be
+							// asked for — only whether any arrived recently.
+							graceStart := now.Add(-workflow.TriggerGrace)
+							if graceStart.Before(start) {
+								graceStart = start
+							}
+							rq := q
+							rq.StartTime = graceStart.Format(time.RFC3339)
+							if res, qerr := ic.QueryEvents(ctx, rq,
+								api.InsightsQueryOptions{Limit: 200}); qerr == nil && res != nil {
+								rec := workflow.EventRecency{Known: true, WithinGrace: len(res.Data)}
+								for _, raw := range res.Data {
+									var e struct {
+										Timestamp string `json:"timestamp"`
+									}
+									if json.Unmarshal(raw, &e) != nil {
+										continue
+									}
+									if ts, perr := time.Parse(time.RFC3339, e.Timestamp); perr == nil &&
+										ts.After(rec.Newest) {
+										rec.Newest = ts
 									}
 								}
+								c.recency = rec
 							}
+							// On failure recency stays Known:false, and the
+							// verdict withholds judgement rather than reading
+							// a failed lookup as "nothing recent".
 						}
 						counts[key] = c
 					}
-					events, newestEvent = c.n, c.newest
+					events, recency = c.n, c.recency
 				}
 
 				reports = append(reports, workflow.AssessHealth(w, events,
-					workflow.RunsWithin(runs, w.ID, start), start, newestEvent, now))
+					workflow.RunsWithin(runs, w.ID, start), start, recency))
 			}
 
 			workflow.SortHealth(reports)
@@ -679,7 +694,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. "+workflow.RanPredicateDoc+" "+workflow.TruncatedNodeDoc+" Read-only: it fetches one run and runs nothing.",
+	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. Verdicts are agree, ran-but-planned-skip, skipped-but-planned-run, not-in-run (the plan named a task the run has no node for, which a halt earlier in the run explains), not-in-plan, unresolved-in-plan and cannot-compare; everything except agree and unresolved-in-plan counts toward diverge. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. "+workflow.RanPredicateDoc+" "+workflow.TruncatedNodeDoc+" Read-only: it fetches one run and runs nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfCompareRunInput) (*mcp.CallToolResult, any, error) {
 			raw, err := dslRaw(args.DSL)
 			if err != nil {
@@ -1170,8 +1185,8 @@ type wfCompareRunInput struct {
 	Input map[string]any `json:"input,omitempty" jsonschema:"Input to resolve ${ input.<field> } against"`
 }
 
-// mcpEventCount pairs an event count with its most recent occurrence.
+// mcpEventCount pairs an event count with how recently those events arrived.
 type mcpEventCount struct {
-	n      int
-	newest time.Time
+	n       int
+	recency workflow.EventRecency
 }
