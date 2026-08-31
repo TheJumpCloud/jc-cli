@@ -465,6 +465,7 @@ func (s *Server) registerDeviceView() {
 	registerTypedAppTool(s, typedAppSpec[deviceViewArgs]{
 		Name: "device_view",
 		Description: "Show an interactive JumpCloud device inventory view: header (hostname, OS+version, serial, last contact, agent version), " +
+			"TIMESTAMP PRECISION: created here comes from GET /systems/{id}, which returns whole seconds (2024-05-14T03:31:31.000Z). devices_search returns the SAME field on the SAME device with milliseconds (…31.286Z) — a JumpCloud inconsistency between two of its own endpoints, not a truncation by jc, verified by comparing both raw responses. Do not correlate this value against Directory Insights events, which carry millisecond precision; use devices_search when exact ordering matters. " +
 			"Field names here are snake_case: this is a jc-shaped projection, not an API passthrough. The passthrough tools (devices_search, users_get, users_search) return JumpCloud's own camelCase (displayName, serialNumber, lastContact) for the same facts. That split is deliberate — camelCase means the API said it, snake_case means jc composed it — but it does mean the same fact is spelled two ways depending on which tool you asked. " +
 			"status badges (online/stale/offline, FDE, MDM), group memberships, applied policies, a system-insights snapshot " +
 			"(uptime, logged-in users, disks), and recent Directory Insights events for the device. " +
