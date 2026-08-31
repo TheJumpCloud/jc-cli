@@ -15,6 +15,12 @@ import (
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
+type wfListInput struct {
+	// Limit matters more here than on most list tools: each row carries the
+	// full DSL, so an unbounded list is a whole workflow document per row.
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum workflows to return. Each row includes the complete dsl, so this is worth setting on a large tenant."`
+}
+
 type wfGetInput struct {
 	Identifier string `json:"identifier" jsonschema:"Workflow name or ID"`
 }
@@ -48,8 +54,12 @@ type wfSimulateInput struct {
 }
 
 type wfValidateInput struct {
-	DSL  map[string]any `json:"dsl" jsonschema:"The workflow DSL document to validate"`
-	Role string         `json:"role,omitempty" jsonschema:"Optionally also check each step against this role's API scopes (name or ID). The execution role is the only thing between an unattended workflow and the API, so without this a destructive operationId validates silently."`
+	DSL map[string]any `json:"dsl,omitempty" jsonschema:"The workflow DSL document to validate. Give this or template, not both."`
+	// Template validates a catalog template instead of a supplied document —
+	// the CLI has had this since the corrected-templates work and the MCP tool
+	// did not, so an agent could not check a template before copying it.
+	Template string `json:"template,omitempty" jsonschema:"Validate a template from the served catalog instead of a DSL — name or id, including a jc: corrected copy. Worth doing before copying one: four of JumpCloud's templates ship with a defect. Placeholders are not counted as errors here, since a template is supposed to have them."`
+	Role     string `json:"role,omitempty" jsonschema:"Optionally also check each step against this role's API scopes (name or ID). The execution role is the only thing between an unattended workflow and the API, so without this a destructive operationId validates silently."`
 }
 
 type wfExplainInput struct {
@@ -251,12 +261,16 @@ func sideEffectRefusal(res workflow.Result) string {
 
 func (s *Server) registerWorkflowTools() {
 	addTypedTool(s, "workflows_list", "List JumpCloud Workflows — server-side automations that run on Directory Insights events, on a schedule, or when triggered through the API. Each row is the FULL object: created_at, created_by, description, dsl, execution_role_id, id, name, status, trigger_type (jc_events|external|scheduler), updated_at. The dsl dominates the payload, so expect a whole workflow document per row rather than a summary. There is no last-run timestamp on this object — use workflows_runs_list for run history, or workflows_health to find event-triggered workflows that should have fired and did not.",
-		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+		func(ctx context.Context, req *mcp.CallToolRequest, args wfListInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
-			raw, err := client.Get(ctx, workflow.Endpoint)
+			endpoint := workflow.Endpoint
+			if args.Limit > 0 {
+				endpoint = fmt.Sprintf("%s?limit=%d", endpoint, args.Limit)
+			}
+			raw, err := client.Get(ctx, endpoint)
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing workflows: %v", err)), nil, nil
 			}
@@ -825,6 +839,40 @@ func (s *Server) registerWorkflowTools() {
 
 	addTypedTool(s, "workflows_validate", "Validate a JumpCloud Workflow DSL locally, before it reaches the API. JumpCloud accepts a malformed DSL and fails only when the workflow runs, so this is the difference between an error now and a workflow that silently never works. Checks the trigger, task structure, control flow, pagination, every Expr expression (compiled with the same engine), and every operationId against JumpCloud's own API operations. Also reports every step that sends email or calls an external connector.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfValidateInput) (*mcp.CallToolResult, any, error) {
+			if args.Template != "" {
+				if len(args.DSL) > 0 {
+					return errorResult("give either dsl or template, not both"), nil, nil
+				}
+				client, cerr := newV2ClientFunc()
+				if cerr != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", cerr)), nil, nil
+				}
+				t, terr := findWorkflowTemplate(ctx, client, args.Template)
+				if terr != nil {
+					return errorResult(terr.Error()), nil, nil
+				}
+				d, derr := workflow.ParseDSL(t.DSL)
+				if derr != nil {
+					return errorResult(derr.Error()), nil, nil
+				}
+				// Placeholders are expected in a template, so they are not
+				// counted against it — the same rule lint applies, so the two
+				// cannot contradict each other about the same template.
+				res := workflow.WithoutPlaceholderFindings(workflow.Validate(d))
+				out, jerr := jsonResult(map[string]any{
+					"template":             t.Name,
+					"id":                   t.ID,
+					"result":               res,
+					"placeholders_to_fill": len(d.PlaceholderMarkers()),
+				})
+				if jerr != nil {
+					return errorResult(jerr.Error()), nil, nil
+				}
+				return out, nil, nil
+			}
+			if len(args.DSL) == 0 {
+				return errorResult("give a dsl or a template to validate"), nil, nil
+			}
 			raw, err := dslRaw(args.DSL)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil

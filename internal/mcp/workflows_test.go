@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -561,5 +562,58 @@ func TestMCPWorkflows_EventTypesOmitsFieldsOnABroadBrowse(t *testing.T) {
 	}
 	if len(narrowRaw) >= len(broadRaw) {
 		t.Errorf("a narrowed query should be smaller: narrow=%d broad=%d", len(narrowRaw), len(broadRaw))
+	}
+}
+
+// Every capability the CLI has in this area must be reachable from MCP too.
+//
+// Three gaps were found by asking that question directly rather than assuming:
+// the catalog audit, validate-a-template, and list-with-a-limit all shipped as
+// CLI flags with no MCP equivalent. An agent could list the template catalog but
+// not check a template before copying it — while four of the twelve ship with a
+// known defect.
+//
+// This asserts the ARGUMENTS exist, which is where the drift happens: the tools
+// themselves were present all along.
+func TestMCPWorkflows_ArgumentParityWithTheCLI(t *testing.T) {
+	cs := connectToolTestServer(t, Options{})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemas := map[string]map[string]any{}
+	for _, tool := range res.Tools {
+		raw, merr := json.Marshal(tool.InputSchema)
+		if merr != nil {
+			continue
+		}
+		var sch struct {
+			Properties map[string]any `json:"properties"`
+		}
+		if json.Unmarshal(raw, &sch) == nil {
+			schemas[tool.Name] = sch.Properties
+		}
+	}
+
+	for _, name := range []string{
+		"workflows_validate", "workflows_list", "workflows_lint", "workflows_event_types",
+	} {
+		if _, ok := schemas[name]; !ok {
+			t.Fatalf("%s is missing entirely", name)
+		}
+	}
+
+	// The specific arguments that were CLI-only.
+	for _, c := range []struct{ tool, arg string }{
+		{"workflows_validate", "template"}, // CLI: validate --template
+		{"workflows_list", "limit"},        // CLI: list --limit
+		{"workflows_event_types", "audit"}, // CLI: event-types --audit
+		{"workflows_lint", "templates"},    // CLI: lint --templates
+		{"workflows_lint", "scopes"},       // CLI: lint --scopes
+		{"workflows_health", "days"},       // CLI: health --days
+	} {
+		if _, ok := schemas[c.tool][c.arg]; !ok {
+			t.Errorf("%s has no %q argument; the CLI has the equivalent flag", c.tool, c.arg)
+		}
 	}
 }
