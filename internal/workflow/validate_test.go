@@ -899,3 +899,47 @@ func TestEventFields(t *testing.T) {
 		t.Error("the suffix match should cover access_management_association_change")
 	}
 }
+
+// The workflows service emits its own event types, and the documentation omits
+// them entirely. They matter more than a typical gap because they are
+// TRIGGERABLE: without them, a workflow chaining off another workflow's run is
+// reported as having an unknown event type — a false alarm from the one check
+// that exists to catch real typos.
+//
+// Verified on a live tenant 2026-08-31: 10 workflow_create, 10 workflow_delete
+// and 11 workflow_run events, service "workflows", none in the parsed catalog.
+func TestValidate_WorkflowsServiceEventTypesAreKnown(t *testing.T) {
+	for _, typ := range []string{"workflow_create", "workflow_delete", "workflow_run"} {
+		if _, known := LookupEventType(typ); !known {
+			t.Errorf("%q is emitted by this tenant and must not be reported as unknown", typ)
+		}
+	}
+}
+
+// A workflow run emits a workflow_run event, so triggering on workflow_run
+// without a condition means re-triggering on your own completion.
+func TestValidate_WorkflowRunTriggerWarnsAboutSelfRetrigger(t *testing.T) {
+	r := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "workflow_run"}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+
+	if !hasMessage(r, "re-trigger on its own completion") {
+		t.Fatalf("an unconditioned workflow_run trigger must be flagged: %v", r.Findings)
+	}
+	if !hasHint(r, "initiated_by.id") {
+		t.Errorf("the hint must name the field that breaks the loop: %v", r.Findings)
+	}
+	// It is a warning, not an error: the API accepts it and the pattern is
+	// legitimate once narrowed.
+	f, _ := findingAt(r, "with.type")
+	if f.Severity != Warning {
+		t.Errorf("severity = %v, want warning", f.Severity)
+	}
+
+	// Chaining off ANOTHER workflow is the useful case and must stay quiet.
+	chained := validateJSON(t, `{"schedule": {"on": {"one": {"with": {"source": "jc_events", "type": "workflow_run",
+	    "condition": "initiated_by.id == \"6a95a7bc1218f500017769c8\""}}}},
+	  "do": [{"a": {"call": "jc_operation", "with": {"operationId": "getApiSystemusers", "version": 1}}}]}`)
+	if hasMessage(chained, "re-trigger on its own completion") {
+		t.Errorf("a narrowed workflow_run trigger is a legitimate pattern: %v", chained.Findings)
+	}
+}
