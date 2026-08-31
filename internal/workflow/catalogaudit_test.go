@@ -93,3 +93,28 @@ func TestAuditCatalog_LdapSrchIsTheEmittedSpelling(t *testing.T) {
 		t.Errorf("the entry should warn about the documented misspelling: %q", e.Describe)
 	}
 }
+
+// The audit must be reachable from BOTH surfaces.
+//
+// It shipped CLI-only in its first form — a flag with no MCP equivalent — which
+// is the same drift this repo has fixed three times over: one surface gains a
+// capability and the other silently does not. The check lives in this package
+// precisely so both can call it; this asserts the shared entry point exists
+// with the shape both need.
+func TestAuditCatalog_IsCallableFromBothSurfaces(t *testing.T) {
+	got := AuditCatalog(map[string]int{"user_create": 1, "zz_unknown": 2}, "30d")
+
+	// The fields both surfaces render.
+	if got.Window != "30d" {
+		t.Errorf("Window = %q, want the window echoed back", got.Window)
+	}
+	if got.Emitted != 2 || got.Known == 0 {
+		t.Errorf("Emitted=%d Known=%d", got.Emitted, got.Known)
+	}
+	if len(got.Gaps) != 1 || got.Gaps[0].EventType != "zz_unknown" {
+		t.Fatalf("gaps = %+v", got.Gaps)
+	}
+	if got.Note == "" {
+		t.Error("both surfaces render the note; it qualifies an empty result")
+	}
+}

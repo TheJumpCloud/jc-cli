@@ -30,6 +30,7 @@ type wfRunGetInput struct {
 type wfEventTypesInput struct {
 	Service string `json:"service,omitempty" jsonschema:"Filter to one Directory Insights service (directory, systems, sso, radius, ldap, mdm, password_manager, software, alert, reports, access_management, asset_management, saas_app_management, notifications, object_storage). Omit or use 'all' for everything."`
 	Search  string `json:"search,omitempty" jsonschema:"Substring matched against the event type name and its description"`
+	Audit   string `json:"audit,omitempty" jsonschema:"Instead of listing the catalog, diff what this tenant ACTUALLY emitted against it over a window (e.g. 7d, 30d). The catalog is generated from documentation that has been observed to omit an entire service, so a type it lacks is reported as unknown by the very check meant to catch typos."`
 }
 
 type wfTemplateInput struct {
@@ -701,8 +702,44 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
+	addTypedTool(s, "workflows_event_types", "List the Directory Insights event types a jc_events workflow trigger can listen for, with what each one means. This is the vocabulary for schedule.on.one.with.type, and nothing in the workflows API validates it: a mistyped type saves, activates, and then silently never fires, which is indistinguishable from an event that simply has not happened yet. Filter by service or search by substring — narrowing to 25 results or fewer also returns payload_fields, the fields a condition on that event may reference (resource, changes, initiated_by, auth_method, geoip, ...), since a condition naming a field the event does not carry evaluates false forever. Pass audit with a window (e.g. 30d) to diff what this tenant ACTUALLY emitted against the catalog instead of listing it — that is how the missing workflows service was found. NOTE both the catalog and the field list are lower bounds: a live tenant emitted 30 types this documentation does not list, so an absent entry is not proof it is invalid.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfEventTypesInput) (*mcp.CallToolResult, any, error) {
+			if args.Audit != "" {
+				ic, err := newInsightsClientFunc()
+				if err != nil {
+					return errorResult(fmt.Sprintf("creating Insights client: %v", err)), nil, nil
+				}
+				from, terr := api.ParseTimeRange(args.Audit)
+				if terr != nil {
+					return errorResult(fmt.Sprintf("invalid audit window %q: %v", args.Audit, terr)), nil, nil
+				}
+				q := api.InsightsQuery{
+					Service:   "all",
+					StartTime: from.UTC().Format(time.RFC3339),
+					EndTime:   nowFunc().UTC().Format(time.RFC3339),
+				}
+				items, qerr := ic.DistinctEvents(ctx, q, "event_type")
+				if qerr != nil {
+					return errorResult(fmt.Sprintf("listing emitted event types: %v", qerr)), nil, nil
+				}
+				observed := make(map[string]int, len(items))
+				for _, raw := range items {
+					var row struct {
+						Key   string `json:"key"`
+						Count int    `json:"doc_count"`
+					}
+					if json.Unmarshal(raw, &row) != nil || row.Key == "" {
+						continue
+					}
+					observed[row.Key] = row.Count
+				}
+				res, jerr := jsonResult(workflow.AuditCatalog(observed, args.Audit))
+				if jerr != nil {
+					return errorResult(jerr.Error()), nil, nil
+				}
+				return res, nil, nil
+			}
+
 			matches := workflow.EventTypes(args.Service, args.Search)
 			names := make([]string, 0, len(matches))
 			for n := range matches {
