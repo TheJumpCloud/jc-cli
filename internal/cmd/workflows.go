@@ -1620,7 +1620,7 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 			// event type alone: workflows younger than the window are judged
 			// over a shorter one, so they need their own count. Workflows
 			// older than the window — the common case — all share a key.
-			counts := map[string]int{}
+			counts := map[string]eventCount{}
 			reports := make([]workflow.HealthReport, 0, len(rows))
 
 			for _, row := range rows {
@@ -1639,21 +1639,23 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 				start := workflow.EffectiveSince(w, since)
 
 				events := 0
+				var newestEvent time.Time
 				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
 					key := eventType + "@" + start.Format(time.RFC3339)
-					n, ok := counts[key]
+					c, ok := counts[key]
 					if !ok {
-						n, err = countEvents(cmd.Context(), eventType, start, now)
-						if err != nil {
-							return fmt.Errorf("counting %s events: %w", eventType, err)
+						n, ts, cerr := countEvents(cmd.Context(), eventType, start, now)
+						if cerr != nil {
+							return fmt.Errorf("counting %s events: %w", eventType, cerr)
 						}
-						counts[key] = n
+						c = eventCount{n: n, newest: ts}
+						counts[key] = c
 					}
-					events = n
+					events, newestEvent = c.n, c.newest
 				}
 
 				reports = append(reports, workflow.AssessHealth(w, events,
-					workflow.RunsWithin(runs, w.ID, start), start))
+					workflow.RunsWithin(runs, w.ID, start), start, newestEvent, now))
 			}
 
 			workflow.SortHealth(reports)
@@ -1666,17 +1668,51 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 }
 
 // countEvents asks Directory Insights how often one event type occurred.
-func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, error) {
+// countEvents returns how many times an event type occurred in the window, and
+// WHEN the most recent one was.
+//
+// The timestamp is what separates "this workflow is broken" from "this workflow
+// has not got round to it yet" — see workflow.TriggerGrace.
+func countEvents(ctx context.Context, eventType string, start, end time.Time) (int, time.Time, error) {
 	client, err := newInsightsClient()
 	if err != nil {
-		return 0, err
+		return 0, time.Time{}, err
 	}
-	return client.CountEvents(ctx, api.InsightsQuery{
+	q := api.InsightsQuery{
 		Service:          "all",
 		StartTime:        start.UTC().Format(time.RFC3339),
 		EndTime:          end.UTC().Format(time.RFC3339),
 		SearchTermFilter: map[string]any{"event_type": eventType},
-	})
+	}
+	n, err := client.CountEvents(ctx, q)
+	if err != nil || n == 0 {
+		return n, time.Time{}, err
+	}
+
+	// Newest first, one row: only its timestamp is needed.
+	res, err := client.QueryEvents(ctx, q, api.InsightsQueryOptions{Limit: 1, Sort: "-timestamp"})
+	if err != nil || res == nil || len(res.Data) == 0 {
+		// A count without a timestamp still supports every verdict except
+		// the recency one, so this degrades rather than fails.
+		return n, time.Time{}, nil
+	}
+	var e struct {
+		Timestamp string `json:"timestamp"`
+	}
+	if err := json.Unmarshal(res.Data[0], &e); err != nil {
+		return n, time.Time{}, nil
+	}
+	ts, perr := time.Parse(time.RFC3339, e.Timestamp)
+	if perr != nil {
+		return n, time.Time{}, nil
+	}
+	return n, ts, nil
+}
+
+// eventCount pairs a count with the timestamp of its most recent event.
+type eventCount struct {
+	n      int
+	newest time.Time
 }
 
 func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days int) error {

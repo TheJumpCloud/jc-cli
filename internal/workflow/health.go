@@ -24,6 +24,27 @@ import (
 // workflow never ran (suspicious), or no events occurred at all (unverifiable,
 // because a typo and a quiet period are indistinguishable from here).
 
+// TriggerGrace is how long after an event a workflow is given to run before
+// its silence is called a fault.
+//
+// Directory Insights and the workflow engine lag INDEPENDENTLY, and either can
+// be ahead. A previous fix covered DI being behind — a run with no indexed
+// event. This covers the engine being behind: an indexed event with no run yet.
+//
+// Trigger latency is not characteristic. Two observations of the same event
+// type, same DSL shape, same tenant:
+//
+//	2026-08-28   ~0.5s from event to run start
+//	2026-08-31   ~19s
+//
+// A 40x spread with no apparent cause, so any inference from "no run yet" has
+// to be sized for the slow case — and 19s is only the slowest OBSERVED, not a
+// known bound. 60s covers it with margin.
+//
+// This costs nothing for the verdict's real use case: a workflow broken for
+// days has events far older than any grace window.
+const TriggerGrace = 60 * time.Second
+
 // HealthVerdict classifies one workflow.
 type HealthVerdict string
 
@@ -58,6 +79,14 @@ type HealthReport struct {
 	// UnknownEventType flags a type absent from the catalog, which makes a
 	// never-fired verdict far more likely to be a typo.
 	UnknownEventType bool `json:"unknown_event_type,omitempty"`
+	// NewestEvent is when the most recent matching event was indexed, when
+	// there was one. It is what decides whether silence is a fault or just
+	// impatience.
+	NewestEvent string `json:"newest_event,omitempty"`
+	// GraceSeconds is the window a workflow is given to respond to an event
+	// before its silence counts against it. Reported so a caller re-running
+	// the check later understands why the verdict changed.
+	GraceSeconds int `json:"grace_window_seconds,omitempty"`
 	// WindowStart is where the comparison actually began. It is the later of
 	// the requested window and the workflow's creation time — see
 	// EffectiveSince for why that clamp is not optional.
@@ -93,7 +122,7 @@ func EffectiveSince(w Workflow, since time.Time) time.Time {
 // must be taken over the SAME window, and that window must start no earlier
 // than EffectiveSince — otherwise a workflow younger than the window reads as
 // never-fired.
-func AssessHealth(w Workflow, events, runs int, windowStart time.Time) HealthReport {
+func AssessHealth(w Workflow, events, runs int, windowStart time.Time, newestEvent, now time.Time) HealthReport {
 	r := HealthReport{
 		WorkflowID: w.ID,
 		Name:       w.Name,
@@ -104,6 +133,10 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time) HealthRep
 	}
 	if !windowStart.IsZero() {
 		r.WindowStart = windowStart.UTC().Format(time.RFC3339)
+	}
+	if !newestEvent.IsZero() {
+		r.NewestEvent = newestEvent.UTC().Format(time.RFC3339)
+		r.GraceSeconds = int(TriggerGrace.Seconds())
 	}
 
 	if w.Status != StatusActive {
@@ -158,10 +191,26 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time) HealthRep
 				", so the comparison covers its lifetime and nothing longer"
 		}
 
+	case runs == 0 && !newestEvent.IsZero() && now.Sub(newestEvent) < TriggerGrace:
+		// The workflow has not failed to run; it has not yet run. Calling
+		// that never-fired is worse than the vagueness it replaced —
+		// unverifiable admits it does not know, while never-fired is an
+		// actionable alarm asserting a falsehood, to the person least able
+		// to dismiss it: the one who just wired the workflow up.
+		r.Verdict = HealthUnverifiable
+		r.Detail = fmt.Sprintf("%s occurred but the most recent was %ds ago and this workflow has not run yet; "+
+			"runs have been observed lagging their event by up to ~20s, so %ds is too recent to judge",
+			countOf(events, r.EventType+" event"), int(now.Sub(newestEvent).Seconds()),
+			int(TriggerGrace.Seconds()))
+
 	case runs == 0:
 		r.Verdict = HealthNeverFired
 		r.Detail = fmt.Sprintf("%s occurred and this workflow never ran",
 			countOf(events, r.EventType+" event"))
+		if !newestEvent.IsZero() {
+			r.Detail += fmt.Sprintf("; the most recent was %s, well past the %ds a run may lag its event",
+				newestEvent.UTC().Format(time.RFC3339), int(TriggerGrace.Seconds()))
+		}
 		switch {
 		case r.UnknownEventType:
 			r.Detail += "; the event type is absent from the catalog, so check the spelling first"
