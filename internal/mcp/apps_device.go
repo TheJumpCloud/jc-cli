@@ -465,6 +465,7 @@ func (s *Server) registerDeviceView() {
 	registerTypedAppTool(s, typedAppSpec[deviceViewArgs]{
 		Name: "device_view",
 		Description: "Show an interactive JumpCloud device inventory view: header (hostname, OS+version, serial, last contact, agent version), " +
+			"Field names here are snake_case: this is a jc-shaped projection, not an API passthrough. The passthrough tools (devices_search, users_get, users_search) return JumpCloud's own camelCase (displayName, serialNumber, lastContact) for the same facts. That split is deliberate — camelCase means the API said it, snake_case means jc composed it — but it does mean the same fact is spelled two ways depending on which tool you asked. " +
 			"status badges (online/stale/offline, FDE, MDM), group memberships, applied policies, a system-insights snapshot " +
 			"(uptime, logged-in users, disks), and recent Directory Insights events for the device. " +
 			"Required input: device (hostname, displayName, or 24-char hex ID). " +

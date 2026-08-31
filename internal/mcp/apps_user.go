@@ -306,6 +306,7 @@ func (s *Server) registerUserView() {
 	registerTypedAppTool(s, typedAppSpec[userViewArgs]{
 		Name: "user_view",
 		Description: "Show an interactive JumpCloud user profile: header (username, email, status badges), MFA enrollment (as mfa_enrollment — deliberately NOT `mfa`, which users_get uses for a different shape, {configured, exclusion}), group memberships with resolved names, SSH keys, and recent auth events. " +
+			"Field names here are snake_case: this is a jc-shaped projection, not an API passthrough. The passthrough tools (devices_search, users_get, users_search) return JumpCloud's own camelCase (displayName, serialNumber, lastContact) for the same facts. That split is deliberate — camelCase means the API said it, snake_case means jc composed it — but it does mean the same fact is spelled two ways depending on which tool you asked. " +
 			"Required input: user (username, email, or ID). Renders as a rich profile in MCP App-capable hosts; returns the same data as JSON when rendering isn't supported.",
 		ResourceURI:         userViewResourceURI,
 		ResourceName:        "User Profile App",

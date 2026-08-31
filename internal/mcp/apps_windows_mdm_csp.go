@@ -21,14 +21,14 @@ import (
 // ── tool: csp_search ───────────────────────────────────────────────
 
 type windowsMDMCSPSearchInput struct {
-	Area string `json:"area,omitempty" jsonschema:"Restrict to one Policy CSP area (e.g. Camera, Update, DeviceLock, ADMX_AppCompat). Empty searches all ~230 areas."`
+	Area string `json:"area,omitempty" jsonschema:"Restrict to one Policy CSP area (e.g. Camera, Update, DeviceLock, ADMX_AppCompat). Empty searches every area in the loaded snapshot."`
 	// Search mirrors the CLI: substring over area, name, URI, and
 	// description — the agent's natural-language-to-OMA-URI bridge.
 	Search      string `json:"search,omitempty" jsonschema:"Case-insensitive substring over area, name, URI, and description (e.g. 'screen capture', 'bitlocker')."`
 	Scope       string `json:"scope,omitempty" jsonschema:"Restrict to 'device' or 'user' scoped settings. JumpCloud's Custom MDM (OMA-URI) template is device-scoped."`
 	Kind        string `json:"kind,omitempty" jsonschema:"Restrict provenance: 'policy' (Policy CSP areas) or 'csp' (standalone CSPs like BitLocker CSP, Firewall CSP, VPNv2). Empty searches both."`
 	ExcludeADMX bool   `json:"exclude_admx,omitempty" jsonschema:"Drop ADMX-backed settings (their values need ADMX-style XML, not plain scalars)."`
-	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 50, max 200). The catalog holds ~3700 settings — narrow with area/search rather than raising the limit."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 50, max 200). The catalog holds several thousand settings — narrow with area/search rather than raising the limit."`
 }
 
 // windowsMDMCSPSettingSummary trims a Setting for search results so a
@@ -94,7 +94,7 @@ const cspSearchLimitMax = 200
 // registers from one place.
 func (s *Server) registerWindowsMDMCSPTools() {
 	addToolWithMetaTyped(s, "windows_mdm_csp_search",
-		"Search Microsoft's Windows Policy CSP settings catalog (~230 areas, ~3700 settings) to map a natural-language Windows-management intent ('disable the camera', 'require BitLocker-era encryption', 'lock screen timeout') to the exact OMA-URI + format + allowed values. "+
+		"Search Microsoft's Windows Policy CSP settings catalog to map a natural-language Windows-management intent ('disable the camera', 'require BitLocker-era encryption', 'lock screen timeout') to the exact OMA-URI + format + allowed values. "+
 			"Data is Microsoft's pinned DDF v2 snapshot, auto-fetched once from Microsoft's official URL (SHA-256-verified) into the local cache — never the JumpCloud API. "+
 			"Pair with windows_mdm_csp_show for full metadata and windows_mdm_csp_template → windows_mdm_oma_uri_create_policy to ship a policy.",
 		nil,
