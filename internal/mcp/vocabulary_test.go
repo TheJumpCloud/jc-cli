@@ -44,15 +44,22 @@ func TestVocabulary_SharedFactsAreMapped(t *testing.T) {
 			continue
 		}
 		shared++
-		// Every reference to one fact must name a distinct emitter: the same
-		// tool listing a fact twice means the table is wrong.
+		// One tool may emit a fact under two keys — _id duplicates id on the
+		// V1 passthrough tools, and jc leaves that as the API sends it. What
+		// must not happen is UNDECLARED duplication: the second key has to
+		// carry a Note saying why it is there, or the table is hiding it.
 		seen := map[string]bool{}
 		for _, r := range refs {
-			emitter := strings.SplitN(r, ":", 2)[0]
-			if seen[emitter] {
-				t.Errorf("fact %q is claimed twice by %s: %v", fact, emitter, refs)
+			parts := strings.SplitN(r, ":", 2)
+			emitter, key := parts[0], parts[1]
+			if !seen[emitter] {
+				seen[emitter] = true
+				continue
 			}
-			seen[emitter] = true
+			if noteFor(emitter, key) == "" {
+				t.Errorf("%s emits fact %q under a second key %q with no note explaining why: %v",
+					emitter, fact, key, refs)
+			}
 		}
 	}
 	if shared == 0 {
@@ -108,6 +115,48 @@ func TestVocabulary_MatchesWhatDeviceViewEmits(t *testing.T) {
 			t.Errorf("vocabulary claims device_view emits %q, but the payload has no %q: %v",
 				f.Key, top, keysOfMap(m))
 		}
+	}
+}
+
+// noteFor returns the declared encoding note for one emitter's key.
+func noteFor(emitter, key string) string {
+	for _, f := range fieldVocabulary {
+		if f.Emitter == emitter && f.Key == key {
+			return f.Note
+		}
+	}
+	return ""
+}
+
+// Where two emitters agree on a fact but encode it differently, at least one
+// must say so. `admin` means the same thing in users_get and users_search and
+// differs only in how a non-admin is represented — a difference that is
+// invisible unless it is written down.
+func TestVocabulary_EncodingDifferencesAreNoted(t *testing.T) {
+	byFact := map[string][]fieldFact{}
+	for _, f := range fieldVocabulary {
+		k := f.Object + "/" + f.Fact
+		byFact[k] = append(byFact[k], f)
+	}
+
+	shared := byFact["user/admin role assignment"]
+	if len(shared) < 2 {
+		t.Fatal("the admin case should be declared by both users tools")
+	}
+	for _, f := range shared {
+		if f.Note == "" {
+			t.Errorf("%s declares `admin` with no note; the presence trap is the whole point", f.Emitter)
+		}
+	}
+	// The trap must be spelled out, not merely hinted.
+	var mentionsPresence bool
+	for _, f := range shared {
+		if strings.Contains(f.Note, "key presence") || strings.Contains(f.Note, "in user") {
+			mentionsPresence = true
+		}
+	}
+	if !mentionsPresence {
+		t.Error("no admin note warns against testing key presence, which is the actual failure mode")
 	}
 }
 

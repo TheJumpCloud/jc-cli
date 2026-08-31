@@ -688,7 +688,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_get", "Get a single JumpCloud user by username or ID. Returns the full user object.",
+	addTypedTool(s, "users_get", "Get a single JumpCloud user by username or ID. Returns the full user object, and is AUTHORITATIVE for one user: users_search hits a different endpoint with a narrower projection and omits fields this returns, among them recoveryEmail and admin. Every field the two share holds the same value, so the difference is invisible to a value comparison — check here, not there, when a field is missing. CAUTION on `admin`: this returns an empty object for a non-admin while users_search omits the key entirely, so testing whether the key is PRESENT gives a different answer per tool for the same user. Read admin.id / admin.roleName instead; presence proves nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -899,7 +899,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_search", "Search for JumpCloud users by keyword across username, email, firstname, lastname.",
+	addTypedTool(s, "users_search", "Search for JumpCloud users by keyword across username, email, firstname, lastname. This is a narrower projection than users_get, not the same object: it omits fields users_get returns (recoveryEmail, admin among them), and it omits `admin` entirely for a non-admin where users_get returns an empty object — so testing key presence gives a different answer per tool. Read admin.id / admin.roleName rather than checking whether the key exists, and use users_get when you need the complete user. Field sets also vary BETWEEN RECORDS of one response, since the API omits empty values per record: one user may carry public_key while the next does not. Do not infer a schema from the first record.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {

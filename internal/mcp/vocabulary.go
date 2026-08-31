@@ -35,6 +35,15 @@ type fieldFact struct {
 	// Fact is what it means, phrased so two emitters describing the same
 	// thing produce the same string.
 	Fact string
+	// Note records a difference in how the fact is ENCODED, when two
+	// emitters agree on the meaning but not the representation.
+	//
+	// This is deliberately separate from Fact. Folding the encoding into the
+	// fact string makes two tools carrying one fact look like a collision,
+	// which would fire the check on something that is not a defect and teach
+	// everyone to ignore it. The `admin` case is exactly this: both tools
+	// mean "admin role assignment", and only absence is spelled differently.
+	Note string
 }
 
 // fieldVocabulary is the declared meaning of keys that more than one emitter
@@ -45,45 +54,72 @@ type fieldFact struct {
 // short one that is true.
 var fieldVocabulary = []fieldFact{
 	// Identity, shared everywhere.
-	{"users_get", "user", "id", "own id"},
-	{"users_search", "user", "id", "own id"},
-	{"user_view", "user", "user.id", "own id"},
-	{"devices_search", "device", "id", "own id"},
-	{"device_view", "device", "device.id", "own id"},
+	{"users_get", "user", "id", "own id", ""},
+	{"users_search", "user", "id", "own id", ""},
+	{"user_view", "user", "user.id", "own id", ""},
+	{"devices_search", "device", "id", "own id", ""},
+	{"device_view", "device", "device.id", "own id", ""},
 
 	// The collision that prompted this table. users_get keeps `mfa`;
 	// user_view uses `mfa_enrollment`, matching the API's own mfaEnrollment.
-	{"users_get", "user", "mfa", "mfa configuration state"},
-	{"users_search", "user", "mfa", "mfa configuration state"},
-	{"user_view", "user", "mfa_enrollment", "mfa enrollment state"},
+	{"users_get", "user", "mfa", "mfa configuration state", ""},
+	{"users_search", "user", "mfa", "mfa configuration state", ""},
+	{"user_view", "user", "mfa_enrollment", "mfa enrollment state", ""},
 
 	// Case-convention split: passthrough tools return the API's camelCase,
 	// jc projections return snake_case. Same facts, different spellings —
 	// allowed, and recorded so it reads as a decision rather than an
 	// accident.
-	{"devices_search", "device", "displayName", "display name"},
-	{"device_view", "device", "device.display_name", "display name"},
-	{"devices_search", "device", "serialNumber", "serial number"},
-	{"device_view", "device", "device.serial_number", "serial number"},
-	{"devices_search", "device", "lastContact", "last contact time"},
-	{"device_view", "device", "device.last_contact", "last contact time"},
-	{"devices_search", "device", "agentVersion", "agent version"},
-	{"device_view", "device", "device.agent_version", "agent version"},
-	{"devices_search", "device", "version", "os version"},
-	{"device_view", "device", "device.os_version", "os version"},
+	{"devices_search", "device", "displayName", "display name", ""},
+	{"device_view", "device", "device.display_name", "display name", ""},
+	{"devices_search", "device", "serialNumber", "serial number", ""},
+	{"device_view", "device", "device.serial_number", "serial number", ""},
+	{"devices_search", "device", "lastContact", "last contact time", ""},
+	{"device_view", "device", "device.last_contact", "last contact time", ""},
+	{"devices_search", "device", "agentVersion", "agent version", ""},
+	{"device_view", "device", "device.agent_version", "agent version", ""},
+	{"devices_search", "device", "version", "os version", ""},
+	{"device_view", "device", "device.os_version", "os version", ""},
+
+	// Upstream drift jc deliberately does NOT normalise.
+	//
+	// users_get and users_search are different endpoints with different
+	// projections. Normalising would mean either fabricating fields the
+	// search endpoint never returned, or an N+1 fetch to fill them — both
+	// worse than the drift. The passthrough tools' value is that they are
+	// faithful; the fix is to make the trap visible, not to hide it.
+	//
+	// `admin` is the sharp one: users_get returns an empty object for a
+	// non-admin, users_search omits the key. So `"admin" in user` answers
+	// differently per tool FOR THE SAME USER, while every shared value
+	// agrees — invisible to a value comparison, which is the shape of every
+	// bug this table exists for.
+	{"users_get", "user", "admin", "admin role assignment",
+		"returns an empty object for a non-admin, so the key is always present"},
+	{"users_search", "user", "admin", "admin role assignment",
+		"OMITS the key for a non-admin, so `\"admin\" in user` answers differently here than in users_get for the same user — read admin.id / admin.roleName, never key presence"},
+	{"users_get", "user", "recoveryEmail", "recovery email",
+		"users_search omits this field entirely; users_get is authoritative for one user"},
+
+	// _id duplicates id on the V1 passthrough tools. Left alone: removing
+	// either is a breaking change bought only for tidiness, and jc rewriting
+	// a passthrough payload is a worse precedent than the duplication.
+	{"users_get", "user", "_id", "own id", "duplicates id; left as the API sends it"},
+	{"users_search", "user", "_id", "own id", "duplicates id; left as the API sends it"},
+	{"devices_search", "device", "_id", "own id", "duplicates id; left as the API sends it"},
 
 	// Group membership, after the resolver fix: both view tools emit the
 	// same shape from the same helper.
-	{"user_view", "user", "groups", "group memberships with resolved names"},
-	{"device_view", "device", "groups", "group memberships with resolved names"},
+	{"user_view", "user", "groups", "group memberships with resolved names", ""},
+	{"device_view", "device", "groups", "group memberships with resolved names", ""},
 
 	// Lint and the template list agree on where a template came from.
-	{"workflows_lint", "template", "source", "who authored it"},
-	{"workflows_templates_list", "template", "source", "who authored it"},
-	{"workflows_lint", "template", "corrected_by", "id of jc's corrected copy"},
-	{"workflows_templates_list", "template", "corrected_by", "id of jc's corrected copy"},
-	{"workflows_lint", "template", "corrects", "name of the template this replaces"},
-	{"workflows_templates_list", "template", "corrects", "name of the template this replaces"},
+	{"workflows_lint", "template", "source", "who authored it", ""},
+	{"workflows_templates_list", "template", "source", "who authored it", ""},
+	{"workflows_lint", "template", "corrected_by", "id of jc's corrected copy", ""},
+	{"workflows_templates_list", "template", "corrected_by", "id of jc's corrected copy", ""},
+	{"workflows_lint", "template", "corrects", "name of the template this replaces", ""},
+	{"workflows_templates_list", "template", "corrects", "name of the template this replaces", ""},
 }
 
 // factsByKey groups the vocabulary by (object, key), so a key meaning two
