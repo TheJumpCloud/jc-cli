@@ -392,3 +392,60 @@ func TestCompareRun_SkipDetailUsesDerivedReason(t *testing.T) {
 		t.Errorf("the detail should give the derived reason: %q", got.Tasks[0].Detail)
 	}
 }
+
+// The unknown path, exercised with a synthetic node rather than waiting for a
+// live one.
+//
+// connector_operation has never appeared in a trace in any state, so the
+// assertion that "unknown is never counted as agreement" has been reasoning
+// rather than a test — and it is blocked behind real external egress, which is
+// not a reason to leave the contract unverified. A synthetic node reaches it
+// today.
+func TestCompareRun_UnknownNodeIsCannotCompareNotAgreement(t *testing.T) {
+	sim := SimResult{Steps: []SimStep{{Task: "callConnector", Status: SimStubbed}}}
+	got := CompareRun(sim, runWith(RunNode{
+		Name: "callConnector", Type: NodeTypeConnector,
+		Message: "Task completed.", IsExecuted: true, Success: true,
+		// No node_output: for a jc_operation this would mean skipped, but a
+		// connector's trace shape has never been observed, so it is unknown.
+	}))
+
+	tc := got.Tasks[0]
+	if tc.Verdict == VerdictAgree {
+		t.Fatal("an unknown node must never be reported as agreement")
+	}
+	if got.Agree != 0 {
+		t.Errorf("Agree = %d, want 0", got.Agree)
+	}
+
+	// A connector node with no output is currently classified as a branch
+	// skip, because connector shares the call-node rule. If that rule is ever
+	// narrowed, this must land in cannot-compare — either way it must not be
+	// agreement, which is the contract being asserted.
+	if tc.Verdict != VerdictCannotCompare && tc.Verdict != VerdictSkippedButPlannedRun {
+		t.Errorf("verdict = %q, want cannot-compare or skipped-but-planned-run", tc.Verdict)
+	}
+}
+
+// A node type with no established shape must route to cannot_compare and be
+// counted there — not silently folded into agreement.
+func TestCompareRun_UnobservedTypeRoutesToCannotCompare(t *testing.T) {
+	sim := SimResult{Steps: []SimStep{{Task: "mystery", Status: SimWouldCall}}}
+	got := CompareRun(sim, runWith(RunNode{
+		Name: "mystery", Type: "some_future_call_type",
+		Message: "Task completed.", IsExecuted: true, Success: true,
+	}))
+
+	if got.Tasks[0].Verdict != VerdictCannotCompare {
+		t.Fatalf("verdict = %q, want cannot-compare", got.Tasks[0].Verdict)
+	}
+	if got.CannotCompare != 1 {
+		t.Errorf("CannotCompare = %d, want 1", got.CannotCompare)
+	}
+	if got.Agree != 0 {
+		t.Errorf("Agree = %d — the tool must not go quiet where its evidence is thinnest", got.Agree)
+	}
+	if !strings.Contains(got.Tasks[0].Detail, "cannot establish") {
+		t.Errorf("the detail must admit the gap: %q", got.Tasks[0].Detail)
+	}
+}

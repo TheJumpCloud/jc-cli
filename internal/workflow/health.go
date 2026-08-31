@@ -45,6 +45,34 @@ import (
 // days has events far older than any grace window.
 const TriggerGrace = 60 * time.Second
 
+// EventRecency answers the only question the grace window needs: was there a
+// matching event too recently for silence to mean anything?
+//
+// It is deliberately NOT "the newest event's timestamp". Directory Insights
+// ignores the sort parameter — verified by issuing the same query with
+// "-timestamp", "timestamp" and no sort at all, and receiving byte-identical
+// ascending results all three times. So there is no way to ask the API for the
+// newest event, and taking the first row of a limited query returns the OLDEST,
+// which is what made the first version of this guard inert: fed the oldest
+// event, "is it within 60s?" is almost always false for any workflow with
+// history, so never-fired fired immediately — exactly what the window existed
+// to prevent.
+//
+// Asking instead for events inside the grace window sidesteps the ordering
+// problem entirely: if that query returns anything, an event is recent; if it
+// returns nothing, every matching event is older than the window and silence is
+// meaningful. The set is small enough to scan for a real newest timestamp.
+type EventRecency struct {
+	// Known is false when the lookup could not be performed. A verdict must
+	// never be inferred from an absence it could not measure.
+	Known bool
+	// WithinGrace is how many matching events fell inside the window.
+	WithinGrace int
+	// Newest is the newest matching event, set only when one was inside the
+	// window. Outside it, the API cannot tell us which was newest.
+	Newest time.Time
+}
+
 // HealthVerdict classifies one workflow.
 type HealthVerdict string
 
@@ -79,14 +107,20 @@ type HealthReport struct {
 	// UnknownEventType flags a type absent from the catalog, which makes a
 	// never-fired verdict far more likely to be a typo.
 	UnknownEventType bool `json:"unknown_event_type,omitempty"`
-	// NewestEvent is when the most recent matching event was indexed, when
-	// there was one. It is what decides whether silence is a fault or just
-	// impatience.
+	// NewestEvent is the newest matching event INSIDE the grace window, when
+	// there was one. Outside the window it is empty, because Directory
+	// Insights offers no way to ask which event was newest — see EventRecency.
 	NewestEvent string `json:"newest_event,omitempty"`
 	// GraceSeconds is the window a workflow is given to respond to an event
-	// before its silence counts against it. Reported so a caller re-running
-	// the check later understands why the verdict changed.
+	// before its silence counts against it.
+	//
+	// Reported on EVERY row the guard applies to, whether or not it changed
+	// the verdict, so a field-set assertion does not pass or fail depending on
+	// which code path ran. A row shape that varies by path is the same defect
+	// as a list whose records carry different keys.
 	GraceSeconds int `json:"grace_window_seconds,omitempty"`
+	// RecentEvents is how many matching events fell inside the grace window.
+	RecentEvents int `json:"recent_events_in_grace_window"`
 	// WindowStart is where the comparison actually began. It is the later of
 	// the requested window and the workflow's creation time — see
 	// EffectiveSince for why that clamp is not optional.
@@ -122,7 +156,7 @@ func EffectiveSince(w Workflow, since time.Time) time.Time {
 // must be taken over the SAME window, and that window must start no earlier
 // than EffectiveSince — otherwise a workflow younger than the window reads as
 // never-fired.
-func AssessHealth(w Workflow, events, runs int, windowStart time.Time, newestEvent, now time.Time) HealthReport {
+func AssessHealth(w Workflow, events, runs int, windowStart time.Time, recency EventRecency) HealthReport {
 	r := HealthReport{
 		WorkflowID: w.ID,
 		Name:       w.Name,
@@ -134,9 +168,12 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time, newestEve
 	if !windowStart.IsZero() {
 		r.WindowStart = windowStart.UTC().Format(time.RFC3339)
 	}
-	if !newestEvent.IsZero() {
-		r.NewestEvent = newestEvent.UTC().Format(time.RFC3339)
+	if !recency.Newest.IsZero() {
+		r.NewestEvent = recency.Newest.UTC().Format(time.RFC3339)
+	}
+	if recency.Known {
 		r.GraceSeconds = int(TriggerGrace.Seconds())
+		r.RecentEvents = recency.WithinGrace
 	}
 
 	if w.Status != StatusActive {
@@ -191,25 +228,37 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time, newestEve
 				", so the comparison covers its lifetime and nothing longer"
 		}
 
-	case runs == 0 && !newestEvent.IsZero() && now.Sub(newestEvent) < TriggerGrace:
-		// The workflow has not failed to run; it has not yet run. Calling
-		// that never-fired is worse than the vagueness it replaced —
-		// unverifiable admits it does not know, while never-fired is an
-		// actionable alarm asserting a falsehood, to the person least able
-		// to dismiss it: the one who just wired the workflow up.
+	case runs == 0 && !recency.Known:
+		// Recency could not be measured, so silence proves nothing. Falling
+		// through to never-fired here would be the THIRD time this check
+		// inferred a negative from data it could not obtain: once when
+		// Directory Insights had not indexed the event, once when the run had
+		// not started, and once here. Absent data is not evidence.
 		r.Verdict = HealthUnverifiable
-		r.Detail = fmt.Sprintf("%s occurred but the most recent was %ds ago and this workflow has not run yet; "+
-			"runs have been observed lagging their event by up to ~20s, so %ds is too recent to judge",
-			countOf(events, r.EventType+" event"), int(now.Sub(newestEvent).Seconds()),
-			int(TriggerGrace.Seconds()))
+		r.Detail = fmt.Sprintf("%s occurred and this workflow has not run, but how recently the "+
+			"most recent one arrived could not be determined, so it cannot be told apart from a "+
+			"workflow that simply has not got round to it yet",
+			countOf(events, r.EventType+" event"))
+
+	case runs == 0 && recency.WithinGrace > 0:
+		// The workflow has not failed to run; it has not yet run. Calling that
+		// never-fired is worse than the vagueness it replaced — unverifiable
+		// admits it does not know, while never-fired is an actionable alarm
+		// asserting a falsehood, to the person least able to dismiss it: the
+		// one who just wired the workflow up.
+		r.Verdict = HealthUnverifiable
+		r.Detail = fmt.Sprintf("%s occurred and this workflow has not run, but %s within the last %ds; "+
+			"runs have been observed lagging their event by up to ~20s, so this is too recent to judge",
+			countOf(events, r.EventType+" event"),
+			countOf(recency.WithinGrace, "arrived"), int(TriggerGrace.Seconds()))
 
 	case runs == 0:
 		r.Verdict = HealthNeverFired
 		r.Detail = fmt.Sprintf("%s occurred and this workflow never ran",
 			countOf(events, r.EventType+" event"))
-		if !newestEvent.IsZero() {
-			r.Detail += fmt.Sprintf("; the most recent was %s, well past the %ds a run may lag its event",
-				newestEvent.UTC().Format(time.RFC3339), int(TriggerGrace.Seconds()))
+		if recency.Known {
+			r.Detail += fmt.Sprintf("; none arrived in the last %ds, well past the window a run may "+
+				"lag its event", int(TriggerGrace.Seconds()))
 		}
 		switch {
 		case r.UnknownEventType:
