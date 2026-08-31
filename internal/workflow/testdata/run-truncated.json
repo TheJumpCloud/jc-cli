@@ -1,0 +1,43 @@
+{
+  "id": "575ebe87-a1b2-4252-93cf-6b5d097564dd",
+  "status": "completed",
+  "executionDetails": {
+    "nodes": [
+      {
+        "name": "__trigger",
+        "type": "trigger",
+        "success": true,
+        "is_executed": true,
+        "message": "Workflow invoked.",
+        "is_output_truncated": false
+      },
+      {
+        "name": "paginateUsers",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": true,
+        "message": "Task completed.",
+        "is_output_truncated": true,
+        "node_output": {
+          "_preview": "<elided>",
+          "_truncated": true,
+          "pageCount": 5,
+          "totalItems": 7
+        }
+      },
+      {
+        "name": "bigBody",
+        "type": "jc_operation",
+        "success": true,
+        "is_executed": true,
+        "message": "Task completed.",
+        "is_output_truncated": false,
+        "node_output": {
+          "method": "GET",
+          "status": 200,
+          "url": "https://console.jumpcloud.com/api/systems?limit=100"
+        }
+      }
+    ]
+  }
+}

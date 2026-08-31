@@ -183,3 +183,100 @@ func TestAssessHealth_CountsReadAsEnglish(t *testing.T) {
 		t.Errorf("detail = %q", firing.Detail)
 	}
 }
+
+// A run proves the event fired, whatever Directory Insights has indexed yet.
+//
+// Nothing other than the trigger event starts a jc_events workflow, so a run in
+// the window is direct evidence — and better evidence than the event count,
+// which lags by a few seconds. Observed live: immediately after creating a
+// group, health reported runs_in_window 1 alongside "no group_create events in
+// the window, so ... indistinguishable", contradicting itself in one row. The
+// same call 30 seconds later said firing.
+//
+// That window is exactly when someone checks a workflow they just wired up.
+func TestAssessHealth_RunProvesTheEventFiredDespiteIndexingLag(t *testing.T) {
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{})
+
+	if r.Verdict != HealthFiring {
+		t.Fatalf("verdict = %q, want firing — a run cannot happen without the event", r.Verdict)
+	}
+	if !strings.Contains(r.Detail, "proof the event fired") {
+		t.Errorf("the detail must rest the conclusion on run evidence: %q", r.Detail)
+	}
+	// It must not pretend the event count agreed.
+	if !strings.Contains(r.Detail, "no indexed group_create events yet") {
+		t.Errorf("the detail must disclose that DI has not caught up: %q", r.Detail)
+	}
+	if strings.Contains(r.Detail, "indistinguishable") {
+		t.Errorf("the unverifiable wording must not survive here: %q", r.Detail)
+	}
+}
+
+// The genuinely ambiguous case is unchanged: no events AND no runs.
+func TestAssessHealth_NoEventsNoRunsStaysUnverifiable(t *testing.T) {
+	r := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 0, time.Time{})
+	if r.Verdict != HealthUnverifiable {
+		t.Errorf("verdict = %q, want unverifiable", r.Verdict)
+	}
+}
+
+// The whole truth table, so a future edit cannot quietly move one cell.
+func TestAssessHealth_VerdictTruthTable(t *testing.T) {
+	for _, c := range []struct {
+		events, runs int
+		want         HealthVerdict
+	}{
+		{0, 0, HealthUnverifiable},
+		{0, 1, HealthFiring},     // the fixed row
+		{5, 0, HealthNeverFired}, // the case the tool exists for
+		{5, 2, HealthFiring},
+	} {
+		got := AssessHealth(eventsWorkflow("group_create", "", StatusActive), c.events, c.runs, time.Time{})
+		if got.Verdict != c.want {
+			t.Errorf("events=%d runs=%d → %q, want %q", c.events, c.runs, got.Verdict, c.want)
+		}
+	}
+}
+
+// never-fired is the verdict the tool exists for, and until now it had never
+// been produced. All four verdicts were observed live in one sweep on
+// 2026-08-31; this pins the shapes that generate them.
+//
+// Note the method: a MISSPELLED event type does NOT produce never-fired, which
+// is what a work order proposed. Health counts events of the workflow's OWN
+// trigger type, so a workflow watching "group_creat" sees zero events of that
+// type and is correctly unverifiable — flagged with UnknownEventType, which is
+// the useful signal there. Producing never-fired needs the opposite: an event
+// type that IS emitted, with something else stopping the run. A trigger
+// condition that can never match does it.
+func TestAssessHealth_AllFourVerdictsFromRealShapes(t *testing.T) {
+	// Observed: events=1 runs=0 — real type, condition that cannot match.
+	cannotMatch := AssessHealth(
+		eventsWorkflow("group_create", "resource.name == 'zz-no-such-group-ever'", StatusActive),
+		1, 0, time.Time{})
+	if cannotMatch.Verdict != HealthNeverFired {
+		t.Errorf("a real event with no run is never-fired, got %q", cannotMatch.Verdict)
+	}
+
+	// Observed: events=0 runs=0 — misspelled type, nothing to count.
+	typo := AssessHealth(eventsWorkflow("group_creat", "", StatusActive), 0, 0, time.Time{})
+	if typo.Verdict != HealthUnverifiable {
+		t.Errorf("a misspelled type yields no events of that type, so it is unverifiable, got %q",
+			typo.Verdict)
+	}
+	if !typo.UnknownEventType {
+		t.Error("the misspelling is the actionable signal here and must be flagged")
+	}
+
+	// Observed: events=2 runs=2.
+	firing := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 2, 2, time.Time{})
+	if firing.Verdict != HealthFiring {
+		t.Errorf("verdict = %q, want firing", firing.Verdict)
+	}
+
+	// Observed: events=0 runs=1, inside the DI indexing window.
+	lagging := AssessHealth(eventsWorkflow("group_create", "", StatusActive), 0, 1, time.Time{})
+	if lagging.Verdict != HealthFiring {
+		t.Errorf("verdict = %q, want firing on run evidence", lagging.Verdict)
+	}
+}

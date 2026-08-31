@@ -249,7 +249,7 @@ func sideEffectRefusal(res workflow.Result) string {
 }
 
 func (s *Server) registerWorkflowTools() {
-	addTypedTool(s, "workflows_list", "List JumpCloud Workflows — server-side automations that run on Directory Insights events, on a schedule, or when triggered through the API. Returns id, name, status, trigger_type (jc_events|external|scheduler), and last_ran.",
+	addTypedTool(s, "workflows_list", "List JumpCloud Workflows — server-side automations that run on Directory Insights events, on a schedule, or when triggered through the API. Each row is the FULL object: created_at, created_by, description, dsl, execution_role_id, id, name, status, trigger_type (jc_events|external|scheduler), updated_at. The dsl dominates the payload, so expect a whole workflow document per row rather than a summary. There is no last-run timestamp on this object — use workflows_runs_list for run history, or workflows_health to find event-triggered workflows that should have fired and did not.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -320,7 +320,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. A switch node also records case_evaluations (every case, its when expression, and whether it matched) and the branch chosen. Each node carries is_output_truncated; the size at which the ENGINE truncates a step's body is undocumented and is a different ceiling from this server's own result limit, so a very large step response may not be a faithful record even when the trace itself returns fine. This is the only place a failed run's cause is visible. "+workflow.RanPredicateDoc+"",
+	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. A switch node also records case_evaluations (every case, its when expression, and whether it matched) and the branch chosen. Each node carries is_output_truncated; the size at which the ENGINE truncates a step's body is undocumented and is a different ceiling from this server's own result limit, so a very large step response may not be a faithful record even when the trace itself returns fine. This is the only place a failed run's cause is visible. "+workflow.RanPredicateDoc+" "+workflow.TruncatedNodeDoc+"",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfRunGetInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -626,6 +626,7 @@ func (s *Server) registerWorkflowTools() {
 						}
 						sub.Role = info.name
 						sub.Result = workflow.ValidateWithRole(d, info.name, info.scopes)
+						sub.TriggerType = sub.Result.TriggerType
 					}
 					subjects = append(subjects, sub)
 				}
@@ -657,7 +658,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. "+workflow.RanPredicateDoc+" Read-only: it fetches one run and runs nothing.",
+	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. "+workflow.RanPredicateDoc+" "+workflow.TruncatedNodeDoc+" Read-only: it fetches one run and runs nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfCompareRunInput) (*mcp.CallToolResult, any, error) {
 			raw, err := dslRaw(args.DSL)
 			if err != nil {

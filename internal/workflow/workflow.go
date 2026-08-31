@@ -78,7 +78,15 @@ const (
 )
 
 // ListDefaultFields is the default field subset shown for workflows.
-var ListDefaultFields = []string{"id", "name", "status", "trigger_type", "last_ran"}
+// ListDefaultFields trims the list view. The API returns the full DSL on every
+// row, which dominates the payload and is not a list-view concern.
+//
+// last_ran is deliberately absent: the field was declared and documented but
+// the API never sends it, so it was always omitted and every caller planning
+// around it was writing against nothing. A last-run timestamp would be genuinely
+// useful — it is derivable from workflows_runs_list — but it should exist before
+// it is named.
+var ListDefaultFields = []string{"id", "name", "status", "trigger_type", "updated_at"}
 
 // RunDefaultFields is the default field subset shown for runs.
 var RunDefaultFields = []string{"id", "name", "workflowId", "status", "startedAt", "completedAt"}
@@ -95,7 +103,6 @@ type Workflow struct {
 	Status          string          `json:"status,omitempty"`
 	TriggerType     string          `json:"trigger_type,omitempty"`
 	ExecutionRoleID string          `json:"execution_role_id,omitempty"`
-	LastRan         *string         `json:"last_ran,omitempty"`
 	CreatedBy       string          `json:"created_by,omitempty"`
 	CreatedAt       string          `json:"created_at,omitempty"`
 	UpdatedAt       string          `json:"updated_at,omitempty"`

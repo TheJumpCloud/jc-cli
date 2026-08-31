@@ -1,6 +1,9 @@
 package workflow
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func subject(name string, sevs ...Severity) LintSubject {
 	s := LintSubject{Kind: "workflow", Name: name}
@@ -178,6 +181,51 @@ func TestLintCorrected_AllClean(t *testing.T) {
 		// A corrected copy must never point at itself for a fix.
 		if s.CorrectedBy != "" {
 			t.Errorf("%s should not carry corrected_by", s.ID)
+		}
+	}
+}
+
+// A linted workflow must be correlatable to the object workflows_get returns.
+//
+// lint reported only `execution_role` as a NAME while get/list reported only
+// `execution_role_id` as an ID — a different field name AND a different
+// representation for one fact, so joining the two needed a separate roles
+// lookup. It was invisible until the tenant had a workflow to compare.
+func TestLintWorkflow_CarriesTheRoleIDForCorrelation(t *testing.T) {
+	w := Workflow{
+		ID: "wf-1", Name: "probe", Status: StatusActive, TriggerType: TriggerEvents,
+		ExecutionRoleID: "5f4fd6954485cfa33af14d14",
+		DSL: []byte(`{"schedule":{"on":{"one":{"with":{"source":"jc_events","type":"user_create"}}}},
+		  "do":[{"a":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}}]}`),
+	}
+
+	sub, _, ok := LintWorkflow(w)
+	if !ok {
+		t.Fatalf("should lint: %s", sub.Skipped)
+	}
+	if sub.ExecutionRoleID != w.ExecutionRoleID {
+		t.Errorf("execution_role_id = %q, want the id workflows_get reports (%q)",
+			sub.ExecutionRoleID, w.ExecutionRoleID)
+	}
+
+	// trigger_type must sit where get/list put it, not one level down.
+	if sub.TriggerType != TriggerEvents {
+		t.Errorf("trigger_type = %q at the top level, want %q — get and list put it there",
+			sub.TriggerType, TriggerEvents)
+	}
+
+	raw, err := json.Marshal(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"execution_role_id", "trigger_type"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("lint must emit %q at the top level so a field-set diff against "+
+				"workflows_get does not flag it", k)
 		}
 	}
 }

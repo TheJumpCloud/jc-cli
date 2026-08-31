@@ -129,6 +129,23 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time) HealthRep
 	}
 
 	switch {
+	case events == 0 && runs > 0:
+		// A run is DIRECT proof the event fired, and better proof than the
+		// event count: nothing other than the trigger event starts a
+		// jc_events workflow, and unlike Directory Insights the runs list is
+		// not subject to indexing lag.
+		//
+		// Without this the tool reported a run and, in the same row, claimed
+		// no evidence the event had fired — self-contradictory. It happened
+		// in the first ~30 seconds after an event, which is exactly when
+		// someone checks whether a workflow they just wired up works, and
+		// telling them "unverifiable" while holding proof of firing defeats
+		// the tool's only purpose.
+		r.Verdict = HealthFiring
+		r.Detail = fmt.Sprintf("%s and no indexed %s events yet; the run is proof the event fired "+
+			"(Directory Insights indexing lags a few seconds behind the runs list)",
+			countOf(runs, "run"), r.EventType)
+
 	case events == 0:
 		r.Verdict = HealthUnverifiable
 		r.Detail = fmt.Sprintf("no %s events in the window, so a workflow that can never match "+
