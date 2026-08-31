@@ -105,6 +105,24 @@ func resolveWorkflow(ctx context.Context, client *api.V2Client, identifier strin
 	}
 }
 
+// fetchLastRan builds the workflow-id → last-run map, or nil if the runs list
+// cannot be read.
+//
+// A failure here must not fail the caller's actual request: last_ran is an
+// addition to the workflow object, so its absence degrades the answer rather
+// than invalidating it. One request, joined in memory — not one per workflow.
+func fetchLastRan(ctx context.Context, client *api.V2Client) map[string]string {
+	raw, err := client.Get(ctx, workflow.RunsEndpoint)
+	if err != nil {
+		return nil
+	}
+	runs, err := workflow.ParseRuns(raw)
+	if err != nil {
+		return nil
+	}
+	return workflow.LastRanByWorkflow(runs)
+}
+
 // ---------- list / get ----------
 
 func newWorkflowsListCmd() *cobra.Command {
@@ -131,6 +149,7 @@ func newWorkflowsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			rows = workflow.AnnotateAllLastRan(rows, fetchLastRan(cmd.Context(), client))
 			opts := output.CurrentOptions()
 			opts.DefaultFields = workflow.ListDefaultFields
 			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
@@ -164,6 +183,7 @@ func newWorkflowsGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			raw = workflow.AnnotateLastRan(raw, fetchLastRan(cmd.Context(), client))
 			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
 		},
 	}
@@ -1877,6 +1897,8 @@ func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) 
 	}
 	roles := map[string]roleInfo{}
 
+	lastRan := fetchLastRan(ctx, client)
+
 	subjects := make([]workflow.LintSubject, 0, len(rows))
 	for _, row := range rows {
 		w, err := workflow.ParseWorkflow(row)
@@ -1887,6 +1909,7 @@ func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) 
 		}
 
 		sub, d, ok := workflow.LintWorkflow(w)
+		sub.LastRan = lastRan[w.ID]
 		if !ok {
 			subjects = append(subjects, sub)
 			continue

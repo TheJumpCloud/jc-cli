@@ -139,6 +139,20 @@ func resolveWorkflowID(ctx context.Context, client *api.V2Client, identifier str
 	}
 }
 
+// fetchWorkflowLastRan builds the workflow-id → last-run map. A failure to read
+// runs degrades last_ran away rather than failing the caller's request.
+func fetchWorkflowLastRan(ctx context.Context, client *api.V2Client) map[string]string {
+	raw, err := client.Get(ctx, workflow.RunsEndpoint)
+	if err != nil {
+		return nil
+	}
+	runs, err := workflow.ParseRuns(raw)
+	if err != nil {
+		return nil
+	}
+	return workflow.LastRanByWorkflow(runs)
+}
+
 func findWorkflowTemplate(ctx context.Context, client *api.V2Client, identifier string) (workflow.Template, error) {
 	// jc's corrected copies resolve first, and only by their "jc:" ID. A
 	// corrected copy shares its NAME with the JumpCloud original, so matching
@@ -260,7 +274,7 @@ func sideEffectRefusal(res workflow.Result) string {
 }
 
 func (s *Server) registerWorkflowTools() {
-	addTypedTool(s, "workflows_list", "List JumpCloud Workflows — server-side automations that run on Directory Insights events, on a schedule, or when triggered through the API. Each row is the FULL object: created_at, created_by, description, dsl, execution_role_id, id, name, status, trigger_type (jc_events|external|scheduler), updated_at. The dsl dominates the payload, so expect a whole workflow document per row rather than a summary. There is no last-run timestamp on this object — use workflows_runs_list for run history, or workflows_health to find event-triggered workflows that should have fired and did not.",
+	addTypedTool(s, "workflows_list", "List JumpCloud Workflows — server-side automations that run on Directory Insights events, on a schedule, or when triggered through the API. Each row is the FULL object: created_at, created_by, description, dsl, execution_role_id, id, name, status, trigger_type (jc_events|external|scheduler), updated_at. The dsl dominates the payload, so expect a whole workflow document per row rather than a summary. Each row also carries last_ran, the most recent run start, ABSENT when the workflow has never run. That field is COMPUTED by jc from the runs list, not returned by JumpCloud — the API sends no last-run timestamp — so it costs one extra request per call and reflects the runs list rather than Directory Insights, which lags. Use workflows_runs_list for full run history, or workflows_health to find event-triggered workflows that should have fired and did not.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfListInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -278,6 +292,7 @@ func (s *Server) registerWorkflowTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
+			rows = workflow.AnnotateAllLastRan(rows, fetchWorkflowLastRan(ctx, client))
 			res, err := jsonResult(rows)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
@@ -300,6 +315,7 @@ func (s *Server) registerWorkflowTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("getting workflow: %v", err)), nil, nil
 			}
+			raw = workflow.AnnotateLastRan(raw, fetchWorkflowLastRan(ctx, client))
 			return textResult(string(raw)), nil, nil
 		},
 	)
@@ -636,6 +652,8 @@ func (s *Server) registerWorkflowTools() {
 					return errorResult(perr.Error()), nil, nil
 				}
 
+				lastRan := fetchWorkflowLastRan(ctx, client)
+
 				// Roles are cached: several workflows commonly share one.
 				type roleInfo struct {
 					name   string
@@ -651,6 +669,7 @@ func (s *Server) registerWorkflowTools() {
 						continue
 					}
 					sub, d, ok := workflow.LintWorkflow(w)
+					sub.LastRan = lastRan[w.ID]
 					if !ok {
 						subjects = append(subjects, sub)
 						continue

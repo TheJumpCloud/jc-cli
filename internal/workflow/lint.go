@@ -84,6 +84,10 @@ type LintSubject struct {
 	// and a correction exists. Reporting a defect without naming the fix
 	// leaves the operator exactly where they started.
 	CorrectedBy string `json:"corrected_by,omitempty"`
+	// LastRan is the most recent run start, absent when the workflow has never
+	// run. Emitted here as well as on workflows_get/list so the two objects
+	// answer "when did this last run" the same way.
+	LastRan string `json:"last_ran,omitempty"`
 	// TriggerType is lifted to the top level to sit where workflows_get and
 	// workflows_list put it. It was reachable only as result.trigger_type,
 	// so the same name lived at two depths and any top-level field-set diff
