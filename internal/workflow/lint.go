@@ -56,7 +56,26 @@ type LintSubject struct {
 	Name   string `json:"name"`
 	// Status and Role are set for workflows; a template has neither.
 	Status string `json:"status,omitempty"`
-	Role   string `json:"execution_role,omitempty"`
+	// ExecutionRoleID and Role are BOTH emitted, using the same field names
+	// workflows_get and workflows_list use for the same facts.
+	//
+	// lint previously reported only `execution_role` as a NAME while get and
+	// list reported only `execution_role_id` as an ID — a different field name
+	// AND a different representation for one fact, so correlating a linted
+	// workflow to its role needed a separate lookup. Same class as the
+	// source/kind divergence fixed for templates; it was invisible until the
+	// tenant had a workflow to compare.
+	//
+	// The id is the durable half: ids are stable, names are not, so it is the
+	// join key between the two tools.
+	//
+	// The reverse — a resolved role NAME on workflows_get/list — is
+	// deliberately NOT added. Those return the API object, and composing a
+	// field into a passthrough is the same mistake as normalising `admin`
+	// would have been: it trades a visible gap for an invisible jc-only
+	// value. A lint subject is jc's own object and may carry both.
+	ExecutionRoleID string `json:"execution_role_id,omitempty"`
+	Role            string `json:"execution_role,omitempty"`
 	// Skipped explains why nothing could be checked, when that happened —
 	// a DSL that will not parse cannot be validated, and reporting that as
 	// "clean" would be worse than saying nothing.
@@ -65,6 +84,11 @@ type LintSubject struct {
 	// and a correction exists. Reporting a defect without naming the fix
 	// leaves the operator exactly where they started.
 	CorrectedBy string `json:"corrected_by,omitempty"`
+	// TriggerType is lifted to the top level to sit where workflows_get and
+	// workflows_list put it. It was reachable only as result.trigger_type,
+	// so the same name lived at two depths and any top-level field-set diff
+	// flagged it.
+	TriggerType string `json:"trigger_type,omitempty"`
 	// Corrects is set on jc's own corrected copies, naming what they replace.
 	Corrects string `json:"corrects,omitempty"`
 	Result   Result `json:"result"`
@@ -209,12 +233,14 @@ func LintCorrected() []LintSubject {
 // LintWorkflow validates one workflow. Scope checking needs a role lookup, so
 // it stays with the caller; ApplyRole folds the result back in.
 func LintWorkflow(w Workflow) (LintSubject, DSL, bool) {
-	sub := LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
+	sub := LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status,
+		ExecutionRoleID: w.ExecutionRoleID}
 	d, err := ParseDSL(w.DSL)
 	if err != nil {
 		sub.Skipped = "dsl could not be parsed: " + err.Error()
 		return sub, DSL{}, false
 	}
 	sub.Result = Validate(d)
+	sub.TriggerType = sub.Result.TriggerType
 	return sub, d, true
 }

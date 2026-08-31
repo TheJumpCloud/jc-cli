@@ -1854,6 +1854,7 @@ func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) 
 			}
 			sub.Role = info.name
 			sub.Result = workflow.ValidateWithRole(d, info.name, info.scopes)
+			sub.TriggerType = sub.Result.TriggerType
 		}
 		subjects = append(subjects, sub)
 	}

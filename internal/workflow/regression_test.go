@@ -164,3 +164,63 @@ func TestRegression_TemplateSweepInvariants(t *testing.T) {
 		t.Errorf("checked_by_source[jc] = %d, want 4", summary.CheckedBySource[SourceJC])
 	}
 }
+
+const paginationDSL = `{"schedule":{"on":{"one":{"with":{"source":"external","condition":"probe != \"\""}}}},
+  "input":{"schema":{"format":"json","document":{"type":"object","required":["probe"],
+    "properties":{"probe":{"type":"string"}}}}},
+  "do":[
+    {"paginateUsers":{"call":"jc_operation","with":{
+      "operationId":"getApiSystemusers","version":1,
+      "queryParams":{"limit":2,"skip":0},
+      "pagination":{"update":{"in":"queryParams","key":"skip",
+        "value":"${ page.request.queryParams.skip + 2 }"},
+        "until":"${ len(page.response.body.results) == 0 }"},
+      "extract":"${ page.response.body.results }"}}},
+    {"bigBody":{"call":"jc_operation","with":{
+      "operationId":"getApiSystems","version":1,"queryParams":{"limit":100}}}}
+  ]}`
+
+// The only observed node where the two halves of the run/skip predicate come
+// apart: node_output is present, status is ABSENT.
+//
+// A truncated node does not carry a trimmed version of the normal shape — it
+// carries a different object entirely: {_preview, _truncated, pageCount,
+// totalItems}, with no body, status, method or url. Keying on node_output
+// gives the right answer (it ran); keying on status would read it as skipped,
+// which is exactly the refactor this fixture exists to make fail loudly.
+//
+// From run 575ebe87-a1b2-4252-93cf-6b5d097564dd. Note the asymmetry, worth
+// knowing: the 7-item EXTRACTED list was truncated while the substantially
+// larger raw device body in the same run was not — truncation applies to
+// extract output, not to raw response bodies.
+func TestRegression_TruncatedNodeRanWithoutAStatus(t *testing.T) {
+	got := compareFixture(t, paginationDSL, map[string]any{"probe": "x"}, "run-truncated.json")
+
+	byTask := map[string]TaskComparison{}
+	for _, tc := range got.Tasks {
+		byTask[tc.Task] = tc
+	}
+
+	trunc, ok := byTask["paginateUsers"]
+	if !ok {
+		t.Fatalf("paginateUsers missing: %+v", got.Tasks)
+	}
+	if !trunc.Ran {
+		t.Error("a truncated node carries node_output, so it ran — do not key on status")
+	}
+	if trunc.Status != "" {
+		t.Errorf("a truncated node has no status; got %q", trunc.Status)
+	}
+	if trunc.Verdict != VerdictAgree {
+		t.Errorf("paginateUsers verdict = %q (%s), want agree", trunc.Verdict, trunc.Detail)
+	}
+
+	// The untruncated sibling still reports its status normally.
+	if big := byTask["bigBody"]; !big.Ran || big.Status != "200" {
+		t.Errorf("bigBody ran=%v status=%q, want true and 200", big.Ran, big.Status)
+	}
+
+	if got.Agree != 2 || got.Diverge != 0 {
+		t.Errorf("agree/diverge = %d/%d, want 2/0", got.Agree, got.Diverge)
+	}
+}

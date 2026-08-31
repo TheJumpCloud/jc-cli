@@ -413,6 +413,16 @@ func SortComparison(tasks []TaskComparison) {
 // step ran. It is reused verbatim wherever that rule is described, so two
 // phrasings cannot drift apart — a wrong-but-plausible rule about exactly these
 // fields cost two build cycles once already.
+// TruncatedNodeDoc describes the one node shape where the predicate's two
+// halves come apart. Reused wherever the trace is described, alongside
+// RanPredicateDoc.
+const TruncatedNodeDoc = "TRUNCATED NODES: when is_output_truncated is true, node_output is not a trimmed " +
+	"version of the normal shape — it is a DIFFERENT object, {_preview, _truncated, pageCount, totalItems}, " +
+	"with no body, status, method or url. So node_output is present while status is absent. This is why the " +
+	"predicate is node_output != null and not anything involving status: keying on status would read a " +
+	"truncated step as skipped when it ran. Truncation applies to a step's extract output, not to raw response " +
+	"bodies — one run truncated a 7-item extracted list while leaving a substantially larger raw device body intact."
+
 const RanPredicateDoc = "CRITICAL when reading a trace: is_executed, success and message are NOT evidence " +
 	"that a step did its work. A step a branch routed around reports is_executed=true, success=true and " +
 	"\"Task completed.\" — byte-identical to one that ran — and differs ONLY in that node_output is null. " +
