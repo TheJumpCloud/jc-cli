@@ -76,29 +76,25 @@ SECTION_SERVICE = {
 # documentation ERROR rather than an omission, and a workflow triggering on the
 # documented spelling would silently never fire.
 OBSERVED = {
-    "software_status_update": {"d": "Observed live (678x/30d); not in the documented catalog."},
-    "ldap_srch": {
-        "d": "An LDAP search. Emitted as ldap_srch (240x/30d); the documentation "
-             "lists ldap_search, which was never emitted — trigger on this spelling.",
-        "s": "ldap",
-    },
-    "policy_result": {"d": "A policy application result. Observed live (84x/30d).", "s": "systems"},
-    "command_result": {"d": "A command execution result. Observed live (10x/30d).", "s": "systems"},
-    "slack_notification_sent": {"d": "A Slack notification was sent. Observed live (8x/30d)."},
-    "bulk_update_alerts": {"d": "Alerts updated in bulk. Observed live (6x/30d)."},
-    "bulk_delete_alerts": {"d": "Alerts deleted in bulk. Observed live (2x/30d)."},
-    "attributemappings_add": {"d": "An attribute mapping was added. Observed live (4x/30d)."},
-    "attributemappings_update": {"d": "An attribute mapping was updated. Observed live (2x/30d)."},
-    "attributemappings_delete": {"d": "An attribute mapping was deleted. Observed live (4x/30d)."},
-    "rule_config_created": {"d": "A rule configuration was created. Observed live (1x/30d)."},
-    "rule_config_updated": {"d": "A rule configuration was updated. Observed live (3x/30d)."},
-    "rule_config_deleted": {"d": "A rule configuration was deleted. Observed live (1x/30d)."},
-    "saas_management_application_review": {
-        "d": "A SaaS-managed application was reviewed. Observed live (3x/30d).",
-        "s": "saas_management",
-    },
-    "radius_auth_attempt": {"d": "A RADIUS authentication attempt. Observed live (1x/30d).", "s": "radius"},
-    "workflow_update": {"d": "A workflow is updated. Observed live (5x/30d).", "s": "workflows"},
+    'attributemappings_add': {"d": 'An attribute mapping was added. Observed live (4x/30d).'},
+    'attributemappings_delete': {"d": 'An attribute mapping was deleted. Observed live (4x/30d).'},
+    'attributemappings_update': {"d": 'An attribute mapping was updated. Observed live (2x/30d).'},
+    'bulk_delete_alerts': {"d": 'Alerts deleted in bulk. Observed live (2x/30d).'},
+    'bulk_update_alerts': {"d": 'Alerts updated in bulk. Observed live (6x/30d).'},
+    'command_result': {"d": 'A command execution result. Observed live (10x/30d).', "s": 'systems'},
+    'ldap_srch': {"d": 'An LDAP search. Emitted as ldap_srch (240x/30d); the documentation lists ldap_search, which was never emitted — trigger on this spelling.', "s": 'ldap'},
+    'policy_result': {"d": 'A policy application result. Observed live (84x/30d).', "s": 'systems'},
+    'radius_auth_attempt': {"d": 'A RADIUS authentication attempt. Observed live (1x/30d).', "s": 'radius'},
+    'rule_config_created': {"d": 'A rule configuration was created. Observed live (1x/30d).'},
+    'rule_config_deleted': {"d": 'A rule configuration was deleted. Observed live (1x/30d).'},
+    'rule_config_updated': {"d": 'A rule configuration was updated. Observed live (3x/30d).'},
+    'saas_management_application_review': {"d": 'A SaaS-managed application was reviewed. Observed live (3x/30d).', "s": 'saas_management'},
+    'slack_notification_sent': {"d": 'A Slack notification was sent. Observed live (8x/30d).'},
+    'software_status_update': {"d": 'Observed live (678x/30d); not in the documented catalog.'},
+    'workflow_create': {"d": 'A workflow is created.', "s": 'workflows'},
+    'workflow_delete': {"d": 'A workflow is deleted.', "s": 'workflows'},
+    'workflow_run': {"d": 'A workflow run finished. initiated_by.id is the WORKFLOW id and resource.id the RUN id; resource.status carries the outcome and resource.meta_data.trigger_source how it started.', "s": 'workflows'},
+    'workflow_update': {"d": 'A workflow is updated. Observed live (5x/30d).', "s": 'workflows'},
 }
 
 

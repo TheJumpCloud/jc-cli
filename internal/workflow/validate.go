@@ -180,6 +180,24 @@ func validateTrigger(d DSL, add func(Severity, string, string, string)) TriggerS
 				fmt.Sprintf("unknown Directory Insights event type %q", trigger.EventType), hint)
 		}
 
+		// A workflow run emits a workflow_run event, so a workflow triggered
+		// on workflow_run re-triggers itself on its own completion. Verified
+		// live: every run produces one, carrying initiated_by.id = the
+		// workflow that ran.
+		//
+		// A trigger condition is the only thing standing between that and an
+		// unbounded loop, so the absence of one is what makes this worth
+		// flagging rather than the event type itself — chaining off ANOTHER
+		// workflow's run is a legitimate and useful pattern.
+		if trigger.EventType == "workflow_run" && trigger.Condition == "" {
+			add(Warning, "dsl.schedule.on.one.with.type",
+				"this triggers on workflow_run, and a workflow run itself emits a workflow_run event, "+
+					"so this workflow will re-trigger on its own completion",
+				"add a condition narrowing it to the workflow you mean to chain from — "+
+					"initiated_by.id is the id of the workflow that ran, so "+
+					`initiated_by.id == "<other workflow id>" stops it retriggering itself`)
+		}
+
 	case trigger.Source == TriggerExternal:
 		// nothing further required; input.schema is optional
 
