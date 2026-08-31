@@ -47,7 +47,7 @@ type deviceViewArgs struct {
 type deviceViewData struct {
 	Device         deviceHeader      `json:"device"`
 	Status         deviceStatusSnap  `json:"status"`
-	Groups         []deviceGroupRef  `json:"groups"`
+	Groups         []GroupRef        `json:"groups"`
 	Policies       []policyRef       `json:"policies"`
 	SystemInsights *deviceInsights   `json:"system_insights,omitempty"`
 	RecentEvents   []json.RawMessage `json:"recent_events"`
@@ -74,11 +74,6 @@ type deviceStatusSnap struct {
 	Connectivity string `json:"connectivity"`
 	FDEEnabled   bool   `json:"fde_enabled"`
 	MDMEnrolled  bool   `json:"mdm_enrolled"`
-}
-
-type deviceGroupRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }
 
 type policyRef struct {
@@ -212,30 +207,7 @@ func fetchDeviceViewData(ctx context.Context, args deviceViewArgs) (*deviceViewD
 			addWarning(fmt.Sprintf("v2 client: %v", err))
 			return
 		}
-		result, err := v2.ListAll(ctx, "/systems/"+id+"/memberof", api.V2ListOptions{})
-		if err != nil {
-			addWarning(fmt.Sprintf("groups: %v", err))
-			return
-		}
-		groups := make([]deviceGroupRef, 0, len(result.Data))
-		for _, raw := range result.Data {
-			var g struct {
-				ID         string `json:"id"`
-				Attributes struct {
-					Name string `json:"name"`
-				} `json:"attributes"`
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(raw, &g); err != nil {
-				continue
-			}
-			name := g.Name
-			if name == "" {
-				name = g.Attributes.Name
-			}
-			groups = append(groups, deviceGroupRef{ID: g.ID, Name: name})
-		}
-		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		groups := resolveGroupNames(ctx, v2, "/systems/"+id+"/memberof", addWarning)
 		mu.Lock()
 		data.Groups = groups
 		mu.Unlock()
@@ -493,6 +465,8 @@ func (s *Server) registerDeviceView() {
 	registerTypedAppTool(s, typedAppSpec[deviceViewArgs]{
 		Name: "device_view",
 		Description: "Show an interactive JumpCloud device inventory view: header (hostname, OS+version, serial, last contact, agent version), " +
+			"TIMESTAMP PRECISION: created here comes from GET /systems/{id}, which returns whole seconds (2024-05-14T03:31:31.000Z). devices_search returns the SAME field on the SAME device with milliseconds (…31.286Z) — a JumpCloud inconsistency between two of its own endpoints, not a truncation by jc, verified by comparing both raw responses. Do not correlate this value against Directory Insights events, which carry millisecond precision; use devices_search when exact ordering matters. " +
+			"Field names here are snake_case: this is a jc-shaped projection, not an API passthrough. The passthrough tools (devices_search, users_get, users_search) return JumpCloud's own camelCase (displayName, serialNumber, lastContact) for the same facts. That split is deliberate — camelCase means the API said it, snake_case means jc composed it — but it does mean the same fact is spelled two ways depending on which tool you asked. " +
 			"status badges (online/stale/offline, FDE, MDM), group memberships, applied policies, a system-insights snapshot " +
 			"(uptime, logged-in users, disks), and recent Directory Insights events for the device. " +
 			"Required input: device (hostname, displayName, or 24-char hex ID). " +

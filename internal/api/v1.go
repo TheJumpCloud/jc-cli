@@ -79,6 +79,22 @@ type v1ListResponse struct {
 	TotalCount int             `json:"totalCount"`
 }
 
+// isJSONArray reports whether a response body is a bare JSON array rather than
+// the usual {results, totalCount} envelope.
+func isJSONArray(body []byte) bool {
+	for _, b := range body {
+		switch b {
+		case ' ', '\t', '\r', '\n':
+			continue
+		case '[':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // ListAll fetches all results from a V1 list endpoint with automatic pagination.
 // The endpoint should be a path like "/systemusers" (appended to BaseURL).
 // Results are accumulated and returned as a ListResult with total count.
@@ -126,7 +142,25 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 			return nil, NewAPIError(resp.StatusCode, endpoint, body)
 		}
 
-		// Parse the V1 list response.
+		// Parse the V1 list response. Most V1 list endpoints return the
+		// {results, totalCount} wrapper, but not all: /systemusers/{id}/sshkeys
+		// returns a BARE ARRAY, and assuming the wrapper made `jc users
+		// ssh-keys` fail outright with "cannot unmarshal array into Go value
+		// of type api.v1ListResponse" — on every surface, since they share
+		// this client.
+		//
+		// A bare array is self-describing: it is the whole result set, so its
+		// length is the total and there is nothing further to page.
+		var pageItems []json.RawMessage
+		if isJSONArray(body) {
+			if err := json.Unmarshal(body, &pageItems); err != nil {
+				return nil, fmt.Errorf("parsing results array: %w", err)
+			}
+			allResults = append(allResults, pageItems...)
+			totalCount = len(allResults)
+			break
+		}
+
 		var listResp v1ListResponse
 		if err := json.Unmarshal(body, &listResp); err != nil {
 			return nil, fmt.Errorf("parsing response: %w", err)
@@ -135,7 +169,6 @@ func (c *V1Client) ListAll(ctx context.Context, endpoint string, opts ListOption
 		totalCount = listResp.TotalCount
 
 		// Unmarshal the results array into individual items.
-		var pageItems []json.RawMessage
 		if err := json.Unmarshal(listResp.Results, &pageItems); err != nil {
 			return nil, fmt.Errorf("parsing results array: %w", err)
 		}

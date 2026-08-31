@@ -94,6 +94,15 @@ func FindCorrected(identifier string) (CorrectedTemplate, bool) {
 	return CorrectedTemplate{}, false
 }
 
+// Source values, shared by every surface that reports where a template came
+// from. One vocabulary, defined once.
+const (
+	// SourceJumpCloud marks a template served by JumpCloud.
+	SourceJumpCloud = "jumpcloud"
+	// SourceJC marks one of jc's own corrected copies.
+	SourceJC = "jc"
+)
+
 // CorrectedIDPrefix marks a template as jc's rather than JumpCloud's. The
 // prefix matters: a corrected copy shares its NAME with the original, so
 // without it the two could not be told apart when resolving.
@@ -119,4 +128,35 @@ func CorrectionFor(templateName string) (CorrectedTemplate, bool) {
 // Describe renders one line naming what a corrected template replaces.
 func (t CorrectedTemplate) Describe() string {
 	return fmt.Sprintf("%s — corrects JumpCloud's %q: %s", t.ID, t.Corrects, t.Changes)
+}
+
+// Template list rows are built HERE, not in each surface.
+//
+// The CLI and the MCP tool each built this map inline, and the copies drifted:
+// one set corrected_by, the other did not. Sharing the construction is what
+// makes "the CLI and the MCP tool agree" a property of the code rather than of
+// whoever last edited both.
+
+// ServedTemplateRow summarises a JumpCloud template for a list view, without
+// its DSL — a full catalog is ~40KB of nested documents. Where jc ships a
+// corrected copy, the row names it, because this list is where a caller decides
+// what to copy.
+func ServedTemplateRow(id, name, category, description string) map[string]any {
+	row := map[string]any{
+		"id": id, "name": name, "category": category,
+		"description": description, "source": SourceJumpCloud,
+	}
+	if ct, ok := CorrectionFor(name); ok {
+		row["corrected_by"] = ct.ID
+	}
+	return row
+}
+
+// CorrectedTemplateRow summarises one of jc's corrected copies.
+func CorrectedTemplateRow(ct CorrectedTemplate) map[string]any {
+	return map[string]any{
+		"id": ct.ID, "name": ct.Name, "category": ct.Category,
+		"description": ct.Description, "source": SourceJC,
+		"corrects": ct.Corrects, "changes": ct.Changes,
+	}
 }

@@ -298,11 +298,7 @@ can supply.`,
 
 			if correctedOnly || withCorrected {
 				for _, ct := range workflow.CorrectedTemplates() {
-					b, err := json.Marshal(map[string]any{
-						"id": ct.ID, "name": ct.Name, "category": ct.Category,
-						"description": ct.Description, "source": "jc",
-						"corrects": ct.Corrects, "changes": ct.Changes,
-					})
+					b, err := json.Marshal(workflow.CorrectedTemplateRow(ct))
 					if err != nil {
 						return err
 					}
@@ -324,16 +320,7 @@ can supply.`,
 					return err
 				}
 				for _, t := range templates {
-					row := map[string]any{
-						"id": t.ID, "name": t.Name, "category": t.Category,
-						"description": t.Description, "source": "jumpcloud",
-					}
-					// Say so on the original, not only on the replacement:
-					// this list is where someone picks what to copy.
-					if ct, ok := workflow.CorrectionFor(t.Name); ok {
-						row["corrected_by"] = ct.ID
-					}
-					b, err := json.Marshal(row)
+					b, err := json.Marshal(workflow.ServedTemplateRow(t.ID, t.Name, t.Category, t.Description))
 					if err != nil {
 						return err
 					}
@@ -1839,15 +1826,12 @@ func lintWorkflows(ctx context.Context, client *api.V2Client, checkScopes bool) 
 			continue
 		}
 
-		sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
-		d, err := workflow.ParseDSL(w.DSL)
-		if err != nil {
-			sub.Skipped = "dsl could not be parsed: " + err.Error()
+		sub, d, ok := workflow.LintWorkflow(w)
+		if !ok {
 			subjects = append(subjects, sub)
 			continue
 		}
 
-		sub.Result = workflow.Validate(d)
 		if checkScopes && w.ExecutionRoleID != "" {
 			info, ok := roles[w.ExecutionRoleID]
 			if !ok {
@@ -1886,26 +1870,13 @@ func lintTemplates(ctx context.Context, client *api.V2Client) ([]workflow.LintSu
 		return nil, err
 	}
 
-	subjects := make([]workflow.LintSubject, 0, len(templates))
+	subjects := make([]workflow.LintSubject, 0, len(templates)+4)
 	for _, t := range templates {
-		sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
-		d, err := workflow.ParseDSL(t.DSL)
-		if err != nil {
-			sub.Skipped = "dsl could not be parsed: " + err.Error()
-			subjects = append(subjects, sub)
-			continue
-		}
-		// Placeholders are expected in a template, so they are not counted
-		// against it — see WithoutPlaceholderFindings.
-		sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
-		// Naming a defect without naming the fix leaves the operator where
-		// they started, since this catalog is what they were going to copy.
-		if ct, ok := workflow.CorrectionFor(t.Name); ok && len(sub.Result.Findings) > 0 {
-			sub.CorrectedBy = ct.ID
-		}
-		subjects = append(subjects, sub)
+		subjects = append(subjects, workflow.LintTemplate(t.ID, t.Name, t.DSL))
 	}
-	return subjects, nil
+	// jc's corrected copies are linted in the same sweep, so the output proves
+	// the corrections rather than only reporting the defects.
+	return append(subjects, workflow.LintCorrected()...), nil
 }
 
 func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
@@ -1931,6 +1902,14 @@ func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
 			name = sub.ID
 		}
 		head := fmt.Sprintf("%s %s", sub.Kind, name)
+		// A corrected copy shares its NAME with the template it replaces, so
+		// without the id the two lines are indistinguishable — and the id is
+		// what you would type to use it. The friendly label is derived from
+		// the source field rather than baked into kind: the data says the
+		// distinction once, presentation is free to spell it out.
+		if sub.Source == workflow.SourceJC {
+			head = fmt.Sprintf("%s (jc corrected) %s", sub.Kind, sub.ID)
+		}
 		if sub.Status != "" {
 			head += " (" + sub.Status + ")"
 		}
@@ -1959,8 +1938,15 @@ func writeLintReport(cmd *cobra.Command, summary workflow.LintSummary) error {
 		}
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d checked: %d clean, %d with errors, %d with warnings, %d not checked ──\n",
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n── %d checked: %d clean, %d with errors, %d with warnings, %d not checked ──\n",
 		summary.Checked, summary.Clean, summary.Errors, summary.Warnings, summary.Skipped)
+	// A bare "16 checked" over a 12-template catalog reads as though the
+	// catalog grew, so the total says where its subjects came from.
+	if n := summary.CheckedBySource; len(n) > 1 {
+		fmt.Fprintf(w, "   of which %d served by JumpCloud and %d jc corrected copies of those\n",
+			n[workflow.SourceJumpCloud], n[workflow.SourceJC])
+	}
 	return nil
 }
 
@@ -2001,7 +1987,10 @@ func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) e
 		if tc.Status != "" {
 			line += " → " + tc.Status
 		}
-		if tc.Verdict == workflow.VerdictAgree {
+		if tc.Failed {
+			line += "  (call failed)"
+		}
+		if tc.Verdict == workflow.VerdictAgree && !tc.Failed {
 			fmt.Fprintln(out, line)
 			continue
 		}

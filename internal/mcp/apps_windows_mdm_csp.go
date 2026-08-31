@@ -21,14 +21,14 @@ import (
 // ── tool: csp_search ───────────────────────────────────────────────
 
 type windowsMDMCSPSearchInput struct {
-	Area string `json:"area,omitempty" jsonschema:"Restrict to one Policy CSP area (e.g. Camera, Update, DeviceLock, ADMX_AppCompat). Empty searches all ~230 areas."`
+	Area string `json:"area,omitempty" jsonschema:"Restrict to one Policy CSP area (e.g. Camera, Update, DeviceLock, ADMX_AppCompat). Empty searches every area in the loaded snapshot."`
 	// Search mirrors the CLI: substring over area, name, URI, and
 	// description — the agent's natural-language-to-OMA-URI bridge.
 	Search      string `json:"search,omitempty" jsonschema:"Case-insensitive substring over area, name, URI, and description (e.g. 'screen capture', 'bitlocker')."`
 	Scope       string `json:"scope,omitempty" jsonschema:"Restrict to 'device' or 'user' scoped settings. JumpCloud's Custom MDM (OMA-URI) template is device-scoped."`
 	Kind        string `json:"kind,omitempty" jsonschema:"Restrict provenance: 'policy' (Policy CSP areas) or 'csp' (standalone CSPs like BitLocker CSP, Firewall CSP, VPNv2). Empty searches both."`
 	ExcludeADMX bool   `json:"exclude_admx,omitempty" jsonschema:"Drop ADMX-backed settings (their values need ADMX-style XML, not plain scalars)."`
-	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 50, max 200). The catalog holds ~3700 settings — narrow with area/search rather than raising the limit."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 50, max 200). The catalog holds several thousand settings — narrow with area/search rather than raising the limit."`
 }
 
 // windowsMDMCSPSettingSummary trims a Setting for search results so a
@@ -80,9 +80,37 @@ type windowsMDMCSPTemplateResult struct {
 	// consumes as its `settings` argument — values seeded from the
 	// schema default (or first allowed value); adjust before executing.
 	Settings []windows_mdm.OMAURISetting `json:"settings"`
+	// Refs maps each entry of Settings, by index, back to the Area/PolicyName
+	// ref it was built from.
+	//
+	// Settings is the exact payload windows_mdm_oma_uri_create_policy sends to
+	// JumpCloud, so the ref cannot live inside it without polluting what goes
+	// on the wire. It has to live alongside — and it has to exist at all,
+	// because this tool ACCEPTS Area/Name refs and returned only uri/format/
+	// value, so its output could not be mapped back to the setting it came
+	// from without re-parsing the OMA-URI. In Area/Name, out uri: the pipeline
+	// search → show → template could not be composed.
+	Refs []windowsMDMCSPRef `json:"refs"`
 	// Warnings flags ADMX-backed refs (value must be ADMX-style XML)
 	// and user-scoped refs (JC's template is device-scoped).
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// windowsMDMCSPRef ties one templated setting back to its catalog identity,
+// spelled the way _search spells it and the way _show and _template accept it.
+type windowsMDMCSPRef struct {
+	// Index is the position in Settings this describes.
+	Index int `json:"index"`
+	// Setting is the Area/PolicyName ref — the same string _search returns
+	// and _show/_template take as input.
+	Setting string `json:"setting"`
+	// Area and Name are the split form _show reports, so a caller correlating
+	// against _show does not have to split on "/" itself.
+	Area string `json:"area"`
+	Name string `json:"name"`
+	// URI is the OMA-URI, repeated here so a ref can be matched to a payload
+	// entry by either identity.
+	URI string `json:"uri"`
 }
 
 // ── registration ───────────────────────────────────────────────────
@@ -94,7 +122,7 @@ const cspSearchLimitMax = 200
 // registers from one place.
 func (s *Server) registerWindowsMDMCSPTools() {
 	addToolWithMetaTyped(s, "windows_mdm_csp_search",
-		"Search Microsoft's Windows Policy CSP settings catalog (~230 areas, ~3700 settings) to map a natural-language Windows-management intent ('disable the camera', 'require BitLocker-era encryption', 'lock screen timeout') to the exact OMA-URI + format + allowed values. "+
+		"Search Microsoft's Windows Policy CSP settings catalog to map a natural-language Windows-management intent ('disable the camera', 'require BitLocker-era encryption', 'lock screen timeout') to the exact OMA-URI + format + allowed values. "+
 			"Data is Microsoft's pinned DDF v2 snapshot, auto-fetched once from Microsoft's official URL (SHA-256-verified) into the local cache — never the JumpCloud API. "+
 			"Pair with windows_mdm_csp_show for full metadata and windows_mdm_csp_template → windows_mdm_oma_uri_create_policy to ship a policy.",
 		nil,
@@ -177,7 +205,7 @@ func (s *Server) registerWindowsMDMCSPTools() {
 	addToolWithMetaTyped(s, "windows_mdm_csp_template",
 		"Emit the ready-to-edit settings list ({uri, format, value} triples) for one or more Policy CSP settings — the exact shape windows_mdm_oma_uri_create_policy consumes as its `settings` argument. "+
 			"Values are seeded from each setting's default (or first allowed value); adjust them before executing the create tool. Never calls the JumpCloud API. "+
-			"Warnings flag ADMX-backed settings (value must be ADMX-style XML like <enabled/>) and user-scoped settings (JumpCloud's template is device-scoped).",
+			"Warnings flag ADMX-backed settings (value must be ADMX-style XML like <enabled/>) and user-scoped settings (JumpCloud's template is device-scoped). The response also returns refs[], mapping each settings[] entry by index back to the Area/PolicyName ref it was built from — settings[] is the exact payload the create tool sends to JumpCloud and cannot carry the ref itself, so refs[] is what lets this output be matched back to windows_mdm_csp_search or _show results without re-parsing the OMA-URI.",
 		nil,
 		func(ctx context.Context, req *mcp.CallToolRequest, args windowsMDMCSPTemplateInput) (*mcp.CallToolResult, any, error) {
 			if len(args.Settings) == 0 {
@@ -206,7 +234,15 @@ func (s *Server) registerWindowsMDMCSPTools() {
 					out.Warnings = append(out.Warnings, fmt.Sprintf(
 						"%s is user-scoped; JumpCloud's Custom MDM (OMA-URI) template is device-scoped and may not apply it", ref))
 				}
-				out.Settings = append(out.Settings, windows_mdm.TemplateSetting(setting))
+				ts := windows_mdm.TemplateSetting(setting)
+				out.Refs = append(out.Refs, windowsMDMCSPRef{
+					Index:   len(out.Settings),
+					Setting: setting.Area + "/" + setting.Name,
+					Area:    setting.Area,
+					Name:    setting.Name,
+					URI:     ts.URI,
+				})
+				out.Settings = append(out.Settings, ts)
 			}
 			res, err := jsonResult(out)
 			if err != nil {

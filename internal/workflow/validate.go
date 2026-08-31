@@ -610,51 +610,11 @@ func checkReachability(tasks []Task, add func(Severity, string, string, string))
 		return
 	}
 
-	targeted := map[string]bool{}
-	for _, t := range top {
-		if t.Body == nil {
-			continue
-		}
-		if then, ok := t.Body["then"].(string); ok && !ControlTargets[then] {
-			targeted[then] = true
-		}
-		if branches, ok := t.Body["switch"].([]any); ok {
-			for _, rawBranch := range branches {
-				branch, ok := rawBranch.(map[string]any)
-				if !ok {
-					continue
-				}
-				for _, rawCase := range branch {
-					c, ok := rawCase.(map[string]any)
-					if !ok {
-						continue
-					}
-					if then, ok := c["then"].(string); ok && !ControlTargets[then] {
-						targeted[then] = true
-					}
-				}
-			}
-		}
-	}
-
-	// jumpsAway reports whether a task always transfers control elsewhere, so
-	// the task after it is never reached by fall-through.
-	jumpsAway := func(t Task) bool {
-		if t.Body == nil {
-			return false
-		}
-		if _, ok := t.Body["switch"]; ok {
-			return true
-		}
-		if then, ok := t.Body["then"].(string); ok {
-			return then != "" && then != "continue"
-		}
-		return false
-	}
+	targeted := JumpTargets(top)
 
 	for i := 1; i < len(top); i++ {
 		t := top[i]
-		if targeted[t.Name] || !jumpsAway(top[i-1]) {
+		if targeted[t.Name] || !JumpsAway(top[i-1]) {
 			continue
 		}
 		add(Warning, t.Path,

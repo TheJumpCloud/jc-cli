@@ -320,7 +320,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. A switch node also records case_evaluations (every case, its when expression, and whether it matched) and the branch chosen. Each node carries is_output_truncated; the size at which the ENGINE truncates a step's body is undocumented and is a different ceiling from this server's own result limit, so a very large step response may not be a faithful record even when the trace itself returns fine. This is the only place a failed run's cause is visible. CRITICAL when reading a trace: is_executed, success and message are NOT reliable evidence that a step did its work. A step a branch routed around reports is_executed=true, success=true and \"Task completed.\" — identical to one that ran — and differs ONLY in that node_output is null. The single trustworthy predicate for a jc_operation is node_output != null carrying a status; a step with node_output null made no call, whatever the other fields say. Verified against ground truth: a task skipped this way would have created a user group, and afterwards the group did not exist.",
+	addTypedTool(s, "workflows_runs_get", "Get one JumpCloud Workflow run with its full per-step execution trace. Each step records the HTTP method, URL and status it called, AND the complete response body under node_output.body — so intermediate state is directly inspectable and does not have to be exfiltrated through an email step to be observed. Skipped steps are marked, and a failing step halts the run: everything after it reports 'Not executed — workflow failed at a prior task'. A switch node also records case_evaluations (every case, its when expression, and whether it matched) and the branch chosen. Each node carries is_output_truncated; the size at which the ENGINE truncates a step's body is undocumented and is a different ceiling from this server's own result limit, so a very large step response may not be a faithful record even when the trace itself returns fine. This is the only place a failed run's cause is visible. "+workflow.RanPredicateDoc+"",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfRunGetInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -350,21 +350,11 @@ func (s *Server) registerWorkflowTools() {
 			}
 			summaries := make([]map[string]any, 0, len(templates)+4)
 			for _, ct := range workflow.CorrectedTemplates() {
-				summaries = append(summaries, map[string]any{
-					"id": ct.ID, "name": ct.Name, "category": ct.Category,
-					"description": ct.Description, "source": "jc",
-					"corrects": ct.Corrects, "changes": ct.Changes,
-				})
+				summaries = append(summaries, workflow.CorrectedTemplateRow(ct))
 			}
 			for _, t := range templates {
-				row := map[string]any{
-					"id": t.ID, "name": t.Name, "category": t.Category,
-					"description": t.Description, "source": "jumpcloud",
-				}
-				if ct, ok := workflow.CorrectionFor(t.Name); ok {
-					row["corrected_by"] = ct.ID
-				}
-				summaries = append(summaries, row)
+				summaries = append(summaries,
+					workflow.ServedTemplateRow(t.ID, t.Name, t.Category, t.Description))
 			}
 			res, err := jsonResult(summaries)
 			if err != nil {
@@ -576,7 +566,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_lint", "Validate EVERY workflow on the tenant at once, and optionally the served template catalog. workflows_validate answers \"is this one document right?\"; this answers \"which of the things already running are wrong?\" — the question nobody asks, because by hand it means exporting every workflow and checking each in turn. JumpCloud accepts a malformed DSL and fails only at run time, so a broken workflow sits there looking healthy. Set templates to lint the catalog instead: the DSL has no published schema, so templates are the only worked examples, and an idiom that appears in one gets copied into real workflows — linting them says which examples are safe to copy. Set scopes to also check each workflow against ITS OWN execution role, the role it will really run as — this catches DRIFT rather than typos, since the API already rejects a scope-short workflow at create time, but nothing rechecks after a role is edited to drop a scope, which leaves every workflow under it failing at run time. Results are ordered worst-first. Read-only.",
+	addTypedTool(s, "workflows_lint", "Validate EVERY workflow on the tenant at once, and optionally the served template catalog. workflows_validate answers \"is this one document right?\"; this answers \"which of the things already running are wrong?\" — the question nobody asks, because by hand it means exporting every workflow and checking each in turn. JumpCloud accepts a malformed DSL and fails only at run time, so a broken workflow sits there looking healthy. Set templates to lint the catalog instead: the DSL has no published schema, so templates are the only worked examples, and an idiom that appears in one gets copied into real workflows — linting them says which examples are safe to copy. Set scopes to also check each workflow against ITS OWN execution role, the role it will really run as — this catches DRIFT rather than typos, since the API already rejects a scope-short workflow at create time, but nothing rechecks after a role is edited to drop a scope, which leaves every workflow under it failing at run time. Results are ordered worst-first. A defective template carries corrected_by naming jc's repaired copy, and those corrected copies are linted in the SAME sweep, so the output proves them rather than only reporting the defects. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfLintInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -609,14 +599,11 @@ func (s *Server) registerWorkflowTools() {
 							Kind: "workflow", Skipped: "workflow could not be parsed: " + werr.Error()})
 						continue
 					}
-					sub := workflow.LintSubject{Kind: "workflow", ID: w.ID, Name: w.Name, Status: w.Status}
-					d, derr := workflow.ParseDSL(w.DSL)
-					if derr != nil {
-						sub.Skipped = "dsl could not be parsed: " + derr.Error()
+					sub, d, ok := workflow.LintWorkflow(w)
+					if !ok {
 						subjects = append(subjects, sub)
 						continue
 					}
-					sub.Result = workflow.Validate(d)
 
 					if args.Scopes && w.ExecutionRoleID != "" {
 						info, ok := roles[w.ExecutionRoleID]
@@ -654,18 +641,12 @@ func (s *Server) registerWorkflowTools() {
 					return errorResult(perr.Error()), nil, nil
 				}
 				for _, t := range templates {
-					sub := workflow.LintSubject{Kind: "template", ID: t.ID, Name: t.Name}
-					d, derr := workflow.ParseDSL(t.DSL)
-					if derr != nil {
-						sub.Skipped = "dsl could not be parsed: " + derr.Error()
-						subjects = append(subjects, sub)
-						continue
-					}
-					// Placeholders are expected in a template, so they are
-					// not counted against it.
-					sub.Result = workflow.WithoutPlaceholderFindings(workflow.Validate(d))
-					subjects = append(subjects, sub)
+					subjects = append(subjects, workflow.LintTemplate(t.ID, t.Name, t.DSL))
 				}
+				// jc's corrected copies are linted in the same sweep, so the
+				// output proves the corrections rather than only reporting
+				// the defects they fix.
+				subjects = append(subjects, workflow.LintCorrected()...)
 			}
 
 			res, jerr := jsonResult(workflow.Summarize(subjects))
@@ -676,7 +657,7 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. NOTE the run trace does not mark skipped steps with is_executed (a skipped node still carries is_executed=true and success=true); only the message distinguishes them, and this tool reads it correctly. Read-only: it fetches one run and runs nothing.",
+	addTypedTool(s, "workflows_compare_run", "Measure a workflow dry run against a REAL run's trace, task by task. workflows_simulate produces a plan and openly states it is this tool's reading of the DSL rather than an observation of JumpCloud's runtime; this is how that reading gets checked. Give the same dsl (and input) you would give workflows_simulate, plus a run_id, and it reports where the plan and the run agree and where they do not. The verdict worth acting on is ran-but-planned-skip: the workflow touched something the plan said it would not. Divergence is not automatically a planner bug — a guard that reads a prior step's response body cannot be evaluated without one, and those are reported as unresolved-in-plan and counted separately rather than held against the plan. "+workflow.RanPredicateDoc+" Read-only: it fetches one run and runs nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfCompareRunInput) (*mcp.CallToolResult, any, error) {
 			raw, err := dslRaw(args.DSL)
 			if err != nil {

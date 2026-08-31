@@ -158,3 +158,58 @@ func TestWindowsMDMCSPTemplate_FeedsCreateTool(t *testing.T) {
 		t.Error("expected error for empty settings list")
 	}
 }
+
+// windows_mdm_csp_template accepts Area/PolicyName refs and used to return only
+// uri/format/value, so its output could not be mapped back to the setting it
+// came from without re-parsing the OMA-URI. The documented pipeline
+// search → show → template therefore could not be composed: in Area/Name,
+// out uri.
+//
+// refs[] closes that, and must stay OUTSIDE settings[], which is the exact
+// payload sent to JumpCloud.
+func TestCSPTemplate_OutputRoundTripsToASettingRef(t *testing.T) {
+	installFixtureSnapshotMCP(t)
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+	out := getResultText(t, callTool(t, cs, "windows_mdm_csp_template",
+		map[string]any{"settings": []any{"Sample/AllowWidget"}}))
+
+	var res struct {
+		Settings []map[string]any `json:"settings"`
+		Refs     []struct {
+			Index   int    `json:"index"`
+			Setting string `json:"setting"`
+			Area    string `json:"area"`
+			Name    string `json:"name"`
+			URI     string `json:"uri"`
+		} `json:"refs"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("template did not return a document: %s", out)
+	}
+	if len(res.Settings) == 0 {
+		t.Fatalf("template returned no settings: %s", out)
+	}
+
+	if len(res.Refs) != len(res.Settings) {
+		t.Fatalf("refs (%d) must cover every settings entry (%d)", len(res.Refs), len(res.Settings))
+	}
+	r := res.Refs[0]
+	if r.Setting != "Sample/AllowWidget" {
+		t.Errorf("setting ref = %q, want the ref that was passed in", r.Setting)
+	}
+	if r.Area != "Sample" || r.Name != "AllowWidget" {
+		t.Errorf("area/name = %q/%q, want Sample/AllowWidget split as _show reports it", r.Area, r.Name)
+	}
+	if r.Index != 0 || r.URI == "" {
+		t.Errorf("ref must locate its payload entry: index=%d uri=%q", r.Index, r.URI)
+	}
+	if r.URI != res.Settings[0]["uri"] {
+		t.Errorf("ref uri %q does not match settings[0].uri %v", r.URI, res.Settings[0]["uri"])
+	}
+
+	// settings[] is the wire payload: it must not gain a setting ref.
+	if _, polluted := res.Settings[0]["setting"]; polluted {
+		t.Error("settings[] is sent to JumpCloud verbatim and must not carry the ref")
+	}
+}

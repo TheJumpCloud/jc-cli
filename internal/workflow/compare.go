@@ -99,7 +99,21 @@ func (n RunNode) State() (RunState, string) {
 	if !n.IsExecuted {
 		return RunStateSkipped, "not reached — the run failed at an earlier task"
 	}
+
+	// success is checked ONLY after node_output has established that a call
+	// happened. Testing it first classified a 404 — a node carrying method,
+	// url, status and a body — as not having run, while the same row printed
+	// its status. Three states exist, not two:
+	//
+	//	node_output populated, success true   -> ran, ok
+	//	node_output populated, success false  -> ran, failed
+	//	node_output null                      -> did not run
+	if n.NodeOutput != nil && !n.Success {
+		return RunStateFailed, n.Message
+	}
 	if !n.Success {
+		// No response and no success: the engine reported a problem before any
+		// call was made. Not a failed call, and not a clean skip either.
 		return RunStateFailed, n.Message
 	}
 
@@ -168,10 +182,21 @@ func (n RunNode) Skipped() bool {
 	return st == RunStateSkipped
 }
 
-// Ran reports whether this step actually did its work.
+// Ran reports whether this step made its call — REGARDLESS of the outcome.
+//
+// A failed step ran. "The workflow never touched this" and "the workflow
+// touched this and got a 404" are opposite facts for anyone auditing a run, and
+// collapsing them is the same conflation as reading is_executed, one axis over:
+// success is the OUTCOME, never the evidence of execution.
 func (n RunNode) Ran() bool {
 	st, _ := n.State()
-	return st == RunStateRan
+	return st == RunStateRan || st == RunStateFailed
+}
+
+// Failed reports whether this step ran and its call failed.
+func (n RunNode) Failed() bool {
+	st, _ := n.State()
+	return st == RunStateFailed
 }
 
 // Verdict classifies one task's agreement between plan and run.
@@ -208,8 +233,14 @@ type TaskComparison struct {
 	Verdict Verdict `json:"verdict"`
 	// Planned is the simulate status, empty when the plan never saw it.
 	Planned SimStatus `json:"planned,omitempty"`
-	// Ran is what the trace shows.
+	// Ran is what the trace shows: whether the step made its call, whatever
+	// the outcome.
 	Ran bool `json:"ran"`
+	// Failed records that the call ran and failed. It is reported alongside
+	// the verdict rather than folded into it: the plan predicting a call that
+	// then 404s got the execution right, and calling that a divergence would
+	// blame the planner for the tenant's state.
+	Failed bool `json:"failed,omitempty"`
 	// Status is what the step really reported: an HTTP status for an API
 	// call, or a word like "success" for an email send.
 	Status string `json:"status,omitempty"`
@@ -284,12 +315,13 @@ func CompareRun(sim SimResult, run Run) Comparison {
 		step, inPlan := planned[name]
 		node, inRun := nodes[name]
 
-		tc := TaskComparison{Task: name, Planned: step.Status, Ran: node.Ran()}
+		tc := TaskComparison{Task: name, Planned: step.Status, Ran: node.Ran(), Failed: node.Failed()}
 		if node.NodeOutput != nil {
 			tc.Status = node.NodeOutput.Status.String()
 		}
 
-		plannedToRun := step.Status == SimWouldCall || step.Status == SimStubbed
+		plannedToRun := step.Status == SimWouldCall || step.Status == SimStubbed ||
+			step.Status == SimSwitched
 		runState, runWhy := node.State()
 
 		switch {
@@ -319,7 +351,13 @@ func CompareRun(sim SimResult, run Run) Comparison {
 
 		case plannedToRun && !node.Ran():
 			tc.Verdict = VerdictSkippedButPlannedRun
-			tc.Detail = "the plan expected this to run; the engine skipped it — " + node.Message
+			_, why := node.State()
+			tc.Detail = "the plan expected this to run; the engine did not — " + why
+			if !node.IsExecuted && c.RunHalted {
+				// The plan was not wrong: the run stopped before getting here.
+				tc.Detail = fmt.Sprintf("the plan expected this to run, and it would have, but the run "+
+					"halted at %q before reaching it", c.HaltedAt)
+			}
 
 		case step.Status == SimSkipped && node.Ran():
 			tc.Verdict = VerdictRanButPlannedSkip
@@ -327,6 +365,13 @@ func CompareRun(sim SimResult, run Run) Comparison {
 
 		default:
 			tc.Verdict = VerdictAgree
+			if tc.Failed {
+				// The plan was right that this would be called; the call
+				// itself failed, which halts the run. Say so, or a reader
+				// scanning verdicts sees "agree" and misses it.
+				tc.Detail = "the plan expected a call and one was made, but it failed with " +
+					tc.Status + ", which halts the run"
+			}
 		}
 
 		switch tc.Verdict {
@@ -363,3 +408,15 @@ func SortComparison(tasks []TaskComparison) {
 		return rank[tasks[i].Verdict] < rank[tasks[j].Verdict]
 	})
 }
+
+// RanPredicateDoc is the one canonical statement of how to tell whether a trace
+// step ran. It is reused verbatim wherever that rule is described, so two
+// phrasings cannot drift apart — a wrong-but-plausible rule about exactly these
+// fields cost two build cycles once already.
+const RanPredicateDoc = "CRITICAL when reading a trace: is_executed, success and message are NOT evidence " +
+	"that a step did its work. A step a branch routed around reports is_executed=true, success=true and " +
+	"\"Task completed.\" — byte-identical to one that ran — and differs ONLY in that node_output is null. " +
+	"The single trustworthy predicate is node_output != null: a step with node_output null made no call, " +
+	"whatever the other fields say, and a step WITH node_output ran even if success is false (that is a " +
+	"failed call, not a skipped one). Verified against ground truth: a task skipped this way would have " +
+	"created a user group, and afterwards the group did not exist."

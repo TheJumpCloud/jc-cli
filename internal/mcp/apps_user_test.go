@@ -14,7 +14,7 @@ import (
 
 // startUserViewServer mounts V1 + V2 + Insights endpoints used by
 // fetchUserViewData on a single test server, with deterministic fixtures.
-func startUserViewServer(t *testing.T, user map[string]any, groups []map[string]any, sshKeys []map[string]any, events []map[string]any) *httptest.Server {
+func startUserViewServer(t *testing.T, user map[string]any, groups, userGroupCatalog, sshKeys, events []map[string]any) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -43,6 +43,12 @@ func startUserViewServer(t *testing.T, user map[string]any, groups []map[string]
 		// V2: user → group memberships
 		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && strings.HasSuffix(r.URL.Path, "/memberof") && r.Method == "GET":
 			_ = json.NewEncoder(w).Encode(groups)
+
+		case r.URL.Path == "/api/v2/usergroups" && r.Method == "GET":
+			_ = json.NewEncoder(w).Encode(userGroupCatalog)
+
+		case r.URL.Path == "/api/v2/systemgroups" && r.Method == "GET":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 
 		// Insights: events query (POST) — the user_view filters by initiated_by.username.
 		case r.URL.Path == "/insights/directory/v1/events" && r.Method == "POST":
@@ -93,9 +99,19 @@ func TestFetchUserViewData_Aggregates(t *testing.T) {
 		"totp_enabled":   true,
 		"created":        "2025-01-15T10:00:00Z",
 	}
+	// The real /memberof returns graph association objects with an id and a
+	// type and NO name — verified live, where every object carried only
+	// id/type/paths/compiledAttributes. Serving a name here would encode the
+	// bug this fixture exists to catch.
 	groups := []map[string]any{
-		{"id": "gg-eng", "attributes": map[string]any{"name": "Engineering"}},
-		{"id": "gg-onc", "attributes": map[string]any{"name": "Oncall"}},
+		{"id": "gg-eng", "type": "user_group"},
+		{"id": "gg-onc", "type": "user_group"},
+	}
+	// Names come from the group catalog, joined by id.
+	userGroupCatalog := []map[string]any{
+		{"id": "gg-onc", "name": "Oncall"},
+		{"id": "gg-eng", "name": "Engineering"},
+		{"id": "gg-other", "name": "Not A Member"},
 	}
 	sshKeys := []map[string]any{
 		{"id": "k1", "name": "laptop", "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabcdef alice@laptop", "create_date": "2026-01-10T00:00:00Z"},
@@ -105,7 +121,7 @@ func TestFetchUserViewData_Aggregates(t *testing.T) {
 		{"timestamp": "2026-04-26T18:00:00Z", "service": "ldap", "event_type": "ldap_bind", "success": true},
 	}
 
-	ts := startUserViewServer(t, user, groups, sshKeys, events)
+	ts := startUserViewServer(t, user, groups, userGroupCatalog, sshKeys, events)
 	t.Cleanup(ts.Close)
 	overrideV1ClientForTest(t, ts.URL)
 	overrideV2ClientForTest(t, ts.URL)
@@ -212,5 +228,33 @@ func TestUserViewResource_ServesHTMLWithInjection(t *testing.T) {
 	}
 	if !strings.Contains(c.Text, "JumpCloud User Profile") {
 		t.Error("served HTML missing page title")
+	}
+}
+
+// user_view must NOT emit an `mfa` key. users_get and users_search use `mfa`
+// for {configured, exclusion}; this projection's block is {totp_enabled,
+// status}. Sharing the key made user.mfa.configured evaluate to undefined —
+// falsy — so an MFA check silently reported not-configured against a view
+// payload. A rename fails loudly; a collision does not.
+func TestUserView_MFAKeyDoesNotCollideWithUsersGet(t *testing.T) {
+	data := userViewData{MFA: userMFA{TOTPEnabled: true, Status: "ENROLLED"}}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, collides := m["mfa"]; collides {
+		t.Error("user_view must not emit `mfa` — users_get already uses it for a different shape")
+	}
+	block, ok := m["mfa_enrollment"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mfa_enrollment, got keys %v", m)
+	}
+	if block["status"] != "ENROLLED" || block["totp_enabled"] != true {
+		t.Errorf("mfa_enrollment = %v", block)
 	}
 }

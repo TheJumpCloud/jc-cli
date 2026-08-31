@@ -314,7 +314,9 @@
       warn.style.display = "none";
     }
 
-    renderHeader(data.user || {}, data.mfa || {});
+    // mfa_enrollment, not mfa: users_get uses `mfa` for a different shape,
+    // so this projection renamed its block to stop the two colliding.
+    renderHeader(data.user || {}, data.mfa_enrollment || {});
     renderGroups(data.groups);
     renderSSHKeys(data.ssh_keys);
     renderEvents(data.recent_events || []);

@@ -115,3 +115,69 @@ func TestWithoutPlaceholderFindings_LeavesRealDefects(t *testing.T) {
 		t.Errorf("a template whose only problems are placeholders is not broken: %+v", got.Findings)
 	}
 }
+
+// Reporting a defect without naming the fix leaves the reader where they
+// started — and this sweep is where they choose what to copy.
+//
+// Regression: the CLI set corrected_by while the MCP tool did not, because the
+// loop was duplicated in both surfaces instead of shared. An agent running the
+// sweep saw four defective templates and no pointer to the corrected copies
+// shipping in the same binary. Both now call LintTemplate.
+func TestLintTemplate_NamesTheCorrection(t *testing.T) {
+	target := CorrectedTemplates()[0]
+
+	// The template this corrects, reconstructed with the defect that earns a
+	// finding: a status guard after a fallible call.
+	defective := []byte(`{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	  "do":[
+	    {"fetch":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}},
+	    {"guarded":{"if":"${ actions.fetch.status == 200 }","call":"jc_operation",
+	      "with":{"operationId":"getApiSystemusers","version":1}}}
+	  ]}`)
+
+	sub := LintTemplate("tmpl-1", target.Corrects, defective)
+	if len(sub.Result.Findings) == 0 {
+		t.Fatal("this template has a status guard and must produce a finding")
+	}
+	if sub.CorrectedBy != target.ID {
+		t.Errorf("corrected_by = %q, want %q — the fix ships in this binary and must be named",
+			sub.CorrectedBy, target.ID)
+	}
+}
+
+// A clean template must not advertise a correction: the pointer is only useful
+// where there is something to fix.
+func TestLintTemplate_CleanTemplateNamesNoCorrection(t *testing.T) {
+	clean := []byte(`{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	  "do":[{"a":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}}]}`)
+
+	sub := LintTemplate("tmpl-2", CorrectedTemplates()[0].Corrects, clean)
+	if sub.CorrectedBy != "" {
+		t.Errorf("a clean template needs no correction pointer, got %q", sub.CorrectedBy)
+	}
+}
+
+// The corrected copies are linted in the same sweep that reports the defects
+// they fix, so the output proves them — and a copy that ever drifted would be
+// caught by the very tool it exists to answer.
+func TestLintCorrected_AllClean(t *testing.T) {
+	subs := LintCorrected()
+	if len(subs) != len(CorrectedTemplates()) {
+		t.Fatalf("linted %d of %d corrected copies", len(subs), len(CorrectedTemplates()))
+	}
+	for _, s := range subs {
+		if s.Skipped != "" {
+			t.Errorf("%s was not checked: %s", s.ID, s.Skipped)
+		}
+		for _, f := range s.Result.Findings {
+			t.Errorf("%s is meant to be the FIXED copy: %s: %s", s.ID, f.Severity, f.Message)
+		}
+		if s.Corrects == "" {
+			t.Errorf("%s does not say what it replaces", s.ID)
+		}
+		// A corrected copy must never point at itself for a fix.
+		if s.CorrectedBy != "" {
+			t.Errorf("%s should not carry corrected_by", s.ID)
+		}
+	}
+}
