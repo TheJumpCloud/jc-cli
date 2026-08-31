@@ -58,6 +58,50 @@ SECTION_SERVICE = {
 }
 
 
+# Event types the documentation omits but a live tenant demonstrably emits.
+#
+# The docstring above has warned since this was written that the catalog is a
+# lower bound. A warning in a comment reconciles nothing: run
+# `jc workflows event-types --audit 30d` against a real tenant and the gap
+# becomes a list. On org 5ec71e8e96bfda0611fc6c5b over 30 days, 19 of the 64
+# emitted types were absent from a 341-entry catalog — 30% of what that tenant
+# actually produces.
+#
+# Descriptions here say what is KNOWN. These types are verified to exist,
+# because the tenant emitted them; their exact semantics are not documented
+# anywhere, so nothing is claimed beyond the name and the observation.
+#
+# ldap_srch is the sharpest entry: the documentation lists `ldap_search`, which
+# this tenant never emitted, while emitting `ldap_srch` 240 times. That is a
+# documentation ERROR rather than an omission, and a workflow triggering on the
+# documented spelling would silently never fire.
+OBSERVED = {
+    "software_status_update": {"d": "Observed live (678x/30d); not in the documented catalog."},
+    "ldap_srch": {
+        "d": "An LDAP search. Emitted as ldap_srch (240x/30d); the documentation "
+             "lists ldap_search, which was never emitted — trigger on this spelling.",
+        "s": "ldap",
+    },
+    "policy_result": {"d": "A policy application result. Observed live (84x/30d).", "s": "systems"},
+    "command_result": {"d": "A command execution result. Observed live (10x/30d).", "s": "systems"},
+    "slack_notification_sent": {"d": "A Slack notification was sent. Observed live (8x/30d)."},
+    "bulk_update_alerts": {"d": "Alerts updated in bulk. Observed live (6x/30d)."},
+    "bulk_delete_alerts": {"d": "Alerts deleted in bulk. Observed live (2x/30d)."},
+    "attributemappings_add": {"d": "An attribute mapping was added. Observed live (4x/30d)."},
+    "attributemappings_update": {"d": "An attribute mapping was updated. Observed live (2x/30d)."},
+    "attributemappings_delete": {"d": "An attribute mapping was deleted. Observed live (4x/30d)."},
+    "rule_config_created": {"d": "A rule configuration was created. Observed live (1x/30d)."},
+    "rule_config_updated": {"d": "A rule configuration was updated. Observed live (3x/30d)."},
+    "rule_config_deleted": {"d": "A rule configuration was deleted. Observed live (1x/30d)."},
+    "saas_management_application_review": {
+        "d": "A SaaS-managed application was reviewed. Observed live (3x/30d).",
+        "s": "saas_management",
+    },
+    "radius_auth_attempt": {"d": "A RADIUS authentication attempt. Observed live (1x/30d).", "s": "radius"},
+    "workflow_update": {"d": "A workflow is updated. Observed live (5x/30d).", "s": "workflows"},
+}
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: gen-event-types.py /path/to/api-insights-directory.json")
@@ -90,6 +134,11 @@ def main():
             entry["s"] = svc
         # First mention wins: the same type can be listed under several
         # sections (MTP repeats the directory events).
+        catalog.setdefault(name, entry)
+
+    # Live observations are merged in, never overriding a documented entry:
+    # if the docs later describe one of these, the doc wins.
+    for name, entry in OBSERVED.items():
         catalog.setdefault(name, entry)
 
     if len(catalog) < 100:

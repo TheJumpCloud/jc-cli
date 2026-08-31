@@ -1410,7 +1410,7 @@ func writeRunTrace(cmd *cobra.Command, run workflow.Run) error {
 }
 
 func newWorkflowsEventTypesCmd() *cobra.Command {
-	var service, search string
+	var service, search, auditWindow string
 
 	cmd := &cobra.Command{
 		Use:     "event-types",
@@ -1428,6 +1428,9 @@ documentation does not list, so a type missing here is not proof it is
 invalid — which is why validate warns rather than rejects.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if auditWindow != "" {
+				return auditEventTypeCatalog(cmd, auditWindow)
+			}
 			matches := workflow.EventTypes(service, search)
 			names := make([]string, 0, len(matches))
 			for n := range matches {
@@ -1462,6 +1465,8 @@ invalid — which is why validate warns rather than rejects.`,
 		},
 	}
 
+	cmd.Flags().StringVar(&auditWindow, "audit", "",
+		"Diff this tenant's actually-emitted event types against the catalog over a window (e.g. 7d, 30d)")
 	cmd.Flags().StringVar(&service, "service", "", "Only this Directory Insights service")
 	cmd.Flags().StringVar(&search, "search", "", "Substring matched against the name and description")
 
@@ -2044,5 +2049,78 @@ func compareSimToRun(cmd *cobra.Command, sim workflow.SimResult, runID string) e
 		fmt.Fprintf(w, "The run halted at %q; tasks after it were never reached.\n", cmp.HaltedAt)
 	}
 	fmt.Fprintf(w, "%s\n", cmp.Caveat)
+	return nil
+}
+
+// auditEventTypeCatalog compares what a tenant emits against what the catalog
+// knows.
+//
+// The catalog is generated from documentation that omits at least one whole
+// service, and nothing reconciled it against reality — the gap was found by
+// accident, twice. This makes finding it deliberate.
+func auditEventTypeCatalog(cmd *cobra.Command, window string) error {
+	client, err := newInsightsClient()
+	if err != nil {
+		return err
+	}
+	start, end, err := resolveInsightsTimeRange(window, "", "")
+	if err != nil {
+		return err
+	}
+	q := api.InsightsQuery{Service: "all", StartTime: start}
+	if end != "" {
+		q.EndTime = end
+	}
+
+	items, err := client.DistinctEvents(cmd.Context(), q, "event_type")
+	if err != nil {
+		return fmt.Errorf("listing emitted event types: %w", err)
+	}
+
+	observed := make(map[string]int, len(items))
+	for _, raw := range items {
+		var row struct {
+			Key   string `json:"key"`
+			Count int    `json:"doc_count"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil || row.Key == "" {
+			continue
+		}
+		observed[row.Key] = row.Count
+	}
+
+	audit := workflow.AuditCatalog(observed, window)
+
+	opts := output.CurrentOptions()
+	if opts.Format == "json" {
+		out, merr := json.MarshalIndent(audit, "", "  ")
+		if merr != nil {
+			return merr
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	if len(audit.Gaps) == 0 {
+		fmt.Fprintf(out, "No gaps: all %d event types emitted over %s are in the catalog.\n",
+			audit.Emitted, audit.Window)
+	}
+	for _, g := range audit.Gaps {
+		line := fmt.Sprintf("  %-42s %d occurrence(s)", g.EventType, g.Count)
+		fmt.Fprintln(out, style.Error.Render(line))
+		if len(g.Suggestions) > 0 {
+			fmt.Fprintf(out, "      %s\n",
+				style.Subtitle.Render("closest known: "+strings.Join(g.Suggestions, ", ")))
+		}
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "\n── %d emitted over %s: %d in the catalog, %d missing (catalog holds %d) ──\n",
+		audit.Emitted, audit.Window, audit.Covered, len(audit.Gaps), audit.Known)
+	fmt.Fprintf(w, "%s\n", audit.Note)
+	if len(audit.Gaps) > 0 {
+		fmt.Fprintln(w, "Add confirmed omissions to OBSERVED in scripts/gen-event-types.py, with where and when they were seen.")
+	}
 	return nil
 }
