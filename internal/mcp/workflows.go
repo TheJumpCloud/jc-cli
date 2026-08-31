@@ -498,7 +498,7 @@ func (s *Server) registerWorkflowTools() {
 			// Counts are cached per (event type, window start) rather than
 			// per event type alone: workflows younger than the window are
 			// judged over a shorter one, so they need their own count.
-			counts := map[string]int{}
+			counts := map[string]mcpEventCount{}
 			reports := make([]workflow.HealthReport, 0, len(rows))
 
 			for _, row := range rows {
@@ -517,30 +517,51 @@ func (s *Server) registerWorkflowTools() {
 				start := workflow.EffectiveSince(w, since)
 
 				events := 0
+				var newestEvent time.Time
 				if w.Status == workflow.StatusActive && w.TriggerType == workflow.TriggerEvents && eventType != "" {
 					key := eventType + "@" + start.Format(time.RFC3339)
-					n, ok := counts[key]
+					c, ok := counts[key]
 					if !ok {
 						ic, ierr := newInsightsClientFunc()
 						if ierr != nil {
 							return errorResult(fmt.Sprintf("creating Insights client: %v", ierr)), nil, nil
 						}
-						n, ierr = ic.CountEvents(ctx, api.InsightsQuery{
+						q := api.InsightsQuery{
 							Service:          "all",
 							StartTime:        start.Format(time.RFC3339),
 							EndTime:          now.Format(time.RFC3339),
 							SearchTermFilter: map[string]any{"event_type": eventType},
-						})
+						}
+						n, ierr := ic.CountEvents(ctx, q)
 						if ierr != nil {
 							return errorResult(fmt.Sprintf("counting %s events: %v", eventType, ierr)), nil, nil
 						}
-						counts[key] = n
+						c = mcpEventCount{n: n}
+						if n > 0 {
+							// The newest event's time is what separates a
+							// broken workflow from one that has not got
+							// round to it yet. Its absence degrades the
+							// recency verdict, never the others.
+							if res, qerr := ic.QueryEvents(ctx, q,
+								api.InsightsQueryOptions{Limit: 1, Sort: "-timestamp"}); qerr == nil &&
+								res != nil && len(res.Data) > 0 {
+								var e struct {
+									Timestamp string `json:"timestamp"`
+								}
+								if json.Unmarshal(res.Data[0], &e) == nil {
+									if ts, perr := time.Parse(time.RFC3339, e.Timestamp); perr == nil {
+										c.newest = ts
+									}
+								}
+							}
+						}
+						counts[key] = c
 					}
-					events = n
+					events, newestEvent = c.n, c.newest
 				}
 
 				reports = append(reports, workflow.AssessHealth(w, events,
-					workflow.RunsWithin(runs, w.ID, start), start))
+					workflow.RunsWithin(runs, w.ID, start), start, newestEvent, now))
 			}
 
 			workflow.SortHealth(reports)
@@ -1147,4 +1168,10 @@ type wfCompareRunInput struct {
 	DSL   map[string]any `json:"dsl" jsonschema:"The workflow DSL document to plan"`
 	RunID string         `json:"run_id" jsonschema:"The id of a completed run to compare the plan against"`
 	Input map[string]any `json:"input,omitempty" jsonschema:"Input to resolve ${ input.<field> } against"`
+}
+
+// mcpEventCount pairs an event count with its most recent occurrence.
+type mcpEventCount struct {
+	n      int
+	newest time.Time
 }
