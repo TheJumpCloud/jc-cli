@@ -38,8 +38,8 @@ type userViewArgs struct {
 // overall view is still useful.
 type userViewData struct {
 	User         userHeader        `json:"user"`
-	MFA          userMFA           `json:"mfa"`
-	Groups       []userGroupRef    `json:"groups"`
+	MFA          userMFA           `json:"mfa_enrollment"`
+	Groups       []GroupRef        `json:"groups"`
 	SSHKeys      []userSSHKey      `json:"ssh_keys"`
 	RecentEvents []json.RawMessage `json:"recent_events"`
 	Warnings     []string          `json:"warnings,omitempty"`
@@ -60,14 +60,20 @@ type userHeader struct {
 	Description string `json:"description,omitempty"`
 }
 
+// userMFA is emitted as "mfa_enrollment", NOT "mfa".
+//
+// users_get and users_search already return an `mfa` key carrying
+// {configured, exclusion}. This projection's `mfa` carried
+// {totp_enabled, status} — the same key name, no overlapping sub-keys. A
+// caller reading user.mfa.configured against this payload got undefined, which
+// is falsy, so an MFA check silently read as NOT CONFIGURED. Worse than a
+// rename, which fails loudly on a missing key.
+//
+// The name matches the API's own mfaEnrollment, which is where status comes
+// from.
 type userMFA struct {
 	TOTPEnabled bool   `json:"totp_enabled"`
 	Status      string `json:"status,omitempty"` // ENROLLED / NOT_ENROLLED / etc.
-}
-
-type userGroupRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }
 
 type userSSHKey struct {
@@ -168,30 +174,7 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 		// associations (the membership endpoint is what the registry
 		// MemberOfTarget points at and the V1 user-groups endpoint
 		// returns).
-		result, err := v2.ListAll(ctx, "/users/"+id+"/memberof", api.V2ListOptions{})
-		if err != nil {
-			addWarning(fmt.Sprintf("groups: %v", err))
-			return
-		}
-		groups := make([]userGroupRef, 0, len(result.Data))
-		for _, raw := range result.Data {
-			var g struct {
-				ID         string `json:"id"`
-				Attributes struct {
-					Name string `json:"name"`
-				} `json:"attributes"`
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(raw, &g); err != nil {
-				continue
-			}
-			name := g.Name
-			if name == "" {
-				name = g.Attributes.Name
-			}
-			groups = append(groups, userGroupRef{ID: g.ID, Name: name})
-		}
-		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		groups := resolveGroupNames(ctx, v2, "/users/"+id+"/memberof", addWarning)
 		mu.Lock()
 		data.Groups = groups
 		mu.Unlock()
@@ -322,7 +305,7 @@ func previewSSHKey(pub string) string {
 func (s *Server) registerUserView() {
 	registerTypedAppTool(s, typedAppSpec[userViewArgs]{
 		Name: "user_view",
-		Description: "Show an interactive JumpCloud user profile: header (username, email, status badges), MFA enrollment, group memberships, SSH keys, and recent auth events. " +
+		Description: "Show an interactive JumpCloud user profile: header (username, email, status badges), MFA enrollment (as mfa_enrollment — deliberately NOT `mfa`, which users_get uses for a different shape, {configured, exclusion}), group memberships with resolved names, SSH keys, and recent auth events. " +
 			"Required input: user (username, email, or ID). Renders as a rich profile in MCP App-capable hosts; returns the same data as JSON when rendering isn't supported.",
 		ResourceURI:         userViewResourceURI,
 		ResourceName:        "User Profile App",

@@ -47,7 +47,7 @@ type deviceViewArgs struct {
 type deviceViewData struct {
 	Device         deviceHeader      `json:"device"`
 	Status         deviceStatusSnap  `json:"status"`
-	Groups         []deviceGroupRef  `json:"groups"`
+	Groups         []GroupRef        `json:"groups"`
 	Policies       []policyRef       `json:"policies"`
 	SystemInsights *deviceInsights   `json:"system_insights,omitempty"`
 	RecentEvents   []json.RawMessage `json:"recent_events"`
@@ -74,11 +74,6 @@ type deviceStatusSnap struct {
 	Connectivity string `json:"connectivity"`
 	FDEEnabled   bool   `json:"fde_enabled"`
 	MDMEnrolled  bool   `json:"mdm_enrolled"`
-}
-
-type deviceGroupRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }
 
 type policyRef struct {
@@ -212,30 +207,7 @@ func fetchDeviceViewData(ctx context.Context, args deviceViewArgs) (*deviceViewD
 			addWarning(fmt.Sprintf("v2 client: %v", err))
 			return
 		}
-		result, err := v2.ListAll(ctx, "/systems/"+id+"/memberof", api.V2ListOptions{})
-		if err != nil {
-			addWarning(fmt.Sprintf("groups: %v", err))
-			return
-		}
-		groups := make([]deviceGroupRef, 0, len(result.Data))
-		for _, raw := range result.Data {
-			var g struct {
-				ID         string `json:"id"`
-				Attributes struct {
-					Name string `json:"name"`
-				} `json:"attributes"`
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(raw, &g); err != nil {
-				continue
-			}
-			name := g.Name
-			if name == "" {
-				name = g.Attributes.Name
-			}
-			groups = append(groups, deviceGroupRef{ID: g.ID, Name: name})
-		}
-		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		groups := resolveGroupNames(ctx, v2, "/systems/"+id+"/memberof", addWarning)
 		mu.Lock()
 		data.Groups = groups
 		mu.Unlock()

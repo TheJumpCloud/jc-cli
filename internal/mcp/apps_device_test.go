@@ -20,6 +20,7 @@ func startDeviceViewServer(
 	t *testing.T,
 	device map[string]any,
 	groups []map[string]any,
+	systemGroupCatalog []map[string]any,
 	policyAssocs []map[string]any,
 	policyCatalog []map[string]any,
 	uptime []map[string]any,
@@ -49,6 +50,12 @@ func startDeviceViewServer(
 		// V2: device → group memberships.
 		case strings.HasPrefix(r.URL.Path, "/api/v2/systems/") && strings.HasSuffix(r.URL.Path, "/memberof") && r.Method == "GET":
 			_ = json.NewEncoder(w).Encode(groups)
+
+		case r.URL.Path == "/api/v2/systemgroups" && r.Method == "GET":
+			_ = json.NewEncoder(w).Encode(systemGroupCatalog)
+
+		case r.URL.Path == "/api/v2/usergroups" && r.Method == "GET":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 
 		// V2: device → policy associations.
 		case strings.HasPrefix(r.URL.Path, "/api/v2/systems/") && strings.HasSuffix(r.URL.Path, "/associations") && r.Method == "GET":
@@ -131,9 +138,14 @@ func TestFetchDeviceViewData_Aggregates(t *testing.T) {
 		"fde":           map[string]any{"active": true},
 		"mdmEnrollment": map[string]any{"enrolled": true},
 	}
+	// As with users: the real /memberof carries no name.
 	groups := []map[string]any{
-		{"id": "sg-eng", "attributes": map[string]any{"name": "Engineering Macs"}},
-		{"id": "sg-fde", "attributes": map[string]any{"name": "FDE Required"}},
+		{"id": "sg-eng", "type": "system_group"},
+		{"id": "sg-fde", "type": "system_group"},
+	}
+	systemGroupCatalog := []map[string]any{
+		{"id": "sg-fde", "name": "FDE Required"},
+		{"id": "sg-eng", "name": "Engineering Macs"},
 	}
 	policyAssocs := []map[string]any{
 		{"to": map[string]any{"type": "policy", "id": "pol-fde"}},
@@ -158,7 +170,7 @@ func TestFetchDeviceViewData_Aggregates(t *testing.T) {
 		{"timestamp": "2026-05-19T11:00:00Z", "service": "directory", "event_type": "system_update", "success": true},
 	}
 
-	ts := startDeviceViewServer(t, device, groups, policyAssocs, policyCatalog, uptime, loggedInUsers, disks, events)
+	ts := startDeviceViewServer(t, device, groups, systemGroupCatalog, policyAssocs, policyCatalog, uptime, loggedInUsers, disks, events)
 	t.Cleanup(ts.Close)
 	overrideV1ClientForTest(t, ts.URL)
 	overrideV2ClientForTest(t, ts.URL)
@@ -288,7 +300,7 @@ func TestFetchDeviceViewData_StaleAndOfflineBuckets(t *testing.T) {
 		"lastContact": now.Add(-3 * 24 * time.Hour).Format(time.RFC3339), // stale bucket
 		"active":      true,
 	}
-	ts := startDeviceViewServer(t, device, nil, nil, nil, nil, nil, nil, nil)
+	ts := startDeviceViewServer(t, device, nil, nil, nil, nil, nil, nil, nil, nil)
 	t.Cleanup(ts.Close)
 	overrideV1ClientForTest(t, ts.URL)
 	overrideV2ClientForTest(t, ts.URL)
