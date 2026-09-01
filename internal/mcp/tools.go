@@ -829,7 +829,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_lock", "Lock a JumpCloud user account. Set execute=true to lock; otherwise returns a plan.",
+	addTypedTool(s, "users_lock", "Lock a JumpCloud user account — blocks sign-in immediately while leaving the account, its groups and its bindings intact. Reversible with users_unlock. This is NOT deletion and NOT removal from a group: see users_delete to remove the person, groups_remove_member to revoke one group's access. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -853,7 +853,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_unlock", "Unlock a JumpCloud user account. Set execute=true to unlock; otherwise returns a plan.",
+	addTypedTool(s, "users_unlock", "Unlock a JumpCloud user account that was locked, restoring their ability to sign in. The exact inverse of users_lock. It does not activate a user who has never set a password, and does not clear an MFA lockout — see users_reset_mfa for that. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1223,7 +1223,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_remove_member", "Remove a user or device from a group. Set execute=true to remove; otherwise returns a plan.",
+	addTypedTool(s, "groups_remove_member", "Remove a user or device FROM A GROUP — revokes what that group grants, and nothing else. The user or device itself is untouched: it keeps existing, keeps its other groups, and can still sign in. This is not offboarding; see users_delete to remove a person entirely, or users_lock to block their sign-in. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args membershipInput) (*mcp.CallToolResult, any, error) {
 			return s.runMembershipTool(ctx, args, "remove")
 		},
@@ -2207,7 +2207,7 @@ func (s *Server) registerAuthPolicyTools() {
 		},
 	)
 
-	addTypedTool(s, "auth_policies_delete", "Delete a JumpCloud authentication policy. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "auth_policies_delete", "Delete an authentication policy permanently — the rule itself is gone and cannot be re-enabled. To stop it applying while keeping it, use auth_policies_disable instead. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -2419,7 +2419,7 @@ func (s *Server) registerAuthPolicyTools() {
 		},
 	)
 
-	addTypedTool(s, "auth_policies_disable", "Disable a JumpCloud authentication policy. Set execute=true to disable; otherwise returns a plan.",
+	addTypedTool(s, "auth_policies_disable", "Turn an authentication policy off while KEEPING it — it stops applying but survives, and can be switched back on. Distinct from auth_policies_delete, which destroys the rule. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4811,7 +4811,7 @@ func (s *Server) registerPolicyTemplateTools() {
 }
 
 func (s *Server) registerAppleMDMTools() {
-	addTypedTool(s, "apple_mdm_list", "List the org's Apple MDM configurations — the APNs push certificate setup that lets JumpCloud manage Macs, iPhones and iPads. Covers Apple Business Manager / ABM and Automated Device Enrollment / DEP linkage. Most orgs have zero or one.",
+	addTypedTool(s, "apple_mdm_list", "Do we have Apple MDM set up? Lists the org's existing Apple MDM configurations — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM / DEP) linkage. A read: it changes nothing, and most orgs have zero or one. Use apple_mdm_create only when setting one up for the first time.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -6129,7 +6129,7 @@ func (s *Server) registerCustomEmailTools() {
 		},
 	)
 
-	addTypedTool(s, "custom_emails_create", "Create a custom email configuration. Set execute=true to create; otherwise returns a plan.",
+	addTypedTool(s, "custom_emails_create", "Create a custom email configuration — overrides the default text JumpCloud sends for an invitation, password reset or similar notification. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -6200,7 +6200,7 @@ func (s *Server) registerCustomEmailTools() {
 		},
 	)
 
-	addTypedTool(s, "custom_emails_delete", "Delete a custom email configuration. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "custom_emails_delete", "Delete a custom email configuration, reverting that notification to JumpCloud's default wording. The emails themselves are unaffected; only the template override goes. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailDeleteInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
