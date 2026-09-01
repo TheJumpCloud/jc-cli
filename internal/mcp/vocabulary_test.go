@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"encoding/json"
+	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -257,5 +259,67 @@ func TestVocabulary_ListParityUsesEveryRecord(t *testing.T) {
 	// the failure mode this exists to prevent.
 	if len(sortedKeys(map[string]bool{"id": true, "username": true})) != len(commonKeys(toolB)) {
 		t.Error("fixture assumption broken")
+	}
+}
+
+// user_view must spell "is this account locked" the way users_get does.
+//
+// It emitted `locked` while users_get and users_search emit `account_locked`.
+// Both snake_case, so the documented camelCase/snake_case split did not explain
+// it — a bare rename, on a security-relevant boolean. A caller who learned
+// account_locked from users_get read undefined against a view payload, which is
+// falsy, so a lock check reported NOT LOCKED on a locked account.
+//
+// Renamed rather than aliased: an alias would have preserved the exact bug it
+// was meant to remove, which is the user_view.mfa precedent.
+func TestVocabulary_UserViewSpellsAccountLockedTheSameWay(t *testing.T) {
+	raw, err := json.Marshal(userHeader{AccountLocked: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, old := m["locked"]; old {
+		t.Error("user_view must not emit `locked` — users_get calls this fact account_locked, " +
+			"and a caller reading that name here saw undefined, which is falsy")
+	}
+	if m["account_locked"] != true {
+		t.Errorf("account_locked = %v, want true", m["account_locked"])
+	}
+}
+
+// The field-set variance warning must be on every list-shaped tool, not just
+// the one where it was first noticed.
+//
+// It said so on users_search while users_list and devices_search — which have
+// the same behaviour — said nothing. A caller reading one description and using
+// the sibling tool inherits the trap without the warning.
+func TestVocabulary_VarianceWarningIsOnEveryListTool(t *testing.T) {
+	body, err := os.ReadFile("tools.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+
+	for _, tool := range []string{"users_list", "users_search", "devices_search"} {
+		m := regexp.MustCompile(`addTypedTool\(s, "` + tool + `", "((?:[^"\\]|\\.)*)"`).
+			FindStringSubmatch(src)
+		if m == nil {
+			t.Errorf("%s not found", tool)
+			continue
+		}
+		if !strings.Contains(m[1], "BETWEEN RECORDS") {
+			t.Errorf("%s does not warn that field sets vary between records of one response; "+
+				"a caller who read a sibling tool's description inherits the trap without the warning", tool)
+		}
+	}
+
+	// The dynamically registered search_* family shares one description
+	// template, so the warning has to live there rather than per tool.
+	if !strings.Contains(src, `"or omit the term to match all. Returns matching records, with `) ||
+		!strings.Contains(src, "BETWEEN RECORDS") {
+		t.Error("the generated search_* description must carry the variance warning too")
 	}
 }

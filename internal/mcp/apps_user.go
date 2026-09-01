@@ -46,18 +46,27 @@ type userViewData struct {
 }
 
 type userHeader struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Firstname   string `json:"firstname,omitempty"`
-	Lastname    string `json:"lastname,omitempty"`
-	Department  string `json:"department,omitempty"`
-	Activated   bool   `json:"activated"`
-	Suspended   bool   `json:"suspended"`
-	Locked      bool   `json:"locked"`
-	Created     string `json:"created,omitempty"`
-	LastLogin   string `json:"last_login,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID         string `json:"id"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Firstname  string `json:"firstname,omitempty"`
+	Lastname   string `json:"lastname,omitempty"`
+	Department string `json:"department,omitempty"`
+	Activated  bool   `json:"activated"`
+	Suspended  bool   `json:"suspended"`
+	// AccountLocked is emitted as "account_locked", matching what users_get
+	// and users_search call the same fact.
+	//
+	// It was "locked" — both snake_case, so the documented camelCase/snake_case
+	// split (API passthrough vs jc projection) did not explain it. It was just
+	// a rename, and a dangerous one: a caller who learned account_locked from
+	// users_get reads undefined here, which is falsy, so a lock check reports
+	// NOT LOCKED on a locked account. Same failure as user_view.mfa, on
+	// another security-relevant boolean.
+	AccountLocked bool   `json:"account_locked"`
+	Created       string `json:"created,omitempty"`
+	LastLogin     string `json:"last_login,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 // userMFA is emitted as "mfa_enrollment", NOT "mfa".
@@ -154,7 +163,7 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 		ID: u.ID, Username: u.Username, Email: u.Email,
 		Firstname: u.Firstname, Lastname: u.Lastname,
 		Department: u.Department, Description: u.Description,
-		Activated: u.Activated, Suspended: u.Suspended, Locked: u.AccountLocked,
+		Activated: u.Activated, Suspended: u.Suspended, AccountLocked: u.AccountLocked,
 		Created: u.Created,
 	}
 	data.MFA = userMFA{TOTPEnabled: u.TOTPEnabled, Status: mfaStatus}

@@ -670,7 +670,7 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) registerUserTools() {
-	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended.",
+	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended. Field sets vary BETWEEN RECORDS of one response, because the API omits empty values per record: one user may carry public_key while the next omits the key entirely, and admin is present only on records that have one. Do not infer a schema from the first record — union the keys across all of them, and test a field's presence rather than assuming it.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1104,7 +1104,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber.",
+	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber. Field sets vary BETWEEN RECORDS of one response: one device may carry domainInfo.domainSid and lack mdm.internal while the next is the reverse, and primarySystemUser is an object on one record and null on another. Do not infer a schema from the first record.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -7136,7 +7136,11 @@ func (s *Server) registerSearchTools() {
 	for _, name := range search.ResourceNames() {
 		r := search.Resources[name]
 		addTypedTool(s, "search_"+strings.ReplaceAll(r.Name, "-", "_"),
-			fmt.Sprintf("Search JumpCloud %s (v1 %s). A bare term matches %v; use filter for structured matching, or omit the term to match all. Returns matching records.", r.Name, r.Endpoint, r.SearchFields),
+			fmt.Sprintf("Search JumpCloud %s (v1 %s). A bare term matches %v; use filter for structured matching, "+
+				"or omit the term to match all. Returns matching records, with `returned` counting this page and "+
+				"`total` how many matched. Field sets vary BETWEEN RECORDS of one response, because the API omits "+
+				"empty values per record — do not infer a schema from the first record.",
+				r.Name, r.Endpoint, r.SearchFields),
 			func(ctx context.Context, req *mcp.CallToolRequest, args searchResourceInput) (*mcp.CallToolResult, any, error) {
 				client, err := newV1ClientFunc()
 				if err != nil {

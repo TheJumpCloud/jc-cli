@@ -70,7 +70,8 @@ var fieldVocabulary = []fieldFact{
 	// jc projections return snake_case. Same facts, different spellings —
 	// allowed, and recorded so it reads as a decision rather than an
 	// accident.
-	{"devices_search", "device", "displayName", "display name", ""},
+	{"devices_search", "device", "displayName", "display name",
+		"users spell the same fact displayname, lower-case n — an upstream inconsistency, not jc's"},
 	{"device_view", "device", "device.display_name", "display name", ""},
 	{"devices_search", "device", "serialNumber", "serial number", ""},
 	{"device_view", "device", "device.serial_number", "serial number", ""},
@@ -107,6 +108,24 @@ var fieldVocabulary = []fieldFact{
 	{"users_get", "user", "_id", "own id", "duplicates id; left as the API sends it"},
 	{"users_search", "user", "_id", "own id", "duplicates id; left as the API sends it"},
 	{"devices_search", "device", "_id", "own id", "duplicates id; left as the API sends it"},
+
+	// account_locked: one fact, one name, on every emitter.
+	//
+	// user_view called it `locked` — both snake_case, so the documented
+	// camelCase/snake_case split did not explain it. It was a bare rename, and
+	// a dangerous one on a security-relevant boolean: a caller who learned
+	// account_locked from users_get read undefined here, which is falsy, so a
+	// lock check reported NOT LOCKED on a locked account. Renamed rather than
+	// aliased, for the reason the user_view.mfa precedent gives — an alias
+	// would have preserved the exact bug it was meant to remove.
+	{"users_get", "user", "account_locked", "whether the account is locked", ""},
+	{"users_search", "user", "account_locked", "whether the account is locked", ""},
+	{"user_view", "user", "user.account_locked", "whether the account is locked", ""},
+
+	// Upstream naming differences jc passes through rather than normalising.
+	// Recorded so they read as known rather than as accidents.
+	{"users_get", "user", "organization", "owning organization id",
+		"the groups endpoints call the same fact organizationObjectId; both are the API's own spelling"},
 
 	// Group membership, after the resolver fix: both view tools emit the
 	// same shape from the same helper.
