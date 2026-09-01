@@ -343,6 +343,7 @@ type policyUpdateInput struct {
 type groupCreateInput struct {
 	Name        string `json:"name" jsonschema:"Group name"`
 	Description string `json:"description,omitempty" jsonschema:"Group description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the group. Without it a plan is returned."`
 }
 
 type groupUpdateInput struct {
@@ -392,6 +393,7 @@ type radiusUpdateInput struct {
 type appleMDMCreateInput struct {
 	Name    string `json:"name" jsonschema:"MDM configuration name"`
 	OrgName string `json:"org_name,omitempty" jsonschema:"Organization name for the MDM certificate"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Apple MDM configuration. Without it a plan is returned. This PROVISIONS AN MDM CERTIFICATE, so it is guarded like every other write."`
 }
 
 type appleMDMUpdateInput struct {
@@ -418,6 +420,7 @@ type userStateCreateInput struct {
 	State     string `json:"state" jsonschema:"Target state: suspended or activated"`
 	StartDate string `json:"start_date" jsonschema:"Date for state change (YYYY-MM-DD or RFC 3339)"`
 	EndDate   string `json:"end_date,omitempty" jsonschema:"Optional end date to revert the state change"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set true to actually schedule the state change. Without it a plan is returned — a scheduled suspension is a future write, so it is guarded like an immediate one."`
 }
 
 type orgUpdateInput struct {
@@ -431,6 +434,7 @@ type sshKeyAddInput struct {
 	User      string `json:"user" jsonschema:"Username or ID of the user"`
 	Name      string `json:"name" jsonschema:"Label for the SSH key"`
 	PublicKey string `json:"public_key" jsonschema:"SSH public key string"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set true to actually add the key. Without it a plan is returned — an SSH key grants access, so it is guarded like every other write."`
 }
 
 type sshKeyDeleteInput struct {
@@ -932,7 +936,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_ssh_keys_add", "Add an SSH key to a JumpCloud user.",
+	addTypedTool(s, "users_ssh_keys_add", "Add an SSH key to a JumpCloud user. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args sshKeyAddInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -948,6 +952,9 @@ func (s *Server) registerUserTools() {
 			body := map[string]any{
 				"name":       args.Name,
 				"public_key": args.PublicKey,
+			}
+			if !args.Execute {
+				return planResult("add", "SSH key", args.Name, id, body)
 			}
 			data, err := client.Create(ctx, "/systemusers/"+id+"/sshkeys", body)
 			if err != nil {
@@ -1239,7 +1246,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_user_create", "Create a new JumpCloud user group.",
+	addTypedTool(s, "groups_user_create", "Create a new JumpCloud user group. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1253,6 +1260,9 @@ func (s *Server) registerGroupTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "user group", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/usergroups", body)
 			if err != nil {
@@ -4734,7 +4744,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_create", "Create a new Apple MDM configuration.",
+	addTypedTool(s, "apple_mdm_create", "Create a new Apple MDM configuration. Set execute=true to apply; otherwise returns a plan. This provisions an MDM certificate.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4746,6 +4756,9 @@ func (s *Server) registerAppleMDMTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "Apple MDM configuration", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/applemdms", body)
 			if err != nil {
@@ -4997,7 +5010,7 @@ func (s *Server) registerUserStateTools() {
 		},
 	)
 
-	addTypedTool(s, "user_states_create", "Schedule a user state change (suspend or reactivate on a given date).",
+	addTypedTool(s, "user_states_create", "Schedule a user state change (suspend or reactivate on a given date). Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userStateCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -5021,6 +5034,9 @@ func (s *Server) registerUserStateTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating V2 client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("schedule", "user state change", args.User, userID, body)
 			}
 			data, err := client.Create(ctx, "/bulk/userstates", body)
 			if err != nil {
