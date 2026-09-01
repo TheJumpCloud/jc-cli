@@ -221,8 +221,11 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the jc version",
 		Run: func(cmd *cobra.Command, args []string) {
-			v := strings.TrimPrefix(version.Number, "v")
-			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", v)
+			// Describe, not Number: a plain `go build` leaves Number at "dev",
+			// and "which build is this?" is exactly the question this command
+			// exists to answer. The commit comes from Go's own build info, so
+			// it is present whether or not -ldflags was used.
+			fmt.Fprintf(cmd.OutOrStdout(), "jc v%s\n", strings.TrimPrefix(version.Describe(), "v"))
 		},
 	}
 }
