@@ -259,3 +259,66 @@ func TestVocabulary_ListParityUsesEveryRecord(t *testing.T) {
 		t.Error("fixture assumption broken")
 	}
 }
+
+// Two tools must not spell one key with two shapes.
+//
+// apple_mdm_payloads_search returned supported_os as an ARRAY of names while
+// apple_mdm_payloads_show returns it as an OBJECT keyed by OS with per-OS
+// availability. Same key, no error when read wrong — the user_view.mfa
+// collision in a different area. The summary is jc's own projection, so it was
+// renamed rather than documented: supported_os_names says what it is.
+func TestVocabulary_AppleSupportedOSDoesNotCollide(t *testing.T) {
+	raw, err := json.Marshal(appleMDMPayloadSummary{SupportedOSNames: []string{"macOS"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, collides := m["supported_os"]; collides {
+		t.Error("the search summary must not emit supported_os — show uses that key " +
+			"for an object keyed by OS, and an array there breaks a caller silently")
+	}
+	if _, ok := m["supported_os_names"].([]any); !ok {
+		t.Errorf("expected supported_os_names as an array, got %v", m)
+	}
+}
+
+// userMetrics is the opposite decision, recorded so the reasoning survives.
+//
+// GET /systems/{id} returns 5 keys and POST /search/systems returns 13 for the
+// same field on the same device — verified live. Both shapes are JumpCloud's,
+// so composing the missing keys would put invented data in a passthrough and
+// dropping the extras would discard what the caller asked for. It is documented
+// instead, in the vocabulary and in both tool descriptions.
+func TestVocabulary_UserMetricsShapeDifferenceIsDocumented(t *testing.T) {
+	var get, search fieldFact
+	for _, f := range fieldVocabulary {
+		if f.Key != "userMetrics" {
+			continue
+		}
+		switch f.Emitter {
+		case "devices_get":
+			get = f
+		case "devices_search":
+			search = f
+		}
+	}
+	if get.Emitter == "" || search.Emitter == "" {
+		t.Fatal("both devices tools must declare userMetrics; the difference is invisible otherwise")
+	}
+	// Same fact — it IS the same information, just projected differently.
+	if get.Fact != search.Fact {
+		t.Errorf("userMetrics carries one fact; the shapes differ, not the meaning: %q vs %q",
+			get.Fact, search.Fact)
+	}
+	// The trap must be spelled out on the short form, which is the one that
+	// silently lacks the interesting keys.
+	if !strings.Contains(get.Note, "lastLogin") {
+		t.Errorf("devices_get's note must name the keys it does NOT return: %q", get.Note)
+	}
+	if !strings.Contains(search.Note, "superset") {
+		t.Errorf("devices_search's note should say it is the fuller shape: %q", search.Note)
+	}
+}

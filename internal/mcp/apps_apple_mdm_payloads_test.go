@@ -101,14 +101,14 @@ func TestAppleMDMPayloadsSearch_FiltersByOSAndSearch(t *testing.T) {
 	}
 	for _, p := range iosOnly.Payloads {
 		found := false
-		for _, plat := range p.SupportedOS {
+		for _, plat := range p.SupportedOSNames {
 			if plat == "iOS" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("payload %s slipped past iOS filter (supported=%v)", p.Type, p.SupportedOS)
+			t.Errorf("payload %s slipped past iOS filter (supported=%v)", p.Type, p.SupportedOSNames)
 		}
 	}
 

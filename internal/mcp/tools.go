@@ -1001,7 +1001,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object.",
+	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object. NOTE on userMetrics: this endpoint returns the SHORT form — 5 keys per record (userName, admin, managed, suspended, secureTokenEnabled). lastLogin and lastPasswordChange are ABSENT here and present in devices_search, which returns 13 keys for the same field on the same device. Reading userMetrics[0].lastLogin here yields undefined, not an error, so use devices_search when you need login or password timestamps. Both shapes come from JumpCloud; jc passes each through unchanged rather than inventing the missing keys.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1104,7 +1104,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber.",
+	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber. NOTE on userMetrics: this endpoint returns the LONG form — 13 keys per record, a superset of what devices_get returns, adding lastLogin, lastPasswordChange, isFDEUser, userNameHash, collectionTime, creationTime, secureTokenPwEnteredTime and userPasswordSavedSakTime. devices_get returns only 5 for the same field on the same device, so code written against one shape breaks silently against the other.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
