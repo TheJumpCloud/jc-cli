@@ -52,7 +52,7 @@ func TestWindowsMDMCSPSearch_FiltersAndTruncation(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	// 5 policy-area + 3 standalone-CSP fixture settings (KLA-467).
-	if all.Total != 8 || all.Matched != 8 || all.Truncated {
+	if all.CatalogSize != 8 || all.Matched != 8 || all.Truncated {
 		t.Errorf("unfiltered result wrong: %+v", all)
 	}
 

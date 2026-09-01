@@ -83,11 +83,11 @@ func TestAppleMDMPayloadsSearch_FiltersByOSAndSearch(t *testing.T) {
 	if err := json.Unmarshal([]byte(getResultText(t, res)), &all); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if all.Total < 50 {
-		t.Errorf("catalog suspiciously small: total=%d", all.Total)
+	if all.CatalogSize < 50 {
+		t.Errorf("catalog suspiciously small: total=%d", all.CatalogSize)
 	}
-	if all.Matched != all.Total {
-		t.Errorf("unfiltered matched=%d != total=%d", all.Matched, all.Total)
+	if all.Matched != all.CatalogSize {
+		t.Errorf("unfiltered matched=%d != total=%d", all.Matched, all.CatalogSize)
 	}
 
 	// OS filter — iOS-supported only. macOS-only payloads must drop.
@@ -96,8 +96,8 @@ func TestAppleMDMPayloadsSearch_FiltersByOSAndSearch(t *testing.T) {
 	if err := json.Unmarshal([]byte(getResultText(t, res)), &iosOnly); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if iosOnly.Matched >= all.Total {
-		t.Errorf("iOS filter didn't drop anything: matched=%d total=%d", iosOnly.Matched, all.Total)
+	if iosOnly.Matched >= all.CatalogSize {
+		t.Errorf("iOS filter didn't drop anything: matched=%d total=%d", iosOnly.Matched, all.CatalogSize)
 	}
 	for _, p := range iosOnly.Payloads {
 		found := false

@@ -674,7 +674,7 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) registerUserTools() {
-	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended.",
+	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1191,7 +1191,7 @@ func (s *Server) registerGroupTools() {
 				return errorResult(fmt.Sprintf("listing device groups: %v", err)), nil, nil
 			}
 			all := append(userGroups.Data, deviceGroups.Data...)
-			return rawListResult(all, len(all))
+			return rawListPage(all)
 		},
 	)
 
@@ -1209,7 +1209,7 @@ func (s *Server) registerGroupTools() {
 
 	// --- User group CRUD ---
 
-	addTypedTool(s, "groups_user_list", "List all JumpCloud user groups. Returns group objects with id, name, description.",
+	addTypedTool(s, "groups_user_list", "List all JumpCloud user groups. Returns group objects with id, name, description. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1223,7 +1223,7 @@ func (s *Server) registerGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing user groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1331,7 +1331,7 @@ func (s *Server) registerGroupTools() {
 
 	// --- Device group CRUD ---
 
-	addTypedTool(s, "groups_device_list", "List all JumpCloud device (system) groups. Returns group objects with id, name, description.",
+	addTypedTool(s, "groups_device_list", "List all JumpCloud device (system) groups. Returns group objects with id, name, description. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1345,7 +1345,7 @@ func (s *Server) registerGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing device groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1559,7 +1559,7 @@ func (s *Server) registerInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying events: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1621,7 +1621,7 @@ func (s *Server) registerInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying distinct values: %v", err)), nil, nil
 			}
-			return rawListResult(data, len(data))
+			return rawListPage(data)
 		},
 	)
 }
@@ -1912,7 +1912,7 @@ func (s *Server) registerCommandTools() {
 }
 
 func (s *Server) registerPolicyTools() {
-	addTypedTool(s, "policies_list", "List all JumpCloud policies. Returns policy objects with id, name, template, os fields.",
+	addTypedTool(s, "policies_list", "List all JumpCloud policies. Returns policy objects with id, name, template, os fields. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1926,7 +1926,7 @@ func (s *Server) registerPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policies: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2057,7 +2057,7 @@ func (s *Server) registerPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy results: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -2077,7 +2077,7 @@ func (s *Server) registerAuthPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing auth policies: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2356,7 +2356,7 @@ func (s *Server) registerAuthPolicyTools() {
 				}
 			}
 
-			return rawListResult(members, len(members))
+			return rawListPage(members)
 		},
 	)
 
@@ -2426,7 +2426,7 @@ func (s *Server) registerIPListTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing IP lists: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2550,7 +2550,7 @@ func (s *Server) registerIdentityProviderTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing identity providers: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2692,7 +2692,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software apps: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2818,7 +2818,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software statuses: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2837,7 +2837,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software associations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2892,7 +2892,7 @@ func (s *Server) registerAssetSubTools(subName, endpoint, noun string, cfg resol
 				return errorResult(fmt.Sprintf("listing %ss: %v", noun, err)), nil, nil
 			}
 			flattened := mcpFlattenAssetFields(result.Data)
-			return rawListResult(flattened, len(flattened))
+			return rawListPage(flattened)
 		},
 	)
 
@@ -3084,7 +3084,7 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing LDAP servers: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3210,7 +3210,7 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing samba domains: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3355,7 +3355,7 @@ func (s *Server) registerADTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Active Directory integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3815,7 +3815,7 @@ func (s *Server) registerGraphTools() {
 				return errorResult(fmt.Sprintf("traversing graph: %v", err)), nil, nil
 			}
 			data := flattenAssociations(result.Data)
-			return rawListResult(data, len(data))
+			return rawListPage(data)
 		},
 	)
 
@@ -4265,13 +4265,48 @@ func resolveTimeRange(last, start, end string) (string, string, error) {
 }
 
 // rawListResult creates a JSON result from raw API response items.
+// List envelopes: `returned` always, `total` only when it is a real total.
+//
+// `total` used to mean two different things depending on which tool produced
+// it. 52 call sites passed len(data) — "how many I am handing you" — and 13
+// passed the API's own count — "how many exist". Same key, no error when read
+// wrong, so a consumer paging on it looped correctly against users_list and
+// stopped early against groups_*. The tenant has at least 8 user groups while
+// groups_user_list(limit:2) reported total:2.
+//
+// This is the user_view.mfa collision at the envelope level, and it is fixed
+// the same way: one key, one meaning. `returned` is always the length of this
+// page. `total` appears ONLY when the API reported a grand total, and is
+// absent otherwise — absent says "unknown" honestly, where a self-referential
+// count said "this is all of them" and was often wrong.
+//
+// Existing consumers are no worse off: a tool that previously reported
+// total == len(data) stopped paging there anyway, and now stops because the
+// field is absent rather than because it was misinformed.
+
+// rawListResult returns a page whose grand total is KNOWN — the API reported
+// it, so a caller may page against it.
 func rawListResult(data []json.RawMessage, total int) (*mcp.CallToolResult, any, error) {
-	result := map[string]any{
-		"data":  data,
-		"total": total,
-	}
+	return listEnvelope(data, &total)
+}
+
+// rawListPage returns a page whose grand total is NOT known. Pass the data
+// only: the envelope reports how many came back and says nothing it cannot
+// support.
+func rawListPage(data []json.RawMessage) (*mcp.CallToolResult, any, error) {
+	return listEnvelope(data, nil)
+}
+
+func listEnvelope(data []json.RawMessage, total *int) (*mcp.CallToolResult, any, error) {
 	if data == nil {
-		result["data"] = []json.RawMessage{}
+		data = []json.RawMessage{}
+	}
+	result := map[string]any{
+		"data":     data,
+		"returned": len(data),
+	}
+	if total != nil {
+		result["total"] = *total
 	}
 	res, err := jsonResult(result)
 	if err != nil {
@@ -4521,7 +4556,7 @@ func (s *Server) registerSystemInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying system insights: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4689,7 +4724,7 @@ func (s *Server) registerPolicyTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4719,7 +4754,7 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Apple MDM configs: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4840,7 +4875,7 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing enrollment profiles: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4859,7 +4894,7 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing MDM devices: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -4879,7 +4914,7 @@ func (s *Server) registerPolicyGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4992,7 +5027,7 @@ func (s *Server) registerUserStateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing user states: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5082,7 +5117,7 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing G Suite integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5120,7 +5155,7 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5139,7 +5174,7 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -5159,7 +5194,7 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Office 365 integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5197,7 +5232,7 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5216,7 +5251,7 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -5232,7 +5267,7 @@ func (s *Server) registerDuoTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Duo accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5313,7 +5348,7 @@ func (s *Server) registerDuoTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Duo applications: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5615,7 +5650,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS applications: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5741,7 +5776,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5808,7 +5843,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("getting SaaS usage: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5824,7 +5859,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS licenses: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5862,7 +5897,7 @@ func (s *Server) registerAccessRequestsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing access requests: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5994,7 +6029,7 @@ func (s *Server) registerCustomEmailTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing custom email templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6161,7 +6196,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing saved views: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6310,7 +6345,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing service accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6468,7 +6503,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing roles: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6610,7 +6645,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing notification channels: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6767,7 +6802,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing alerts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6964,7 +6999,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing health-monitoring rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7016,7 +7051,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing rule templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7198,7 +7233,7 @@ func (s *Server) registerReportTools() {
 				if err != nil {
 					return errorResult(fmt.Sprintf("listing %s reports: %v", f.Name, err)), nil, nil
 				}
-				return rawListResult(result.Data, len(result.Data))
+				return rawListPage(result.Data)
 			},
 		)
 		addTypedTool(s, "reports_"+f.Name+"_get",
@@ -7396,7 +7431,7 @@ func (s *Server) registerReportTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing scheduled runs: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7551,7 +7586,7 @@ func alertsSubList(ctx context.Context, identifier, subPath, key string) (*mcp.C
 	if arr := wrap[key]; arr != nil {
 		_ = json.Unmarshal(arr, &items)
 	}
-	return rawListResult(items, len(items))
+	return rawListPage(items)
 }
 
 type alertNoteInput struct {

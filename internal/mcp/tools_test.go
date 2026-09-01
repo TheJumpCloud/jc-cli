@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -1480,8 +1481,15 @@ func TestMCP_PoliciesListTool(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		t.Fatalf("parse result: %v", err)
 	}
-	if res["total"] != float64(0) {
-		t.Errorf("expected total 0, got %v", res["total"])
+	// `returned` is the honest field: how many came back in this page.
+	// `total` is deliberately ABSENT here — the policies endpoint reports no
+	// grand total, and the envelope used to invent one by echoing len(data),
+	// which told a paging consumer "that is all of them" without knowing.
+	if res["returned"] != float64(0) {
+		t.Errorf("expected returned 0, got %v", res["returned"])
+	}
+	if _, present := res["total"]; present {
+		t.Errorf("total must be absent when the API reports none, got %v", res["total"])
 	}
 }
 
@@ -2122,4 +2130,97 @@ func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
 			}
 		}
 	}
+}
+
+// `total` must mean one thing, everywhere it appears.
+//
+// It used to mean two: 52 call sites passed len(data) — "how many I am handing
+// you" — and 13 passed the API's count — "how many exist". Two catalog tools
+// meant a third thing, the size of the whole corpus. Same key, no error when
+// read wrong, so a consumer paging on it looped correctly against users_list
+// and stopped early against groups_*: the tenant has at least 8 user groups
+// while groups_user_list(limit:2) reported total:2.
+//
+// The rule now: `returned` is this page, always. `total` is how many exist,
+// and is ABSENT when unknown. `catalog_size` is a corpus, and never called
+// total.
+func TestMCP_ListEnvelopeTotalMeansOneThing(t *testing.T) {
+	// A page whose grand total the API reported.
+	known := 42
+	res, _, err := listEnvelope([]json.RawMessage{[]byte(`{"id":"a"}`)}, &known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := decodeEnvelope(t, res)
+	if m["returned"] != float64(1) {
+		t.Errorf("returned = %v, want 1 (the length of this page)", m["returned"])
+	}
+	if m["total"] != float64(42) {
+		t.Errorf("total = %v, want the API's count", m["total"])
+	}
+
+	// A page whose grand total is unknown: `total` must be absent, not echoed
+	// back as the page length.
+	res, _, err = listEnvelope([]json.RawMessage{[]byte(`{"id":"a"}`), []byte(`{"id":"b"}`)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = decodeEnvelope(t, res)
+	if m["returned"] != float64(2) {
+		t.Errorf("returned = %v, want 2", m["returned"])
+	}
+	if v, present := m["total"]; present {
+		t.Errorf("total must be absent when unknown, got %v — echoing the page "+
+			"length tells a paging caller 'that is all of them' without knowing", v)
+	}
+
+	// An empty page still reports honestly rather than omitting the field.
+	res, _, err = listEnvelope(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = decodeEnvelope(t, res)
+	if m["returned"] != float64(0) {
+		t.Errorf("returned = %v on an empty page, want 0", m["returned"])
+	}
+	if _, ok := m["data"].([]any); !ok {
+		t.Errorf("data must be an empty array, not null: %v", m["data"])
+	}
+}
+
+// No list tool may report a self-referential total again. The helper that made
+// that possible is gone; this asserts nobody reintroduces the shape by hand.
+func TestMCP_NoToolEchoesPageLengthAsTotal(t *testing.T) {
+	srcs, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range srcs {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, rerr := os.ReadFile(f)
+		if rerr != nil {
+			continue
+		}
+		// rawListResult(x, len(x)) — the exact shape that made total a lie.
+		if m := regexp.MustCompile(`rawListResult\(\s*(\w[\w.]*)\s*,\s*len\(\s*(\w[\w.]*)\s*\)`).
+			FindAllStringSubmatch(string(body), -1); m != nil {
+			for _, hit := range m {
+				if hit[1] == hit[2] {
+					t.Errorf("%s: rawListResult(%s, len(%s)) reports the page length as a "+
+						"grand total — use rawListPage(%s)", f, hit[1], hit[2], hit[1])
+				}
+			}
+		}
+	}
+}
+
+func decodeEnvelope(t *testing.T, res *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(getResultText(t, res)), &m); err != nil {
+		t.Fatalf("envelope did not parse: %v", err)
+	}
+	return m
 }

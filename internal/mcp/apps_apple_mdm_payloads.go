@@ -61,10 +61,18 @@ type appleMDMPayloadSummary struct {
 }
 
 type appleMDMPayloadsSearchResult struct {
-	Release  string                    `json:"release"`
-	Total    int                       `json:"total"`    // unfiltered catalog size
-	Matched  int                       `json:"matched"`  // after applying filters
-	Payloads []appleMDMPayloadSummary  `json:"payloads"`
+	Release string `json:"release"`
+	// CatalogSize is the whole corpus, NOT a count of this query's results.
+	// It was called `total`, which on every list tool means how many records
+	// exist matching the request — the same key carrying a different fact, so
+	// a caller reading it as a result count was off by the size of the
+	// catalog.
+	CatalogSize int `json:"catalog_size"`
+	// Matched is how many passed the filters; Returned how many are in this
+	// response.
+	Matched  int                      `json:"matched"`
+	Returned int                      `json:"returned"`
+	Payloads []appleMDMPayloadSummary `json:"payloads"`
 }
 
 // ── tool 2: show ───────────────────────────────────────────────────
@@ -77,8 +85,8 @@ type appleMDMPayloadsShowInput struct {
 }
 
 type appleMDMPayloadsShowResult struct {
-	Release string             `json:"release"`
-	Payload apple_mdm.Payload  `json:"payload"`
+	Release string            `json:"release"`
+	Payload apple_mdm.Payload `json:"payload"`
 }
 
 // ── tool 3: template ───────────────────────────────────────────────
@@ -103,10 +111,10 @@ type appleMDMPayloadsTemplateInput struct {
 }
 
 type appleMDMPayloadsTemplateResult struct {
-	PayloadType        string         `json:"payload_type"`
-	ValidatedValues    map[string]any `json:"validated_values"`
-	MobileconfigBytes  int            `json:"mobileconfig_bytes"`
-	Mobileconfig       string         `json:"mobileconfig"`
+	PayloadType       string         `json:"payload_type"`
+	ValidatedValues   map[string]any `json:"validated_values"`
+	MobileconfigBytes int            `json:"mobileconfig_bytes"`
+	Mobileconfig      string         `json:"mobileconfig"`
 }
 
 // ── tool 4: create_policy ──────────────────────────────────────────
@@ -140,10 +148,10 @@ type appleMDMPayloadsCreatePolicyInput struct {
 
 type appleMDMPayloadsCreatePolicyResult struct {
 	// On execute: the JC policy ID + name + JC template ID.
-	PolicyID         string `json:"policy_id,omitempty"`
-	PolicyName       string `json:"policy_name"`
-	JCTemplateID     string `json:"jc_template_id"`
-	JCTemplateName   string `json:"jc_template_name"`
+	PolicyID       string `json:"policy_id,omitempty"`
+	PolicyName     string `json:"policy_name"`
+	JCTemplateID   string `json:"jc_template_id"`
+	JCTemplateName string `json:"jc_template_name"`
 	// Always: the inner Apple payloadtype + validated values + the
 	// emitted mobileconfig bytes (the body that did / would have shipped).
 	PayloadType       string         `json:"payload_type"`
@@ -304,10 +312,11 @@ func (s *Server) registerAppleMDMPayloadsTools() {
 				summaries = append(summaries, summarizePayload(p))
 			}
 			res, err := jsonResult(appleMDMPayloadsSearchResult{
-				Release:  cat.Release,
-				Total:    cat.Len(),
-				Matched:  len(summaries),
-				Payloads: summaries,
+				Release:     cat.Release,
+				CatalogSize: cat.Len(),
+				Matched:     len(summaries),
+				Returned:    len(summaries),
+				Payloads:    summaries,
 			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil

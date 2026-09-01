@@ -48,9 +48,12 @@ type windowsMDMCSPSettingSummary struct {
 
 type windowsMDMCSPSearchResult struct {
 	Snapshot string `json:"snapshot"`
-	Total    int    `json:"total"`   // full catalog size
-	Matched  int    `json:"matched"` // after filters
-	Returned int    `json:"returned"`
+	// CatalogSize is the whole corpus, NOT a count of this query's results.
+	// It was called `total`, which on every list tool means how many records
+	// match the request.
+	CatalogSize int `json:"catalog_size"`
+	Matched     int `json:"matched"`  // passed the filters
+	Returned    int `json:"returned"` // in this response
 	// Truncated is set when matched > returned — never a silent cap;
 	// the agent should narrow with area/search.
 	Truncated bool                          `json:"truncated,omitempty"`
@@ -165,12 +168,12 @@ func (s *Server) registerWindowsMDMCSPTools() {
 				})
 			}
 			res, err := jsonResult(windowsMDMCSPSearchResult{
-				Snapshot:  cat.Snapshot,
-				Total:     cat.Len(),
-				Matched:   len(matches),
-				Returned:  len(summaries),
-				Truncated: len(matches) > len(summaries),
-				Settings:  summaries,
+				Snapshot:    cat.Snapshot,
+				CatalogSize: cat.Len(),
+				Matched:     len(matches),
+				Returned:    len(summaries),
+				Truncated:   len(matches) > len(summaries),
+				Settings:    summaries,
 			})
 			if err != nil {
 				return errorResult(err.Error()), nil, nil

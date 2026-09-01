@@ -96,7 +96,7 @@ func (s *Server) registerADTranslationRuleTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(raw, len(raw))
+			return rawListPage(raw)
 		},
 	)
 
@@ -115,7 +115,7 @@ func (s *Server) registerADTranslationRuleTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing recommended translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
