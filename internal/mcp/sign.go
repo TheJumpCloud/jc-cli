@@ -38,13 +38,13 @@ func (noopSigner) sign(string, any) error { return nil }
 // chain. Verifiers reconstruct the canonical form and check against the
 // stored public key.
 type signedManifest struct {
-	Tool            string          `json:"tool"`
-	ArgsRedacted    json.RawMessage `json:"args_redacted"`
-	Target          string          `json:"target,omitempty"`
-	Timestamp       string          `json:"timestamp"`
-	Nonce           string          `json:"nonce"`
-	OperatorPubkey  string          `json:"operator_pubkey"`
-	Signature       string          `json:"signature,omitempty"`
+	Tool           string          `json:"tool"`
+	ArgsRedacted   json.RawMessage `json:"args_redacted"`
+	Target         string          `json:"target,omitempty"`
+	Timestamp      string          `json:"timestamp"`
+	Nonce          string          `json:"nonce"`
+	OperatorPubkey string          `json:"operator_pubkey"`
+	Signature      string          `json:"signature,omitempty"`
 }
 
 // canonicalForSigning returns the byte sequence the signature is computed
@@ -62,12 +62,12 @@ func (m signedManifest) canonicalForSigning() ([]byte, error) {
 // for a profile that has no signing key yet creates one, persists the
 // private key in the keychain, and writes the pubkey into config.
 type ed25519Signer struct {
-	mu       sync.Mutex
-	profile  string
-	logPath  string
-	priv     ed25519.PrivateKey // nil until lazy-loaded
-	pub      ed25519.PublicKey  // nil until lazy-loaded
-	pubB64   string             // cached for the manifest field
+	mu      sync.Mutex
+	profile string
+	logPath string
+	priv    ed25519.PrivateKey // nil until lazy-loaded
+	pub     ed25519.PublicKey  // nil until lazy-loaded
+	pubB64  string             // cached for the manifest field
 }
 
 // newEd25519Signer constructs the signer for the named profile and the

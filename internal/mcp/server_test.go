@@ -920,8 +920,8 @@ func TestNewServer_AuditEnabledByExplicitPath(t *testing.T) {
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
 
 	s := MustNewServer(Options{
-		AuditEnabled: false,        // disabled...
-		AuditLogPath: auditPath,    // ...but explicit path wins
+		AuditEnabled: false,     // disabled...
+		AuditLogPath: auditPath, // ...but explicit path wins
 	})
 
 	// Write a log entry to confirm the logger is active.

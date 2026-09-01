@@ -70,7 +70,8 @@ var fieldVocabulary = []fieldFact{
 	// jc projections return snake_case. Same facts, different spellings —
 	// allowed, and recorded so it reads as a decision rather than an
 	// accident.
-	{"devices_search", "device", "displayName", "display name", ""},
+	{"devices_search", "device", "displayName", "display name",
+		"users spell the same fact displayname, lower-case n — an upstream inconsistency, not jc's"},
 	{"device_view", "device", "device.display_name", "display name", ""},
 	{"devices_search", "device", "serialNumber", "serial number", ""},
 	{"device_view", "device", "device.serial_number", "serial number", ""},
@@ -107,6 +108,46 @@ var fieldVocabulary = []fieldFact{
 	{"users_get", "user", "_id", "own id", "duplicates id; left as the API sends it"},
 	{"users_search", "user", "_id", "own id", "duplicates id; left as the API sends it"},
 	{"devices_search", "device", "_id", "own id", "duplicates id; left as the API sends it"},
+
+	// userMetrics: one fact, two shapes, and jc composes neither.
+	//
+	// Verified live on the same device: GET /systems/{id} returns 5-key
+	// records (userName, admin, managed, suspended, secureTokenEnabled) while
+	// POST /search/systems returns 13, adding lastLogin, lastPasswordChange,
+	// isFDEUser, collectionTime and more. So userMetrics[0].lastLogin is a
+	// real date from one tool and undefined — falsy — from the other, with no
+	// error either way.
+	//
+	// This is the user_view.mfa pattern, and it is NOT fixed the same way,
+	// because it is not jc's to fix: both shapes come straight from JumpCloud.
+	// Composing the missing keys would put invented data in a passthrough, and
+	// dropping the extra ones would discard data the caller asked for. The
+	// honest fix is to make the difference impossible to walk into, which is
+	// what the notes below and the tool descriptions do.
+	{"devices_get", "device", "userMetrics", "per-user metrics for this device",
+		"5 keys from GET /systems/{id}: userName, admin, managed, suspended, secureTokenEnabled. " +
+			"lastLogin and lastPasswordChange are NOT here — read them from devices_search"},
+	{"devices_search", "device", "userMetrics", "per-user metrics for this device",
+		"13 keys from POST /search/systems, adding lastLogin, lastPasswordChange, isFDEUser, " +
+			"userNameHash, collectionTime, creationTime, secureTokenPwEnteredTime, " +
+			"userPasswordSavedSakTime — a superset of what devices_get returns"},
+	// account_locked: one fact, one name, on every emitter.
+	//
+	// user_view called it `locked` — both snake_case, so the documented
+	// camelCase/snake_case split did not explain it. It was a bare rename, and
+	// a dangerous one on a security-relevant boolean: a caller who learned
+	// account_locked from users_get read undefined here, which is falsy, so a
+	// lock check reported NOT LOCKED on a locked account. Renamed rather than
+	// aliased, for the reason the user_view.mfa precedent gives — an alias
+	// would have preserved the exact bug it was meant to remove.
+	{"users_get", "user", "account_locked", "whether the account is locked", ""},
+	{"users_search", "user", "account_locked", "whether the account is locked", ""},
+	{"user_view", "user", "user.account_locked", "whether the account is locked", ""},
+
+	// Upstream naming differences jc passes through rather than normalising.
+	// Recorded so they read as known rather than as accidents.
+	{"users_get", "user", "organization", "owning organization id",
+		"the groups endpoints call the same fact organizationObjectId; both are the API's own spelling"},
 
 	// Group membership, after the resolver fix: both view tools emit the
 	// same shape from the same helper.

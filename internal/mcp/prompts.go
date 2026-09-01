@@ -45,7 +45,7 @@ func (s *Server) registerOnboardUserPrompt() {
 			if firstname != "" || lastname != "" {
 				steps = append(steps, fmt.Sprintf("   Include firstname=%q and lastname=%q.", firstname, lastname))
 			}
-			steps = append(steps, "   Use the users_create tool.")
+			steps = append(steps, "   Use the users_create tool. It returns a PLAN by default — review it, then call again with execute=true to actually create the user.")
 			steps = append(steps, "")
 
 			if groups != "" {

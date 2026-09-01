@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"encoding/json"
+	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -257,5 +259,130 @@ func TestVocabulary_ListParityUsesEveryRecord(t *testing.T) {
 	// the failure mode this exists to prevent.
 	if len(sortedKeys(map[string]bool{"id": true, "username": true})) != len(commonKeys(toolB)) {
 		t.Error("fixture assumption broken")
+	}
+}
+
+// Two tools must not spell one key with two shapes.
+//
+// apple_mdm_payloads_search returned supported_os as an ARRAY of names while
+// apple_mdm_payloads_show returns it as an OBJECT keyed by OS with per-OS
+// availability. Same key, no error when read wrong — the user_view.mfa
+// collision in a different area. The summary is jc's own projection, so it was
+// renamed rather than documented: supported_os_names says what it is.
+func TestVocabulary_AppleSupportedOSDoesNotCollide(t *testing.T) {
+	raw, err := json.Marshal(appleMDMPayloadSummary{SupportedOSNames: []string{"macOS"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, collides := m["supported_os"]; collides {
+		t.Error("the search summary must not emit supported_os — show uses that key " +
+			"for an object keyed by OS, and an array there breaks a caller silently")
+	}
+	if _, ok := m["supported_os_names"].([]any); !ok {
+		t.Errorf("expected supported_os_names as an array, got %v", m)
+	}
+}
+
+// userMetrics is the opposite decision, recorded so the reasoning survives.
+//
+// GET /systems/{id} returns 5 keys and POST /search/systems returns 13 for the
+// same field on the same device — verified live. Both shapes are JumpCloud's,
+// so composing the missing keys would put invented data in a passthrough and
+// dropping the extras would discard what the caller asked for. It is documented
+// instead, in the vocabulary and in both tool descriptions.
+func TestVocabulary_UserMetricsShapeDifferenceIsDocumented(t *testing.T) {
+	var get, search fieldFact
+	for _, f := range fieldVocabulary {
+		if f.Key != "userMetrics" {
+			continue
+		}
+		switch f.Emitter {
+		case "devices_get":
+			get = f
+		case "devices_search":
+			search = f
+		}
+	}
+	if get.Emitter == "" || search.Emitter == "" {
+		t.Fatal("both devices tools must declare userMetrics; the difference is invisible otherwise")
+	}
+	// Same fact — it IS the same information, just projected differently.
+	if get.Fact != search.Fact {
+		t.Errorf("userMetrics carries one fact; the shapes differ, not the meaning: %q vs %q",
+			get.Fact, search.Fact)
+	}
+	// The trap must be spelled out on the short form, which is the one that
+	// silently lacks the interesting keys.
+	if !strings.Contains(get.Note, "lastLogin") {
+		t.Errorf("devices_get's note must name the keys it does NOT return: %q", get.Note)
+	}
+	if !strings.Contains(search.Note, "superset") {
+		t.Errorf("devices_search's note should say it is the fuller shape: %q", search.Note)
+	}
+}
+
+// user_view must spell "is this account locked" the way users_get does.
+//
+// It emitted `locked` while users_get and users_search emit `account_locked`.
+// Both snake_case, so the documented camelCase/snake_case split did not explain
+// it — a bare rename, on a security-relevant boolean. A caller who learned
+// account_locked from users_get read undefined against a view payload, which is
+// falsy, so a lock check reported NOT LOCKED on a locked account.
+//
+// Renamed rather than aliased: an alias would have preserved the exact bug it
+// was meant to remove, which is the user_view.mfa precedent.
+func TestVocabulary_UserViewSpellsAccountLockedTheSameWay(t *testing.T) {
+	raw, err := json.Marshal(userHeader{AccountLocked: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, old := m["locked"]; old {
+		t.Error("user_view must not emit `locked` — users_get calls this fact account_locked, " +
+			"and a caller reading that name here saw undefined, which is falsy")
+	}
+	if m["account_locked"] != true {
+		t.Errorf("account_locked = %v, want true", m["account_locked"])
+	}
+}
+
+// The field-set variance warning must be on every list-shaped tool, not just
+// the one where it was first noticed.
+//
+// It said so on users_search while users_list and devices_search — which have
+// the same behaviour — said nothing. A caller reading one description and using
+// the sibling tool inherits the trap without the warning.
+func TestVocabulary_VarianceWarningIsOnEveryListTool(t *testing.T) {
+	body, err := os.ReadFile("tools.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+
+	for _, tool := range []string{"users_list", "users_search", "devices_search"} {
+		m := regexp.MustCompile(`addTypedTool\(s, "` + tool + `", "((?:[^"\\]|\\.)*)"`).
+			FindStringSubmatch(src)
+		if m == nil {
+			t.Errorf("%s not found", tool)
+			continue
+		}
+		if !strings.Contains(m[1], "BETWEEN RECORDS") {
+			t.Errorf("%s does not warn that field sets vary between records of one response; "+
+				"a caller who read a sibling tool's description inherits the trap without the warning", tool)
+		}
+	}
+
+	// The dynamically registered search_* family shares one description
+	// template, so the warning has to live there rather than per tool.
+	if !strings.Contains(src, `"or omit the term to match all. Returns matching records, with `) ||
+		!strings.Contains(src, "BETWEEN RECORDS") {
+		t.Error("the generated search_* description must carry the variance warning too")
 	}
 }

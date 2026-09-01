@@ -139,7 +139,7 @@ func TestFetchUserViewData_Aggregates(t *testing.T) {
 	if data.User.Email != "alice@acme.com" {
 		t.Errorf("email = %q", data.User.Email)
 	}
-	if !data.User.Activated || data.User.Locked || data.User.Suspended {
+	if !data.User.Activated || data.User.AccountLocked || data.User.Suspended {
 		t.Errorf("status flags wrong: %+v", data.User)
 	}
 	// MFA

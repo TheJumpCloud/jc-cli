@@ -52,6 +52,7 @@ type userCreateInput struct {
 	Firstname  string `json:"firstname,omitempty" jsonschema:"First name"`
 	Lastname   string `json:"lastname,omitempty" jsonschema:"Last name"`
 	Department string `json:"department,omitempty" jsonschema:"Department"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the user. Without it a plan is returned."`
 }
 
 type userUpdateInput struct {
@@ -111,6 +112,7 @@ type authPolicyCreateInput struct {
 	Conditions string `json:"conditions,omitempty" jsonschema:"Conditions tree as raw JSON string"`
 	MFA        bool   `json:"mfa,omitempty" jsonschema:"Require MFA for this policy"`
 	Disabled   bool   `json:"disabled,omitempty" jsonschema:"Create in disabled state"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the authentication policy. Without it a plan is returned."`
 }
 
 type authPolicyUpdateInput struct {
@@ -138,6 +140,7 @@ type ipListCreateInput struct {
 	Name        string   `json:"name" jsonschema:"IP list name"`
 	Description string   `json:"description,omitempty" jsonschema:"IP list description"`
 	IPs         []string `json:"ips" jsonschema:"IP entries (single IPs, CIDR ranges, IP ranges)"`
+	Execute     bool     `json:"execute,omitempty" jsonschema:"Set true to actually create the IP list. Without it a plan is returned."`
 }
 
 type ipListUpdateInput struct {
@@ -154,6 +157,7 @@ type identityProviderCreateInput struct {
 	ClientID     string `json:"clientId" jsonschema:"OIDC client ID"`
 	ClientSecret string `json:"clientSecret" jsonschema:"OIDC client secret"`
 	URL          string `json:"url" jsonschema:"OIDC issuer URL"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the identity provider. Without it a plan is returned."`
 }
 
 type identityProviderUpdateInput struct {
@@ -170,6 +174,7 @@ type saasCreateInput struct {
 	CatalogAppID      string `json:"catalog_app_id" jsonschema:"Catalog application ID"`
 	Status            string `json:"status,omitempty" jsonschema:"Application status (APPROVED, UNAPPROVED, IGNORED)"`
 	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"Access restriction (DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING)"`
+	Execute           bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SaaS application. Without it a plan is returned."`
 }
 
 type saasUpdateInput struct {
@@ -206,6 +211,7 @@ type accessRequestCreateInput struct {
 	Sudo         bool   `json:"sudo,omitempty" jsonschema:"Enable sudo access"`
 	SudoNoPasswd bool   `json:"sudo_nopasswd,omitempty" jsonschema:"Enable passwordless sudo"`
 	Remarks      string `json:"remarks,omitempty" jsonschema:"Optional remarks"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the access request. Without it a plan is returned."`
 }
 
 type accessRequestUpdateInput struct {
@@ -223,6 +229,7 @@ type accessRequestRevokeInput struct {
 type softwareCreateInput struct {
 	Name     string `json:"name" jsonschema:"Display name for the software app"`
 	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
+	Execute  bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the software app. Without it a plan is returned."`
 }
 
 type softwareUpdateInput struct {
@@ -233,7 +240,8 @@ type softwareUpdateInput struct {
 }
 
 type assetCreateInput struct {
-	Fields map[string]string `json:"fields" jsonschema:"Field values as key-value pairs (e.g. Name, Serial Number, Status, Tag)"`
+	Fields  map[string]string `json:"fields" jsonschema:"Field values as key-value pairs (e.g. Name, Serial Number, Status, Tag)"`
+	Execute bool              `json:"execute,omitempty" jsonschema:"Set true to actually create the asset. Without it a plan is returned."`
 }
 
 type assetUpdateInput struct {
@@ -246,6 +254,7 @@ type ldapCreateInput struct {
 	Name                         string `json:"name" jsonschema:"LDAP server name"`
 	UserLockoutAction            string `json:"user_lockout_action,omitempty" jsonschema:"Action on user lockout"`
 	UserPasswordExpirationAction string `json:"user_password_expiration_action,omitempty" jsonschema:"Action on password expiration"`
+	Execute                      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the LDAP server. Without it a plan is returned."`
 }
 
 type ldapUpdateInput struct {
@@ -259,6 +268,7 @@ type ldapUpdateInput struct {
 type adCreateInput struct {
 	Domain  string `json:"domain" jsonschema:"Active Directory domain name"`
 	UseCase string `json:"use_case,omitempty" jsonschema:"Integration use case"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Active Directory integration. Without it a plan is returned."`
 }
 
 type adUpdateInput struct {
@@ -272,6 +282,7 @@ type adminCreateInput struct {
 	Email     string `json:"email" jsonschema:"Administrator email address"`
 	Role      string `json:"role,omitempty" jsonschema:"Admin role (e.g. Administrator, Manager, Read Only)"`
 	EnableMFA bool   `json:"enable_mfa,omitempty" jsonschema:"Enable multi-factor authentication"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the administrator. Without it a plan is returned."`
 }
 
 type adminUpdateInput struct {
@@ -310,6 +321,7 @@ type commandCreateInput struct {
 	Command     string `json:"command" jsonschema:"Command body to execute"`
 	CommandType string `json:"command_type" jsonschema:"Command type: linux, mac, windows"`
 	Shell       string `json:"shell,omitempty" jsonschema:"Windows shell: powershell or cmd (windows commands only; defaults to powershell)"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the command. Without it a plan is returned."`
 }
 
 type commandUpdateInput struct {
@@ -331,6 +343,7 @@ type policyCreateInput struct {
 	Name       string `json:"name" jsonschema:"Policy name"`
 	TemplateID string `json:"template_id" jsonschema:"Policy template ID"`
 	Values     string `json:"values,omitempty" jsonschema:"Policy values as raw JSON object"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the policy. Without it a plan is returned."`
 }
 
 type policyUpdateInput struct {
@@ -357,6 +370,7 @@ type appCreateInput struct {
 	Name    string `json:"name" jsonschema:"Application name"`
 	SsoType string `json:"sso_type,omitempty" jsonschema:"SSO type (e.g. saml, oidc, bookmark)"`
 	Config  string `json:"config,omitempty" jsonschema:"Application configuration as raw JSON"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
 }
 
 type appUpdateInput struct {
@@ -379,6 +393,7 @@ type radiusCreateInput struct {
 	SharedSecret   string `json:"shared_secret" jsonschema:"RADIUS shared secret"`
 	AuthPort       int    `json:"auth_port,omitempty" jsonschema:"Authentication port (default 1812)"`
 	AccountingPort int    `json:"accounting_port,omitempty" jsonschema:"Accounting port (default 1813)"`
+	Execute        bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the RADIUS server. Without it a plan is returned."`
 }
 
 type radiusUpdateInput struct {
@@ -406,6 +421,7 @@ type appleMDMUpdateInput struct {
 type policyGroupCreateInput struct {
 	Name        string `json:"name" jsonschema:"Policy group name"`
 	Description string `json:"description,omitempty" jsonschema:"Policy group description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the policy group. Without it a plan is returned."`
 }
 
 type policyGroupUpdateInput struct {
@@ -444,13 +460,15 @@ type sshKeyDeleteInput struct {
 }
 
 type duoCreateInput struct {
-	Name string `json:"name" jsonschema:"Duo account name"`
+	Name    string `json:"name" jsonschema:"Duo account name"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Duo account. Without it a plan is returned."`
 }
 
 type duoAppCreateInput struct {
 	Account string `json:"account" jsonschema:"Duo account name or ID"`
 	Name    string `json:"name" jsonschema:"Duo application name"`
 	APIHost string `json:"api_host" jsonschema:"Duo API host"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Duo application. Without it a plan is returned."`
 }
 
 type duoAppGetInput struct {
@@ -488,6 +506,7 @@ type graphBindInput struct {
 type commandTriggerInput struct {
 	TriggerName string `json:"trigger_name" jsonschema:"Name of the command trigger to fire"`
 	Data        string `json:"data,omitempty" jsonschema:"Optional JSON payload to send with the trigger"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually fire the command trigger. Without it a plan is returned."`
 }
 
 type customEmailTypeInput struct {
@@ -674,7 +693,7 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) registerUserTools() {
-	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended.",
+	addTypedTool(s, "users_list", "List all JumpCloud users. Returns user objects with fields like username, email, firstname, lastname, activated, suspended. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`. Field sets vary BETWEEN RECORDS of one response, because the API omits empty values per record: one user may carry public_key while the next omits the key entirely, and admin is present only on records that have one. Do not infer a schema from the first record — union the keys across all of them, and test a field's presence rather than assuming it.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -710,7 +729,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_create", "Create a new JumpCloud user. Requires username and email.",
+	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname, department, job title, employee id and attributes. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -732,6 +751,9 @@ func (s *Server) registerUserTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "user", args.Username, "", body)
+			}
 			data, err := client.Create(ctx, "/systemusers", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating user: %v", err)), nil, nil
@@ -740,7 +762,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_update", "Update a JumpCloud user's fields. Set execute=true to apply changes; otherwise returns a plan.",
+	addTypedTool(s, "users_update", "Change an existing JumpCloud user — edit their profile, rename them, move them to another department, correct an email, set or clear custom attributes. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan of what would change.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -783,7 +805,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_delete", "Delete a JumpCloud user. Set execute=true to delete; otherwise returns a plan. This is destructive and irreversible.",
+	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, use users_lock or a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -918,7 +940,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_ssh_keys_list", "List SSH keys for a JumpCloud user.",
+	addTypedTool(s, "users_ssh_keys_list", "List a JumpCloud user's SSH public keys — the keys granting them key-based login on the Linux devices they are bound to.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -936,7 +958,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_ssh_keys_add", "Add an SSH key to a JumpCloud user. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "users_ssh_keys_add", "Add an SSH public key to a JumpCloud user — grants them key-based login on every Linux device they are bound to. Note this GRANTS ACCESS. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args sshKeyAddInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -990,7 +1012,7 @@ func (s *Server) registerUserTools() {
 }
 
 func (s *Server) registerDeviceTools() {
-	addTypedTool(s, "devices_list", "List all JumpCloud devices (systems). Returns device objects with fields like displayName, hostname, os, osVersion, lastContact, agentVersion.",
+	addTypedTool(s, "devices_list", "List the JumpCloud device fleet — every machine, computer, laptop, desktop or server (JumpCloud calls them systems) enrolled in the org. Use this for inventory, fleet-wide reporting, or finding a machine when you do not know its hostname. Returns full device objects including displayName, hostname, os, osVersion, serialNumber, lastContact and agentVersion.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1008,7 +1030,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object.",
+	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object. NOTE on userMetrics: this endpoint returns the SHORT form — 5 keys per record (userName, admin, managed, suspended, secureTokenEnabled). lastLogin and lastPasswordChange are ABSENT here and present in devices_search, which returns 13 keys for the same field on the same device. Reading userMetrics[0].lastLogin here yields undefined, not an error, so use devices_search when you need login or password timestamps. Both shapes come from JumpCloud; jc passes each through unchanged rather than inventing the missing keys.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1044,7 +1066,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_update", "Update settings on an existing JumpCloud device. Set execute=true to apply changes; otherwise returns a plan.",
+	addTypedTool(s, "devices_update", "Change an enrolled JumpCloud device (system) — rename it, set its display name, adjust its settings. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args deviceUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1087,7 +1109,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_delete", "Delete a JumpCloud device. Set execute=true to delete; otherwise returns a plan. This is destructive and irreversible.",
+	addTypedTool(s, "devices_delete", "Remove a device (system) from JumpCloud — decommission, retire, unenroll or wipe a machine from the directory. This is DESTRUCTIVE: the device record and its bindings are removed, and the agent stops being managed. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1111,7 +1133,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber.",
+	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber. NOTE on userMetrics: this endpoint returns the LONG form — 13 keys per record, a superset of what devices_get returns, adding lastLogin, lastPasswordChange, isFDEUser, userNameHash, collectionTime, creationTime, secureTokenPwEnteredTime and userPasswordSavedSakTime. devices_get returns only 5 for the same field on the same device, so code written against one shape breaks silently against the other. Field sets vary BETWEEN RECORDS of one response: one device may carry domainInfo.domainSid and lack mdm.internal while the next is the reverse, and primarySystemUser is an object on one record and null on another. Do not infer a schema from the first record.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1191,7 +1213,7 @@ func (s *Server) registerGroupTools() {
 				return errorResult(fmt.Sprintf("listing device groups: %v", err)), nil, nil
 			}
 			all := append(userGroups.Data, deviceGroups.Data...)
-			return rawListResult(all, len(all))
+			return rawListPage(all)
 		},
 	)
 
@@ -1209,7 +1231,7 @@ func (s *Server) registerGroupTools() {
 
 	// --- User group CRUD ---
 
-	addTypedTool(s, "groups_user_list", "List all JumpCloud user groups. Returns group objects with id, name, description.",
+	addTypedTool(s, "groups_user_list", "List all JumpCloud user groups. Returns group objects with id, name, description. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1223,7 +1245,7 @@ func (s *Server) registerGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing user groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1246,7 +1268,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_user_create", "Create a new JumpCloud user group. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "groups_user_create", "Create a user group — a collection of people used to grant application access, assign policies, or scope permissions. Distinct from a DEVICE group; see groups_device_create for machines. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1331,7 +1353,7 @@ func (s *Server) registerGroupTools() {
 
 	// --- Device group CRUD ---
 
-	addTypedTool(s, "groups_device_list", "List all JumpCloud device (system) groups. Returns group objects with id, name, description.",
+	addTypedTool(s, "groups_device_list", "List all JumpCloud device (system) groups. Returns group objects with id, name, description. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1345,7 +1367,7 @@ func (s *Server) registerGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing device groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1368,7 +1390,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_device_create", "Create a new JumpCloud device (system) group.",
+	addTypedTool(s, "groups_device_create", "Create a device group (JumpCloud calls it a system group) — a collection of machines, computers or laptops used to target policies, commands and software. Distinct from a USER group; see groups_user_create for people.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1423,7 +1445,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_device_delete", "Delete a JumpCloud device (system) group. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "groups_device_delete", "Delete a device group (system group) — the group of machines itself, not the devices in it. Members are unaffected and stay enrolled. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1559,7 +1581,7 @@ func (s *Server) registerInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying events: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -1621,7 +1643,7 @@ func (s *Server) registerInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying distinct values: %v", err)), nil, nil
 			}
-			return rawListResult(data, len(data))
+			return rawListPage(data)
 		},
 	)
 }
@@ -1718,7 +1740,7 @@ func (s *Server) registerCommandTools() {
 		},
 	)
 
-	addTypedTool(s, "commands_create", "Create a new JumpCloud command.",
+	addTypedTool(s, "commands_create", "Create a JumpCloud command — a script (bash, PowerShell, Windows batch) that can be run on enrolled devices, on a schedule or on demand. Creating it does not run it; use commands_trigger for that.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args commandCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1747,6 +1769,9 @@ func (s *Server) registerCommandTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "command", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/commands", body)
 			if err != nil {
@@ -1902,6 +1927,9 @@ func (s *Server) registerCommandTools() {
 				}
 				body = parsed
 			}
+			if !args.Execute {
+				return planResult("fire", "command trigger", args.TriggerName, "", body)
+			}
 			result, err := client.Post(ctx, "/command/trigger/"+args.TriggerName, body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("triggering command: %v", err)), nil, nil
@@ -1912,7 +1940,7 @@ func (s *Server) registerCommandTools() {
 }
 
 func (s *Server) registerPolicyTools() {
-	addTypedTool(s, "policies_list", "List all JumpCloud policies. Returns policy objects with id, name, template, os fields.",
+	addTypedTool(s, "policies_list", "List all JumpCloud policies. Returns policy objects with id, name, template, os fields. Envelope: `returned` is how many are in this response; `total` is how many exist and is ABSENT when the API does not report one — do not read a missing total as zero, and do not page against `returned`.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1926,11 +1954,11 @@ func (s *Server) registerPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policies: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "policies_get", "Get a single JumpCloud policy by name or ID.",
+	addTypedTool(s, "policies_get", "Get one JumpCloud policy by name or ID — a device configuration setting (screen lock, FileVault, firewall, password rules) applied to Macs, Windows or Linux machines.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -1968,6 +1996,9 @@ func (s *Server) registerPolicyTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "policy", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/policies", body)
 			if err != nil {
@@ -2057,7 +2088,7 @@ func (s *Server) registerPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy results: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -2077,7 +2108,7 @@ func (s *Server) registerAuthPolicyTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing auth policies: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2125,6 +2156,9 @@ func (s *Server) registerAuthPolicyTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "authentication policy", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/authn/policies", body)
 			if err != nil {
@@ -2356,7 +2390,7 @@ func (s *Server) registerAuthPolicyTools() {
 				}
 			}
 
-			return rawListResult(members, len(members))
+			return rawListPage(members)
 		},
 	)
 
@@ -2426,7 +2460,7 @@ func (s *Server) registerIPListTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing IP lists: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2464,6 +2498,9 @@ func (s *Server) registerIPListTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "IP list", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/iplists", body)
 			if err != nil {
@@ -2550,7 +2587,7 @@ func (s *Server) registerIdentityProviderTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing identity providers: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2590,6 +2627,9 @@ func (s *Server) registerIdentityProviderTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "identity provider", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/identity-providers", body)
 			if err != nil {
@@ -2692,7 +2732,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software apps: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2733,6 +2773,9 @@ func (s *Server) registerSoftwareTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "software app", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/softwareapps", body)
 			if err != nil {
@@ -2818,7 +2861,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software statuses: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2837,7 +2880,7 @@ func (s *Server) registerSoftwareTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing software associations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -2892,7 +2935,7 @@ func (s *Server) registerAssetSubTools(subName, endpoint, noun string, cfg resol
 				return errorResult(fmt.Sprintf("listing %ss: %v", noun, err)), nil, nil
 			}
 			flattened := mcpFlattenAssetFields(result.Data)
-			return rawListResult(flattened, len(flattened))
+			return rawListPage(flattened)
 		},
 	)
 
@@ -3084,7 +3127,7 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing LDAP servers: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3107,7 +3150,7 @@ func (s *Server) registerLDAPTools() {
 		},
 	)
 
-	addTypedTool(s, "ldap_create", "Create a new JumpCloud LDAP server.",
+	addTypedTool(s, "ldap_create", "Create a JumpCloud LDAP server — the hosted LDAP directory endpoint that legacy apps and appliances can bind against.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args ldapCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -3124,6 +3167,9 @@ func (s *Server) registerLDAPTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "LDAP server", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/ldapservers", body)
 			if err != nil {
@@ -3210,7 +3256,7 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing samba domains: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3355,7 +3401,7 @@ func (s *Server) registerADTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Active Directory integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -3392,6 +3438,9 @@ func (s *Server) registerADTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "Active Directory integration", args.Domain, "", body)
 			}
 			data, err := client.Create(ctx, "/activedirectories", body)
 			if err != nil {
@@ -3474,7 +3523,7 @@ func (s *Server) registerOrgTools() {
 		},
 	)
 
-	addTypedTool(s, "org_get", "Get a JumpCloud organization by ID.",
+	addTypedTool(s, "org_get", "Get a JumpCloud organization by ID — the tenant's own settings, name, and identifier. Most API keys see exactly one org.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -3571,7 +3620,7 @@ func (s *Server) registerAdminTools() {
 		},
 	)
 
-	addTypedTool(s, "admins_create", "Create a new JumpCloud administrator.",
+	addTypedTool(s, "admins_create", "Create a JumpCloud administrator — grant someone console access, add an admin, invite an IT teammate. Distinct from a directory USER: an administrator manages JumpCloud itself. The new admin is emailed an invitation.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args adminCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -3588,6 +3637,9 @@ func (s *Server) registerAdminTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "administrator", args.Email, "", body)
 			}
 			data, err := client.Create(ctx, "/users", body)
 			if err != nil {
@@ -3690,7 +3742,7 @@ func (s *Server) registerAppsTools() {
 		},
 	)
 
-	addTypedTool(s, "apps_create", "Create a new JumpCloud SSO application.",
+	addTypedTool(s, "apps_create", "Create a JumpCloud SSO application — add a SAML or OIDC app, connect a SaaS tool for single sign-on. See app_templates for the catalog of preconfigured connectors.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -3711,6 +3763,9 @@ func (s *Server) registerAppsTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "SSO application", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/applications", body)
 			if err != nil {
@@ -3815,7 +3870,7 @@ func (s *Server) registerGraphTools() {
 				return errorResult(fmt.Sprintf("traversing graph: %v", err)), nil, nil
 			}
 			data := flattenAssociations(result.Data)
-			return rawListResult(data, len(data))
+			return rawListPage(data)
 		},
 	)
 
@@ -4265,13 +4320,48 @@ func resolveTimeRange(last, start, end string) (string, string, error) {
 }
 
 // rawListResult creates a JSON result from raw API response items.
+// List envelopes: `returned` always, `total` only when it is a real total.
+//
+// `total` used to mean two different things depending on which tool produced
+// it. 52 call sites passed len(data) — "how many I am handing you" — and 13
+// passed the API's own count — "how many exist". Same key, no error when read
+// wrong, so a consumer paging on it looped correctly against users_list and
+// stopped early against groups_*. The tenant has at least 8 user groups while
+// groups_user_list(limit:2) reported total:2.
+//
+// This is the user_view.mfa collision at the envelope level, and it is fixed
+// the same way: one key, one meaning. `returned` is always the length of this
+// page. `total` appears ONLY when the API reported a grand total, and is
+// absent otherwise — absent says "unknown" honestly, where a self-referential
+// count said "this is all of them" and was often wrong.
+//
+// Existing consumers are no worse off: a tool that previously reported
+// total == len(data) stopped paging there anyway, and now stops because the
+// field is absent rather than because it was misinformed.
+
+// rawListResult returns a page whose grand total is KNOWN — the API reported
+// it, so a caller may page against it.
 func rawListResult(data []json.RawMessage, total int) (*mcp.CallToolResult, any, error) {
-	result := map[string]any{
-		"data":  data,
-		"total": total,
-	}
+	return listEnvelope(data, &total)
+}
+
+// rawListPage returns a page whose grand total is NOT known. Pass the data
+// only: the envelope reports how many came back and says nothing it cannot
+// support.
+func rawListPage(data []json.RawMessage) (*mcp.CallToolResult, any, error) {
+	return listEnvelope(data, nil)
+}
+
+func listEnvelope(data []json.RawMessage, total *int) (*mcp.CallToolResult, any, error) {
 	if data == nil {
-		result["data"] = []json.RawMessage{}
+		data = []json.RawMessage{}
+	}
+	result := map[string]any{
+		"data":     data,
+		"returned": len(data),
+	}
+	if total != nil {
+		result["total"] = *total
 	}
 	res, err := jsonResult(result)
 	if err != nil {
@@ -4521,7 +4611,7 @@ func (s *Server) registerSystemInsightsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("querying system insights: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4567,7 +4657,7 @@ func (s *Server) registerRADIUSTools() {
 		},
 	)
 
-	addTypedTool(s, "radius_get", "Get a single RADIUS server by name or ID.",
+	addTypedTool(s, "radius_get", "Get one RADIUS server by name or ID — its network address, shared secret configuration and MFA setting.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -4585,7 +4675,7 @@ func (s *Server) registerRADIUSTools() {
 		},
 	)
 
-	addTypedTool(s, "radius_create", "Create a new RADIUS server.",
+	addTypedTool(s, "radius_create", "Create a RADIUS server — the endpoint network gear and Wi-Fi access points authenticate users against.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args radiusCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4603,6 +4693,9 @@ func (s *Server) registerRADIUSTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "RADIUS server", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/radiusservers", body)
 			if err != nil {
@@ -4689,11 +4782,11 @@ func (s *Server) registerPolicyTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "policy_templates_get", "Get a single policy template by ID.",
+	addTypedTool(s, "policy_templates_get", "Get one policy template by ID — the schema for a device policy, listing every configField it accepts and their types. Read this before creating a policy of that kind.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4709,7 +4802,7 @@ func (s *Server) registerPolicyTemplateTools() {
 }
 
 func (s *Server) registerAppleMDMTools() {
-	addTypedTool(s, "apple_mdm_list", "List all Apple MDM configurations.",
+	addTypedTool(s, "apple_mdm_list", "List the org's Apple MDM configurations — the APNs push certificate setup that lets JumpCloud manage Macs, iPhones and iPads. Covers Apple Business Manager / ABM and Automated Device Enrollment / DEP linkage. Most orgs have zero or one.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4719,11 +4812,11 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Apple MDM configs: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_get", "Get an Apple MDM configuration by name or ID.",
+	addTypedTool(s, "apple_mdm_get", "Get one Apple MDM configuration by name or ID — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM/DEP) linkage.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4744,7 +4837,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_create", "Create a new Apple MDM configuration. Set execute=true to apply; otherwise returns a plan. This provisions an MDM certificate.",
+	addTypedTool(s, "apple_mdm_create", "Create an Apple MDM configuration — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, and the basis for Apple Business Manager (ABM) and Automated Device Enrollment (DEP). Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4800,7 +4893,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_delete", "Delete an Apple MDM configuration. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "apple_mdm_delete", "Delete an Apple MDM configuration — removes the APNs push certificate that manages Macs, iPhones and iPads. DESTRUCTIVE: every Apple device enrolled through it stops being managed, and re-enrolment needs a new certificate from Apple. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4840,7 +4933,7 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing enrollment profiles: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -4859,7 +4952,7 @@ func (s *Server) registerAppleMDMTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing MDM devices: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
@@ -4879,11 +4972,11 @@ func (s *Server) registerPolicyGroupTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing policy groups: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "policy_groups_get", "Get a single policy group by name or ID.",
+	addTypedTool(s, "policy_groups_get", "Get one policy group by name or ID — the bundle of device policies and what it contains.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4902,7 +4995,7 @@ func (s *Server) registerPolicyGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "policy_groups_create", "Create a new policy group.",
+	addTypedTool(s, "policy_groups_create", "Create a policy group — a bundle of device policies applied together, so a set of configuration lands on a machine as one unit.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args policyGroupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4914,6 +5007,9 @@ func (s *Server) registerPolicyGroupTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "policy group", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/policygroups", body)
 			if err != nil {
@@ -4982,7 +5078,7 @@ func (s *Server) registerPolicyGroupTools() {
 }
 
 func (s *Server) registerUserStateTools() {
-	addTypedTool(s, "user_states_list", "List all scheduled user state changes.",
+	addTypedTool(s, "user_states_list", "List scheduled user state changes — pending suspensions and reactivations, with the dates they take effect. Useful for finding an offboarding already queued.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4992,11 +5088,11 @@ func (s *Server) registerUserStateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing user states: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "user_states_get", "Get a scheduled user state change by ID.",
+	addTypedTool(s, "user_states_get", "Get one scheduled user state change by ID — a pending suspension or reactivation and the date it applies.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5082,7 +5178,7 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing G Suite integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5120,7 +5216,7 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5139,13 +5235,13 @@ func (s *Server) registerGsuiteTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
 
 func (s *Server) registerOffice365Tools() {
-	addTypedTool(s, "office365_list", "List all JumpCloud Office 365 integrations.",
+	addTypedTool(s, "office365_list", "List the org's Office 365 / Microsoft 365 integrations — the tenants JumpCloud syncs users into for Entra ID and Exchange.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5159,7 +5255,7 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Office 365 integrations: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5197,7 +5293,7 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing translation rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5216,13 +5312,13 @@ func (s *Server) registerOffice365Tools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing importable users: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 }
 
 func (s *Server) registerDuoTools() {
-	addTypedTool(s, "duo_list", "List all JumpCloud Duo accounts.",
+	addTypedTool(s, "duo_list", "List the org's Duo Security accounts — the connected Duo tenants available as multi-factor providers.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5232,7 +5328,7 @@ func (s *Server) registerDuoTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Duo accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5255,7 +5351,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_create", "Create a new JumpCloud Duo account.",
+	addTypedTool(s, "duo_create", "Create a JumpCloud Duo account — connects a Duo Security tenant so Duo can be used as an MFA factor.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -5265,6 +5361,9 @@ func (s *Server) registerDuoTools() {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
 			body := map[string]any{"name": args.Name}
+			if !args.Execute {
+				return planResult("create", "Duo account", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/duo/accounts", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating Duo account: %v", err)), nil, nil
@@ -5298,7 +5397,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_apps", "List Duo applications for a Duo account.",
+	addTypedTool(s, "duo_apps", "List the Duo applications configured under a Duo account — the multi-factor integrations JumpCloud can send prompts through.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5313,11 +5412,11 @@ func (s *Server) registerDuoTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing Duo applications: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "duo_app_get", "Get a specific Duo application.",
+	addTypedTool(s, "duo_app_get", "Get one Duo application by ID — the MFA integration configuration inside a Duo account.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppGetInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5336,7 +5435,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_app_create", "Create a Duo application for a Duo account.",
+	addTypedTool(s, "duo_app_create", "Create a Duo application inside a Duo account — the integration JumpCloud uses to send Duo multi-factor prompts.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -5353,6 +5452,9 @@ func (s *Server) registerDuoTools() {
 			body := map[string]any{
 				"name":    args.Name,
 				"apiHost": args.APIHost,
+			}
+			if !args.Execute {
+				return planResult("create", "Duo application", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, fmt.Sprintf("/duo/accounts/%s/applications", accountID), body)
 			if err != nil {
@@ -5615,7 +5717,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS applications: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5653,6 +5755,9 @@ func (s *Server) registerSaaSManagementTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "SaaS application", args.CatalogAppID, "", body)
 			}
 			data, err := client.Create(ctx, "/saas-management/applications", body)
 			if err != nil {
@@ -5741,7 +5846,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5808,7 +5913,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("getting SaaS usage: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5824,7 +5929,7 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing SaaS licenses: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5862,7 +5967,7 @@ func (s *Server) registerAccessRequestsTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing access requests: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -5919,6 +6024,9 @@ func (s *Server) registerAccessRequestsTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating V2 API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "access request", args.User, "", body)
 			}
 			data, err := client.Create(ctx, "/accessrequests", body)
 			if err != nil {
@@ -5994,7 +6102,7 @@ func (s *Server) registerCustomEmailTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing custom email templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6161,7 +6269,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing saved views: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6310,7 +6418,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing service accounts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6468,11 +6576,11 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing roles: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
-	addTypedTool(s, "roles_get", "Get a single JumpCloud role by name or ID.",
+	addTypedTool(s, "roles_get", "Get one JumpCloud administrator role by name or ID, including its full scope list — the API permissions it grants. This is what decides whether an unattended workflow or service account can call a given endpoint.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -6610,7 +6718,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing notification channels: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6767,7 +6875,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing alerts: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -6790,7 +6898,7 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "alerts_stats", "Get JumpCloud alert count statistics.",
+	addTypedTool(s, "alerts_stats", "Get counts of JumpCloud alerts by state and severity — how many are open, acknowledged or resolved. A dashboard summary rather than the alerts themselves; use alerts_list for the individual records.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -6964,7 +7072,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing health-monitoring rules: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7016,7 +7124,7 @@ func (s *Server) registerAppTemplateTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing rule templates: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7152,7 +7260,11 @@ func (s *Server) registerSearchTools() {
 	for _, name := range search.ResourceNames() {
 		r := search.Resources[name]
 		addTypedTool(s, "search_"+strings.ReplaceAll(r.Name, "-", "_"),
-			fmt.Sprintf("Search JumpCloud %s (v1 %s). A bare term matches %v; use filter for structured matching, or omit the term to match all. Returns matching records.", r.Name, r.Endpoint, r.SearchFields),
+			fmt.Sprintf("Search JumpCloud %s (v1 %s). A bare term matches %v; use filter for structured matching, "+
+				"or omit the term to match all. Returns matching records, with `returned` counting this page and "+
+				"`total` how many matched. Field sets vary BETWEEN RECORDS of one response, because the API omits "+
+				"empty values per record — do not infer a schema from the first record.",
+				r.Name, r.Endpoint, r.SearchFields),
 			func(ctx context.Context, req *mcp.CallToolRequest, args searchResourceInput) (*mcp.CallToolResult, any, error) {
 				client, err := newV1ClientFunc()
 				if err != nil {
@@ -7198,7 +7310,7 @@ func (s *Server) registerReportTools() {
 				if err != nil {
 					return errorResult(fmt.Sprintf("listing %s reports: %v", f.Name, err)), nil, nil
 				}
-				return rawListResult(result.Data, len(result.Data))
+				return rawListPage(result.Data)
 			},
 		)
 		addTypedTool(s, "reports_"+f.Name+"_get",
@@ -7396,7 +7508,7 @@ func (s *Server) registerReportTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("listing scheduled runs: %v", err)), nil, nil
 			}
-			return rawListResult(result.Data, len(result.Data))
+			return rawListPage(result.Data)
 		},
 	)
 
@@ -7551,7 +7663,7 @@ func alertsSubList(ctx context.Context, identifier, subPath, key string) (*mcp.C
 	if arr := wrap[key]; arr != nil {
 		_ = json.Unmarshal(arr, &items)
 	}
-	return rawListResult(items, len(items))
+	return rawListPage(items)
 }
 
 type alertNoteInput struct {

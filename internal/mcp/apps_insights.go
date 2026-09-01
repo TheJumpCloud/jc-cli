@@ -58,8 +58,8 @@ type insightsViewData struct {
 	Start      string            `json:"start"`
 	End        string            `json:"end"`
 	BucketSize string            `json:"bucket_size"`
-	Total      int               `json:"total"`    // true count from CountEvents
-	Sampled    int               `json:"sampled"`  // number of events actually aggregated
+	Total      int               `json:"total"`   // true count from CountEvents
+	Sampled    int               `json:"sampled"` // number of events actually aggregated
 	EventTypes []string          `json:"event_types"`
 	Bins       []insightsBin     `json:"bins"`
 	TopUsers   []insightsUserCnt `json:"top_users"`

@@ -283,13 +283,13 @@ func StepUpReachesOperatorOnStdio(authPref string) bool {
 // a handful of new knobs (URL, callback addr, timeout, profile) that
 // would otherwise bloat the call signature.
 type stepUpConfig struct {
-	Required             bool
-	APIKey               string
-	AuthenticatorPref    string
-	Profile              string
-	WebhookURL           string
-	WebhookCallbackAddr  string
-	WebhookTimeout       time.Duration
+	Required            bool
+	APIKey              string
+	AuthenticatorPref   string
+	Profile             string
+	WebhookURL          string
+	WebhookCallbackAddr string
+	WebhookTimeout      time.Duration
 }
 
 // newStepUp returns the authenticator a Server should use given the
