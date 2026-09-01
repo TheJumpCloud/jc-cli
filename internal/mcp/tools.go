@@ -729,7 +729,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname, department, job title, employee id and attributes. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
+	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname and department. Job title, employee identifier and custom attributes exist on the user object but are NOT settable here — set them with users_update, or read them from users_get. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -762,7 +762,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_update", "Change an existing JumpCloud user — edit their profile, rename them, move them to another department, correct an email, set or clear custom attributes. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan of what would change.",
+	addTypedTool(s, "users_update", "Change an existing JumpCloud user — edit their profile, rename them, move them to another department, correct an email, change their job title. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan of what would change.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4371,6 +4371,15 @@ func listEnvelope(data []json.RawMessage, total *int) (*mcp.CallToolResult, any,
 }
 
 // planResult creates a plan preview result for destructive operations.
+// PlanShapeDoc describes what a write tool returns when execute is not set.
+//
+// 21 tools changed to plan-by-default at once, and none of their descriptions
+// said what a plan looks like — "returns a plan" leaves the next consumer
+// guessing at the keys. Stated once and reused, so the answer cannot drift
+// between tools the way `total` did.
+const PlanShapeDoc = "Without execute it returns a plan: {plan:true, action, resource, target, resolved_id} " +
+	"plus effects where the change has any. Nothing is written. Call again with execute=true to apply."
+
 func planResult(action, resource, identifier, resolvedID string, effects any) (*mcp.CallToolResult, any, error) {
 	plan := map[string]any{
 		"plan":        true,

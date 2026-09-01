@@ -2326,3 +2326,84 @@ func TestMCP_ToolDescriptionsCarryMoreThanTheirOwnName(t *testing.T) {
 			"computer or laptop), and what it does NOT do.", f.name, f.n)
 	}
 }
+
+// A description must not promise an argument the tool does not accept.
+//
+// users_create said "optional firstname, lastname, department, job title,
+// employee id and attributes" and accepted only the first three. All six fields
+// are real on the user OBJECT, which is how the error happened: a rewrite aimed
+// at discoverability described the DOMAIN rather than the INTERFACE. A caller
+// writes code against a parameter that is silently ignored.
+//
+// This is the last_ran bug inverted. There a description named an output field
+// that did not exist; here it named input fields that did not. Same class,
+// opposite direction, same silent failure.
+//
+// The check reads enumerated field lists out of the prose — the "requires X and
+// Y" / "optional A, B and C" shapes — and asserts each names a real argument.
+func TestMCP_DescriptionsDoNotPromiseAbsentArguments(t *testing.T) {
+	body, err := os.ReadFile("tools.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+
+	// json keys per input struct.
+	structs := map[string]map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?s)type (\w+) struct \{(.*?)\n\}`).FindAllStringSubmatch(src, -1) {
+		keys := map[string]bool{}
+		for _, k := range regexp.MustCompile(`json:"(\w+)`).FindAllStringSubmatch(m[2], -1) {
+			keys[strings.ToLower(k[1])] = true
+		}
+		structs[m[1]] = keys
+	}
+
+	// Phrases that name a field in prose, mapped to the argument they imply.
+	// Deliberately a short curated list: a general parser over English would
+	// produce false positives, and a check nobody trusts gets ignored.
+	implies := map[string][]string{
+		"job title":           {"job_title", "jobtitle"},
+		"employee id":         {"employee_id", "employeeid", "employeeidentifier"},
+		"employee identifier": {"employee_id", "employeeidentifier"},
+		"custom attributes":   {"attributes"},
+	}
+
+	toolPat := regexp.MustCompile(`addTypedTool\(s, "(\w+)", "((?:[^"\\]|\\.)*)",\s*\n\s*func\(ctx context\.Context, req \*mcp\.CallToolRequest, args (\w+)\)`)
+	for _, m := range toolPat.FindAllStringSubmatch(src, -1) {
+		tool, desc, st := m[1], strings.ToLower(m[2]), m[3]
+		args := structs[st]
+
+		// Only the part of the description that enumerates inputs. Prose
+		// elsewhere may legitimately mention a field as output.
+		enumerated := ""
+		for _, lead := range []string{"requires ", "optional "} {
+			if i := strings.Index(desc, lead); i >= 0 {
+				seg := desc[i:]
+				if j := strings.Index(seg, "."); j > 0 {
+					seg = seg[:j]
+				}
+				enumerated += " " + seg
+			}
+		}
+		if enumerated == "" {
+			continue
+		}
+
+		for phrase, names := range implies {
+			if !strings.Contains(enumerated, phrase) {
+				continue
+			}
+			ok := false
+			for _, n := range names {
+				if args[n] {
+					ok = true
+				}
+			}
+			if !ok {
+				t.Errorf("%s names %q where it enumerates its inputs, but accepts none of %v — "+
+					"a caller writes against a parameter that is silently ignored",
+					tool, phrase, names)
+			}
+		}
+	}
+}
