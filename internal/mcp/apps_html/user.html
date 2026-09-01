@@ -214,7 +214,9 @@
 
     var badgesEl = document.getElementById("badges");
     clear(badgesEl);
-    if (u.locked) {
+    // account_locked, not locked: users_get spells this fact that way and a
+    // caller reading the other name silently saw "not locked".
+    if (u.account_locked) {
       badgesEl.appendChild(el("span", { className: "badge locked", textContent: "Locked" }));
     } else if (u.suspended) {
       badgesEl.appendChild(el("span", { className: "badge suspend", textContent: "Suspended" }));

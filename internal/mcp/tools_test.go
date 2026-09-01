@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -1319,8 +1320,12 @@ func TestMCP_CommandsCreateTool_WindowsShell(t *testing.T) {
 	overrideV1ClientForTest(t, ts.URL)
 
 	cs := connectToolTestServer(t, Options{})
+	// execute:true — commands_create now plans by default, like every other
+	// write tool. This test is about what lands in the request body, so it
+	// needs the real call.
 	result := callTool(t, cs, "commands_create", map[string]any{
 		"name": "Win", "command": "Write-Output hi", "command_type": "windows",
+		"execute": true,
 	})
 	if result.IsError {
 		t.Fatalf("commands_create failed: %s", getResultText(t, result))
@@ -1480,8 +1485,15 @@ func TestMCP_PoliciesListTool(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		t.Fatalf("parse result: %v", err)
 	}
-	if res["total"] != float64(0) {
-		t.Errorf("expected total 0, got %v", res["total"])
+	// `returned` is the honest field: how many came back in this page.
+	// `total` is deliberately ABSENT here — the policies endpoint reports no
+	// grand total, and the envelope used to invent one by echoing len(data),
+	// which told a paging consumer "that is all of them" without knowing.
+	if res["returned"] != float64(0) {
+		t.Errorf("expected returned 0, got %v", res["returned"])
+	}
+	if _, present := res["total"]; present {
+		t.Errorf("total must be absent when the API reports none, got %v", res["total"])
 	}
 }
 
@@ -2013,33 +2025,16 @@ func TestMCP_MutatingToolsRequireAnExecuteArgument(t *testing.T) {
 	// Four were fixed when they were reported: apple_mdm_create (it provisions
 	// an MDM certificate), users_ssh_keys_add (an SSH key grants access),
 	// groups_user_create and user_states_create.
+	// Every mutating tool is now guarded. The list that used to sit here — 23
+	// tools that acted on call while 58 planned by default — is empty, and the
+	// two entries left are not writes.
 	allowed := map[string]string{
 		// Recipe running is itself a dry-run-capable dispatcher.
 		"recipe_run": "takes its own dry_run argument",
-
-		"access_requests_create":    "pre-existing: see the note above",
-		"ad_create":                 "pre-existing: see the note above",
-		"admins_create":             "pre-existing: see the note above",
-		"apps_create":               "pre-existing: see the note above",
-		"assets_accessories_create": "pre-existing: see the note above",
-		"assets_devices_create":     "pre-existing: see the note above",
-		"assets_locations_create":   "pre-existing: see the note above",
-		"auth_policies_create":      "pre-existing: see the note above",
-		"commands_create":           "pre-existing: see the note above",
-		"commands_trigger":          "pre-existing: see the note above",
-		"duo_app_create":            "pre-existing: see the note above",
-		"duo_create":                "pre-existing: see the note above",
-		"gsuite_import_users":       "pre-existing: see the note above",
-		"identity_providers_create": "pre-existing: see the note above",
-		"iplists_create":            "pre-existing: see the note above",
-		"ldap_create":               "pre-existing: see the note above",
-		"office365_import_users":    "pre-existing: see the note above",
-		"policies_create":           "pre-existing: see the note above",
-		"policy_groups_create":      "pre-existing: see the note above",
-		"radius_create":             "pre-existing: see the note above",
-		"saas_management_create":    "pre-existing: see the note above",
-		"software_create":           "pre-existing: see the note above",
-		"users_create":              "pre-existing: see the note above",
+		// Both are READS the name heuristic mistook for writes: each lists the
+		// users available to import, and imports nothing.
+		"gsuite_import_users":    "reads: lists importable users",
+		"office365_import_users": "reads: lists importable users",
 	}
 	var unexplained []string
 	for _, name := range missing {
@@ -2098,6 +2093,14 @@ func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
 			"user": "probe", "name": "k", "public_key": "ssh-rsa AAAA"}},
 		{"user_states_create", map[string]any{
 			"user": "probe", "state": "SUSPENDED", "start_date": "2026-12-01"}},
+
+		// The rest of the surface, guarded in the same pass. These are the
+		// ones where acting on call is worst: an administrator has console
+		// access, and a command trigger runs scripts on real devices.
+		{"users_create", map[string]any{"username": "probe2", "email": "p2@example.com"}},
+		{"admins_create", map[string]any{"email": "admin@example.com"}},
+		{"iplists_create", map[string]any{"name": "probe-list", "ips": []any{"10.0.0.1"}}},
+		{"policy_groups_create", map[string]any{"name": "probe-pg"}},
 	} {
 		writes = nil
 		out := getResultText(t, callTool(t, cs, c.tool, c.args))
@@ -2121,5 +2124,205 @@ func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
 				t.Errorf("%s: called without execute but issued %s", c.tool, wr)
 			}
 		}
+	}
+}
+
+// `total` must mean one thing, everywhere it appears.
+//
+// It used to mean two: 52 call sites passed len(data) — "how many I am handing
+// you" — and 13 passed the API's count — "how many exist". Two catalog tools
+// meant a third thing, the size of the whole corpus. Same key, no error when
+// read wrong, so a consumer paging on it looped correctly against users_list
+// and stopped early against groups_*: the tenant has at least 8 user groups
+// while groups_user_list(limit:2) reported total:2.
+//
+// The rule now: `returned` is this page, always. `total` is how many exist,
+// and is ABSENT when unknown. `catalog_size` is a corpus, and never called
+// total.
+func TestMCP_ListEnvelopeTotalMeansOneThing(t *testing.T) {
+	// A page whose grand total the API reported.
+	known := 42
+	res, _, err := listEnvelope([]json.RawMessage{[]byte(`{"id":"a"}`)}, &known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := decodeEnvelope(t, res)
+	if m["returned"] != float64(1) {
+		t.Errorf("returned = %v, want 1 (the length of this page)", m["returned"])
+	}
+	if m["total"] != float64(42) {
+		t.Errorf("total = %v, want the API's count", m["total"])
+	}
+
+	// A page whose grand total is unknown: `total` must be absent, not echoed
+	// back as the page length.
+	res, _, err = listEnvelope([]json.RawMessage{[]byte(`{"id":"a"}`), []byte(`{"id":"b"}`)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = decodeEnvelope(t, res)
+	if m["returned"] != float64(2) {
+		t.Errorf("returned = %v, want 2", m["returned"])
+	}
+	if v, present := m["total"]; present {
+		t.Errorf("total must be absent when unknown, got %v — echoing the page "+
+			"length tells a paging caller 'that is all of them' without knowing", v)
+	}
+
+	// An empty page still reports honestly rather than omitting the field.
+	res, _, err = listEnvelope(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = decodeEnvelope(t, res)
+	if m["returned"] != float64(0) {
+		t.Errorf("returned = %v on an empty page, want 0", m["returned"])
+	}
+	if _, ok := m["data"].([]any); !ok {
+		t.Errorf("data must be an empty array, not null: %v", m["data"])
+	}
+}
+
+// No list tool may report a self-referential total again. The helper that made
+// that possible is gone; this asserts nobody reintroduces the shape by hand.
+func TestMCP_NoToolEchoesPageLengthAsTotal(t *testing.T) {
+	srcs, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range srcs {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, rerr := os.ReadFile(f)
+		if rerr != nil {
+			continue
+		}
+		// rawListResult(x, len(x)) — the exact shape that made total a lie.
+		if m := regexp.MustCompile(`rawListResult\(\s*(\w[\w.]*)\s*,\s*len\(\s*(\w[\w.]*)\s*\)`).
+			FindAllStringSubmatch(string(body), -1); m != nil {
+			for _, hit := range m {
+				if hit[1] == hit[2] {
+					t.Errorf("%s: rawListResult(%s, len(%s)) reports the page length as a "+
+						"grand total — use rawListPage(%s)", f, hit[1], hit[2], hit[1])
+				}
+			}
+		}
+	}
+}
+
+func decodeEnvelope(t *testing.T, res *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(getResultText(t, res)), &m); err != nil {
+		t.Fatalf("envelope did not parse: %v", err)
+	}
+	return m
+}
+
+// A tool nobody can find is a tool that does not exist.
+//
+// An enumeration found eleven tools unreachable through tool_search —
+// users_create, devices_list, apple_mdm_get among them — while natural
+// phrasings returned neighbours instead. devices_get surfaced only when
+// queried with its own description almost verbatim.
+//
+// The cause was description length: those tools carried the shortest text on
+// the surface, several under 40 characters and saying nothing beyond their own
+// name ("Create a new JumpCloud user."). Search has nothing to match on but
+// the words present, so a description that restates the identifier competes
+// badly against one that mentions what the thing is called in practice.
+//
+// The bar here is deliberately low. It is a floor against descriptions that
+// carry no information, NOT a target: length is a proxy for "does this contain
+// the words someone would actually type", and padding one to clear the
+// threshold would defeat the point entirely.
+func TestMCP_ToolDescriptionsCarryMoreThanTheirOwnName(t *testing.T) {
+	const floor = 60
+
+	srcs, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pat := regexp.MustCompile(`addTypedTool\(s, "(\w+)", "((?:[^"\\]|\\.)*)"`)
+
+	type finding struct {
+		name string
+		n    int
+	}
+	var thin []finding
+	for _, f := range srcs {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, rerr := os.ReadFile(f)
+		if rerr != nil {
+			continue
+		}
+		for _, m := range pat.FindAllStringSubmatch(string(body), -1) {
+			if len(m[2]) < floor {
+				thin = append(thin, finding{m[1], len(m[2])})
+			}
+		}
+	}
+
+	// KNOWN DEBT. These predate the floor and each needs a rewrite by someone
+	// who knows what the tool actually does — padding one to clear a threshold
+	// would defeat the point, and a confident-sounding wrong description is
+	// worse for an agent than a terse true one. Listed so the debt is
+	// countable and so the set cannot GROW.
+	//
+	// 36 were rewritten when the discoverability problem was reported: the
+	// eleven named as unreachable, plus every description under 45 characters.
+	predating := map[string]string{
+		"access_requests_get":           "pre-existing: 55 chars",
+		"ad_create":                     "pre-existing: 52 chars",
+		"admins_get":                    "pre-existing: 52 chars",
+		"alerts_get":                    "pre-existing: 50 chars",
+		"app_templates_get":             "pre-existing: 50 chars",
+		"apple_mdm_devices":             "pre-existing: 52 chars",
+		"apple_mdm_enrollment_profiles": "pre-existing: 56 chars",
+		"apps_get":                      "pre-existing: 53 chars",
+		"auth_policies_get":             "pre-existing: 59 chars",
+		"commands_get":                  "pre-existing: 45 chars",
+		"custom_emails_get":             "pre-existing: 57 chars",
+		"duo_get":                       "pre-existing: 49 chars",
+		"groups_device_get":             "pre-existing: 59 chars",
+		"groups_user_get":               "pre-existing: 48 chars",
+		"gsuite_get":                    "pre-existing: 57 chars",
+		"gsuite_import_users":           "pre-existing: 49 chars",
+		"gsuite_list":                   "pre-existing: 59 chars",
+		"gsuite_translation_rules":      "pre-existing: 49 chars",
+		"health_rules_stats":            "pre-existing: 48 chars",
+		"identity_providers_get":        "pre-existing: 55 chars",
+		"iplists_get":                   "pre-existing: 45 chars",
+		"ldap_get":                      "pre-existing: 49 chars",
+		"ldap_samba_domain_get":         "pre-existing: 56 chars",
+		"ldap_samba_domains_list":       "pre-existing: 47 chars",
+		"notification_channels_get":     "pre-existing: 58 chars",
+		"office365_import_users":        "pre-existing: 53 chars",
+		"office365_translation_rules":   "pre-existing: 53 chars",
+		"org_settings":                  "pre-existing: 52 chars",
+		"password_policies_for_group":   "pre-existing: 58 chars",
+		"policies_create":               "pre-existing: 46 chars",
+		"saas_management_accounts":      "pre-existing: 58 chars",
+		"saas_management_catalog_get":   "pre-existing: 55 chars",
+		"saas_management_create":        "pre-existing: 51 chars",
+		"saas_management_licenses":      "pre-existing: 56 chars",
+		"saas_management_usage":         "pre-existing: 59 chars",
+		"saved_views_get":               "pre-existing: 48 chars",
+		"service_accounts_get":          "pre-existing: 53 chars",
+		"software_associations":         "pre-existing: 54 chars",
+		"software_get":                  "pre-existing: 50 chars",
+	}
+
+	sort.Slice(thin, func(i, j int) bool { return thin[i].n < thin[j].n })
+	for _, f := range thin {
+		if _, known := predating[f.name]; known {
+			continue
+		}
+		t.Errorf("%s: %d-char description — too thin to be found by search. "+
+			"Say what it is called in practice (an admin is not a user; a system is a machine, "+
+			"computer or laptop), and what it does NOT do.", f.name, f.n)
 	}
 }

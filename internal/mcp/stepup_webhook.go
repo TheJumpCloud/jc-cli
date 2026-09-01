@@ -79,11 +79,11 @@ type approvalVerdict struct {
 //     non-2xx, timeout, ctx cancelled, malformed verdict) all return
 //     errStepUpUnavailable or errStepUpDenied — never nil.
 type webhookStepUp struct {
-	webhookURL  string
-	httpClient  *http.Client
-	timeout     time.Duration
-	hmacKey     []byte // per-process random; binds token → envelope
-	profile     string
+	webhookURL string
+	httpClient *http.Client
+	timeout    time.Duration
+	hmacKey    []byte // per-process random; binds token → envelope
+	profile    string
 
 	mu       sync.Mutex
 	pending  map[string]*pendingApproval

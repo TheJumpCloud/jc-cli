@@ -20,16 +20,16 @@ import (
 // callback URL after a configurable delay. Drop-in stand-in for the
 // real receiver (Slack bot, internal approver app) in tests.
 type mockReceiver struct {
-	server          *httptest.Server
-	verdict         approvalVerdict
-	postVerdict     bool
-	verdictDelay    time.Duration
-	verdictMutator  func(envelope approvalEnvelope, body []byte) ([]byte, string) // override body + target URL
-	respondStatus   int
-	respondDelay    time.Duration
-	mu              sync.Mutex
-	envelopes       []approvalEnvelope
-	postErr         error
+	server         *httptest.Server
+	verdict        approvalVerdict
+	postVerdict    bool
+	verdictDelay   time.Duration
+	verdictMutator func(envelope approvalEnvelope, body []byte) ([]byte, string) // override body + target URL
+	respondStatus  int
+	respondDelay   time.Duration
+	mu             sync.Mutex
+	envelopes      []approvalEnvelope
+	postErr        error
 }
 
 func newMockReceiver() *mockReceiver {
