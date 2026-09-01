@@ -1319,8 +1319,12 @@ func TestMCP_CommandsCreateTool_WindowsShell(t *testing.T) {
 	overrideV1ClientForTest(t, ts.URL)
 
 	cs := connectToolTestServer(t, Options{})
+	// execute:true — commands_create now plans by default, like every other
+	// write tool. This test is about what lands in the request body, so it
+	// needs the real call.
 	result := callTool(t, cs, "commands_create", map[string]any{
 		"name": "Win", "command": "Write-Output hi", "command_type": "windows",
+		"execute": true,
 	})
 	if result.IsError {
 		t.Fatalf("commands_create failed: %s", getResultText(t, result))
@@ -2013,33 +2017,16 @@ func TestMCP_MutatingToolsRequireAnExecuteArgument(t *testing.T) {
 	// Four were fixed when they were reported: apple_mdm_create (it provisions
 	// an MDM certificate), users_ssh_keys_add (an SSH key grants access),
 	// groups_user_create and user_states_create.
+	// Every mutating tool is now guarded. The list that used to sit here — 23
+	// tools that acted on call while 58 planned by default — is empty, and the
+	// two entries left are not writes.
 	allowed := map[string]string{
 		// Recipe running is itself a dry-run-capable dispatcher.
 		"recipe_run": "takes its own dry_run argument",
-
-		"access_requests_create":    "pre-existing: see the note above",
-		"ad_create":                 "pre-existing: see the note above",
-		"admins_create":             "pre-existing: see the note above",
-		"apps_create":               "pre-existing: see the note above",
-		"assets_accessories_create": "pre-existing: see the note above",
-		"assets_devices_create":     "pre-existing: see the note above",
-		"assets_locations_create":   "pre-existing: see the note above",
-		"auth_policies_create":      "pre-existing: see the note above",
-		"commands_create":           "pre-existing: see the note above",
-		"commands_trigger":          "pre-existing: see the note above",
-		"duo_app_create":            "pre-existing: see the note above",
-		"duo_create":                "pre-existing: see the note above",
-		"gsuite_import_users":       "pre-existing: see the note above",
-		"identity_providers_create": "pre-existing: see the note above",
-		"iplists_create":            "pre-existing: see the note above",
-		"ldap_create":               "pre-existing: see the note above",
-		"office365_import_users":    "pre-existing: see the note above",
-		"policies_create":           "pre-existing: see the note above",
-		"policy_groups_create":      "pre-existing: see the note above",
-		"radius_create":             "pre-existing: see the note above",
-		"saas_management_create":    "pre-existing: see the note above",
-		"software_create":           "pre-existing: see the note above",
-		"users_create":              "pre-existing: see the note above",
+		// Both are READS the name heuristic mistook for writes: each lists the
+		// users available to import, and imports nothing.
+		"gsuite_import_users":    "reads: lists importable users",
+		"office365_import_users": "reads: lists importable users",
 	}
 	var unexplained []string
 	for _, name := range missing {
@@ -2098,6 +2085,14 @@ func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
 			"user": "probe", "name": "k", "public_key": "ssh-rsa AAAA"}},
 		{"user_states_create", map[string]any{
 			"user": "probe", "state": "SUSPENDED", "start_date": "2026-12-01"}},
+
+		// The rest of the surface, guarded in the same pass. These are the
+		// ones where acting on call is worst: an administrator has console
+		// access, and a command trigger runs scripts on real devices.
+		{"users_create", map[string]any{"username": "probe2", "email": "p2@example.com"}},
+		{"admins_create", map[string]any{"email": "admin@example.com"}},
+		{"iplists_create", map[string]any{"name": "probe-list", "ips": []any{"10.0.0.1"}}},
+		{"policy_groups_create", map[string]any{"name": "probe-pg"}},
 	} {
 		writes = nil
 		out := getResultText(t, callTool(t, cs, c.tool, c.args))

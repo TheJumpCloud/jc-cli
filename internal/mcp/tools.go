@@ -52,6 +52,7 @@ type userCreateInput struct {
 	Firstname  string `json:"firstname,omitempty" jsonschema:"First name"`
 	Lastname   string `json:"lastname,omitempty" jsonschema:"Last name"`
 	Department string `json:"department,omitempty" jsonschema:"Department"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the user. Without it a plan is returned."`
 }
 
 type userUpdateInput struct {
@@ -111,6 +112,7 @@ type authPolicyCreateInput struct {
 	Conditions string `json:"conditions,omitempty" jsonschema:"Conditions tree as raw JSON string"`
 	MFA        bool   `json:"mfa,omitempty" jsonschema:"Require MFA for this policy"`
 	Disabled   bool   `json:"disabled,omitempty" jsonschema:"Create in disabled state"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the authentication policy. Without it a plan is returned."`
 }
 
 type authPolicyUpdateInput struct {
@@ -138,6 +140,7 @@ type ipListCreateInput struct {
 	Name        string   `json:"name" jsonschema:"IP list name"`
 	Description string   `json:"description,omitempty" jsonschema:"IP list description"`
 	IPs         []string `json:"ips" jsonschema:"IP entries (single IPs, CIDR ranges, IP ranges)"`
+	Execute     bool     `json:"execute,omitempty" jsonschema:"Set true to actually create the IP list. Without it a plan is returned."`
 }
 
 type ipListUpdateInput struct {
@@ -154,6 +157,7 @@ type identityProviderCreateInput struct {
 	ClientID     string `json:"clientId" jsonschema:"OIDC client ID"`
 	ClientSecret string `json:"clientSecret" jsonschema:"OIDC client secret"`
 	URL          string `json:"url" jsonschema:"OIDC issuer URL"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the identity provider. Without it a plan is returned."`
 }
 
 type identityProviderUpdateInput struct {
@@ -170,6 +174,7 @@ type saasCreateInput struct {
 	CatalogAppID      string `json:"catalog_app_id" jsonschema:"Catalog application ID"`
 	Status            string `json:"status,omitempty" jsonschema:"Application status (APPROVED, UNAPPROVED, IGNORED)"`
 	AccessRestriction string `json:"access_restriction,omitempty" jsonschema:"Access restriction (DEFAULT_ACTION, NO_ACTION, BLOCK, DISMISSIBLE_WARNING)"`
+	Execute           bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SaaS application. Without it a plan is returned."`
 }
 
 type saasUpdateInput struct {
@@ -206,6 +211,7 @@ type accessRequestCreateInput struct {
 	Sudo         bool   `json:"sudo,omitempty" jsonschema:"Enable sudo access"`
 	SudoNoPasswd bool   `json:"sudo_nopasswd,omitempty" jsonschema:"Enable passwordless sudo"`
 	Remarks      string `json:"remarks,omitempty" jsonschema:"Optional remarks"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the access request. Without it a plan is returned."`
 }
 
 type accessRequestUpdateInput struct {
@@ -223,6 +229,7 @@ type accessRequestRevokeInput struct {
 type softwareCreateInput struct {
 	Name     string `json:"name" jsonschema:"Display name for the software app"`
 	Settings string `json:"settings,omitempty" jsonschema:"Package settings as raw JSON array"`
+	Execute  bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the software app. Without it a plan is returned."`
 }
 
 type softwareUpdateInput struct {
@@ -233,7 +240,8 @@ type softwareUpdateInput struct {
 }
 
 type assetCreateInput struct {
-	Fields map[string]string `json:"fields" jsonschema:"Field values as key-value pairs (e.g. Name, Serial Number, Status, Tag)"`
+	Fields  map[string]string `json:"fields" jsonschema:"Field values as key-value pairs (e.g. Name, Serial Number, Status, Tag)"`
+	Execute bool              `json:"execute,omitempty" jsonschema:"Set true to actually create the asset. Without it a plan is returned."`
 }
 
 type assetUpdateInput struct {
@@ -246,6 +254,7 @@ type ldapCreateInput struct {
 	Name                         string `json:"name" jsonschema:"LDAP server name"`
 	UserLockoutAction            string `json:"user_lockout_action,omitempty" jsonschema:"Action on user lockout"`
 	UserPasswordExpirationAction string `json:"user_password_expiration_action,omitempty" jsonschema:"Action on password expiration"`
+	Execute                      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the LDAP server. Without it a plan is returned."`
 }
 
 type ldapUpdateInput struct {
@@ -259,6 +268,7 @@ type ldapUpdateInput struct {
 type adCreateInput struct {
 	Domain  string `json:"domain" jsonschema:"Active Directory domain name"`
 	UseCase string `json:"use_case,omitempty" jsonschema:"Integration use case"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Active Directory integration. Without it a plan is returned."`
 }
 
 type adUpdateInput struct {
@@ -272,6 +282,7 @@ type adminCreateInput struct {
 	Email     string `json:"email" jsonschema:"Administrator email address"`
 	Role      string `json:"role,omitempty" jsonschema:"Admin role (e.g. Administrator, Manager, Read Only)"`
 	EnableMFA bool   `json:"enable_mfa,omitempty" jsonschema:"Enable multi-factor authentication"`
+	Execute   bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the administrator. Without it a plan is returned."`
 }
 
 type adminUpdateInput struct {
@@ -310,6 +321,7 @@ type commandCreateInput struct {
 	Command     string `json:"command" jsonschema:"Command body to execute"`
 	CommandType string `json:"command_type" jsonschema:"Command type: linux, mac, windows"`
 	Shell       string `json:"shell,omitempty" jsonschema:"Windows shell: powershell or cmd (windows commands only; defaults to powershell)"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the command. Without it a plan is returned."`
 }
 
 type commandUpdateInput struct {
@@ -331,6 +343,7 @@ type policyCreateInput struct {
 	Name       string `json:"name" jsonschema:"Policy name"`
 	TemplateID string `json:"template_id" jsonschema:"Policy template ID"`
 	Values     string `json:"values,omitempty" jsonschema:"Policy values as raw JSON object"`
+	Execute    bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the policy. Without it a plan is returned."`
 }
 
 type policyUpdateInput struct {
@@ -357,6 +370,7 @@ type appCreateInput struct {
 	Name    string `json:"name" jsonschema:"Application name"`
 	SsoType string `json:"sso_type,omitempty" jsonschema:"SSO type (e.g. saml, oidc, bookmark)"`
 	Config  string `json:"config,omitempty" jsonschema:"Application configuration as raw JSON"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
 }
 
 type appUpdateInput struct {
@@ -379,6 +393,7 @@ type radiusCreateInput struct {
 	SharedSecret   string `json:"shared_secret" jsonschema:"RADIUS shared secret"`
 	AuthPort       int    `json:"auth_port,omitempty" jsonschema:"Authentication port (default 1812)"`
 	AccountingPort int    `json:"accounting_port,omitempty" jsonschema:"Accounting port (default 1813)"`
+	Execute        bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the RADIUS server. Without it a plan is returned."`
 }
 
 type radiusUpdateInput struct {
@@ -406,6 +421,7 @@ type appleMDMUpdateInput struct {
 type policyGroupCreateInput struct {
 	Name        string `json:"name" jsonschema:"Policy group name"`
 	Description string `json:"description,omitempty" jsonschema:"Policy group description"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the policy group. Without it a plan is returned."`
 }
 
 type policyGroupUpdateInput struct {
@@ -444,13 +460,15 @@ type sshKeyDeleteInput struct {
 }
 
 type duoCreateInput struct {
-	Name string `json:"name" jsonschema:"Duo account name"`
+	Name    string `json:"name" jsonschema:"Duo account name"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Duo account. Without it a plan is returned."`
 }
 
 type duoAppCreateInput struct {
 	Account string `json:"account" jsonschema:"Duo account name or ID"`
 	Name    string `json:"name" jsonschema:"Duo application name"`
 	APIHost string `json:"api_host" jsonschema:"Duo API host"`
+	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the Duo application. Without it a plan is returned."`
 }
 
 type duoAppGetInput struct {
@@ -488,6 +506,7 @@ type graphBindInput struct {
 type commandTriggerInput struct {
 	TriggerName string `json:"trigger_name" jsonschema:"Name of the command trigger to fire"`
 	Data        string `json:"data,omitempty" jsonschema:"Optional JSON payload to send with the trigger"`
+	Execute     bool   `json:"execute,omitempty" jsonschema:"Set true to actually fire the command trigger. Without it a plan is returned."`
 }
 
 type customEmailTypeInput struct {
@@ -731,6 +750,9 @@ func (s *Server) registerUserTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "user", args.Username, "", body)
 			}
 			data, err := client.Create(ctx, "/systemusers", body)
 			if err != nil {
@@ -1748,6 +1770,9 @@ func (s *Server) registerCommandTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "command", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/commands", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating command: %v", err)), nil, nil
@@ -1902,6 +1927,9 @@ func (s *Server) registerCommandTools() {
 				}
 				body = parsed
 			}
+			if !args.Execute {
+				return planResult("fire", "command trigger", args.TriggerName, "", body)
+			}
 			result, err := client.Post(ctx, "/command/trigger/"+args.TriggerName, body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("triggering command: %v", err)), nil, nil
@@ -1968,6 +1996,9 @@ func (s *Server) registerPolicyTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "policy", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/policies", body)
 			if err != nil {
@@ -2125,6 +2156,9 @@ func (s *Server) registerAuthPolicyTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "authentication policy", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/authn/policies", body)
 			if err != nil {
@@ -2465,6 +2499,9 @@ func (s *Server) registerIPListTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "IP list", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/iplists", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating IP list: %v", err)), nil, nil
@@ -2590,6 +2627,9 @@ func (s *Server) registerIdentityProviderTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "identity provider", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/identity-providers", body)
 			if err != nil {
@@ -2733,6 +2773,9 @@ func (s *Server) registerSoftwareTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "software app", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/softwareapps", body)
 			if err != nil {
@@ -3125,6 +3168,9 @@ func (s *Server) registerLDAPTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "LDAP server", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/ldapservers", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating LDAP server: %v", err)), nil, nil
@@ -3393,6 +3439,9 @@ func (s *Server) registerADTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "Active Directory integration", args.Domain, "", body)
+			}
 			data, err := client.Create(ctx, "/activedirectories", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating Active Directory: %v", err)), nil, nil
@@ -3589,6 +3638,9 @@ func (s *Server) registerAdminTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "administrator", args.Email, "", body)
+			}
 			data, err := client.Create(ctx, "/users", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating admin: %v", err)), nil, nil
@@ -3711,6 +3763,9 @@ func (s *Server) registerAppsTools() {
 			client, err := newV1ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "SSO application", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/applications", body)
 			if err != nil {
@@ -4604,6 +4659,9 @@ func (s *Server) registerRADIUSTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "RADIUS server", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/radiusservers", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating RADIUS server: %v", err)), nil, nil
@@ -4914,6 +4972,9 @@ func (s *Server) registerPolicyGroupTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "policy group", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, "/policygroups", body)
 			if err != nil {
@@ -5265,6 +5326,9 @@ func (s *Server) registerDuoTools() {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
 			body := map[string]any{"name": args.Name}
+			if !args.Execute {
+				return planResult("create", "Duo account", args.Name, "", body)
+			}
 			data, err := client.Create(ctx, "/duo/accounts", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating Duo account: %v", err)), nil, nil
@@ -5353,6 +5417,9 @@ func (s *Server) registerDuoTools() {
 			body := map[string]any{
 				"name":    args.Name,
 				"apiHost": args.APIHost,
+			}
+			if !args.Execute {
+				return planResult("create", "Duo application", args.Name, "", body)
 			}
 			data, err := client.Create(ctx, fmt.Sprintf("/duo/accounts/%s/applications", accountID), body)
 			if err != nil {
@@ -5654,6 +5721,9 @@ func (s *Server) registerSaaSManagementTools() {
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
+			if !args.Execute {
+				return planResult("create", "SaaS application", args.CatalogAppID, "", body)
+			}
 			data, err := client.Create(ctx, "/saas-management/applications", body)
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating SaaS application: %v", err)), nil, nil
@@ -5919,6 +5989,9 @@ func (s *Server) registerAccessRequestsTools() {
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating V2 API client: %v", err)), nil, nil
+			}
+			if !args.Execute {
+				return planResult("create", "access request", args.User, "", body)
 			}
 			data, err := client.Create(ctx, "/accessrequests", body)
 			if err != nil {
