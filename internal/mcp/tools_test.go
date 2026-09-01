@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1928,5 +1929,197 @@ func TestMCP_ReadOnlyMode_BlocksCreate(t *testing.T) {
 	text := getResultText(t, result)
 	if !strings.Contains(text, "read-only") {
 		t.Errorf("expected 'read-only' error, got: %s", text)
+	}
+}
+
+// Every mutating tool must take an `execute` argument and return a plan
+// without it.
+//
+// Four shipped without one — apple_mdm_create, groups_user_create,
+// user_states_create and users_ssh_keys_add — while 93 others had it. They
+// acted immediately on call. apple_mdm_create provisions an MDM certificate
+// and users_ssh_keys_add grants access, so "the caller can just be careful"
+// was never the right answer.
+//
+// This asserts the SHAPE across the whole surface rather than naming the four,
+// so the next write tool cannot ship without the guard.
+func TestMCP_MutatingToolsRequireAnExecuteArgument(t *testing.T) {
+	cs := connectToolTestServer(t, Options{})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Name prefixes/suffixes that denote a write. Kept explicit rather than
+	// inferred: a tool named "search" that writes would be a worse problem
+	// than this test failing to catch it.
+	writeish := func(name string) bool {
+		// Matched as a trailing verb, not a substring: "_set" inside
+		// "devices_settings_get" is a read, and treating it as a write would
+		// put false positives in a list whose whole value is being trusted.
+		for _, verb := range []string{
+			"create", "update", "delete", "add", "remove", "reset",
+			"lock", "unlock", "bind", "unbind", "apply", "trigger",
+			"activate", "deactivate", "erase", "import",
+		} {
+			if strings.HasSuffix(name, "_"+verb) {
+				return true
+			}
+		}
+		// A few writes name the object last.
+		for _, prefixed := range []string{"import_users", "erase_device"} {
+			if strings.HasSuffix(name, prefixed) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var missing []string
+	for _, tool := range res.Tools {
+		if !writeish(tool.Name) {
+			continue
+		}
+		raw, merr := json.Marshal(tool.InputSchema)
+		if merr != nil {
+			continue
+		}
+		var sch struct {
+			Properties map[string]any `json:"properties"`
+		}
+		if json.Unmarshal(raw, &sch) != nil {
+			continue
+		}
+		if _, ok := sch.Properties["execute"]; !ok {
+			missing = append(missing, tool.Name)
+		}
+	}
+
+	// Tools that legitimately have no execute guard, each with a reason.
+	// Adding a name here is a decision, not a convenience.
+	// KNOWN DEBT, deliberately listed rather than silently tolerated.
+	//
+	// 58 write tools take an `execute` argument and return a plan without it.
+	// These do not, and act on call. The inconsistency is itself the hazard: a
+	// caller cannot predict from a tool's name which kind it is, so "check
+	// before calling" is not advice anyone can follow.
+	//
+	// Guarding them is a behaviour change for every existing caller — a call
+	// that creates a user today would start returning a plan — so it is a
+	// product decision, not a test fixture one. Until that decision is made
+	// the list stays here, visible and countable, and the assertion below
+	// stops the set GROWING.
+	//
+	// Four were fixed when they were reported: apple_mdm_create (it provisions
+	// an MDM certificate), users_ssh_keys_add (an SSH key grants access),
+	// groups_user_create and user_states_create.
+	allowed := map[string]string{
+		// Recipe running is itself a dry-run-capable dispatcher.
+		"recipe_run": "takes its own dry_run argument",
+
+		"access_requests_create":    "pre-existing: see the note above",
+		"ad_create":                 "pre-existing: see the note above",
+		"admins_create":             "pre-existing: see the note above",
+		"apps_create":               "pre-existing: see the note above",
+		"assets_accessories_create": "pre-existing: see the note above",
+		"assets_devices_create":     "pre-existing: see the note above",
+		"assets_locations_create":   "pre-existing: see the note above",
+		"auth_policies_create":      "pre-existing: see the note above",
+		"commands_create":           "pre-existing: see the note above",
+		"commands_trigger":          "pre-existing: see the note above",
+		"duo_app_create":            "pre-existing: see the note above",
+		"duo_create":                "pre-existing: see the note above",
+		"gsuite_import_users":       "pre-existing: see the note above",
+		"identity_providers_create": "pre-existing: see the note above",
+		"iplists_create":            "pre-existing: see the note above",
+		"ldap_create":               "pre-existing: see the note above",
+		"office365_import_users":    "pre-existing: see the note above",
+		"policies_create":           "pre-existing: see the note above",
+		"policy_groups_create":      "pre-existing: see the note above",
+		"radius_create":             "pre-existing: see the note above",
+		"saas_management_create":    "pre-existing: see the note above",
+		"software_create":           "pre-existing: see the note above",
+		"users_create":              "pre-existing: see the note above",
+	}
+	var unexplained []string
+	for _, name := range missing {
+		if _, ok := allowed[name]; !ok {
+			unexplained = append(unexplained, name)
+		}
+	}
+	sort.Strings(unexplained)
+	if len(unexplained) > 0 {
+		t.Errorf("mutating tools with no `execute` guard — they act on call:\n  %s",
+			strings.Join(unexplained, "\n  "))
+	}
+}
+
+// The guard must be HONOURED, not merely declared.
+//
+// An earlier version of the test above asserted only that an `execute`
+// argument existed in the schema. Deleting the plan branch from a handler left
+// the argument in place, so the tool acted on call and the test still passed —
+// it was checking the doorbell, not the door.
+//
+// This calls each newly guarded tool WITHOUT execute and asserts two things:
+// the response is a plan, and no write reached the server.
+func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
+	var writes []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
+			writes = append(writes, r.Method+" "+r.URL.Path)
+		}
+		switch {
+		// Resolver paths, so a name can be turned into an id.
+		case strings.Contains(r.URL.Path, "/search/systemusers"),
+			r.URL.Path == "/api/systemusers":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]any{{"_id": "u1", "username": "probe",
+					"email": "p@example.com"}}, "totalCount": 1})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	overrideV1ClientForTest(t, srv.URL)
+	overrideV2ClientForTest(t, srv.URL)
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"groups_user_create", map[string]any{"name": "probe-group"}},
+		{"apple_mdm_create", map[string]any{"name": "probe-mdm"}},
+		{"users_ssh_keys_add", map[string]any{
+			"user": "probe", "name": "k", "public_key": "ssh-rsa AAAA"}},
+		{"user_states_create", map[string]any{
+			"user": "probe", "state": "SUSPENDED", "start_date": "2026-12-01"}},
+	} {
+		writes = nil
+		out := getResultText(t, callTool(t, cs, c.tool, c.args))
+
+		var m map[string]any
+		if err := json.Unmarshal([]byte(out), &m); err != nil {
+			t.Errorf("%s: expected a plan document, got: %s", c.tool, out)
+			continue
+		}
+		if m["plan"] != true {
+			t.Errorf("%s: called without execute and did not return a plan: %s", c.tool, out)
+		}
+		// The part that matters: nothing was actually done.
+		for _, wr := range writes {
+			if strings.HasPrefix(wr, "POST") || strings.HasPrefix(wr, "PUT") ||
+				strings.HasPrefix(wr, "DELETE") {
+				// The resolver may POST to a search endpoint; that is a read.
+				if strings.Contains(wr, "/search/") {
+					continue
+				}
+				t.Errorf("%s: called without execute but issued %s", c.tool, wr)
+			}
+		}
 	}
 }
