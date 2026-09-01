@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -2121,5 +2122,112 @@ func TestMCP_ExecuteGuardsAreHonouredNotJustDeclared(t *testing.T) {
 				t.Errorf("%s: called without execute but issued %s", c.tool, wr)
 			}
 		}
+	}
+}
+
+// A tool nobody can find is a tool that does not exist.
+//
+// An enumeration found eleven tools unreachable through tool_search —
+// users_create, devices_list, apple_mdm_get among them — while natural
+// phrasings returned neighbours instead. devices_get surfaced only when
+// queried with its own description almost verbatim.
+//
+// The cause was description length: those tools carried the shortest text on
+// the surface, several under 40 characters and saying nothing beyond their own
+// name ("Create a new JumpCloud user."). Search has nothing to match on but
+// the words present, so a description that restates the identifier competes
+// badly against one that mentions what the thing is called in practice.
+//
+// The bar here is deliberately low. It is a floor against descriptions that
+// carry no information, NOT a target: length is a proxy for "does this contain
+// the words someone would actually type", and padding one to clear the
+// threshold would defeat the point entirely.
+func TestMCP_ToolDescriptionsCarryMoreThanTheirOwnName(t *testing.T) {
+	const floor = 60
+
+	srcs, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pat := regexp.MustCompile(`addTypedTool\(s, "(\w+)", "((?:[^"\\]|\\.)*)"`)
+
+	type finding struct {
+		name string
+		n    int
+	}
+	var thin []finding
+	for _, f := range srcs {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		body, rerr := os.ReadFile(f)
+		if rerr != nil {
+			continue
+		}
+		for _, m := range pat.FindAllStringSubmatch(string(body), -1) {
+			if len(m[2]) < floor {
+				thin = append(thin, finding{m[1], len(m[2])})
+			}
+		}
+	}
+
+	// KNOWN DEBT. These predate the floor and each needs a rewrite by someone
+	// who knows what the tool actually does — padding one to clear a threshold
+	// would defeat the point, and a confident-sounding wrong description is
+	// worse for an agent than a terse true one. Listed so the debt is
+	// countable and so the set cannot GROW.
+	//
+	// 36 were rewritten when the discoverability problem was reported: the
+	// eleven named as unreachable, plus every description under 45 characters.
+	predating := map[string]string{
+		"access_requests_get":           "pre-existing: 55 chars",
+		"ad_create":                     "pre-existing: 52 chars",
+		"admins_get":                    "pre-existing: 52 chars",
+		"alerts_get":                    "pre-existing: 50 chars",
+		"app_templates_get":             "pre-existing: 50 chars",
+		"apple_mdm_devices":             "pre-existing: 52 chars",
+		"apple_mdm_enrollment_profiles": "pre-existing: 56 chars",
+		"apps_get":                      "pre-existing: 53 chars",
+		"auth_policies_get":             "pre-existing: 59 chars",
+		"commands_get":                  "pre-existing: 45 chars",
+		"custom_emails_get":             "pre-existing: 57 chars",
+		"duo_get":                       "pre-existing: 49 chars",
+		"groups_device_get":             "pre-existing: 59 chars",
+		"groups_user_get":               "pre-existing: 48 chars",
+		"gsuite_get":                    "pre-existing: 57 chars",
+		"gsuite_import_users":           "pre-existing: 49 chars",
+		"gsuite_list":                   "pre-existing: 59 chars",
+		"gsuite_translation_rules":      "pre-existing: 49 chars",
+		"health_rules_stats":            "pre-existing: 48 chars",
+		"identity_providers_get":        "pre-existing: 55 chars",
+		"iplists_get":                   "pre-existing: 45 chars",
+		"ldap_get":                      "pre-existing: 49 chars",
+		"ldap_samba_domain_get":         "pre-existing: 56 chars",
+		"ldap_samba_domains_list":       "pre-existing: 47 chars",
+		"notification_channels_get":     "pre-existing: 58 chars",
+		"office365_import_users":        "pre-existing: 53 chars",
+		"office365_translation_rules":   "pre-existing: 53 chars",
+		"org_settings":                  "pre-existing: 52 chars",
+		"password_policies_for_group":   "pre-existing: 58 chars",
+		"policies_create":               "pre-existing: 46 chars",
+		"saas_management_accounts":      "pre-existing: 58 chars",
+		"saas_management_catalog_get":   "pre-existing: 55 chars",
+		"saas_management_create":        "pre-existing: 51 chars",
+		"saas_management_licenses":      "pre-existing: 56 chars",
+		"saas_management_usage":         "pre-existing: 59 chars",
+		"saved_views_get":               "pre-existing: 48 chars",
+		"service_accounts_get":          "pre-existing: 53 chars",
+		"software_associations":         "pre-existing: 54 chars",
+		"software_get":                  "pre-existing: 50 chars",
+	}
+
+	sort.Slice(thin, func(i, j int) bool { return thin[i].n < thin[j].n })
+	for _, f := range thin {
+		if _, known := predating[f.name]; known {
+			continue
+		}
+		t.Errorf("%s: %d-char description — too thin to be found by search. "+
+			"Say what it is called in practice (an admin is not a user; a system is a machine, "+
+			"computer or laptop), and what it does NOT do.", f.name, f.n)
 	}
 }

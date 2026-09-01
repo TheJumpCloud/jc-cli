@@ -710,7 +710,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_create", "Create a new JumpCloud user. Requires username and email.",
+	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname, department, job title, employee id and attributes. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -740,7 +740,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_update", "Update a JumpCloud user's fields. Set execute=true to apply changes; otherwise returns a plan.",
+	addTypedTool(s, "users_update", "Change an existing JumpCloud user — edit their profile, rename them, move them to another department, correct an email, set or clear custom attributes. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan of what would change.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -783,7 +783,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_delete", "Delete a JumpCloud user. Set execute=true to delete; otherwise returns a plan. This is destructive and irreversible.",
+	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, use users_lock or a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -918,7 +918,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_ssh_keys_list", "List SSH keys for a JumpCloud user.",
+	addTypedTool(s, "users_ssh_keys_list", "List a JumpCloud user's SSH public keys — the keys granting them key-based login on the Linux devices they are bound to.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -936,7 +936,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_ssh_keys_add", "Add an SSH key to a JumpCloud user. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "users_ssh_keys_add", "Add an SSH public key to a JumpCloud user — grants them key-based login on every Linux device they are bound to. Note this GRANTS ACCESS. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args sshKeyAddInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -990,7 +990,7 @@ func (s *Server) registerUserTools() {
 }
 
 func (s *Server) registerDeviceTools() {
-	addTypedTool(s, "devices_list", "List all JumpCloud devices (systems). Returns device objects with fields like displayName, hostname, os, osVersion, lastContact, agentVersion.",
+	addTypedTool(s, "devices_list", "List the JumpCloud device fleet — every machine, computer, laptop, desktop or server (JumpCloud calls them systems) enrolled in the org. Use this for inventory, fleet-wide reporting, or finding a machine when you do not know its hostname. Returns full device objects including displayName, hostname, os, osVersion, serialNumber, lastContact and agentVersion.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1044,7 +1044,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_update", "Update settings on an existing JumpCloud device. Set execute=true to apply changes; otherwise returns a plan.",
+	addTypedTool(s, "devices_update", "Change an enrolled JumpCloud device (system) — rename it, set its display name, adjust its settings. Only the fields you pass are changed. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args deviceUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1087,7 +1087,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_delete", "Delete a JumpCloud device. Set execute=true to delete; otherwise returns a plan. This is destructive and irreversible.",
+	addTypedTool(s, "devices_delete", "Remove a device (system) from JumpCloud — decommission, retire, unenroll or wipe a machine from the directory. This is DESTRUCTIVE: the device record and its bindings are removed, and the agent stops being managed. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1246,7 +1246,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_user_create", "Create a new JumpCloud user group. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "groups_user_create", "Create a user group — a collection of people used to grant application access, assign policies, or scope permissions. Distinct from a DEVICE group; see groups_device_create for machines. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1368,7 +1368,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_device_create", "Create a new JumpCloud device (system) group.",
+	addTypedTool(s, "groups_device_create", "Create a device group (JumpCloud calls it a system group) — a collection of machines, computers or laptops used to target policies, commands and software. Distinct from a USER group; see groups_user_create for people.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1423,7 +1423,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_device_delete", "Delete a JumpCloud device (system) group. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "groups_device_delete", "Delete a device group (system group) — the group of machines itself, not the devices in it. Members are unaffected and stay enrolled. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1718,7 +1718,7 @@ func (s *Server) registerCommandTools() {
 		},
 	)
 
-	addTypedTool(s, "commands_create", "Create a new JumpCloud command.",
+	addTypedTool(s, "commands_create", "Create a JumpCloud command — a script (bash, PowerShell, Windows batch) that can be run on enrolled devices, on a schedule or on demand. Creating it does not run it; use commands_trigger for that.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args commandCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1930,7 +1930,7 @@ func (s *Server) registerPolicyTools() {
 		},
 	)
 
-	addTypedTool(s, "policies_get", "Get a single JumpCloud policy by name or ID.",
+	addTypedTool(s, "policies_get", "Get one JumpCloud policy by name or ID — a device configuration setting (screen lock, FileVault, firewall, password rules) applied to Macs, Windows or Linux machines.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -3107,7 +3107,7 @@ func (s *Server) registerLDAPTools() {
 		},
 	)
 
-	addTypedTool(s, "ldap_create", "Create a new JumpCloud LDAP server.",
+	addTypedTool(s, "ldap_create", "Create a JumpCloud LDAP server — the hosted LDAP directory endpoint that legacy apps and appliances can bind against.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args ldapCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -3474,7 +3474,7 @@ func (s *Server) registerOrgTools() {
 		},
 	)
 
-	addTypedTool(s, "org_get", "Get a JumpCloud organization by ID.",
+	addTypedTool(s, "org_get", "Get a JumpCloud organization by ID — the tenant's own settings, name, and identifier. Most API keys see exactly one org.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -3571,7 +3571,7 @@ func (s *Server) registerAdminTools() {
 		},
 	)
 
-	addTypedTool(s, "admins_create", "Create a new JumpCloud administrator.",
+	addTypedTool(s, "admins_create", "Create a JumpCloud administrator — grant someone console access, add an admin, invite an IT teammate. Distinct from a directory USER: an administrator manages JumpCloud itself. The new admin is emailed an invitation.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args adminCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -3690,7 +3690,7 @@ func (s *Server) registerAppsTools() {
 		},
 	)
 
-	addTypedTool(s, "apps_create", "Create a new JumpCloud SSO application.",
+	addTypedTool(s, "apps_create", "Create a JumpCloud SSO application — add a SAML or OIDC app, connect a SaaS tool for single sign-on. See app_templates for the catalog of preconfigured connectors.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4567,7 +4567,7 @@ func (s *Server) registerRADIUSTools() {
 		},
 	)
 
-	addTypedTool(s, "radius_get", "Get a single RADIUS server by name or ID.",
+	addTypedTool(s, "radius_get", "Get one RADIUS server by name or ID — its network address, shared secret configuration and MFA setting.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -4585,7 +4585,7 @@ func (s *Server) registerRADIUSTools() {
 		},
 	)
 
-	addTypedTool(s, "radius_create", "Create a new RADIUS server.",
+	addTypedTool(s, "radius_create", "Create a RADIUS server — the endpoint network gear and Wi-Fi access points authenticate users against.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args radiusCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4693,7 +4693,7 @@ func (s *Server) registerPolicyTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "policy_templates_get", "Get a single policy template by ID.",
+	addTypedTool(s, "policy_templates_get", "Get one policy template by ID — the schema for a device policy, listing every configField it accepts and their types. Read this before creating a policy of that kind.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4709,7 +4709,7 @@ func (s *Server) registerPolicyTemplateTools() {
 }
 
 func (s *Server) registerAppleMDMTools() {
-	addTypedTool(s, "apple_mdm_list", "List all Apple MDM configurations.",
+	addTypedTool(s, "apple_mdm_list", "List the org's Apple MDM configurations — the APNs push certificate setup that lets JumpCloud manage Macs, iPhones and iPads. Covers Apple Business Manager / ABM and Automated Device Enrollment / DEP linkage. Most orgs have zero or one.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4723,7 +4723,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_get", "Get an Apple MDM configuration by name or ID.",
+	addTypedTool(s, "apple_mdm_get", "Get one Apple MDM configuration by name or ID — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM/DEP) linkage.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4744,7 +4744,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_create", "Create a new Apple MDM configuration. Set execute=true to apply; otherwise returns a plan. This provisions an MDM certificate.",
+	addTypedTool(s, "apple_mdm_create", "Create an Apple MDM configuration — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, and the basis for Apple Business Manager (ABM) and Automated Device Enrollment (DEP). Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4800,7 +4800,7 @@ func (s *Server) registerAppleMDMTools() {
 		},
 	)
 
-	addTypedTool(s, "apple_mdm_delete", "Delete an Apple MDM configuration. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "apple_mdm_delete", "Delete an Apple MDM configuration — removes the APNs push certificate that manages Macs, iPhones and iPads. DESTRUCTIVE: every Apple device enrolled through it stops being managed, and re-enrolment needs a new certificate from Apple. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4883,7 +4883,7 @@ func (s *Server) registerPolicyGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "policy_groups_get", "Get a single policy group by name or ID.",
+	addTypedTool(s, "policy_groups_get", "Get one policy group by name or ID — the bundle of device policies and what it contains.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4902,7 +4902,7 @@ func (s *Server) registerPolicyGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "policy_groups_create", "Create a new policy group.",
+	addTypedTool(s, "policy_groups_create", "Create a policy group — a bundle of device policies applied together, so a set of configuration lands on a machine as one unit.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args policyGroupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4982,7 +4982,7 @@ func (s *Server) registerPolicyGroupTools() {
 }
 
 func (s *Server) registerUserStateTools() {
-	addTypedTool(s, "user_states_list", "List all scheduled user state changes.",
+	addTypedTool(s, "user_states_list", "List scheduled user state changes — pending suspensions and reactivations, with the dates they take effect. Useful for finding an offboarding already queued.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -4996,7 +4996,7 @@ func (s *Server) registerUserStateTools() {
 		},
 	)
 
-	addTypedTool(s, "user_states_get", "Get a scheduled user state change by ID.",
+	addTypedTool(s, "user_states_get", "Get one scheduled user state change by ID — a pending suspension or reactivation and the date it applies.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5145,7 +5145,7 @@ func (s *Server) registerGsuiteTools() {
 }
 
 func (s *Server) registerOffice365Tools() {
-	addTypedTool(s, "office365_list", "List all JumpCloud Office 365 integrations.",
+	addTypedTool(s, "office365_list", "List the org's Office 365 / Microsoft 365 integrations — the tenants JumpCloud syncs users into for Entra ID and Exchange.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5222,7 +5222,7 @@ func (s *Server) registerOffice365Tools() {
 }
 
 func (s *Server) registerDuoTools() {
-	addTypedTool(s, "duo_list", "List all JumpCloud Duo accounts.",
+	addTypedTool(s, "duo_list", "List the org's Duo Security accounts — the connected Duo tenants available as multi-factor providers.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5255,7 +5255,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_create", "Create a new JumpCloud Duo account.",
+	addTypedTool(s, "duo_create", "Create a JumpCloud Duo account — connects a Duo Security tenant so Duo can be used as an MFA factor.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -5298,7 +5298,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_apps", "List Duo applications for a Duo account.",
+	addTypedTool(s, "duo_apps", "List the Duo applications configured under a Duo account — the multi-factor integrations JumpCloud can send prompts through.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5317,7 +5317,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_app_get", "Get a specific Duo application.",
+	addTypedTool(s, "duo_app_get", "Get one Duo application by ID — the MFA integration configuration inside a Duo account.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppGetInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -5336,7 +5336,7 @@ func (s *Server) registerDuoTools() {
 		},
 	)
 
-	addTypedTool(s, "duo_app_create", "Create a Duo application for a Duo account.",
+	addTypedTool(s, "duo_app_create", "Create a Duo application inside a Duo account — the integration JumpCloud uses to send Duo multi-factor prompts.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args duoAppCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -6472,7 +6472,7 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "roles_get", "Get a single JumpCloud role by name or ID.",
+	addTypedTool(s, "roles_get", "Get one JumpCloud administrator role by name or ID, including its full scope list — the API permissions it grants. This is what decides whether an unattended workflow or service account can call a given endpoint.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -6790,7 +6790,7 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "alerts_stats", "Get JumpCloud alert count statistics.",
+	addTypedTool(s, "alerts_stats", "Get counts of JumpCloud alerts by state and severity — how many are open, acknowledged or resolved. A dashboard summary rather than the alerts themselves; use alerts_list for the individual records.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
