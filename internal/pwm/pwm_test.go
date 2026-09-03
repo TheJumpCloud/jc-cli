@@ -2,6 +2,7 @@ package pwm
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -96,13 +97,13 @@ func TestFindUser_ByWhatSomeoneTypes(t *testing.T) {
 		"juergen@klaassen.consulting",
 		"Juergen Klaassen",
 	} {
-		if _, ok := FindUser(users, id); !ok {
-			t.Errorf("FindUser(%q) found nothing", id)
+		if _, err := FindUser(users, id); err != nil {
+			t.Errorf("FindUser(%q): %v", id, err)
 		}
 	}
 	// A JumpCloud id is NOT a PWM id and must not match by accident — it
 	// resolves only through the bridge, with the directory consulted.
-	if _, ok := FindUser(users, "608b8cf181c10b3303716501"); ok {
+	if _, err := FindUser(users, "608b8cf181c10b3303716501"); err == nil {
 		t.Error("a JumpCloud id must not resolve directly; it goes through FindUserByExternalID")
 	}
 }
@@ -156,8 +157,8 @@ func TestFolder_IdentityAcrossSpellings(t *testing.T) {
 	if len(folders) != 1 || folders[0].Identity() == "" {
 		t.Fatalf("parsed %+v", folders)
 	}
-	if _, ok := FindFolder(folders, "zz-pwm-probe-folder"); !ok {
-		t.Error("a folder should resolve by name")
+	if _, err := FindFolder(folders, "zz-pwm-probe-folder"); err != nil {
+		t.Errorf("a folder should resolve by name: %v", err)
 	}
 }
 
@@ -210,5 +211,80 @@ func TestParseUsers_ReportsUndecodableRecords(t *testing.T) {
 	}
 	if len(users[0].Groups) != 1 || users[0].Groups[0].Name != "PWM Users" {
 		t.Errorf("groups did not decode: %+v", users[0].Groups)
+	}
+}
+
+// The defect a verification pass found: two shared folders with the same
+// name, and "who can see this folder" answered about one of them with no
+// warning at all. The count happened to be right on that tenant, which is
+// what made it dangerous — the silence was the defect, not the number.
+func TestFindFolder_DuplicateNamesAreReportedNotGuessed(t *testing.T) {
+	folders := []Folder{
+		{ID: "f83faec9-45e6-4986-994e-d6748d2bc06f", Name: "zz-pwm-probe-folder"},
+		{ID: "c35b3898-296c-4c83-97f7-5e0d9f8322ab", Name: "zz-pwm-probe-folder"},
+	}
+	f, err := FindFolder(folders, "zz-pwm-probe-folder")
+	if err == nil {
+		t.Fatalf("two folders share that name and one was returned anyway (%s) — "+
+			"an access review would be answered about an arbitrary half of the answer",
+			f.Identity())
+	}
+	var amb *AmbiguousError
+	if !errors.As(err, &amb) {
+		t.Fatalf("want *AmbiguousError, got %T: %v", err, err)
+	}
+	if len(amb.Candidates) != 2 {
+		t.Fatalf("want 2 candidates, got %d", len(amb.Candidates))
+	}
+	// The message has to carry the IDs, or the operator cannot act on it:
+	// the API cannot delete a shared folder, so renaming away the clash is
+	// not available and addressing one by ID is the only way forward.
+	for _, want := range []string{"f83faec9", "c35b3898", "ambiguous"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message missing %q: %s", want, err)
+		}
+	}
+}
+
+// Ambiguity must not swallow the deliberate precedence in FindUser: an
+// exact username match SHOULD beat someone whose display name collides.
+// Treating that as ambiguous would break resolution for a normal tenant.
+func TestFindUser_TierPrecedenceIsNotAmbiguity(t *testing.T) {
+	users := []User{
+		{ID: "11111111-1111-1111-1111-111111111111", Username: "ada", Name: "Ada Lovelace"},
+		{ID: "22222222-2222-2222-2222-222222222222", Username: "grace", Name: "ada"},
+	}
+	u, err := FindUser(users, "ada")
+	if err != nil {
+		t.Fatalf("a username match must win over a display-name match: %v", err)
+	}
+	if u.Username != "ada" {
+		t.Errorf("resolved to %q, want the username match", u.Username)
+	}
+}
+
+// But a genuine clash inside one tier is still ambiguous.
+func TestFindUser_DuplicateWithinOneTierIsAmbiguous(t *testing.T) {
+	users := []User{
+		{ID: "11111111-1111-1111-1111-111111111111", Username: "ada", Email: "ada@x.io"},
+		{ID: "22222222-2222-2222-2222-222222222222", Username: "ada", Email: "ada@y.io"},
+	}
+	if _, err := FindUser(users, "ada"); err == nil {
+		t.Fatal("two users share that username and one was returned anyway")
+	}
+}
+
+// ErrNoMatch has to stay distinguishable from ambiguity: ResolveUser
+// treats it as "try the directory next", and an ambiguous name must not
+// take that path and come back with a confident answer from elsewhere.
+func TestFindUser_NoMatchIsNotAmbiguity(t *testing.T) {
+	users := []User{{ID: "11111111-1111-1111-1111-111111111111", Username: "ada"}}
+	_, err := FindUser(users, "nobody")
+	if !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("want ErrNoMatch, got %v", err)
+	}
+	var amb *AmbiguousError
+	if errors.As(err, &amb) {
+		t.Error("a miss must not present as ambiguity")
 	}
 }

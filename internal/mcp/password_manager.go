@@ -102,13 +102,13 @@ func pwmResolveFolder(ctx context.Context, identifier string) (string, error) {
 }
 
 func (s *Server) registerPasswordManagerTools() {
-	addTypedTool(s, "password_manager_overview", "Org-wide summary of JumpCloud Password Manager, the credential vault: how many people and groups are enrolled, how many shared folders and stored passwords exist, and the hygiene numbers — weak, old and reused credentials plus an overall score. Start here to answer 'how healthy is our vault' or 'is anyone actually using Password Manager'. Returns a bare object, not a list envelope.",
+	addTypedTool(s, "password_manager_overview", "Org-wide health summary of JumpCloud Password Manager, the credential vault: total counts of enrolled people and groups, shared folders and stored passwords, plus the hygiene numbers — weak, old and reused credentials and an overall score. Aggregate totals only; it names nobody. Start here for how healthy the vault is. Returns a bare object, not a list envelope.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			return pwmRead(ctx, pwm.OverviewEndpoint, "the Password Manager overview")
 		},
 	)
 
-	addTypedTool(s, "password_manager_users_list", "Everyone enrolled in the Password Manager vault, with each person's stored-item count, credential-hygiene score and weak or ageing credential counts. Enrolment is NOT the same as having a JumpCloud account — a directory user who never opened the vault does not appear here at all, so this is the list to check before concluding someone is using it. Each record carries externalId, which is the only link back to the directory.",
+	addTypedTool(s, "password_manager_users_list", "Who is using Password Manager: the named people enrolled in the vault, one row each, with their stored-item count, credential-hygiene score and weak or ageing credential counts. Use this to find out who is actually on it and who is not. Enrolment is NOT the same as having a JumpCloud account — a directory user who never opened the vault does not appear here at all. Each record carries externalId, the only link back to the directory.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			return pwmReadList(ctx, pwm.UsersEndpoint, "Password Manager users")
 		},

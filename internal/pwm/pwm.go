@@ -9,6 +9,7 @@ package pwm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -234,46 +235,44 @@ func FindUserByExternalID(users []User, jcUserID string) (User, bool) {
 // The directory bridge is deliberately NOT done here — it needs an API client,
 // and this package stays free of one so the three surfaces share the matching
 // rules rather than reimplementing them.
-func FindUser(users []User, identifier string) (User, bool) {
+func FindUser(users []User, identifier string) (User, error) {
 	if IsID(identifier) {
 		for _, u := range users {
 			if u.ID == identifier {
-				return u, true
+				return u, nil
 			}
 		}
-		return User{}, false
+		return User{}, ErrNoMatch
 	}
 	want := strings.ToLower(identifier)
-	for _, u := range users {
-		if strings.ToLower(u.Username) == want || strings.ToLower(u.Email) == want {
-			return u, true
-		}
+
+	// Username and email are checked before display name, and that
+	// precedence is deliberate rather than ambiguity: an exact username
+	// match SHOULD beat someone whose display name happens to collide.
+	// Ambiguity is only ambiguity within one tier.
+	if u, err := oneOf(users, "user", identifier, func(u User) bool {
+		return strings.ToLower(u.Username) == want || strings.ToLower(u.Email) == want
+	}, func(u User) (string, string) { return u.Username, u.ID }); err != ErrNoMatch {
+		return u, err
 	}
-	for _, u := range users {
-		if strings.ToLower(u.Name) == want {
-			return u, true
-		}
-	}
-	return User{}, false
+	return oneOf(users, "user", identifier, func(u User) bool {
+		return strings.ToLower(u.Name) == want
+	}, func(u User) (string, string) { return u.Name, u.ID })
 }
 
-// FindGroup resolves a Password Manager group by id or name.
-func FindGroup(groups []Group, identifier string) (Group, bool) {
+func FindGroup(groups []Group, identifier string) (Group, error) {
 	if IsID(identifier) {
 		for _, g := range groups {
 			if g.ID == identifier {
-				return g, true
+				return g, nil
 			}
 		}
-		return Group{}, false
+		return Group{}, ErrNoMatch
 	}
 	want := strings.ToLower(identifier)
-	for _, g := range groups {
-		if strings.ToLower(g.Name) == want {
-			return g, true
-		}
-	}
-	return Group{}, false
+	return oneOf(groups, "group", identifier, func(g Group) bool {
+		return strings.ToLower(g.Name) == want
+	}, func(g Group) (string, string) { return g.Name, g.ID })
 }
 
 // Folder is a Password Manager shared folder as the LIST returns it.
@@ -318,22 +317,19 @@ func ParseFolders(raw json.RawMessage) ([]Folder, error) {
 }
 
 // FindFolder resolves a shared folder by id or name.
-func FindFolder(folders []Folder, identifier string) (Folder, bool) {
+func FindFolder(folders []Folder, identifier string) (Folder, error) {
 	if IsID(identifier) {
 		for _, f := range folders {
 			if f.Identity() == identifier {
-				return f, true
+				return f, nil
 			}
 		}
-		return Folder{}, false
+		return Folder{}, ErrNoMatch
 	}
 	want := strings.ToLower(identifier)
-	for _, f := range folders {
-		if strings.ToLower(f.Name) == want {
-			return f, true
-		}
-	}
-	return Folder{}, false
+	return oneOf(folders, "shared folder", identifier, func(f Folder) bool {
+		return strings.ToLower(f.Name) == want
+	}, func(f Folder) (string, string) { return f.Name, f.Identity() })
 }
 
 // ─── resolution ────────────────────────────────────────────────────
@@ -384,8 +380,14 @@ func ResolveUser(ctx context.Context, get Fetcher, resolveDirectory DirectoryRes
 		return User{}, err
 	}
 
-	if u, ok := FindUser(users, identifier); ok {
+	// An ambiguous name stops here rather than falling through to the
+	// directory. Guessing which of two matching records was meant is the
+	// failure this reports; trying a different lookup would only hide it.
+	switch u, ferr := FindUser(users, identifier); {
+	case ferr == nil:
 		return u, nil
+	case !errors.Is(ferr, ErrNoMatch):
+		return User{}, ferr
 	}
 
 	jcID := identifier
@@ -420,9 +422,12 @@ func ResolveFolder(ctx context.Context, get Fetcher, identifier string) (string,
 	if err != nil {
 		return "", err
 	}
-	f, ok := FindFolder(folders, identifier)
-	if !ok {
+	f, ferr := FindFolder(folders, identifier)
+	if errors.Is(ferr, ErrNoMatch) {
 		return "", fmt.Errorf("no shared folder %q (%d exist)", identifier, len(folders))
+	}
+	if ferr != nil {
+		return "", ferr
 	}
 	return f.Identity(), nil
 }
@@ -437,5 +442,66 @@ func enrolledCount(n int) string {
 		return "1 person is enrolled"
 	default:
 		return fmt.Sprintf("%d people are enrolled", n)
+	}
+}
+
+// ─── ambiguity ─────────────────────────────────────────────────────
+
+// ErrNoMatch means nothing in the list matched. It is a normal outcome,
+// not a fault: ResolveUser treats it as "try the directory next".
+var ErrNoMatch = errors.New("no match")
+
+// AmbiguousError means a name matched more than one record.
+//
+// It exists because "who can see this folder?" is an access-review
+// question, and answering it about one arbitrary folder of two — with no
+// warning — is a confidently wrong answer to a question about who can
+// read credentials. Shared folders make this permanent rather than
+// transient: the API creates them and cannot delete them, so two folders
+// with the same name stay that way.
+type AmbiguousError struct {
+	Kind       string
+	Identifier string
+	Candidates []Candidate
+}
+
+// Candidate is one record a name matched.
+type Candidate struct {
+	Name string
+	ID   string
+}
+
+func (e *AmbiguousError) Error() string {
+	lines := make([]string, len(e.Candidates))
+	for i, c := range e.Candidates {
+		lines[i] = "  " + c.Name + " (" + c.ID + ")"
+	}
+	return fmt.Sprintf("%s %q is ambiguous — it matches %d records:\n%s\n"+
+		"Pass one of the IDs above instead of the name.",
+		e.Kind, e.Identifier, len(e.Candidates), strings.Join(lines, "\n"))
+}
+
+// oneOf returns the single record matching pred, ErrNoMatch if none do,
+// or an *AmbiguousError naming every candidate if several do.
+func oneOf[T any](items []T, kind, identifier string, pred func(T) bool, describe func(T) (name, id string)) (T, error) {
+	var found []T
+	for _, it := range items {
+		if pred(it) {
+			found = append(found, it)
+		}
+	}
+	var zero T
+	switch len(found) {
+	case 0:
+		return zero, ErrNoMatch
+	case 1:
+		return found[0], nil
+	default:
+		cands := make([]Candidate, len(found))
+		for i, it := range found {
+			n, id := describe(it)
+			cands[i] = Candidate{Name: n, ID: id}
+		}
+		return zero, &AmbiguousError{Kind: kind, Identifier: identifier, Candidates: cands}
 	}
 }
