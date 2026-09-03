@@ -2407,3 +2407,170 @@ func TestMCP_DescriptionsDoNotPromiseAbsentArguments(t *testing.T) {
 		}
 	}
 }
+
+// Sibling tools must not describe themselves almost identically.
+//
+// A verification pass found two tools unreachable by natural phrasing even
+// though their text was correct. users_delete says "remove a leaver" verbatim
+// and still lost "remove a user who left" to groups_remove_member; apple_mdm_list
+// lost to apple_mdm_create. Neither is a missing-words problem — it is a
+// DISCRIMINATION problem.
+//
+// The mechanism was visible in the text. apple_mdm_list and apple_mdm_create
+// shared about twenty tokens of identical boilerplate, so the one word that
+// distinguished them competed against twenty that did not. Pairs doing opposite
+// things were worse: users_lock and users_unlock differed by a single character
+// in otherwise identical sentences.
+//
+// Note this pulls against TestMCP_DescriptionsDoNotNameOtherTools, deliberately:
+// the easy way to make two tools read differently is to have each name the
+// other, and that turned out to move queries between them. The difference has
+// to come from describing each tool's own effect instead. That constraint is
+// the useful part — it forces a real description rather than a signpost.
+//
+// This is a floor on how alike two tools in one family may read. It is a proxy
+// — search ranking is not vocabulary overlap — but the pairs it catches are
+// genuinely ones a caller could be handed the wrong half of, and the fix that
+// clears it (say what the tool does NOT do, and name its counterpart) is worth
+// making regardless.
+func TestMCP_SiblingToolsAreDistinguishable(t *testing.T) {
+	body, err := os.ReadFile("tools.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pat := regexp.MustCompile(`addTypedTool\(s, "(\w+)", "((?:[^"\\]|\\.)*)"`)
+	type tool struct{ name, desc string }
+	var tools []tool
+	for _, m := range pat.FindAllStringSubmatch(string(body), -1) {
+		tools = append(tools, tool{m[1], m[2]})
+	}
+
+	words := func(d string) map[string]bool {
+		out := map[string]bool{}
+		for _, w := range strings.Fields(strings.ToLower(d)) {
+			w = strings.Trim(w, ".,—:;()`\"")
+			if len(w) > 3 {
+				out[w] = true
+			}
+		}
+		return out
+	}
+
+	// Pairs that do OPPOSITE things are the ones worth failing on: being handed
+	// the wrong half is a mistake, not an inconvenience.
+	opposites := [][2]string{
+		{"users_lock", "users_unlock"},
+		{"custom_emails_create", "custom_emails_delete"},
+		{"auth_policies_delete", "auth_policies_disable"},
+		{"apple_mdm_list", "apple_mdm_create"},
+		{"groups_remove_member", "users_delete"},
+	}
+	byName := map[string]string{}
+	for _, tl := range tools {
+		byName[tl.name] = tl.desc
+	}
+
+	const ceiling = 0.60
+	for _, pair := range opposites {
+		a, b := byName[pair[0]], byName[pair[1]]
+		if a == "" || b == "" {
+			t.Errorf("pair %v: a tool is missing", pair)
+			continue
+		}
+		wa, wb := words(a), words(b)
+		shared := 0
+		for w := range wa {
+			if wb[w] {
+				shared++
+			}
+		}
+		// Containment, not Jaccard: what fraction of the SHORTER description
+		// is also in the longer one. Jaccard lets a stub sibling pass simply
+		// because its counterpart is verbose — which is precisely the case
+		// here, where one tool was rewritten richly and the other left as a
+		// one-liner. Containment asks the question that matters: is this tool
+		// wholly describable in its sibling's words?
+		smaller := len(wa)
+		if len(wb) < smaller {
+			smaller = len(wb)
+		}
+		if smaller == 0 {
+			continue
+		}
+		if j := float64(shared) / float64(smaller); j > ceiling {
+			t.Errorf("%s and %s do opposite things, but %.0f%% of the shorter description's "+
+				"words appear in the other — describe each tool's own distinct effect. Note the "+
+				"constraint these two tests impose together: you may NOT create the difference "+
+				"by naming the counterpart, because that moves its queries onto this tool "+
+				"(see TestMCP_DescriptionsDoNotNameOtherTools). The difference has to come "+
+				"from what the tool itself does.",
+				pair[0], pair[1], j*100)
+		}
+	}
+}
+
+// A tool's description must not name another tool.
+//
+// This reverses advice I gave and shipped, on evidence that it backfired.
+//
+// Making siblings distinguishable, I wrote cross-references like "see
+// users_delete to remove the person, groups_remove_member to revoke one group's
+// access". Accurate, useful to a human — and it moved the REFERENCED tool's
+// queries onto the REFERRING one. users_lock then ranked first for both "remove
+// a user who left" and "revoke someone's access to one group", with the tool
+// that should have won absent from the results entirely.
+//
+// The index cannot tell a description of the tool from a description of its
+// alternatives. Worse, the bare identifier is enough on its own: users_unlock
+// saying "the exact inverse of users_lock" made it outrank users_lock on "lock
+// a user", because unlock's text contained that literal token and lock's did
+// not repeat its own name.
+//
+// So the rule is the strict one: describe what THIS tool does, including what
+// it does not do, without naming another tool. Pointing a caller onward is
+// still worth doing — it belongs in a result or an error message, where it does
+// not enter the index.
+func TestMCP_DescriptionsDoNotNameOtherTools(t *testing.T) {
+	body, err := os.ReadFile("tools.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	pat := regexp.MustCompile(`addTypedTool\(s, "(\w+)", "((?:[^"\\]|\\.)*)"`)
+
+	type entry struct{ name, desc string }
+	var tools []entry
+	names := map[string]bool{}
+	for _, m := range pat.FindAllStringSubmatch(src, -1) {
+		tools = append(tools, entry{m[1], m[2]})
+		names[m[1]] = true
+	}
+	if len(tools) < 100 {
+		t.Fatalf("only %d tools parsed — the pattern probably broke", len(tools))
+	}
+
+	// Tools whose whole purpose is to point at another, where naming it is the
+	// content rather than a cross-reference.
+	exempt := map[string]bool{
+		"recipe_run": true, // dispatches to other operations by name
+		"jc_ping":    true,
+		"jc_whoami":  true,
+	}
+
+	for _, tl := range tools {
+		if exempt[tl.name] {
+			continue
+		}
+		for other := range names {
+			if other == tl.name || len(other) < 8 {
+				continue
+			}
+			if strings.Contains(tl.desc, other) {
+				t.Errorf("%s names %s in its description — the index cannot tell a description "+
+					"of this tool from one of its alternative, and the reference moves %s's "+
+					"queries onto %s. Say what this tool does instead; put the pointer in a "+
+					"result or error message.", tl.name, other, other, tl.name)
+			}
+		}
+	}
+}

@@ -711,7 +711,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_get", "Get a single JumpCloud user by username or ID. Returns the full user object, and is AUTHORITATIVE for one user: users_search hits a different endpoint with a narrower projection and omits fields this returns, among them recoveryEmail and admin. Every field the two share holds the same value, so the difference is invisible to a value comparison — check here, not there, when a field is missing. CAUTION on `admin`: this returns an empty object for a non-admin while users_search omits the key entirely, so testing whether the key is PRESENT gives a different answer per tool for the same user. Read admin.id / admin.roleName instead; presence proves nothing.",
+	addTypedTool(s, "users_get", "Get a single JumpCloud user by username or ID. Returns the full user object, and is AUTHORITATIVE for one user: A keyword search hits a different endpoint with a narrower projection and omits fields this returns, among them recoveryEmail and admin. Every field the two share holds the same value, so the difference is invisible to a value comparison — check this tool, not a keyword search, when a field is missing. CAUTION on `admin`: this returns an empty object for a non-admin while a keyword search omits the key entirely, so testing whether the key is PRESENT gives a different answer per tool for the same user. Read admin.id / admin.roleName instead; presence proves nothing.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -729,7 +729,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname and department. Job title, employee identifier and custom attributes exist on the user object but are NOT settable here — set them with users_update, or read them from users_get. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
+	addTypedTool(s, "users_create", "Create a new JumpCloud user account — onboard a new hire, provision an employee, add a person to the directory. Requires username and email; optional firstname, lastname and department. Job title, employee identifier and custom attributes exist on the user object but are NOT settable at creation — apply them in a follow-up update, or read them back from the user record. The created user is unactivated until they set a password, so creating one does not by itself grant access.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args userCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -805,7 +805,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, use users_lock or a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, lock the account or schedule a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -829,7 +829,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_lock", "Lock a JumpCloud user account. Set execute=true to lock; otherwise returns a plan.",
+	addTypedTool(s, "users_lock", "Lock a JumpCloud user account — blocks sign-in immediately while leaving the account, its groups and its bindings intact. Reversible. Locking is not deletion and not a group change: the account and every membership continue to exist. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -853,7 +853,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_unlock", "Unlock a JumpCloud user account. Set execute=true to unlock; otherwise returns a plan.",
+	addTypedTool(s, "users_unlock", "Unlock a JumpCloud user account, restoring its ability to sign in after it was locked. It does not activate an account that never set a password, and does not clear a multi-factor lockout. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -925,7 +925,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_search", "Search for JumpCloud users by keyword across username, email, firstname, lastname. This is a narrower projection than users_get, not the same object: it omits fields users_get returns (recoveryEmail, admin among them), and it omits `admin` entirely for a non-admin where users_get returns an empty object — so testing key presence gives a different answer per tool. Read admin.id / admin.roleName rather than checking whether the key exists, and use users_get when you need the complete user. Field sets also vary BETWEEN RECORDS of one response, since the API omits empty values per record: one user may carry public_key while the next does not. Do not infer a schema from the first record.",
+	addTypedTool(s, "users_search", "Search for JumpCloud users by keyword across username, email, firstname, lastname. This is a narrower projection than fetching one user by id, not the same object: it omits fields a single-user fetch returns (recoveryEmail, admin among them), and it omits `admin` entirely for a non-admin where that fetch returns an empty object — so testing key presence gives a different answer per tool. Read admin.id / admin.roleName rather than checking whether the key exists, and fetch the single user by id when you need the complete object. Field sets also vary BETWEEN RECORDS of one response, since the API omits empty values per record: one user may carry public_key while the next does not. Do not infer a schema from the first record.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1030,7 +1030,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object. NOTE on userMetrics: this endpoint returns the SHORT form — 5 keys per record (userName, admin, managed, suspended, secureTokenEnabled). lastLogin and lastPasswordChange are ABSENT here and present in devices_search, which returns 13 keys for the same field on the same device. Reading userMetrics[0].lastLogin here yields undefined, not an error, so use devices_search when you need login or password timestamps. Both shapes come from JumpCloud; jc passes each through unchanged rather than inventing the missing keys.",
+	addTypedTool(s, "devices_get", "Get a single JumpCloud device by hostname or ID. Returns the full device object. NOTE on userMetrics: this endpoint returns the SHORT form — 5 keys per record (userName, admin, managed, suspended, secureTokenEnabled). lastLogin and lastPasswordChange are ABSENT here and present when the same device is returned by a keyword search, which returns 13 keys for the same field on the same device. Reading userMetrics[0].lastLogin here yields undefined, not an error, so use a keyword search when you need login or password timestamps. Both shapes come from JumpCloud; jc passes each through unchanged rather than inventing the missing keys.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1133,7 +1133,7 @@ func (s *Server) registerDeviceTools() {
 		},
 	)
 
-	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber. NOTE on userMetrics: this endpoint returns the LONG form — 13 keys per record, a superset of what devices_get returns, adding lastLogin, lastPasswordChange, isFDEUser, userNameHash, collectionTime, creationTime, secureTokenPwEnteredTime and userPasswordSavedSakTime. devices_get returns only 5 for the same field on the same device, so code written against one shape breaks silently against the other. Field sets vary BETWEEN RECORDS of one response: one device may carry domainInfo.domainSid and lack mdm.internal while the next is the reverse, and primarySystemUser is an object on one record and null on another. Do not infer a schema from the first record.",
+	addTypedTool(s, "devices_search", "Search for JumpCloud devices by keyword across hostname, displayName, os, serialNumber. NOTE on userMetrics: this endpoint returns the LONG form — 13 keys per record, a superset of what a single-device fetch returns, adding lastLogin, lastPasswordChange, isFDEUser, userNameHash, collectionTime, creationTime, secureTokenPwEnteredTime and userPasswordSavedSakTime. fetching one device by id returns only 5 for the same field on the same device, so code written against one shape breaks silently against the other. Field sets vary BETWEEN RECORDS of one response: one device may carry domainInfo.domainSid and lack mdm.internal while the next is the reverse, and primarySystemUser is an object on one record and null on another. Do not infer a schema from the first record.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args searchInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -1223,7 +1223,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_remove_member", "Remove a user or device from a group. Set execute=true to remove; otherwise returns a plan.",
+	addTypedTool(s, "groups_remove_member", "Remove a user or device FROM A GROUP — revokes what that group grants, and nothing else. The member itself is untouched: it keeps existing, keeps its other groups, and can still sign in. Group membership only; the account is not affected. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args membershipInput) (*mcp.CallToolResult, any, error) {
 			return s.runMembershipTool(ctx, args, "remove")
 		},
@@ -1268,7 +1268,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_user_create", "Create a user group — a collection of people used to grant application access, assign policies, or scope permissions. Distinct from a DEVICE group; see groups_device_create for machines. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "groups_user_create", "Create a user group — a collection of people used to grant application access, assign policies, or scope permissions. Distinct from a DEVICE group, which collects machines rather than people. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1390,7 +1390,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_device_create", "Create a device group (JumpCloud calls it a system group) — a collection of machines, computers or laptops used to target policies, commands and software. Distinct from a USER group; see groups_user_create for people.",
+	addTypedTool(s, "groups_device_create", "Create a device group (JumpCloud calls it a system group) — a collection of machines, computers or laptops used to target policies, commands and software. Distinct from a USER group, which collects people rather than machines.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args groupCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1740,7 +1740,7 @@ func (s *Server) registerCommandTools() {
 		},
 	)
 
-	addTypedTool(s, "commands_create", "Create a JumpCloud command — a script (bash, PowerShell, Windows batch) that can be run on enrolled devices, on a schedule or on demand. Creating it does not run it; use commands_trigger for that.",
+	addTypedTool(s, "commands_create", "Create a JumpCloud command — a script (bash, PowerShell, Windows batch) that can be run on enrolled devices, on a schedule or on demand. Creating it does not run it — running is a separate operation.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args commandCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -2207,7 +2207,7 @@ func (s *Server) registerAuthPolicyTools() {
 		},
 	)
 
-	addTypedTool(s, "auth_policies_delete", "Delete a JumpCloud authentication policy. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "auth_policies_delete", "Delete an authentication policy permanently — the rule is destroyed and cannot be switched back on. Irreversible. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -2419,7 +2419,7 @@ func (s *Server) registerAuthPolicyTools() {
 		},
 	)
 
-	addTypedTool(s, "auth_policies_disable", "Disable a JumpCloud authentication policy. Set execute=true to disable; otherwise returns a plan.",
+	addTypedTool(s, "auth_policies_disable", "Turn an authentication policy off while keeping it — it stops applying but survives and can be switched back on later. Reversible. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -4811,7 +4811,7 @@ func (s *Server) registerPolicyTemplateTools() {
 }
 
 func (s *Server) registerAppleMDMTools() {
-	addTypedTool(s, "apple_mdm_list", "List the org's Apple MDM configurations — the APNs push certificate setup that lets JumpCloud manage Macs, iPhones and iPads. Covers Apple Business Manager / ABM and Automated Device Enrollment / DEP linkage. Most orgs have zero or one.",
+	addTypedTool(s, "apple_mdm_list", "Do we have Apple MDM set up? Lists the org's existing Apple MDM configurations — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM / DEP) linkage. A read: it changes nothing, and most orgs have zero or one.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -6129,7 +6129,7 @@ func (s *Server) registerCustomEmailTools() {
 		},
 	)
 
-	addTypedTool(s, "custom_emails_create", "Create a custom email configuration. Set execute=true to create; otherwise returns a plan.",
+	addTypedTool(s, "custom_emails_create", "Create a custom email template so JumpCloud sends your own wording in place of its built-in text for one notification type — a user invitation, a password reset, a device enrolment prompt. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailCreateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -6200,7 +6200,7 @@ func (s *Server) registerCustomEmailTools() {
 		},
 	)
 
-	addTypedTool(s, "custom_emails_delete", "Delete a custom email configuration. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "custom_emails_delete", "Discard a customised email override, so that notification falls back to JumpCloud's built-in text. Messages keep going out; only your replacement wording is dropped. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailDeleteInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -6907,7 +6907,7 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "alerts_stats", "Get counts of JumpCloud alerts by state and severity — how many are open, acknowledged or resolved. A dashboard summary rather than the alerts themselves; use alerts_list for the individual records.",
+	addTypedTool(s, "alerts_stats", "Get counts of JumpCloud alerts by state and severity — how many are open, acknowledged or resolved. A dashboard summary rather than the alerts themselves; list the alerts themselves for the individual records.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
@@ -7209,7 +7209,7 @@ func (s *Server) registerAppTemplateTools() {
 		},
 	)
 
-	addTypedTool(s, "health_rules_update", "Update a JumpCloud health-monitoring rule from a raw rule object supplied as rule_json (a body from health_rules_get round-trips). Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "health_rules_update", "Update a JumpCloud health-monitoring rule from a raw rule object supplied as rule_json (a body read from the matching get operation round-trips). Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args healthRuleUpdateInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
