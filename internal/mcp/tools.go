@@ -576,9 +576,9 @@ type insightsDistinctInput struct {
 // registerTools adds MCP tools to the server.
 func (s *Server) registerTools() {
 	// ping: A simple health-check tool.
-	s.addTool("jc_ping", "Check if the JC MCP server is running and authenticated",
+	s.addTool("jc_ping", "Check that the JC MCP server is running and authenticated, and report exactly which build is answering — version plus the git commit it was built from, and whether that working tree was dirty. Worth calling first when verifying a change: a report written against a stale binary looks identical to one written against the intended build.",
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-			return textResult(fmt.Sprintf("jc MCP server v%s is running", version.Number)), nil, nil
+			return textResult(fmt.Sprintf("jc MCP server %s is running", version.Describe())), nil, nil
 		},
 	)
 
