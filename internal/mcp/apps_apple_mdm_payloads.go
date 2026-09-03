@@ -300,7 +300,7 @@ func (s *Server) registerAppleMDMPayloadsTools() {
 	addToolWithMetaTyped(s, "apple_mdm_payloads_search",
 		"Search Apple's MDM Configuration Profile schema catalog (vendored from github.com/apple/device-management, MIT-licensed, Release-v26.4). "+
 			"Use this to map a natural-language MDM intent ('disable AirDrop on iPads', 'enforce FileVault on Macs') to candidate Apple PayloadTypes. "+
-			"Returns up to 125 trimmed-down entries; pair with apple_mdm_payloads_show to fetch the full schema for one.",
+			"Returns trimmed-down entries: catalog_size is how many payloads the catalog holds, matched how many passed the filters, returned how many are in this response. Those are three different numbers — do not read catalog_size as a result count. Pair with apple_mdm_payloads_show to fetch the full schema for one.",
 		nil,
 		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMPayloadsSearchInput) (*mcp.CallToolResult, any, error) {
 			cat, err := apple_mdm.Default()
