@@ -2,15 +2,14 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 )
 
 // All checks register in init() — keeping them in one file makes the
 // catalog auditable at a glance. Add a new check by:
-//   1. Writing a check function: func checkXxx(ctx, *Data) ([]Finding, error)
-//   2. Registering it in init() with a unique kebab-case ID and category.
+//  1. Writing a check function: func checkXxx(ctx, *Data) ([]Finding, error)
+//  2. Registering it in init() with a unique kebab-case ID and category.
 //
 // Severity is set per-finding (a single check may emit findings at
 // different severities — e.g. admin-mfa-coverage is CRITICAL if any
@@ -108,15 +107,15 @@ func checkAdminsWithoutMFA(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("admins fetch unavailable")
 	}
 	var findings []Finding
-	for _, raw := range d.Admins {
+	for i, raw := range d.Admins {
 		var a struct {
 			ID                string `json:"_id"`
 			Email             string `json:"email"`
 			EnableMultiFactor bool   `json:"enableMultiFactor"`
 			TotpEnrolled      bool   `json:"totpEnrolled"`
 		}
-		if err := json.Unmarshal(raw, &a); err != nil {
-			continue
+		if err := decodeRecord("admins-without-mfa", "admin", i, len(d.Admins), raw, &a); err != nil {
+			return nil, err
 		}
 		if a.EnableMultiFactor && a.TotpEnrolled {
 			continue
@@ -139,7 +138,7 @@ func checkUsersWithoutMFA(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("users fetch unavailable")
 	}
 	var findings []Finding
-	for _, raw := range d.Users {
+	for i, raw := range d.Users {
 		var u struct {
 			ID            string `json:"_id"`
 			Username      string `json:"username"`
@@ -152,8 +151,8 @@ func checkUsersWithoutMFA(_ context.Context, d *Data) ([]Finding, error) {
 				Configured bool `json:"configured"`
 			} `json:"mfa"`
 		}
-		if err := json.Unmarshal(raw, &u); err != nil {
-			continue
+		if err := decodeRecord("users-without-mfa", "user", i, len(d.Users), raw, &u); err != nil {
+			return nil, err
 		}
 		// Only flag active users — a locked/suspended user without MFA
 		// isn't an attack surface. Mirrors the compliance_view scoping.
@@ -181,15 +180,15 @@ func checkSuspendedNotLocked(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("users fetch unavailable")
 	}
 	var findings []Finding
-	for _, raw := range d.Users {
+	for i, raw := range d.Users {
 		var u struct {
 			ID            string `json:"_id"`
 			Username      string `json:"username"`
 			Suspended     bool   `json:"suspended"`
 			AccountLocked bool   `json:"account_locked"`
 		}
-		if err := json.Unmarshal(raw, &u); err != nil {
-			continue
+		if err := decodeRecord("suspended-not-locked", "user", i, len(d.Users), raw, &u); err != nil {
+			return nil, err
 		}
 		if !u.Suspended || u.AccountLocked {
 			continue
@@ -212,14 +211,14 @@ func checkEmptyIPLists(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("ip lists fetch unavailable")
 	}
 	var findings []Finding
-	for _, raw := range d.IPLists {
+	for i, raw := range d.IPLists {
 		var l struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 			IPs  []any  `json:"ips"`
 		}
-		if err := json.Unmarshal(raw, &l); err != nil {
-			continue
+		if err := decodeRecord("iplists-empty", "IP list", i, len(d.IPLists), raw, &l); err != nil {
+			return nil, err
 		}
 		if len(l.IPs) > 0 {
 			continue
@@ -244,7 +243,7 @@ func checkMFAAdoptionRate(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("users fetch unavailable")
 	}
 	total, enrolled := 0, 0
-	for _, raw := range d.Users {
+	for i, raw := range d.Users {
 		var u struct {
 			Activated     bool `json:"activated"`
 			Suspended     bool `json:"suspended"`
@@ -254,8 +253,8 @@ func checkMFAAdoptionRate(_ context.Context, d *Data) ([]Finding, error) {
 				Configured bool `json:"configured"`
 			} `json:"mfa"`
 		}
-		if err := json.Unmarshal(raw, &u); err != nil {
-			continue
+		if err := decodeRecord("mfa-adoption-rate", "user", i, len(d.Users), raw, &u); err != nil {
+			return nil, err
 		}
 		if !u.Activated || u.Suspended || u.AccountLocked {
 			continue
@@ -305,13 +304,13 @@ func checkAdminMFACoverage(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("admins fetch unavailable")
 	}
 	total, mfa := 0, 0
-	for _, raw := range d.Admins {
+	for i, raw := range d.Admins {
 		var a struct {
 			EnableMultiFactor bool `json:"enableMultiFactor"`
 			TotpEnrolled      bool `json:"totpEnrolled"`
 		}
-		if err := json.Unmarshal(raw, &a); err != nil {
-			continue
+		if err := decodeRecord("admin-mfa-coverage", "admin", i, len(d.Admins), raw, &a); err != nil {
+			return nil, err
 		}
 		total++
 		if a.EnableMultiFactor && a.TotpEnrolled {
@@ -339,22 +338,22 @@ func checkPasswordAge(_ context.Context, d *Data) ([]Finding, error) {
 	}
 	cutoff := d.Now.Add(-passwordAgeThreshold)
 	var stale int
-	for _, raw := range d.Users {
+	for i, raw := range d.Users {
 		var u struct {
 			Activated     bool   `json:"activated"`
 			Suspended     bool   `json:"suspended"`
 			AccountLocked bool   `json:"account_locked"`
 			PasswordDate  string `json:"password_date"`
 		}
-		if err := json.Unmarshal(raw, &u); err != nil {
-			continue
+		if err := decodeRecord("password-age", "user", i, len(d.Users), raw, &u); err != nil {
+			return nil, err
 		}
 		if !u.Activated || u.Suspended || u.AccountLocked || u.PasswordDate == "" {
 			continue
 		}
-		t, err := time.Parse(time.RFC3339, u.PasswordDate)
+		t, err := parseAuditTime("password-age", "user", "password_date", u.PasswordDate)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		if t.Before(cutoff) {
 			stale++
@@ -379,15 +378,15 @@ func checkFDECoverage(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("devices fetch unavailable")
 	}
 	var total, encrypted int
-	for _, raw := range d.Devices {
+	for i, raw := range d.Devices {
 		var dev struct {
 			OS  string `json:"os"`
 			FDE struct {
 				Active bool `json:"active"`
 			} `json:"fde"`
 		}
-		if err := json.Unmarshal(raw, &dev); err != nil {
-			continue
+		if err := decodeRecord("fde-coverage", "device", i, len(d.Devices), raw, &dev); err != nil {
+			return nil, err
 		}
 		// FDE is only meaningful on macOS/Windows. Linux/iOS/etc.
 		// don't expose a comparable FDE state via this API.
@@ -434,7 +433,7 @@ func checkStaleDevices(_ context.Context, d *Data) ([]Finding, error) {
 	}
 	cutoff := d.Now.Add(-staleDeviceThreshold)
 	var findings []Finding
-	for _, raw := range d.Devices {
+	for i, raw := range d.Devices {
 		var dev struct {
 			ID          string `json:"_id"`
 			Hostname    string `json:"hostname"`
@@ -442,15 +441,15 @@ func checkStaleDevices(_ context.Context, d *Data) ([]Finding, error) {
 			OS          string `json:"os"`
 			LastContact string `json:"lastContact"`
 		}
-		if err := json.Unmarshal(raw, &dev); err != nil {
-			continue
+		if err := decodeRecord("stale-devices", "device", i, len(d.Devices), raw, &dev); err != nil {
+			return nil, err
 		}
 		if dev.LastContact == "" {
 			continue
 		}
-		t, err := time.Parse(time.RFC3339, dev.LastContact)
+		t, err := parseAuditTime("stale-devices", "device", "lastContact", dev.LastContact)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		if !t.Before(cutoff) {
 			continue
@@ -477,14 +476,14 @@ func checkDisabledAuthPolicies(_ context.Context, d *Data) ([]Finding, error) {
 		return nil, fmt.Errorf("auth policies fetch unavailable")
 	}
 	var findings []Finding
-	for _, raw := range d.AuthPolicies {
+	for i, raw := range d.AuthPolicies {
 		var p struct {
 			ID       string `json:"id"`
 			Name     string `json:"name"`
 			Disabled bool   `json:"disabled"`
 		}
-		if err := json.Unmarshal(raw, &p); err != nil {
-			continue
+		if err := decodeRecord("auth-policies-disabled", "auth policy", i, len(d.AuthPolicies), raw, &p); err != nil {
+			return nil, err
 		}
 		if !p.Disabled {
 			continue
@@ -510,21 +509,21 @@ func checkRecentAdmins(_ context.Context, d *Data) ([]Finding, error) {
 	}
 	cutoff := d.Now.Add(-recentAdminWindow)
 	var findings []Finding
-	for _, raw := range d.Admins {
+	for i, raw := range d.Admins {
 		var a struct {
 			ID      string `json:"_id"`
 			Email   string `json:"email"`
 			Created string `json:"created"`
 		}
-		if err := json.Unmarshal(raw, &a); err != nil {
-			continue
+		if err := decodeRecord("recently-created-admins", "admin", i, len(d.Admins), raw, &a); err != nil {
+			return nil, err
 		}
 		if a.Created == "" {
 			continue
 		}
-		t, err := time.Parse(time.RFC3339, a.Created)
+		t, err := parseAuditTime("recently-created-admins", "admin", "created", a.Created)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		if t.Before(cutoff) {
 			continue
