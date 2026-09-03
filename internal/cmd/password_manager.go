@@ -62,60 +62,22 @@ func pwmGet(ctx context.Context, endpoint string) (json.RawMessage, error) {
 	return client.Get(ctx, endpoint)
 }
 
-// resolvePWMUser turns what an operator typed into a Password Manager user.
-//
-// Three routes, in the order that costs least: a PWM UUID is used directly; a
-// name matching a Password Manager record is used as-is; otherwise the name is
-// resolved against the DIRECTORY and matched here through externalId, which is
-// the only link between the two systems.
+// resolvePWMUser adapts the shared bridge in internal/pwm to the CLI's
+// clients. The logic itself lives in the contract package so the MCP
+// server resolves "ada" to the same record this does.
 func resolvePWMUser(ctx context.Context, identifier string) (pwm.User, error) {
-	raw, err := pwmGet(ctx, pwm.UsersEndpoint)
-	if err != nil {
-		return pwm.User{}, err
-	}
-	users, err := pwm.ParseUsers(raw)
-	if err != nil {
-		return pwm.User{}, err
-	}
-
-	if u, ok := pwm.FindUser(users, identifier); ok {
-		return u, nil
-	}
-
-	// The bridge. A JumpCloud id given directly is honoured here too, since
-	// that is exactly what externalId holds.
-	//
-	// Users live on V1, so this is the V1 resolver: the V2 one 404s on
-	// /systemusers, which is what the first version of this did.
-	jcID := identifier
-	if !isJCObjectID(identifier) {
-		v1, cerr := newV1Client()
-		if cerr != nil {
-			return pwm.User{}, cerr
-		}
-		jcID, err = resolve.NewResolver(v1).Resolve(ctx, identifier, resolve.UserConfig)
-		if err != nil {
-			return pwm.User{}, fmt.Errorf("%q matches no Password Manager user, and no JumpCloud "+
-				"user either: %w", identifier, err)
-		}
-	}
-	if u, ok := pwm.FindUserByExternalID(users, jcID); ok {
-		return u, nil
-	}
-	return pwm.User{}, fmt.Errorf("%q is a JumpCloud user but is not enrolled in Password Manager "+
-		"(%d users are)", identifier, len(users))
+	return pwm.ResolveUser(ctx, pwmGet, directoryUserResolver, identifier)
 }
 
-func isJCObjectID(s string) bool {
-	if len(s) != 24 {
-		return false
+// directoryUserResolver crosses to the directory. Users live on V1, so
+// this is the V1 resolver: the V2 one 404s on /systemusers, which is what
+// the first version of this did.
+func directoryUserResolver(ctx context.Context, name string) (string, error) {
+	v1, err := newV1Client()
+	if err != nil {
+		return "", err
 	}
-	for _, r := range s {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
-			return false
-		}
-	}
-	return true
+	return resolve.NewResolver(v1).Resolve(ctx, name, resolve.UserConfig)
 }
 
 func newPWMOverviewCmd() *cobra.Command {
@@ -347,22 +309,7 @@ no delete route for one, so a write here cannot be undone.`,
 }
 
 func resolvePWMFolder(ctx context.Context, identifier string) (string, error) {
-	if pwm.IsID(identifier) {
-		return identifier, nil
-	}
-	raw, err := pwmGet(ctx, pwm.SharedFoldersEndpoint)
-	if err != nil {
-		return "", err
-	}
-	folders, err := pwm.ParseFolders(raw)
-	if err != nil {
-		return "", err
-	}
-	f, ok := pwm.FindFolder(folders, identifier)
-	if !ok {
-		return "", fmt.Errorf("no shared folder %q (%d exist)", identifier, len(folders))
-	}
-	return f.Identity(), nil
+	return pwm.ResolveFolder(ctx, pwmGet, identifier)
 }
 
 func newPWMItemsCmd() *cobra.Command {

@@ -623,6 +623,7 @@ func (s *Server) registerTools() {
 	s.registerADTranslationRuleTools()
 	s.registerDeviceSettingsTools()
 	s.registerPasswordPolicyTools()
+	s.registerPasswordManagerTools()
 	s.registerWorkflowTools()
 
 	// --- Organization tools ---

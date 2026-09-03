@@ -335,6 +335,20 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	expectedTools := []string{
+		// Password Manager — the credential vault, read-only by design.
+		"password_manager_overview",
+		"password_manager_users_list",
+		"password_manager_user_get",
+		"password_manager_user_folders",
+		"password_manager_user_items",
+		"password_manager_groups_list",
+		"password_manager_folders_list",
+		"password_manager_folder_get",
+		"password_manager_folder_users",
+		"password_manager_folder_groups",
+		"password_manager_items",
+		"password_manager_policies",
+		"password_manager_backup_keys",
 		"jc_ping",
 		// Access Requests
 		"access_requests_list", "access_requests_get", "access_requests_create", "access_requests_update", "access_requests_revoke",
@@ -522,8 +536,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 317 {
-		t.Errorf("expected 317 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 330 {
+		t.Errorf("expected 330 tools, got %d", len(result.Tools))
 	}
 }
 

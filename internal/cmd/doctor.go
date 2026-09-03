@@ -198,7 +198,7 @@ func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration,
 
 func collectBuild() buildSection {
 	return buildSection{
-		Version:   strings.TrimPrefix(version.Number, "v"),
+		Version:   strings.TrimPrefix(version.Describe(), "v"),
 		GoVersion: runtime.Version(),
 		OSArch:    runtime.GOOS + "/" + runtime.GOARCH,
 	}

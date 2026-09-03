@@ -29,7 +29,11 @@ func NewRootCmd() *cobra.Command {
 It covers the full JumpCloud API surface (v1, v2, Directory Insights) with
 built-in MCP server support, a recipe system, plan mode, and conversational
 interface.`,
-		Version:       strings.TrimPrefix(version.Number, "v"),
+		// Describe, not Number: `--version` is asked the same question as the
+		// `version` subcommand and must not answer it differently. A plain
+		// `go build` leaves Number at "dev", and a bare "dev" already cost one
+		// full verification round against a stale binary.
+		Version:       strings.TrimPrefix(version.Describe(), "v"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

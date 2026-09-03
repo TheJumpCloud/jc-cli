@@ -7,6 +7,7 @@
 package pwm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -333,4 +334,108 @@ func FindFolder(folders []Folder, identifier string) (Folder, bool) {
 		}
 	}
 	return Folder{}, false
+}
+
+// ─── resolution ────────────────────────────────────────────────────
+
+// Fetcher reads one Password Manager endpoint. Both surfaces already have
+// a client; neither needs to hand this package one.
+type Fetcher func(ctx context.Context, endpoint string) (json.RawMessage, error)
+
+// DirectoryResolver turns a directory name into a JumpCloud user ID. It is
+// a parameter rather than an import because users live on V1 and this
+// package should not care which client the caller holds.
+type DirectoryResolver func(ctx context.Context, name string) (string, error)
+
+// IsDirectoryID reports whether s looks like a JumpCloud 24-character hex
+// object ID — the format the rest of the directory uses, and the format
+// externalId holds. Password Manager's own IDs are UUIDs; see IsID.
+func IsDirectoryID(s string) bool {
+	if len(s) != 24 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// ResolveUser turns what an operator typed into a Password Manager user.
+//
+// Three routes, in the order that costs least: a name matching a Password
+// Manager record is used as-is; a directory ID is matched through
+// externalId; otherwise the name is resolved against the DIRECTORY and
+// then matched here through externalId, which is the only link between
+// the two systems.
+//
+// This lives in the contract package rather than in either surface
+// because the bridge is the part most likely to drift: the CLI and the
+// MCP server must agree on what "ada" means, or the same question gets
+// two answers depending on who asks.
+func ResolveUser(ctx context.Context, get Fetcher, resolveDirectory DirectoryResolver, identifier string) (User, error) {
+	raw, err := get(ctx, UsersEndpoint)
+	if err != nil {
+		return User{}, err
+	}
+	users, err := ParseUsers(raw)
+	if err != nil {
+		return User{}, err
+	}
+
+	if u, ok := FindUser(users, identifier); ok {
+		return u, nil
+	}
+
+	jcID := identifier
+	if !IsDirectoryID(identifier) {
+		if resolveDirectory == nil {
+			return User{}, fmt.Errorf("%q matches no Password Manager user (%s)",
+				identifier, enrolledCount(len(users)))
+		}
+		jcID, err = resolveDirectory(ctx, identifier)
+		if err != nil {
+			return User{}, fmt.Errorf("%q matches no Password Manager user, and no JumpCloud "+
+				"user either: %w", identifier, err)
+		}
+	}
+	if u, ok := FindUserByExternalID(users, jcID); ok {
+		return u, nil
+	}
+	return User{}, fmt.Errorf("%q is a JumpCloud user but is not enrolled in Password Manager (%s)",
+		identifier, enrolledCount(len(users)))
+}
+
+// ResolveFolder turns a shared-folder name or ID into an ID.
+func ResolveFolder(ctx context.Context, get Fetcher, identifier string) (string, error) {
+	if IsID(identifier) {
+		return identifier, nil
+	}
+	raw, err := get(ctx, SharedFoldersEndpoint)
+	if err != nil {
+		return "", err
+	}
+	folders, err := ParseFolders(raw)
+	if err != nil {
+		return "", err
+	}
+	f, ok := FindFolder(folders, identifier)
+	if !ok {
+		return "", fmt.Errorf("no shared folder %q (%d exist)", identifier, len(folders))
+	}
+	return f.Identity(), nil
+}
+
+// enrolledCount phrases the enrolment count so the error reads as a
+// sentence. "1 users are" undercuts an otherwise precise message.
+func enrolledCount(n int) string {
+	switch n {
+	case 0:
+		return "nobody is enrolled"
+	case 1:
+		return "1 person is enrolled"
+	default:
+		return fmt.Sprintf("%d people are enrolled", n)
+	}
 }
