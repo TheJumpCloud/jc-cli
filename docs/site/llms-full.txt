@@ -628,6 +628,7 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `notification-channels`
 - `office365`
 - `org`
+- `password-manager`
 - `policies`
 - `policy-groups`
 - `policy-templates`
