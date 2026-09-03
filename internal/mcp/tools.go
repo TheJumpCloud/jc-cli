@@ -806,7 +806,7 @@ func (s *Server) registerUserTools() {
 		},
 	)
 
-	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, lock the account or schedule a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
+	addTypedTool(s, "users_delete", "Delete a JumpCloud user permanently — remove a user who left, offboard, deprovision, remove a leaver, terminate an account. This is DESTRUCTIVE and not reversible: the user, their group memberships and their bindings go with it. To disable access without losing the record, lock the account or schedule a suspend state instead. Set execute=true to delete; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args destructiveInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
@@ -1224,7 +1224,7 @@ func (s *Server) registerGroupTools() {
 		},
 	)
 
-	addTypedTool(s, "groups_remove_member", "Remove a user or device FROM A GROUP — revokes what that group grants, and nothing else. The member itself is untouched: it keeps existing, keeps its other groups, and can still sign in. Group membership only; the account is not affected. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "groups_remove_member", "Remove a user or device FROM A GROUP — revoke someone's access to one group. Revokes what that group grants, and nothing else. The member itself is untouched: it keeps existing, keeps its other groups, and can still sign in. Group membership only; the account is not affected. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args membershipInput) (*mcp.CallToolResult, any, error) {
 			return s.runMembershipTool(ctx, args, "remove")
 		},
@@ -6201,7 +6201,7 @@ func (s *Server) registerCustomEmailTools() {
 		},
 	)
 
-	addTypedTool(s, "custom_emails_delete", "Discard a customised email override, so that notification falls back to JumpCloud's built-in text. Messages keep going out; only your replacement wording is dropped. Set execute=true to apply; otherwise returns a plan.",
+	addTypedTool(s, "custom_emails_delete", "Get rid of a custom email template: discard a customised email override, so that notification falls back to JumpCloud's built-in text. Messages keep going out; only your replacement wording is dropped. Set execute=true to apply; otherwise returns a plan.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args customEmailDeleteInput) (*mcp.CallToolResult, any, error) {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
