@@ -507,10 +507,14 @@ func (s *Server) registerWorkflowTools() {
 			counts := map[string]mcpEventCount{}
 			reports := make([]workflow.HealthReport, 0, len(rows))
 
-			for _, row := range rows {
+			for i, row := range rows {
+				// See the CLI copy: a workflow that will not decode must not
+				// disappear from the report.
 				w, werr := workflow.ParseWorkflow(row)
 				if werr != nil {
-					continue
+					return errorResult(fmt.Sprintf("workflow %d of %d did not decode: %v — it "+
+						"would otherwise be missing from this health report entirely",
+						i+1, len(rows), werr)), nil, nil
 				}
 
 				eventType := ""

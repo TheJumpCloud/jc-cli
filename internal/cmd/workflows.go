@@ -1621,10 +1621,15 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 			counts := map[string]eventCount{}
 			reports := make([]workflow.HealthReport, 0, len(rows))
 
-			for _, row := range rows {
+			for i, row := range rows {
+				// A workflow jc cannot read must not vanish from a health
+				// report. Dropping it silently is the same failure this
+				// check exists to prevent: a clean report that is clean
+				// only because something was not looked at.
 				w, err := workflow.ParseWorkflow(row)
 				if err != nil {
-					continue
+					return fmt.Errorf("workflow %d of %d did not decode: %w — it would "+
+						"otherwise be missing from this health report entirely", i+1, len(rows), err)
 				}
 
 				eventType := ""
