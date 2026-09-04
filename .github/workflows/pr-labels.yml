@@ -4,6 +4,15 @@ name: PR Label Check
 # The release workflow re-checks this on `pull_request closed`, but by then
 # it's too late — a merge with no label produces no release. Running the
 # same check on PR events surfaces the problem while it's still fixable.
+#
+# Labels are read from the API, NOT from context.payload. The payload is a
+# snapshot taken when the event fired, and `gh pr create --label x` applies
+# the label just after the PR is created — so the `opened` event can fire
+# with no labels on it and the check fails on a PR that is correctly
+# labelled. Worse, re-running the job replays the SAME frozen payload and
+# fails identically, so the only way out was to toggle a label and provoke a
+# fresh event. Fetching at job-run time makes the check reflect reality and
+# makes a re-run mean something.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -11,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read   # pulls.get, to read the labels live
 
 jobs:
   Check-PR-Labels:
@@ -21,7 +31,15 @@ jobs:
         with:
           script: |
             const valid = ['major', 'minor', 'patch', 'no version'];
-            const labels = context.payload.pull_request.labels.map(l => l.name);
+
+            // Live read — see the note at the top of this file for why the
+            // event payload is not trustworthy here.
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const labels = pr.labels.map(l => l.name);
             core.info(`Labels on PR: ${labels.join(', ') || '(none)'}`);
 
             const matches = labels.filter(name => valid.includes(name));
