@@ -2,7 +2,13 @@
 
 package mcp
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
 
 // touchIDAvailable() is hardware-dependent (Mac mini, Mac Pro, and CI
 // runners lack the biometric stack), so the darwin factory tests branch
@@ -91,5 +97,100 @@ func TestStepUpReachesOperatorOnStdio_TTYPrefAlwaysFalse(t *testing.T) {
 	// terminal, so the warning must still fire on stdio.
 	if got := StepUpReachesOperatorOnStdio("tty"); got {
 		t.Errorf("StepUpReachesOperatorOnStdio(\"tty\") = true on darwin, want false")
+	}
+}
+
+// ─── authorize: the wait, not the prompt ───────────────────────────
+
+// The defect this guards: authorize ignored its context and blocked on the
+// OS modal, so an unanswered Touch ID prompt looked to the MCP client like a
+// tool that hangs. A verification pass spent a whole session concluding the
+// workflow write path was broken — reads worked, plan mode returned
+// instantly, and only execute=true hung, which is indistinguishable from a
+// broken write endpoint.
+//
+// The CGO call cannot be driven from a test, so authorizeWith takes the
+// prompt as a parameter and these exercise the half that does not touch C —
+// which is the half that was wrong.
+func TestTouchIDAuthorize_UnansweredPromptReturnsRatherThanHanging(t *testing.T) {
+	s := &touchIDStepUp{}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	blockedUntilTestEnds := make(chan struct{})
+	defer close(blockedUntilTestEnds)
+
+	start := time.Now()
+	err := s.authorizeWith(ctx, "workflows_create", "", func(string) error {
+		<-blockedUntilTestEnds // a modal nobody answers
+		return nil
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("an unanswered prompt returned success")
+	}
+	if elapsed > time.Second {
+		t.Errorf("waited %v for a prompt nobody answered; the context deadline was 50ms", elapsed)
+	}
+	// The message has to name Touch ID, or the next person debugs a hang
+	// instead of walking over to the Mac and approving it.
+	for _, want := range []string{"Touch ID", "workflows_create", "not answered"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q, got: %v", want, err)
+		}
+	}
+}
+
+// The prompt must still be waited for when it is answered — a timeout that
+// fired on a normal approval would block every destructive call instead.
+func TestTouchIDAuthorize_AnsweredPromptIsHonoured(t *testing.T) {
+	s := &touchIDStepUp{}
+	for name, want := range map[string]error{
+		"approved":    nil,
+		"denied":      errStepUpDenied,
+		"unavailable": errStepUpUnavailable,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := s.authorizeWith(context.Background(), "users_delete", "ada",
+				func(string) error { return want })
+			if !errors.Is(got, want) {
+				t.Errorf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// The reason string is what the operator reads on the modal, so it has to
+// say which tool and which target are being approved.
+func TestTouchIDAuthorize_ReasonNamesToolAndTarget(t *testing.T) {
+	s := &touchIDStepUp{}
+	var seen string
+	_ = s.authorizeWith(context.Background(), "users_delete", "ada",
+		func(reason string) error { seen = reason; return nil })
+	if !strings.Contains(seen, "users_delete") || !strings.Contains(seen, "ada") {
+		t.Errorf("reason %q should name both the tool and the target", seen)
+	}
+
+	_ = s.authorizeWith(context.Background(), "users_delete", "",
+		func(reason string) error { seen = reason; return nil })
+	if strings.Contains(seen, " on ") {
+		t.Errorf("with no target the reason should not dangle an \" on \" clause: %q", seen)
+	}
+}
+
+// A caller that supplies its own deadline keeps it; the cap exists only for
+// callers that supply none.
+func TestTouchIDAuthorize_CallerDeadlineWins(t *testing.T) {
+	s := &touchIDStepUp{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	release := make(chan struct{})
+	defer close(release)
+
+	start := time.Now()
+	_ = s.authorizeWith(ctx, "workflows_create", "", func(string) error { <-release; return nil })
+	if elapsed := time.Since(start); elapsed > touchIDPromptCap/2 {
+		t.Errorf("waited %v — the caller's 30ms deadline was replaced by the cap", elapsed)
 	}
 }
