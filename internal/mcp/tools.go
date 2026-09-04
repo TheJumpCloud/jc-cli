@@ -4812,7 +4812,7 @@ func (s *Server) registerPolicyTemplateTools() {
 }
 
 func (s *Server) registerAppleMDMTools() {
-	addTypedTool(s, "apple_mdm_list", "Do we have Apple MDM set up? Lists the org's existing Apple MDM configurations — the APNs push certificate that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM / DEP) linkage. A read: it changes nothing, and most orgs have zero or one.",
+	addTypedTool(s, "apple_mdm_list", "What Apple MDM cert do we have? Do we have Apple MDM set up? Shows the org's existing Apple MDM configurations and their certificate expiry — the APNs push cert that lets JumpCloud manage Macs, iPhones and iPads, with its expiry and Apple Business Manager (ABM / DEP) linkage. A read: it changes nothing, and most orgs have zero or one.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV2ClientFunc()
 			if err != nil {
