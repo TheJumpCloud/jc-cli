@@ -32,8 +32,8 @@ func TestSchemaResources_JSON(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if len(resources) != 39 {
-		t.Fatalf("expected 39 resources, got %d", len(resources))
+	if len(resources) != 40 {
+		t.Fatalf("expected 40 resources, got %d", len(resources))
 	}
 }
 

@@ -49,7 +49,7 @@ func (s *Server) registerFoundationResources() {
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			info := map[string]any{
 				"name":       "jc",
-				"version":    version.Number,
+				"version":    version.Describe(),
 				"profile":    config.ActiveProfile(),
 				"read_only":  s.readOnly,
 				"rate_limit": s.limiter.maxPerMin,

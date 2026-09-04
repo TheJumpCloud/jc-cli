@@ -6,8 +6,8 @@ import (
 
 func TestResourceNames_Sorted(t *testing.T) {
 	names := ResourceNames()
-	if len(names) != 39 {
-		t.Fatalf("expected 39 resources, got %d", len(names))
+	if len(names) != 40 {
+		t.Fatalf("expected 40 resources, got %d", len(names))
 	}
 	for i := 1; i < len(names); i++ {
 		if names[i-1] >= names[i] {
@@ -21,7 +21,7 @@ func TestResourceNames_ContainsAllExpected(t *testing.T) {
 	// workflow*) joined this list so the TUI, which builds its menu from
 	// schema.Resources, can see them; internal/cmd's parity test keeps the
 	// two in step.
-	expected := []string{"access-requests", "ad", "admins", "alerts", "app-templates", "apple-mdm", "apps", "assets", "auth-policies", "commands", "custom-emails", "devices", "duo", "groups", "gsuite", "health-rule-templates", "health-rules", "identity-providers", "insights", "iplists", "ldap", "notification-channels", "office365", "org", "policies", "policy-groups", "policy-templates", "radius", "roles", "saas-management", "saved-views", "service-accounts", "software", "system-insights", "user-states", "users", "workflow-runs", "workflow-templates", "workflows"}
+	expected := []string{"access-requests", "ad", "admins", "alerts", "app-templates", "apple-mdm", "apps", "assets", "auth-policies", "commands", "custom-emails", "devices", "duo", "groups", "gsuite", "health-rule-templates", "health-rules", "identity-providers", "insights", "iplists", "ldap", "notification-channels", "office365", "org", "password-manager", "policies", "policy-groups", "policy-templates", "radius", "roles", "saas-management", "saved-views", "service-accounts", "software", "system-insights", "user-states", "users", "workflow-runs", "workflow-templates", "workflows"}
 	names := ResourceNames()
 	if len(names) != len(expected) {
 		t.Fatalf("expected %d resources, got %d", len(expected), len(names))
@@ -148,8 +148,8 @@ func TestGetResource_SortFields(t *testing.T) {
 
 func TestAllResources_Count(t *testing.T) {
 	all := AllResources()
-	if len(all) != 39 {
-		t.Fatalf("expected 39 resources, got %d", len(all))
+	if len(all) != 40 {
+		t.Fatalf("expected 40 resources, got %d", len(all))
 	}
 }
 
@@ -177,8 +177,8 @@ func TestBuildCommandManifest_Structure(t *testing.T) {
 	if len(m.Commands) == 0 {
 		t.Error("expected commands")
 	}
-	if len(m.Resources) != 39 {
-		t.Errorf("expected 39 resources, got %d", len(m.Resources))
+	if len(m.Resources) != 40 {
+		t.Errorf("expected 40 resources, got %d", len(m.Resources))
 	}
 }
 

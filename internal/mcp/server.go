@@ -137,8 +137,10 @@ func NewServer(opts Options) (*Server, error) {
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
-			Name:    "jc",
-			Version: version.Number,
+			Name: "jc",
+			// Describe, not Number: this is the version an MCP client reads
+			// programmatically to record which build it tested against.
+			Version: version.Describe(),
 		},
 		&mcp.ServerOptions{
 			Instructions: "JumpCloud CLI MCP server. Manage users, devices, groups, policies, commands, and more.",
