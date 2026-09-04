@@ -176,6 +176,7 @@ not scoped under a workflow.`,
 	}
 
 	var workflowFilter string
+	var runsLimit int
 	list := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -187,6 +188,9 @@ not scoped under a workflow.`,
 				return err
 			}
 			endpoint := workflow.RunsEndpoint
+			if runsLimit > 0 {
+				endpoint = fmt.Sprintf("%s?limit=%d", endpoint, runsLimit)
+			}
 			if workflowFilter != "" {
 				id, err := resolveWorkflow(cmd.Context(), client, workflowFilter)
 				if err != nil {
@@ -194,7 +198,11 @@ not scoped under a workflow.`,
 					// remain, so fall back to the raw value.
 					id = workflowFilter
 				}
-				endpoint = fmt.Sprintf("%s?workflow_id=%s", endpoint, id)
+				sep := "?"
+				if strings.Contains(endpoint, "?") {
+					sep = "&"
+				}
+				endpoint = fmt.Sprintf("%s%sworkflow_id=%s", endpoint, sep, id)
 			}
 			raw, err := client.Get(cmd.Context(), endpoint)
 			if err != nil {
@@ -216,6 +224,7 @@ not scoped under a workflow.`,
 		},
 	}
 	list.Flags().StringVar(&workflowFilter, "workflow", "", "Only runs of this workflow (name or ID)")
+	list.Flags().IntVar(&runsLimit, "limit", 0, "How many runs to return. The server defaults to a small page, so older runs are not reachable by listing without this.")
 
 	var trace bool
 	get := &cobra.Command{

@@ -27,6 +27,10 @@ type wfGetInput struct {
 
 type wfRunsListInput struct {
 	Workflow string `json:"workflow,omitempty" jsonschema:"Only runs of this workflow (name or ID). Runs outlive their workflow, so a deleted workflow's ID still works."`
+	// Without this the server's own default applied and older runs were
+	// unreachable by listing at all — a verification pass found runs it
+	// could fetch by ID that the list would not return.
+	Limit int `json:"limit,omitempty" jsonschema:"How many runs to return. The server defaults to a small page, so older runs are not reachable by listing without raising this."`
 }
 
 type wfRunGetInput struct {
@@ -65,6 +69,11 @@ type wfValidateInput struct {
 type wfExplainInput struct {
 	DSL        map[string]any `json:"dsl,omitempty" jsonschema:"A DSL document to explain"`
 	Identifier string         `json:"identifier,omitempty" jsonschema:"Or the name or ID of an existing workflow"`
+	// The validate tool has taken a template since the corrected-templates
+	// work and this one did not, so explaining a catalogue template meant
+	// fetching its DSL first while validating one did not. Two tools that
+	// sit beside each other should accept the same thing.
+	Template string `json:"template,omitempty" jsonschema:"Or a template from the served catalog — name or id, including a jc: corrected copy."`
 }
 
 type wfCreateInput struct {
@@ -302,13 +311,20 @@ func (s *Server) registerWorkflowTools() {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
 			endpoint := workflow.RunsEndpoint
+			if args.Limit > 0 {
+				endpoint = fmt.Sprintf("%s?limit=%d", endpoint, args.Limit)
+			}
 			if args.Workflow != "" {
 				id, err := resolveWorkflowID(ctx, client, args.Workflow)
 				if err != nil {
 					// The workflow may be deleted while its runs remain.
 					id = args.Workflow
 				}
-				endpoint = fmt.Sprintf("%s?workflow_id=%s", endpoint, id)
+				sep := "?"
+				if strings.Contains(endpoint, "?") {
+					sep = "&"
+				}
+				endpoint = fmt.Sprintf("%s%sworkflow_id=%s", endpoint, sep, id)
 			}
 			raw, err := client.Get(ctx, endpoint)
 			if err != nil {
@@ -894,15 +910,26 @@ func (s *Server) registerWorkflowTools() {
 		},
 	)
 
-	addTypedTool(s, "workflows_explain", "Explain what a JumpCloud Workflow does: when it fires, what each step calls (with every operationId resolved to its real METHOD and path), and which steps reach outside JumpCloud. Accepts either a DSL document or the name or ID of an existing workflow.",
+	addTypedTool(s, "workflows_explain", "Explain what a JumpCloud Workflow does: when it fires, what each step calls (with every operationId resolved to its real METHOD and path), and which steps reach outside JumpCloud. Accepts a DSL document, the name or ID of an existing workflow, or a template from the served catalog.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args wfExplainInput) (*mcp.CallToolResult, any, error) {
 			raw, derr := dslRaw(args.DSL)
 			if derr != nil {
 				return errorResult(derr.Error()), nil, nil
 			}
+			if len(raw) == 0 && args.Template != "" {
+				client, cerr := newV2ClientFunc()
+				if cerr != nil {
+					return errorResult(fmt.Sprintf("creating API client: %v", cerr)), nil, nil
+				}
+				t, terr := findWorkflowTemplate(ctx, client, args.Template)
+				if terr != nil {
+					return errorResult(terr.Error()), nil, nil
+				}
+				raw = t.DSL
+			}
 			if len(raw) == 0 {
 				if args.Identifier == "" {
-					return errorResult("supply either dsl or identifier"), nil, nil
+					return errorResult("supply one of dsl, identifier or template"), nil, nil
 				}
 				client, err := newV2ClientFunc()
 				if err != nil {
