@@ -111,32 +111,7 @@ func resolveWorkflowID(ctx context.Context, client *api.V2Client, identifier str
 	if err != nil {
 		return "", err
 	}
-	var byName []workflow.Workflow
-	for _, r := range rows {
-		w, err := workflow.ParseWorkflow(r)
-		if err != nil {
-			continue
-		}
-		if w.ID == identifier {
-			return w.ID, nil
-		}
-		if strings.EqualFold(w.Name, identifier) {
-			byName = append(byName, w)
-		}
-	}
-	switch len(byName) {
-	case 0:
-		return "", fmt.Errorf("workflow %q not found", identifier)
-	case 1:
-		return byName[0].ID, nil
-	default:
-		ids := make([]string, 0, len(byName))
-		for _, w := range byName {
-			ids = append(ids, w.ID)
-		}
-		return "", fmt.Errorf("workflow name %q is ambiguous (%d share it: %s); use an ID",
-			identifier, len(byName), strings.Join(ids, ", "))
-	}
+	return workflow.ResolveID(rows, identifier)
 }
 
 // fetchWorkflowLastRan builds the workflow-id → last-run map. A failure to read
@@ -582,20 +557,18 @@ func (s *Server) registerWorkflowTools() {
 							rq.StartTime = graceStart.Format(time.RFC3339)
 							if res, qerr := ic.QueryEvents(ctx, rq,
 								api.InsightsQueryOptions{Limit: 200}); qerr == nil && res != nil {
-								rec := workflow.EventRecency{Known: true, WithinGrace: len(res.Data)}
-								for _, raw := range res.Data {
-									var e struct {
-										Timestamp string `json:"timestamp"`
-									}
-									if json.Unmarshal(raw, &e) != nil {
-										continue
-									}
-									if ts, perr := time.Parse(time.RFC3339, e.Timestamp); perr == nil &&
-										ts.After(rec.Newest) {
-										rec.Newest = ts
+								// A record jc cannot read leaves recency UNKNOWN
+								// rather than zero: the verdict logic has its own
+								// case for "could not measure", and this subsystem
+								// has already shipped an absence read as a negative
+								// twice.
+								if newest, nerr := workflow.NewestEventTime(res.Data); nerr == nil {
+									c.recency = workflow.EventRecency{
+										Known:       true,
+										WithinGrace: len(res.Data),
+										Newest:      newest,
 									}
 								}
-								c.recency = rec
 							}
 							// On failure recency stays Known:false, and the
 							// verdict withholds judgement rather than reading
@@ -791,16 +764,9 @@ func (s *Server) registerWorkflowTools() {
 				if qerr != nil {
 					return errorResult(fmt.Sprintf("listing emitted event types: %v", qerr)), nil, nil
 				}
-				observed := make(map[string]int, len(items))
-				for _, raw := range items {
-					var row struct {
-						Key   string `json:"key"`
-						Count int    `json:"doc_count"`
-					}
-					if json.Unmarshal(raw, &row) != nil || row.Key == "" {
-						continue
-					}
-					observed[row.Key] = row.Count
+				observed, oerr := workflow.ObservedEventTypes(items)
+				if oerr != nil {
+					return errorResult(oerr.Error()), nil, nil
 				}
 				res, jerr := jsonResult(workflow.AuditCatalog(observed, args.Audit))
 				if jerr != nil {
