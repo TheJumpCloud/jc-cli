@@ -108,7 +108,7 @@ func (s *Server) registerPasswordManagerTools() {
 		},
 	)
 
-	addTypedTool(s, "password_manager_users_list", "Who is using the Password Manager? Lists the named people enrolled in the vault, one row each, with their stored-item count, credential-hygiene score and weak or ageing credential counts. Use this to find out who is actually on it and who is not. Enrolment is NOT the same as having a JumpCloud account — a directory user who never opened the vault does not appear here at all. Each record carries externalId, the only link back to the directory.",
+	addTypedTool(s, "password_manager_users_list", "Vault enrolment roster — the full list of people enrolled in Password Manager, how many there are and which ones, with stored-item counts, credential-hygiene scores and weak or ageing credential counts per row. Use it to see how many have signed up and how many have not. Enrolment is NOT the same as having a JumpCloud account — a directory user who never opened the vault does not appear here at all. Each record carries externalId, the only link back to the directory.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			return pwmReadList(ctx, pwm.UsersEndpoint, "Password Manager users")
 		},
