@@ -75,34 +75,7 @@ func resolveWorkflow(ctx context.Context, client *api.V2Client, identifier strin
 	if err != nil {
 		return "", err
 	}
-
-	var byName []workflow.Workflow
-	for _, r := range rows {
-		w, err := workflow.ParseWorkflow(r)
-		if err != nil {
-			continue
-		}
-		if w.ID == identifier {
-			return w.ID, nil
-		}
-		if strings.EqualFold(w.Name, identifier) {
-			byName = append(byName, w)
-		}
-	}
-
-	switch len(byName) {
-	case 0:
-		return "", fmt.Errorf("workflow %q not found", identifier)
-	case 1:
-		return byName[0].ID, nil
-	default:
-		ids := make([]string, 0, len(byName))
-		for _, w := range byName {
-			ids = append(ids, w.ID)
-		}
-		return "", fmt.Errorf("workflow name %q is ambiguous (%d share it: %s); use an ID",
-			identifier, len(byName), strings.Join(ids, ", "))
-	}
+	return workflow.ResolveID(rows, identifier)
 }
 
 // fetchLastRan builds the workflow-id → last-run map, or nil if the runs list
@@ -203,6 +176,7 @@ not scoped under a workflow.`,
 	}
 
 	var workflowFilter string
+	var runsLimit int
 	list := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -214,6 +188,9 @@ not scoped under a workflow.`,
 				return err
 			}
 			endpoint := workflow.RunsEndpoint
+			if runsLimit > 0 {
+				endpoint = fmt.Sprintf("%s?limit=%d", endpoint, runsLimit)
+			}
 			if workflowFilter != "" {
 				id, err := resolveWorkflow(cmd.Context(), client, workflowFilter)
 				if err != nil {
@@ -221,7 +198,11 @@ not scoped under a workflow.`,
 					// remain, so fall back to the raw value.
 					id = workflowFilter
 				}
-				endpoint = fmt.Sprintf("%s?workflow_id=%s", endpoint, id)
+				sep := "?"
+				if strings.Contains(endpoint, "?") {
+					sep = "&"
+				}
+				endpoint = fmt.Sprintf("%s%sworkflow_id=%s", endpoint, sep, id)
 			}
 			raw, err := client.Get(cmd.Context(), endpoint)
 			if err != nil {
@@ -243,6 +224,7 @@ not scoped under a workflow.`,
 		},
 	}
 	list.Flags().StringVar(&workflowFilter, "workflow", "", "Only runs of this workflow (name or ID)")
+	list.Flags().IntVar(&runsLimit, "limit", 0, "How many runs to return. The server defaults to a small page, so older runs are not reachable by listing without this.")
 
 	var trace bool
 	get := &cobra.Command{
@@ -1648,10 +1630,15 @@ legitimately filters, and saying otherwise would make this untrustworthy.`,
 			counts := map[string]eventCount{}
 			reports := make([]workflow.HealthReport, 0, len(rows))
 
-			for _, row := range rows {
+			for i, row := range rows {
+				// A workflow jc cannot read must not vanish from a health
+				// report. Dropping it silently is the same failure this
+				// check exists to prevent: a clean report that is clean
+				// only because something was not looked at.
 				w, err := workflow.ParseWorkflow(row)
 				if err != nil {
-					continue
+					return fmt.Errorf("workflow %d of %d did not decode: %w — it would "+
+						"otherwise be missing from this health report entirely", i+1, len(rows), err)
 				}
 
 				eventType := ""
@@ -1737,19 +1724,12 @@ func countEvents(ctx context.Context, eventType string, start, end time.Time) (i
 		return n, workflow.EventRecency{}, nil
 	}
 
-	recency := workflow.EventRecency{Known: true, WithinGrace: len(res.Data)}
-	for _, raw := range res.Data {
-		var e struct {
-			Timestamp string `json:"timestamp"`
-		}
-		if json.Unmarshal(raw, &e) != nil {
-			continue
-		}
-		ts, perr := time.Parse(time.RFC3339, e.Timestamp)
-		if perr == nil && ts.After(recency.Newest) {
-			recency.Newest = ts
-		}
+	// Unknown, not zero, when a record will not decode — see the MCP copy.
+	newest, nerr := workflow.NewestEventTime(res.Data)
+	if nerr != nil {
+		return n, workflow.EventRecency{}, nil
 	}
+	recency := workflow.EventRecency{Known: true, WithinGrace: len(res.Data), Newest: newest}
 	return n, recency, nil
 }
 
@@ -2119,16 +2099,9 @@ func auditEventTypeCatalog(cmd *cobra.Command, window string) error {
 		return fmt.Errorf("listing emitted event types: %w", err)
 	}
 
-	observed := make(map[string]int, len(items))
-	for _, raw := range items {
-		var row struct {
-			Key   string `json:"key"`
-			Count int    `json:"doc_count"`
-		}
-		if err := json.Unmarshal(raw, &row); err != nil || row.Key == "" {
-			continue
-		}
-		observed[row.Key] = row.Count
+	observed, oerr := workflow.ObservedEventTypes(items)
+	if oerr != nil {
+		return oerr
 	}
 
 	audit := workflow.AuditCatalog(observed, window)
