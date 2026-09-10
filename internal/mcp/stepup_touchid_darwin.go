@@ -112,6 +112,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -156,15 +157,70 @@ func newTouchIDStepUpIfSupported() stepUpAuthenticator {
 
 func (t *touchIDStepUp) remediation(err error) string { return ttyTouchIDRemediation(err) }
 
-func (t *touchIDStepUp) authorize(_ context.Context, toolName, target string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// touchIDPromptCap bounds the wait when the caller supplied no deadline. A
+// prompt someone is standing in front of is answered in seconds; anything
+// longer means nobody is there.
+const touchIDPromptCap = 90 * time.Second
+
+// authorize presents the OS modal and waits for it, but no longer forever.
+//
+// It used to ignore the context entirely and block on the CGO call, which is
+// what an unanswered prompt looks like from the other end: a tool call that
+// hangs until the MCP client gives up. A verification pass spent a session
+// concluding the workflow write path was broken, when the truth was a Touch
+// ID prompt on a Mac nobody was looking at — reads worked, plan mode
+// returned instantly, and only execute=true hung, which reads exactly like a
+// broken write endpoint.
+//
+// The CGO call cannot be cancelled, so it runs in a goroutine and the modal
+// stays up until macOS dismisses it. What changes is that the caller gets a
+// timely answer that NAMES Touch ID, so the next person sees a prompt to
+// approve rather than a hang to debug.
+func (t *touchIDStepUp) authorize(ctx context.Context, toolName, target string) error {
+	return t.authorizeWith(ctx, toolName, target, t.evaluate)
+}
+
+// authorizeWith is authorize with the prompt itself injected, so the waiting
+// behaviour can be tested without raising a real modal. The CGO call cannot
+// be driven from a test and a hang is exactly what this guards against, so
+// the part worth proving is the part that does not touch C.
+func (t *touchIDStepUp) authorizeWith(ctx context.Context, toolName, target string, evaluate func(reason string) error) error {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, touchIDPromptCap)
+		defer cancel()
+	}
 
 	reason := fmt.Sprintf("Approve MCP %s", toolName)
 	if target != "" {
 		reason = fmt.Sprintf("Approve MCP %s on %s", toolName, target)
 	}
 
+	done := make(chan error, 1)
+	go func() {
+		// Locked inside the goroutine: on the timeout path authorizeWith
+		// returns while the modal is still up, and a deferred unlock in the
+		// caller would release a mutex the prompt still relies on to stay
+		// serialized. Buffered channel so this goroutine never blocks
+		// writing a result nobody is waiting for any more.
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		done <- evaluate(reason)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("touch id: the approval prompt for %s was not answered — "+
+			"jc raised a Touch ID modal on the machine running the MCP server and it is "+
+			"still waiting. Approve it there, or drop --require-step-up if this server "+
+			"runs somewhere nobody is sitting", toolName)
+	}
+}
+
+// evaluate raises the OS modal and blocks until macOS resolves it.
+func (t *touchIDStepUp) evaluate(reason string) error {
 	cReason := C.CString(reason)
 	defer C.free(unsafe.Pointer(cReason))
 
