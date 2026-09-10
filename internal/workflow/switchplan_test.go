@@ -107,3 +107,58 @@ func TestSimulate_DefaultIsStillChosenWhenNothingMatched(t *testing.T) {
 		}
 	}
 }
+
+// `.extracted` is not a field. A live run settled it: a for.in of
+// ${ actions.listUsers.extracted } failed with "no value found for
+// actions.listUsers.extracted" and iterated ZERO times, while the bare task
+// name over the same extract iterated seven. Validate accepted both, so the
+// only signal was a failed run.
+func TestValidate_ExtractedIsNotAField(t *testing.T) {
+	d, err := ParseDSL(json.RawMessage(`{
+	 "schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	 "do":[
+	  {"listUsers":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1,
+	    "extract":"${ page.response.body.results }"}}},
+	  {"loop":{"for":{"each":"u","in":"${ actions.listUsers.extracted }"},
+	    "do":[{"inner":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, f := range Validate(d).Findings {
+		if strings.Contains(f.Message, "extracted is not a field") {
+			found = true
+			if f.Severity != Error {
+				t.Errorf("severity = %v, want error — this fails at run time", f.Severity)
+			}
+			// The hint has to carry the working form, or the author is told
+			// what is wrong without being told what is right.
+			if !strings.Contains(f.Hint, "${ actions.listUsers }") {
+				t.Errorf("hint should give the correct form, got: %s", f.Hint)
+			}
+		}
+	}
+	if !found {
+		t.Error("the .extracted suffix was accepted; the only signal would be a failed run")
+	}
+}
+
+// Only that suffix is flagged. actions.X.body is legitimate — the corrected
+// templates use it — and which other paths a for.in accepts has not been
+// established, so banning suffixes generally would reject working documents.
+func TestValidate_OtherActionSuffixesAreNotFlagged(t *testing.T) {
+	d, err := ParseDSL(json.RawMessage(`{
+	 "schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	 "do":[
+	  {"listUsers":{"call":"jc_operation","with":{"operationId":"getApiSystemusers","version":1}}},
+	  {"guard":{"call":"jc_operation","if":"${ len(actions.listUsers.body.results) > 0 }",
+	    "with":{"operationId":"getApiSystemusers","version":1}}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range Validate(d).Findings {
+		if strings.Contains(f.Message, "is not a field") {
+			t.Errorf("actions.X.body was flagged: %s", f.Message)
+		}
+	}
+}
