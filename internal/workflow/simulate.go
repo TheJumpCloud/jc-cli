@@ -199,6 +199,18 @@ func Simulate(d DSL, input map[string]any) SimResult {
 			}
 			step.Operation, step.Method = op.Describe(), op.Method
 			step.Params = resolveParams(t.With(), env)
+
+			// A plan whose parameters the API will reject is not a plan.
+			// Simulate used to print "would-call" with the wrong parameter
+			// name echoed back, directly beside the correct path — the
+			// contradiction was visible in one row and unremarked, and the
+			// create then failed with HTTP 400.
+			if why := pathParamProblem(op, t.With()); why != "" {
+				step.Status = SimUnresolved
+				step.Why = why
+				break
+			}
+
 			if changesState(op) {
 				step.Status = SimStubbed
 				step.Why = op.Method + " changes state and is never executed by a dry run"
@@ -332,4 +344,23 @@ func SimulateRaw(raw json.RawMessage, input map[string]any) (SimResult, error) {
 		return SimResult{}, err
 	}
 	return Simulate(d, input), nil
+}
+
+// pathParamProblem describes a pathParams object the operation will reject,
+// or "" when it is fine. Shares ComparePathParams with validate so the two
+// cannot disagree about the same document.
+func pathParamProblem(op Operation, with map[string]any) string {
+	missing, unexpected, ok := ComparePathParams(op, with)
+	if !ok {
+		return "pathParams is not an object"
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	if len(unexpected) == 1 && len(missing) == 1 {
+		return fmt.Sprintf("path parameter %q is not set; %q was supplied instead (%s)",
+			missing[0], unexpected[0], op.Path)
+	}
+	return fmt.Sprintf("path parameters not set: %s (%s)",
+		strings.Join(missing, ", "), op.Path)
 }
