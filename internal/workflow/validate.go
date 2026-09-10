@@ -392,6 +392,8 @@ func validateJCOperation(t Task, with map[string]any, add func(Severity, string,
 		return
 	}
 
+	validatePathParams(t, with, op, id, add)
+
 	// version is absent from the guide's field list, but every jc_operation
 	// step in every shipped template carries it and its value always matches
 	// the operation's API version. Treat it as required and checkable.
@@ -648,4 +650,107 @@ func checkReachability(tasks []Task, add func(Severity, string, string, string))
 			"execution follows the jump graph, not the order of the do list. Give some branch an explicit then "+
 				"naming this task, or move it out of the do list")
 	}
+}
+
+// validatePathParams checks the pathParams object against the placeholders in
+// the resolved operation's path.
+//
+// A live run had pathParams {"userid": ...} where the operation's path is
+// /api/v2/users/{user_id}/memberof. Both validate and simulate accepted it
+// silently — simulate even echoed the wrong name back into its plan — and
+// JumpCloud rejected the create with HTTP 400 "required parameter 'user_id'
+// is missing". That defeats the point of validating locally, which is to fail
+// before the round trip.
+//
+// The data was already loaded: the same catalogue that produces the excellent
+// operationId near-miss hint carries the path, and the required parameters are
+// that path one level down.
+func validatePathParams(t Task, with map[string]any, op Operation, id string, add func(Severity, string, string, string)) {
+	required := op.PathParams()
+
+	raw, present := with["pathParams"]
+	if !present {
+		// pathParams missing entirely is already reported below, naming the
+		// whole path. Reporting each placeholder here as well would say the
+		// same thing once per parameter.
+		return
+	}
+	m, isMap := raw.(map[string]any)
+	if !isMap {
+		add(Error, t.Path+".with.pathParams",
+			fmt.Sprintf("pathParams must be an object, got %T", raw), "")
+		return
+	}
+	supplied := map[string]bool{}
+	for k := range m {
+		supplied[k] = true
+	}
+
+	if len(required) == 0 {
+		for k := range supplied {
+			add(Warning, t.Path+".with.pathParams."+k,
+				fmt.Sprintf("%s takes no path parameters (%s)", id, op.Path),
+				"remove it, or move it to queryParams or bodyParams if the operation takes it there")
+		}
+		return
+	}
+
+	// A supplied name close to a missing one is a typo, and saying so is more
+	// use than reporting the two facts separately. userid -> user_id is
+	// distance 1.
+	claimed := map[string]bool{}
+	for _, want := range required {
+		if supplied[want] {
+			continue
+		}
+		if got, ok := nearestSupplied(want, supplied, claimed); ok {
+			claimed[got] = true
+			add(Error, t.Path+".with.pathParams",
+				fmt.Sprintf("%s expects path parameter %q, not %q", id, want, got),
+				fmt.Sprintf("rename %q to %q (%s)", got, want, op.Path))
+			continue
+		}
+		add(Error, t.Path+".with.pathParams",
+			fmt.Sprintf("%s requires path parameter %q, which is not set", id, want),
+			fmt.Sprintf("add it: the path is %s", op.Path))
+	}
+
+	for k := range supplied {
+		if claimed[k] {
+			continue
+		}
+		var isRequired bool
+		for _, want := range required {
+			if want == k {
+				isRequired = true
+				break
+			}
+		}
+		if !isRequired {
+			add(Warning, t.Path+".with.pathParams."+k,
+				fmt.Sprintf("%s has no path parameter %q (%s)", id, k, op.Path),
+				fmt.Sprintf("the path takes: %s", strings.Join(required, ", ")))
+		}
+	}
+}
+
+// nearestSupplied finds an unclaimed supplied name close enough to want to be
+// a typo of it rather than a different parameter. The cap is deliberately
+// tight: a wrong-but-plausible rename is worse than no suggestion, which is
+// the same reasoning that tightened the event-type suggestions.
+func nearestSupplied(want string, supplied, claimed map[string]bool) (string, bool) {
+	best, bestDist := "", 0
+	for k := range supplied {
+		if claimed[k] {
+			continue
+		}
+		d := levenshtein(strings.ToLower(want), strings.ToLower(k))
+		if d > 3 {
+			continue
+		}
+		if best == "" || d < bestDist {
+			best, bestDist = k, d
+		}
+	}
+	return best, best != ""
 }

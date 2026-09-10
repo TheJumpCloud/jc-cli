@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -230,4 +231,23 @@ func min3(a, b, c int) int {
 		a = c
 	}
 	return a
+}
+
+// pathParamPattern matches the {placeholder} segments in an operation path.
+var pathParamPattern = regexp.MustCompile(`\{(\w+)\}`)
+
+// PathParams returns the placeholder names an operation's path requires, in
+// the order they appear. 509 of the 732 catalogued operations take at least
+// one, and the names are not uniform — id, user_id, group_id, UUID,
+// provider_id — which is exactly why supplying the wrong one is easy.
+func (o Operation) PathParams() []string {
+	m := pathParamPattern.FindAllStringSubmatch(o.Path, -1)
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for _, g := range m {
+		out = append(out, g[1])
+	}
+	return out
 }
