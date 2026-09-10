@@ -463,70 +463,18 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
 	}
 
-	var matches []match
-	lowerName := strings.ToLower(name)
-
-	for _, raw := range result.Data {
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			continue
-		}
-
-		// Extract the name field — use ExtractNameFunc if provided.
-		var nameVal string
-		if cfg.ExtractNameFunc != nil {
-			n, err := cfg.ExtractNameFunc(raw)
-			if err != nil {
-				continue
-			}
-			nameVal = n
-		} else {
-			nameRaw, ok := obj[cfg.NameField]
-			if !ok {
-				continue
-			}
-			if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
-				continue
-			}
-		}
-
-		if strings.ToLower(nameVal) != lowerName {
-			continue
-		}
-
-		// Extract the ID field.
-		idRaw, ok := obj[cfg.IDField]
-		if !ok {
-			continue
-		}
-		var idVal string
-		if err := json.Unmarshal(idRaw, &idVal); err != nil {
-			continue
-		}
-
-		matches = append(matches, match{ID: idVal, Name: nameVal})
+	res, err := matchByName(result.Data, name, cfg)
+	if err != nil {
+		return "", err
 	}
 
-	switch len(matches) {
+	switch len(res.matches) {
 	case 0:
-		return "", &ResolveError{
-			ResourceType: cfg.NameField,
-			Identifier:   name,
-			Message:      fmt.Sprintf("%s %q not found", cfg.NameField, name),
-		}
+		return "", res.notFound(name, cfg)
 	case 1:
-		return matches[0].ID, nil
+		return res.matches[0].ID, nil
 	default:
-		lines := make([]string, len(matches))
-		for i, m := range matches {
-			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
-		}
-		return "", &ResolveError{
-			ResourceType: cfg.NameField,
-			Identifier:   name,
-			Message: fmt.Sprintf("ambiguous %s %q matched %d resources:\n%s",
-				cfg.NameField, name, len(matches), strings.Join(lines, "\n")),
-		}
+		return "", res.ambiguous(name, cfg)
 	}
 }
 
@@ -605,69 +553,18 @@ func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg Resou
 		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
 	}
 
-	var matches []match
-	lowerName := strings.ToLower(name)
-
-	for _, raw := range result.Data {
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			continue
-		}
-
-		// Extract the name field — use ExtractNameFunc if provided.
-		var nameVal string
-		if cfg.ExtractNameFunc != nil {
-			n, err := cfg.ExtractNameFunc(raw)
-			if err != nil {
-				continue
-			}
-			nameVal = n
-		} else {
-			nameRaw, ok := obj[cfg.NameField]
-			if !ok {
-				continue
-			}
-			if err := json.Unmarshal(nameRaw, &nameVal); err != nil {
-				continue
-			}
-		}
-
-		if strings.ToLower(nameVal) != lowerName {
-			continue
-		}
-
-		idRaw, ok := obj[cfg.IDField]
-		if !ok {
-			continue
-		}
-		var idVal string
-		if err := json.Unmarshal(idRaw, &idVal); err != nil {
-			continue
-		}
-
-		matches = append(matches, match{ID: idVal, Name: nameVal})
+	res, err := matchByName(result.Data, name, cfg)
+	if err != nil {
+		return "", err
 	}
 
-	switch len(matches) {
+	switch len(res.matches) {
 	case 0:
-		return "", &ResolveError{
-			ResourceType: cfg.NameField,
-			Identifier:   name,
-			Message:      fmt.Sprintf("%s %q not found", cfg.NameField, name),
-		}
+		return "", res.notFound(name, cfg)
 	case 1:
-		return matches[0].ID, nil
+		return res.matches[0].ID, nil
 	default:
-		lines := make([]string, len(matches))
-		for i, m := range matches {
-			lines[i] = fmt.Sprintf("  %s (ID: %s)", m.Name, m.ID)
-		}
-		return "", &ResolveError{
-			ResourceType: cfg.NameField,
-			Identifier:   name,
-			Message: fmt.Sprintf("ambiguous %s %q matched %d resources:\n%s",
-				cfg.NameField, name, len(matches), strings.Join(lines, "\n")),
-		}
+		return "", res.ambiguous(name, cfg)
 	}
 }
 
