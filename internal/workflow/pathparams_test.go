@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -197,5 +198,59 @@ func TestSimulate_CorrectPathParamsStillPlans(t *testing.T) {
 	pp, _ := res.Steps[0].Params["pathParams"].(map[string]any)
 	if pp["user_id"] != "6a5a55c2af0a0dfa12103c3c" {
 		t.Errorf("input did not resolve into the path parameter: %v", pp)
+	}
+}
+
+// The seven parameter shapes a verification pass exercised against the live
+// tenant, kept as a regression guard. It chose them to cover every shape it
+// knew of, and three (a, b, d) are forms observed succeeding in real runs
+// earlier in this project — so these are known-good documents, not guesses.
+//
+// This is the direction that matters. 509 of 732 catalogued operations take a
+// path parameter, so a rule that over-fires breaks simulate for most real
+// workflows: rejecting a correct document is a worse defect than the one this
+// rule was added to catch.
+func TestValidate_NoFalsePositivesAcrossPathParamShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name, operationID string
+		version           int
+		pathParams        string
+	}{
+		{"single id", "getApiSystemusersById", 1, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"single id, v2", "getApiV2UsergroupsById", 2, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"two parameters", "postApiV2ApplemdmsByAppleMdmIdDevicesByDeviceIdLock", 2,
+			`{"apple_mdm_id":"5ec9ce0000c9510e358c9918","device_id":"5ec9ce0000c9510e358c9919"}`},
+		{"id in a nested path", "postApiSystemusersByIdStateSuspend", 1, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"named snake_case", "getApiV2PoliciesByPolicyIdPolicyresults", 2, `{"policy_id":"5ec9ce0000c9510e358c9918"}`},
+		{"no path params, body only", "postApiRuncommand", 1, ""},
+		{"no path params at all", "getApiSystemusers", 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pp := ""
+			if tc.pathParams != "" {
+				pp = `,"pathParams":` + tc.pathParams
+			}
+			doc := `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+			 "do":[{"g":{"call":"jc_operation","with":{"operationId":"` + tc.operationID +
+				`","version":` + strconv.Itoa(tc.version) + pp + `}}}]}`
+
+			d, err := ParseDSL(json.RawMessage(doc))
+			if err != nil {
+				t.Fatalf("fixture did not parse: %v", err)
+			}
+			for _, f := range Validate(d).Findings {
+				if strings.Contains(f.Path, "pathParams") {
+					t.Errorf("%s (%s): %s — %s", tc.name, tc.operationID, f.Severity, f.Message)
+				}
+			}
+			// Simulate must agree, for the same reason the two share
+			// ComparePathParams at all.
+			for _, s := range Simulate(d, map[string]any{}).Steps {
+				if s.Status == SimUnresolved && strings.Contains(s.Why, "path parameter") {
+					t.Errorf("%s (%s): simulate refused a correct document — %s",
+						tc.name, tc.operationID, s.Why)
+				}
+			}
+		})
 	}
 }

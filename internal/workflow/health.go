@@ -223,10 +223,6 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time, recency E
 		if r.UnknownEventType {
 			r.Detail += "; the event type is also absent from the catalog, which makes a typo likely"
 		}
-		if created, cerr := time.Parse(time.RFC3339, w.CreatedAt); cerr == nil && created.After(windowStart.Add(-time.Second)) {
-			r.Detail += "; the workflow was only created " + created.UTC().Format(time.RFC3339) +
-				", so the comparison covers its lifetime and nothing longer"
-		}
 
 	case runs == 0 && !recency.Known:
 		// Recency could not be measured, so silence proves nothing. Falling
@@ -276,7 +272,26 @@ func AssessHealth(w Workflow, events, runs int, windowStart time.Time, recency E
 			r.Detail += "; fewer runs than events is expected here, the trigger has a condition"
 		}
 	}
+
+	// The clamp note belongs on EVERY verdict, not just the one it started
+	// on. A workflow younger than the requested window is compared over its
+	// own lifetime, so a report can read events_in_window 1 beside
+	// window_days 30 and look self-contradictory. window_start disambiguates
+	// it, but only for someone who thinks to look; the number is the thing
+	// that gets quoted.
+	r.Detail += lifetimeClampNote(w, windowStart)
 	return r
+}
+
+// lifetimeClampNote explains a window that was cut short by the workflow's own
+// age, or "" when the full window applied.
+func lifetimeClampNote(w Workflow, windowStart time.Time) string {
+	created, err := time.Parse(time.RFC3339, w.CreatedAt)
+	if err != nil || !created.After(windowStart.Add(-time.Second)) {
+		return ""
+	}
+	return "; the workflow was only created " + created.UTC().Format(time.RFC3339) +
+		", so the comparison covers its lifetime and nothing longer"
 }
 
 // countOf renders a count with its noun, so a report reads "1 group_create
