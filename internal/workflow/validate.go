@@ -666,28 +666,21 @@ func checkReachability(tasks []Task, add func(Severity, string, string, string))
 // operationId near-miss hint carries the path, and the required parameters are
 // that path one level down.
 func validatePathParams(t Task, with map[string]any, op Operation, id string, add func(Severity, string, string, string)) {
-	required := op.PathParams()
-
-	raw, present := with["pathParams"]
-	if !present {
+	missing, unexpected, ok := ComparePathParams(op, with)
+	if !ok {
+		add(Error, t.Path+".with.pathParams",
+			fmt.Sprintf("pathParams must be an object, got %T", with["pathParams"]), "")
+		return
+	}
+	if _, present := with["pathParams"]; !present {
 		// pathParams missing entirely is already reported below, naming the
 		// whole path. Reporting each placeholder here as well would say the
 		// same thing once per parameter.
 		return
 	}
-	m, isMap := raw.(map[string]any)
-	if !isMap {
-		add(Error, t.Path+".with.pathParams",
-			fmt.Sprintf("pathParams must be an object, got %T", raw), "")
-		return
-	}
-	supplied := map[string]bool{}
-	for k := range m {
-		supplied[k] = true
-	}
 
-	if len(required) == 0 {
-		for k := range supplied {
+	if len(op.PathParams()) == 0 {
+		for _, k := range unexpected {
 			add(Warning, t.Path+".with.pathParams."+k,
 				fmt.Sprintf("%s takes no path parameters (%s)", id, op.Path),
 				"remove it, or move it to queryParams or bodyParams if the operation takes it there")
@@ -699,11 +692,8 @@ func validatePathParams(t Task, with map[string]any, op Operation, id string, ad
 	// use than reporting the two facts separately. userid -> user_id is
 	// distance 1.
 	claimed := map[string]bool{}
-	for _, want := range required {
-		if supplied[want] {
-			continue
-		}
-		if got, ok := nearestSupplied(want, supplied, claimed); ok {
+	for _, want := range missing {
+		if got, found := nearestUnexpected(want, unexpected, claimed); found {
 			claimed[got] = true
 			add(Error, t.Path+".with.pathParams",
 				fmt.Sprintf("%s expects path parameter %q, not %q", id, want, got),
@@ -715,32 +705,23 @@ func validatePathParams(t Task, with map[string]any, op Operation, id string, ad
 			fmt.Sprintf("add it: the path is %s", op.Path))
 	}
 
-	for k := range supplied {
+	for _, k := range unexpected {
 		if claimed[k] {
 			continue
 		}
-		var isRequired bool
-		for _, want := range required {
-			if want == k {
-				isRequired = true
-				break
-			}
-		}
-		if !isRequired {
-			add(Warning, t.Path+".with.pathParams."+k,
-				fmt.Sprintf("%s has no path parameter %q (%s)", id, k, op.Path),
-				fmt.Sprintf("the path takes: %s", strings.Join(required, ", ")))
-		}
+		add(Warning, t.Path+".with.pathParams."+k,
+			fmt.Sprintf("%s has no path parameter %q (%s)", id, k, op.Path),
+			fmt.Sprintf("the path takes: %s", strings.Join(op.PathParams(), ", ")))
 	}
 }
 
-// nearestSupplied finds an unclaimed supplied name close enough to want to be
-// a typo of it rather than a different parameter. The cap is deliberately
+// nearestUnexpected finds an unclaimed supplied name close enough to want to
+// be a typo of it rather than a different parameter. The cap is deliberately
 // tight: a wrong-but-plausible rename is worse than no suggestion, which is
 // the same reasoning that tightened the event-type suggestions.
-func nearestSupplied(want string, supplied, claimed map[string]bool) (string, bool) {
+func nearestUnexpected(want string, unexpected []string, claimed map[string]bool) (string, bool) {
 	best, bestDist := "", 0
-	for k := range supplied {
+	for _, k := range unexpected {
 		if claimed[k] {
 			continue
 		}

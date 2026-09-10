@@ -251,3 +251,47 @@ func (o Operation) PathParams() []string {
 	}
 	return out
 }
+
+// ComparePathParams reports how a task's pathParams object differs from the
+// placeholders the operation's path actually requires.
+//
+// Shared by validate and simulate on purpose. A live run wrote
+// pathParams {"userid": ...} against /api/v2/users/{user_id}/memberof and BOTH
+// accepted it — simulate even printed the correct path beside the wrong name
+// without remarking on it — so the two agreeing is the point, not an
+// incidental tidiness.
+//
+// ok is false when pathParams is present but not an object.
+func ComparePathParams(op Operation, with map[string]any) (missing, unexpected []string, ok bool) {
+	required := op.PathParams()
+
+	raw, present := with["pathParams"]
+	if !present {
+		return required, nil, true
+	}
+	m, isMap := raw.(map[string]any)
+	if !isMap {
+		return nil, nil, false
+	}
+
+	supplied := make(map[string]bool, len(m))
+	for k := range m {
+		supplied[k] = true
+	}
+	for _, want := range required {
+		if !supplied[want] {
+			missing = append(missing, want)
+		}
+	}
+	req := make(map[string]bool, len(required))
+	for _, want := range required {
+		req[want] = true
+	}
+	for k := range supplied {
+		if !req[k] {
+			unexpected = append(unexpected, k)
+		}
+	}
+	sort.Strings(unexpected)
+	return missing, unexpected, true
+}

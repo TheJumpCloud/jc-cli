@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -134,5 +135,122 @@ func TestOperation_PathParams(t *testing.T) {
 		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
 			t.Errorf("PathParams(%q) = %v, want %v", tc.path, got, tc.want)
 		}
+	}
+}
+
+// Validate and simulate must agree about the same document. The live report
+// named BOTH as accepting pathParams {"userid": ...} silently, and fixing one
+// would have left the other saying "would-call" on a plan the API rejects —
+// which is how the two drift apart in the first place.
+func TestSimulateAndValidateAgreeOnPathParams(t *testing.T) {
+	const typo = `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	 "do":[{"g":{"call":"jc_operation","with":{
+	   "operationId":"getApiV2UsersByUserIdMemberof","version":2,
+	   "pathParams":{"userid":"x"}}}}]}`
+
+	d, err := ParseDSL(json.RawMessage(typo))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var validateObjected bool
+	for _, f := range Validate(d).Findings {
+		if f.Severity == Error && strings.Contains(f.Message, "user_id") {
+			validateObjected = true
+		}
+	}
+
+	res := Simulate(d, map[string]any{})
+	var simulateObjected bool
+	for _, s := range res.Steps {
+		if s.Status == SimUnresolved && strings.Contains(s.Why, "user_id") {
+			simulateObjected = true
+		}
+		if s.Status == SimWouldCall {
+			t.Errorf("simulate planned a call the API rejects: %s — %v", s.Task, s.Params)
+		}
+	}
+
+	if validateObjected != simulateObjected {
+		t.Errorf("validate objected=%v but simulate objected=%v — the two surfaces "+
+			"disagree about the same document", validateObjected, simulateObjected)
+	}
+	if !validateObjected {
+		t.Error("neither surface objected")
+	}
+}
+
+// The correct document must still plan, or the check has just broken simulate
+// for every workflow that uses a path parameter — which is 509 of 732
+// operations.
+func TestSimulate_CorrectPathParamsStillPlans(t *testing.T) {
+	d, err := ParseDSL(json.RawMessage(`{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+	 "do":[{"g":{"call":"jc_operation","with":{
+	   "operationId":"getApiV2UsersByUserIdMemberof","version":2,
+	   "pathParams":{"user_id":"${ input.userId }"}}}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Simulate(d, map[string]any{"userId": "6a5a55c2af0a0dfa12103c3c"})
+	if len(res.Steps) != 1 || res.Steps[0].Status != SimWouldCall {
+		t.Fatalf("want one would-call step, got %+v", res.Steps)
+	}
+	pp, _ := res.Steps[0].Params["pathParams"].(map[string]any)
+	if pp["user_id"] != "6a5a55c2af0a0dfa12103c3c" {
+		t.Errorf("input did not resolve into the path parameter: %v", pp)
+	}
+}
+
+// The seven parameter shapes a verification pass exercised against the live
+// tenant, kept as a regression guard. It chose them to cover every shape it
+// knew of, and three (a, b, d) are forms observed succeeding in real runs
+// earlier in this project — so these are known-good documents, not guesses.
+//
+// This is the direction that matters. 509 of 732 catalogued operations take a
+// path parameter, so a rule that over-fires breaks simulate for most real
+// workflows: rejecting a correct document is a worse defect than the one this
+// rule was added to catch.
+func TestValidate_NoFalsePositivesAcrossPathParamShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name, operationID string
+		version           int
+		pathParams        string
+	}{
+		{"single id", "getApiSystemusersById", 1, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"single id, v2", "getApiV2UsergroupsById", 2, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"two parameters", "postApiV2ApplemdmsByAppleMdmIdDevicesByDeviceIdLock", 2,
+			`{"apple_mdm_id":"5ec9ce0000c9510e358c9918","device_id":"5ec9ce0000c9510e358c9919"}`},
+		{"id in a nested path", "postApiSystemusersByIdStateSuspend", 1, `{"id":"5ec9ce0000c9510e358c9918"}`},
+		{"named snake_case", "getApiV2PoliciesByPolicyIdPolicyresults", 2, `{"policy_id":"5ec9ce0000c9510e358c9918"}`},
+		{"no path params, body only", "postApiRuncommand", 1, ""},
+		{"no path params at all", "getApiSystemusers", 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pp := ""
+			if tc.pathParams != "" {
+				pp = `,"pathParams":` + tc.pathParams
+			}
+			doc := `{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
+			 "do":[{"g":{"call":"jc_operation","with":{"operationId":"` + tc.operationID +
+				`","version":` + strconv.Itoa(tc.version) + pp + `}}}]}`
+
+			d, err := ParseDSL(json.RawMessage(doc))
+			if err != nil {
+				t.Fatalf("fixture did not parse: %v", err)
+			}
+			for _, f := range Validate(d).Findings {
+				if strings.Contains(f.Path, "pathParams") {
+					t.Errorf("%s (%s): %s — %s", tc.name, tc.operationID, f.Severity, f.Message)
+				}
+			}
+			// Simulate must agree, for the same reason the two share
+			// ComparePathParams at all.
+			for _, s := range Simulate(d, map[string]any{}).Steps {
+				if s.Status == SimUnresolved && strings.Contains(s.Why, "path parameter") {
+					t.Errorf("%s (%s): simulate refused a correct document — %s",
+						tc.name, tc.operationID, s.Why)
+				}
+			}
+		})
 	}
 }
