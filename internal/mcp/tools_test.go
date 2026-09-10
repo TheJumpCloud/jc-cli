@@ -335,6 +335,15 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	expectedTools := []string{
+		// Google EMM — Android Enterprise, read-only by design.
+		"google_emm_enterprises_list",
+		"google_emm_enterprise_get",
+		"google_emm_connection_status",
+		"google_emm_devices_list",
+		"google_emm_device_get",
+		"google_emm_device_policy_results",
+		"google_emm_enrollment_tokens_list",
+		"google_emm_enrollment_token_get",
 		// Password Manager — the credential vault, read-only by design.
 		"password_manager_overview",
 		"password_manager_users_list",
@@ -536,8 +545,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 330 {
-		t.Errorf("expected 330 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 338 {
+		t.Errorf("expected 338 tools, got %d", len(result.Tools))
 	}
 }
 
