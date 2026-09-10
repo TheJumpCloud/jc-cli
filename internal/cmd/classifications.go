@@ -242,14 +242,32 @@ var commandClass = map[string]string{
 	"jc workflows templates init": ClassReadOnly,
 	"jc workflows event-types":    ClassReadOnly,
 	"jc workflows simulate":       ClassReadOnly,
-	"jc workflows health":         ClassReadOnly,
-	"jc workflows lint":           ClassReadOnly,
-	"jc workflows validate":       ClassReadOnly,
-	"jc workflows explain":        ClassReadOnly,
-	"jc workflows create":         ClassMutating,
-	"jc workflows update":         ClassMutating,
-	"jc workflows delete":         ClassDestructive,
-	"jc workflows trigger":        ClassDestructive,
+	// Password Manager is read-only by design: the API can create a shared
+	// folder and offers no route to delete one, so a write here cannot be
+	// undone. Every leaf is a read.
+	"jc password-manager backup-keys":      ClassReadOnly,
+	"jc password-manager folders get":      ClassReadOnly,
+	"jc password-manager folders groups":   ClassReadOnly,
+	"jc password-manager folders list":     ClassReadOnly,
+	"jc password-manager folders users":    ClassReadOnly,
+	"jc password-manager groups list":      ClassReadOnly,
+	"jc password-manager items":            ClassReadOnly,
+	"jc password-manager overview":         ClassReadOnly,
+	"jc password-manager policies company": ClassReadOnly,
+	"jc password-manager policies folders": ClassReadOnly,
+	"jc password-manager users folders":    ClassReadOnly,
+	"jc password-manager users get":        ClassReadOnly,
+	"jc password-manager users items":      ClassReadOnly,
+	"jc password-manager users list":       ClassReadOnly,
+
+	"jc workflows health":   ClassReadOnly,
+	"jc workflows lint":     ClassReadOnly,
+	"jc workflows validate": ClassReadOnly,
+	"jc workflows explain":  ClassReadOnly,
+	"jc workflows create":   ClassMutating,
+	"jc workflows update":   ClassMutating,
+	"jc workflows delete":   ClassDestructive,
+	"jc workflows trigger":  ClassDestructive,
 
 	// password-policies — org password requirements (KLA-485). delete is
 	// destructive: removing a policy silently re-governs everyone it covered

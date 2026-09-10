@@ -673,6 +673,30 @@ var Resources = map[string]ResourceSchema{
 	// creating one also needs an execution role and local validation. The TUI
 	// is a viewer here and hands authoring to `jc workflows templates init` /
 	// `validate` / `create`.
+	// Password Manager. Read-only: the API can create a shared folder and has
+	// no route to delete one, so a write cannot be undone.
+	//
+	// Ids here are UUIDs, not the 24-character hex the rest of JumpCloud uses,
+	// and externalId is the only link back to the directory.
+	"password-manager": {
+		Resource:      "password-manager",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "username", "email", "status"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "Password Manager id — a UUID, not a JumpCloud object id", ReadOnly: true},
+			{Name: "externalId", Type: "string", Description: "The JumpCloud user id this record mirrors; the only bridge between the two systems", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Display name", ReadOnly: true},
+			{Name: "username", Type: "string", Description: "Username", ReadOnly: true},
+			{Name: "email", Type: "string", Description: "Email address", ReadOnly: true},
+			{Name: "status", Type: "string", Description: "Enrolment status", ReadOnly: true},
+			{Name: "itemsCount", Type: "int", Description: "Stored items", ReadOnly: true},
+			{Name: "passwordsScore", Type: "int", Description: "Password hygiene score", ReadOnly: true},
+			{Name: "weakPasswords", Type: "int", Description: "Passwords flagged weak", ReadOnly: true},
+			{Name: "oldPasswords", Type: "int", Description: "Passwords flagged old", ReadOnly: true},
+		},
+	},
+
 	"workflows": {
 		Resource:      "workflows",
 		APIVersion:    "v2",
