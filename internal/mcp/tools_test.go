@@ -344,6 +344,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"google_emm_device_policy_results",
 		"google_emm_enrollment_tokens_list",
 		"google_emm_enrollment_token_get",
+		// Workday import — two verified reads; the rest is unprobed.
+		"workday_integrations_list",
+		"workday_integration_get",
 		// Password Manager — the credential vault, read-only by design.
 		"password_manager_overview",
 		"password_manager_users_list",
@@ -545,8 +548,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 338 {
-		t.Errorf("expected 338 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 340 {
+		t.Errorf("expected 340 tools, got %d", len(result.Tools))
 	}
 }
 
