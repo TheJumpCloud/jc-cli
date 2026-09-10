@@ -245,6 +245,9 @@ var commandClass = map[string]string{
 	// Password Manager is read-only by design: the API can create a shared
 	// folder and offers no route to delete one, so a write here cannot be
 	// undone. Every leaf is a read.
+	// Workday: only the two verified reads exist; see internal/workday.
+	"jc workday get":                       ClassReadOnly,
+	"jc workday list":                      ClassReadOnly,
 	"jc password-manager backup-keys":      ClassReadOnly,
 	"jc password-manager folders get":      ClassReadOnly,
 	"jc password-manager folders groups":   ClassReadOnly,

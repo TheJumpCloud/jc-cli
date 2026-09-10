@@ -151,7 +151,7 @@ interface.`,
 	// AI & Automation
 	addToGroup(rootCmd, "ai",
 		newMcpCmd(), newAskCmd(), newExplainCmd(),
-		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
+		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newWorkdayCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
 	)
 
 	// Setup & Config
