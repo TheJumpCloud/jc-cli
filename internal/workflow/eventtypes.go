@@ -112,8 +112,19 @@ func SuggestEventType(name string, limit int) []string {
 		if strings.Contains(lower, needle) || strings.Contains(needle, lower) {
 			d = 0
 		}
-		// Beyond this a "suggestion" is noise rather than a near miss.
-		if d > len(needle)/2+2 {
+		// Two caps, and the absolute one does the work. The relative cap
+		// alone scales with the name: for a 23-character type it allowed 13
+		// edits, which let feature_settings_change be "corrected" to
+		// syncro_settings_update (11), autotask_settings_update (12) and
+		// association_change (13). None is a typo of it.
+		//
+		// That matters because this list exists to catch TYPOS, and a real
+		// typo is one or two characters — the three examples above are all
+		// distance 1. An event type the catalog simply omits is the opposite
+		// case, and offering corrections there invites someone to "fix" a
+		// correct type into a wrong one, producing a workflow that silently
+		// never fires: the exact failure this area was built to catch.
+		if d > 3 || d > len(needle)/2+2 {
 			continue
 		}
 		all = append(all, scored{n, d})

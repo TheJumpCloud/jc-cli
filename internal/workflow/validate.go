@@ -203,12 +203,19 @@ func validateTrigger(d DSL, add func(Severity, string, string, string)) TriggerS
 
 	case trigger.Source == "":
 		add(Error, "dsl.schedule.on.one.with", "trigger has no source",
-			"set source to jc_events or external")
+			"jc_events or external. A SCHEDULED workflow does not use this envelope at all: omit `on` entirely and give schedule a flat object — {frequency, interval, day_of_week, time, timezone} — which validates as trigger_type scheduler.")
 
 	default:
+		// There are THREE trigger types, and this hint used to name two.
+		// explain, health and lint all report trigger_type "scheduler", and
+		// lint passes two scheduler templates as clean — so an author who
+		// wrote source: "scheduler" by analogy was told by the validator
+		// that the thing they were doing does not exist, while the rest of
+		// jc showed it working. A hint that is confidently wrong stops
+		// correct work, which is worse than no hint.
 		add(Error, "dsl.schedule.on.one.with.source",
 			fmt.Sprintf("unknown trigger source %q", trigger.Source),
-			"jc_events or external")
+			"jc_events or external. A SCHEDULED workflow does not use this envelope at all: omit `on` entirely and give schedule a flat object — {frequency, interval, day_of_week, time, timezone} — which validates as trigger_type scheduler.")
 	}
 	return trigger
 }
