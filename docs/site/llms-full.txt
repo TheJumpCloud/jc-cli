@@ -617,6 +617,7 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `custom-emails`
 - `devices`
 - `duo`
+- `google-emm`
 - `groups`
 - `gsuite`
 - `health-rule-templates`

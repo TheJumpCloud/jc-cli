@@ -1572,6 +1572,7 @@
     "custom-emails",
     "devices",
     "duo",
+    "google-emm",
     "groups",
     "gsuite",
     "health-rule-templates",

@@ -624,6 +624,7 @@ func (s *Server) registerTools() {
 	s.registerDeviceSettingsTools()
 	s.registerPasswordPolicyTools()
 	s.registerPasswordManagerTools()
+	s.registerGoogleEMMTools()
 	s.registerWorkdayTools()
 	s.registerWorkflowTools()
 

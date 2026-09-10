@@ -678,6 +678,24 @@ var Resources = map[string]ResourceSchema{
 	//
 	// Ids here are UUIDs, not the 24-character hex the rest of JumpCloud uses,
 	// and externalId is the only link back to the directory.
+	"google-emm": {
+		Resource:      "google-emm",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"objectId", "displayName", "enterpriseType", "allowDeviceEnrollment"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "JumpCloud object id — the ONLY identifier any Google EMM endpoint accepts", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Google's resource name, enterprises/<googleId>. Display only; the API rejects it", ReadOnly: true},
+			{Name: "displayName", Type: "string", Description: "Enterprise display name", ReadOnly: true},
+			{Name: "enterpriseType", Type: "string", Description: "Managed Google Play accounts vs managed Google domain", ReadOnly: true},
+			{Name: "contactEmail", Type: "string", Description: "Enterprise contact address", ReadOnly: true},
+			{Name: "deviceGroupId", Type: "string", Description: "The JumpCloud device group enrolled devices land in", ReadOnly: true},
+			{Name: "allowDeviceEnrollment", Type: "bool", Description: "Whether new devices may enroll", ReadOnly: true},
+			{Name: "organizationObjectId", Type: "string", Description: "Owning organization", ReadOnly: true},
+			{Name: "createdAt", Type: "string", Description: "When the binding was created", ReadOnly: true},
+		},
+	},
+
 	"password-manager": {
 		Resource:      "password-manager",
 		APIVersion:    "v2",
