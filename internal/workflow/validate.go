@@ -294,6 +294,70 @@ func validateLoop(t Task, add func(Severity, string, string, string)) {
 	body, ok := t.Body["do"].([]any)
 	if !ok || len(body) == 0 {
 		add(Error, t.Path+".do", "a for loop body needs at least one task", "")
+		return
+	}
+	warnUnguardedLoopCall(t, body, add)
+}
+
+// warnUnguardedLoopCall flags a loop that calls the API without pre-filtering.
+//
+// A for.each does NOT isolate its iterations. A non-2xx from any call halts
+// the whole run: later iterations never happen, every task after the loop is
+// skipped, and the run reports one failure that says nothing about how much of
+// the fleet went untouched. Verified live — a loop over three ids with a
+// nonexistent one in the middle reported iteration_count 1,
+// failed_at_iteration 2, and never attempted the third.
+//
+// This is the engine behaviour most likely to surprise, because it is the
+// opposite of what a sweep needs, and NONE of the twelve shipped templates
+// loops over a fallible call — so nobody copying them learns it. That is
+// exactly the combination that justifies a lint: silent, severe, and with no
+// worked example to warn the author.
+//
+// It stays quiet when the author has already pre-filtered, which is the whole
+// point of warning at all:
+//
+//   - an `if` ON the fallible task is a real pre-filter — it decides from data
+//     already in hand, before the call. (An `if` AFTER the call is dead code,
+//     because by then the run is over.)
+//   - a `switch` earlier in the body routes around the record entirely.
+//
+// Doing the right thing silences it. A warning nobody can satisfy is one
+// people learn to scroll past.
+func warnUnguardedLoopCall(t Task, body []any, add func(Severity, string, string, string)) {
+	var sawSwitch bool
+	for _, raw := range body {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		for name, rawTask := range entry {
+			inner, ok := rawTask.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, isSwitch := inner["switch"]; isSwitch {
+				sawSwitch = true
+				continue
+			}
+			call, _ := inner["call"].(string)
+			if call != CallJCOperation && call != CallConnector {
+				continue
+			}
+			if _, guarded := inner["if"]; guarded {
+				continue
+			}
+			if sawSwitch {
+				continue
+			}
+			add(Warning, t.Path+".do."+name,
+				fmt.Sprintf("%q calls the API inside a loop with nothing to filter out bad records", name),
+				"a non-2xx halts the WHOLE run, not just this iteration: the remaining records are "+
+					"never touched and every task after the loop is skipped. Guard this task with an "+
+					"`if` on the loop variable, or route past it with a switch earlier in the body. "+
+					"An `if` after the call cannot help — the run is already over.")
+			return
+		}
 	}
 }
 

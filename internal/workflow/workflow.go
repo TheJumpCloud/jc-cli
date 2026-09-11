@@ -146,6 +146,11 @@ type RunNode struct {
 	// carrying the expression and its result. It is a stronger skip signal
 	// than the message, being structured rather than English prose.
 	IfCondition *IfCondition `json:"if_condition,omitempty"`
+	// IterationCount is how many times a `for` node's body ran. It is the
+	// only signal that distinguishes a loop that completed from one that was
+	// never entered, because a `for` node carries NO node_output on success —
+	// see RunNode.State.
+	IterationCount *int `json:"iteration_count,omitempty"`
 }
 
 // IfCondition is a task guard as the engine evaluated it.
