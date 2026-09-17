@@ -715,6 +715,21 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	"workday": {
+		Resource:      "workday",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id"},
+		Fields: []FieldDef{
+			// The record has never been observed with data in it — no tenant
+			// available has a Workday integration — so only the id is
+			// declared. Fill this in from a real record rather than from the
+			// spec, which is wrong about this API's shapes often enough that
+			// guessing here would defeat the purpose.
+			{Name: "id", Type: "string", Description: "JumpCloud object id of the Workday integration", ReadOnly: true},
+		},
+	},
+
 	"workflows": {
 		Resource:      "workflows",
 		APIVersion:    "v2",

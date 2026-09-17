@@ -642,6 +642,7 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `system-insights`
 - `user-states`
 - `users`
+- `workday`
 - `workflow-runs`
 - `workflow-templates`
 - `workflows`

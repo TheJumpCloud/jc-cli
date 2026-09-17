@@ -625,6 +625,7 @@ func (s *Server) registerTools() {
 	s.registerPasswordPolicyTools()
 	s.registerPasswordManagerTools()
 	s.registerGoogleEMMTools()
+	s.registerWorkdayTools()
 	s.registerWorkflowTools()
 
 	// --- Organization tools ---

@@ -268,6 +268,9 @@ var commandClass = map[string]string{
 	"jc password-manager users get":               ClassReadOnly,
 	"jc password-manager users items":             ClassReadOnly,
 	"jc password-manager users list":              ClassReadOnly,
+	// Workday: only the two verified reads exist; see internal/workday.
+	"jc workday get":  ClassReadOnly,
+	"jc workday list": ClassReadOnly,
 
 	"jc workflows health":   ClassReadOnly,
 	"jc workflows lint":     ClassReadOnly,
