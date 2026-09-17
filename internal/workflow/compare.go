@@ -87,6 +87,10 @@ const (
 	// call type as plain "email". sendEmailsToChannel presumably shares it,
 	// but that has not been observed.
 	NodeTypeEmail = "email"
+	// NodeTypeFor is a for.each loop. It appears as ONE node carrying an
+	// iteration count and a summary; individual iterations are not
+	// represented in the trace at all.
+	NodeTypeFor = "for"
 )
 
 // State classifies what this node did, and why.
@@ -98,6 +102,28 @@ const (
 func (n RunNode) State() (RunState, string) {
 	if !n.IsExecuted {
 		return RunStateSkipped, "not reached — the run failed at an earlier task"
+	}
+
+	// A `for` node INVERTS the node_output predicate, so it has to be
+	// decided before the generic rules below touch it.
+	//
+	//	loop completed  -> node_output null,      iteration_count 7
+	//	loop failed     -> node_output POPULATED, iteration_count 1
+	//
+	// A completed loop therefore looks exactly like a skipped call node.
+	// Applying the envelope rule here reported a loop that ran seven times
+	// as not having run — which for a fleet-wide sweep is the difference
+	// between "we processed everyone" and "we processed nobody".
+	if n.Type == NodeTypeFor {
+		switch {
+		case !n.Success:
+			return RunStateFailed, n.Message
+		case n.IterationCount != nil && *n.IterationCount == 0:
+			// Entered, matched nothing. Not a failure, and not a run either.
+			return RunStateSkipped, "the loop had nothing to iterate over"
+		default:
+			return RunStateRan, n.Message
+		}
 	}
 
 	// success is checked ONLY after node_output has established that a call

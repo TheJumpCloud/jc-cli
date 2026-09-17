@@ -23,6 +23,10 @@ import (
 // task defined earlier in the document.
 var actionsRefRE = regexp.MustCompile(`\bactions\.([A-Za-z_][A-Za-z0-9_]*)`)
 
+// extractedRefRE matches the .extracted suffix that a live run proved is not
+// a field. See the note where it is used.
+var extractedRefRE = regexp.MustCompile(`actions\.(\w+)\.extracted\b`)
+
 // pageRefRE finds `page` references, which are only in scope inside pagination
 // expressions.
 var pageRefRE = regexp.MustCompile(`\bpage\.`)
@@ -196,6 +200,22 @@ func validateExpressions(d DSL, trigger TriggerStyle, tasks []Task, add func(Sev
 					fmt.Sprintf("actions.%s refers to a task that has not run yet", ref),
 					"a task can only read output from a task defined earlier")
 			}
+		}
+
+		// `.extracted` is not a field. A live run proved it: a for.in of
+		// ${ actions.listUsers.extracted } failed with "no value found for
+		// actions.listUsers.extracted" and iterated zero times, while the
+		// bare task name over the same extract iterated seven.
+		//
+		// The mistake is a natural analogy — actions.X.body is real, so
+		// actions.X.extracted looks like it should be — and validate accepted
+		// both, so the only signal was a failed run. Only this suffix is
+		// flagged, not suffixes generally: actions.X.body is legitimate and
+		// which other paths a for.in accepts has not been established.
+		for _, m := range extractedRefRE.FindAllStringSubmatch(e.Source, -1) {
+			add(Error, e.Path,
+				fmt.Sprintf("actions.%s.extracted is not a field", m[1]),
+				fmt.Sprintf("the extract result IS the task: use ${ actions.%s }", m[1]))
 		}
 	}
 

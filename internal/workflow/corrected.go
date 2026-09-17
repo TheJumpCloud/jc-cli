@@ -34,6 +34,20 @@ import (
 // where every reference to a skipped task's status and body came out false and
 // the run still completed.
 //
+// A second engine property belongs beside the first, because it has the same
+// shape — the templates are silent about it and the failure is quiet.
+//
+// A NON-2XX HALTS THE RUN INSIDE A LOOP TOO. A for.each does not isolate its
+// iterations: the first failing record ends the whole run, later iterations
+// never happen, and every task after the loop is skipped. Verified live — a
+// loop over three ids with a nonexistent one in the middle reported
+// iteration_count 1, failed_at_iteration 2, and never attempted the third.
+//
+// None of the twelve templates loops over a fallible call, so nobody copying
+// them learns this. The mitigation is the same idiom as the corrections above,
+// applied inside the loop: branch with switch/when BEFORE the fallible call,
+// never guard after it.
+
 //go:embed corrected.json
 var correctedJSON []byte
 

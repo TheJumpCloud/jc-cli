@@ -42,7 +42,19 @@ guesswork and mistakes surface at run time. The intended loop is:
 
 Workflows run as a role you choose, and can send email and call external
 connectors. Both are surfaced rather than assumed — see ` + "`validate`" + ` and
-` + "`explain`" + `.`,
+` + "`explain`" + `.
+
+A NON-2XX HALTS THE WHOLE RUN, INCLUDING INSIDE A LOOP. This is the engine
+behaviour most likely to surprise, because it is the opposite of what a
+fleet-wide sweep needs. A for.each over 500 users dies on the first bad record:
+the remaining iterations never happen, every task after the loop is skipped,
+and the run reports a single failure that says nothing about how much of the
+fleet went untouched. Verified live — a loop over three ids with a bad one in
+the middle stopped at iteration 2 and never attempted the third.
+
+None of the shipped templates loops over a fallible call, so there is no worked
+example to warn you. Pre-filter with switch/when BEFORE the call that can fail;
+an ` + "`if`" + ` after it is dead code, because by then the run is already over.`,
 	}
 
 	cmd.AddCommand(newWorkflowsListCmd())

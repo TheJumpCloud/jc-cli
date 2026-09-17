@@ -131,6 +131,12 @@ func Simulate(d DSL, input map[string]any) SimResult {
 	unreachable := UnreachableTasks(d.Tasks())
 
 	chosen := map[string]bool{}
+	// undecided holds branch targets belonging to a switch whose `when` could
+	// not be evaluated in a dry run. They are NOT skipped — nobody knows
+	// whether they run — and saying "skipped" produces a false
+	// ran-but-planned-skip, which is the one verdict this tool tells you to
+	// act on.
+	undecided := map[string]bool{}
 	for _, t := range d.Tasks() {
 		step := SimStep{Task: t.Name, Call: t.Call()}
 
@@ -143,7 +149,16 @@ func Simulate(d DSL, input map[string]any) SimResult {
 			continue
 		}
 
-		// A branch target runs only if some switch selected it.
+		// A branch target runs only if some switch selected it — unless the
+		// switch could not be evaluated at all, in which case its targets are
+		// unresolved rather than skipped.
+		if branchTargets[t.Name] && !chosen[t.Name] && undecided[t.Name] {
+			step.Status = SimUnresolved
+			step.Why = "the switch routing here reads data a dry run does not have, " +
+				"so whether this branch is taken cannot be predicted"
+			res.Steps = append(res.Steps, step)
+			continue
+		}
 		if branchTargets[t.Name] && !chosen[t.Name] {
 			step.Status = SimSkipped
 			step.Why = "a branch target no evaluated switch selected"
@@ -162,10 +177,23 @@ func Simulate(d DSL, input map[string]any) SimResult {
 			// false positive there teaches people to ignore it, which defeats
 			// the tool.
 			step.Status = SimSwitched
-			if target, why := pickBranch(branches, env); target != "" {
-				chosen[target] = true
-				step.Why = "chose " + target + " (" + why + ")"
-			} else {
+			outcome := pickBranch(branches, env)
+			switch {
+			case len(outcome.unevaluable) > 0:
+				// A `when` that reads a prior step's response body cannot be
+				// evaluated without one. The if-guard path has always
+				// reported that as unresolved; this one used to discard the
+				// error and fall through to the default, so the plan named a
+				// branch it had not chosen and the comparison called the
+				// engine wrong.
+				for _, target := range outcome.targets {
+					undecided[target] = true
+				}
+				step.Why = "cannot route: " + strings.Join(outcome.unevaluable, "; ")
+			case outcome.target != "":
+				chosen[outcome.target] = true
+				step.Why = "chose " + outcome.target + " (" + outcome.why + ")"
+			default:
 				step.Why = "no branch matched, so nothing downstream was selected"
 			}
 			res.Steps = append(res.Steps, step)
@@ -241,8 +269,30 @@ func Simulate(d DSL, input map[string]any) SimResult {
 	return res
 }
 
-// pickBranch returns the first matching branch's target, and why.
-func pickBranch(branches []any, env map[string]any) (string, string) {
+// branchOutcome is what the planner could work out about a switch.
+type branchOutcome struct {
+	// target is the branch selected, when one could be.
+	target string
+	why    string
+	// unevaluable holds the `when` expressions that could not be evaluated at
+	// all. Non-empty means the routing is unknown, which is different from no
+	// branch matching.
+	unevaluable []string
+	// targets is every branch target of this switch, needed when the routing
+	// is unknown and all of them become undecided.
+	targets []string
+}
+
+// pickBranch works out which branch a switch takes, and reports honestly when
+// it cannot.
+//
+// It used to swallow the evaluation error and fall through to the default, so
+// a switch reading a prior step's response body — which is what the corrected
+// templates all do — silently produced a plan that named the default branch.
+// The plan then disagreed with every run that branched any other way, and
+// reported the ENGINE as wrong.
+func pickBranch(branches []any, env map[string]any) branchOutcome {
+	var out branchOutcome
 	var fallback string
 	for _, rawBranch := range branches {
 		branch, ok := rawBranch.(map[string]any)
@@ -255,20 +305,29 @@ func pickBranch(branches []any, env map[string]any) (string, string) {
 				continue
 			}
 			then, _ := c["then"].(string)
+			if then != "" && !ControlTargets[then] {
+				out.targets = append(out.targets, then)
+			}
 			when, hasWhen := c["when"].(string)
 			if !hasWhen {
 				fallback = then
 				continue
 			}
-			if pass, err := evalBool(when, env); err == nil && pass {
-				return then, "case " + name + " matched"
+			pass, err := evalBool(when, env)
+			if err != nil {
+				out.unevaluable = append(out.unevaluable,
+					"case "+name+" ("+when+"): "+err.Error())
+				continue
+			}
+			if pass && out.target == "" {
+				out.target, out.why = then, "case "+name+" matched"
 			}
 		}
 	}
-	if fallback != "" {
-		return fallback, "default"
+	if out.target == "" && fallback != "" && len(out.unevaluable) == 0 {
+		out.target, out.why = fallback, "default"
 	}
-	return "", ""
+	return out
 }
 
 func evalBool(src string, env map[string]any) (bool, error) {
