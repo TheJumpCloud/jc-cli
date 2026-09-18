@@ -1533,3 +1533,69 @@ func TestResetViperForRecipeStep(t *testing.T) {
 		t.Error("plan flag still true after reset")
 	}
 }
+
+// A read-only recipe's whole value is what it found, and `jc recipe run` used
+// to discard it: Execute collects every step's stdout into StepResult.Output
+// and the command wrote none of it anywhere. The shipped audit-inactive-users
+// has told operators to "review the user list above" since the catalog began,
+// when no list was ever above.
+func TestRecipeRun_WritesStepOutputToStdout(t *testing.T) {
+	setupRecipeTest(t)
+
+	recipeDir := t.TempDir()
+	overrideRecipesDir(t, recipeDir)
+
+	recipeContent := `name: test-findings
+description: Test that findings reach stdout
+steps:
+  - name: check-version
+    command: 'version'
+on_success:
+  message: "done"
+`
+	_ = os.WriteFile(filepath.Join(recipeDir, "test-findings.yaml"), []byte(recipeContent), 0600)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs([]string{"recipe", "run", "test-findings"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	stdout := out.String()
+	if strings.TrimSpace(stdout) == "" {
+		t.Fatal("stdout is empty — the step output was computed and thrown away, " +
+			"which makes every audit recipe in the catalog report nothing")
+	}
+
+	var result struct {
+		Recipe string `json:"recipe"`
+		Status string `json:"status"`
+		Steps  []struct {
+			Name   string `json:"name"`
+			Output string `json:"output"`
+			Status string `json:"status"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("stdout is not the execution result: %v\ngot: %q", err, stdout)
+	}
+	if len(result.Steps) != 1 {
+		t.Fatalf("got %d steps, want 1", len(result.Steps))
+	}
+	if strings.TrimSpace(result.Steps[0].Output) == "" {
+		t.Error("the step ran and its output is empty; the findings are the deliverable")
+	}
+
+	// The split matters: data is pipeable on stdout, progress is not mixed in.
+	if strings.Contains(stdout, "[1/1]") {
+		t.Error("progress leaked into stdout, which breaks piping the result")
+	}
+	if !strings.Contains(errOut.String(), "[1/1]") {
+		t.Error("progress should still go to stderr")
+	}
+}
