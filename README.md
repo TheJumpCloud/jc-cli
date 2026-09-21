@@ -74,8 +74,8 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 28 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Duo MFA, custom emails, and app templates.
-- **AI-native** — built-in [MCP server](#mcp-server) with 214 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 42 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Workday, Duo MFA, Password Manager, workflows, alerts, health rules, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
+- **AI-native** — built-in [MCP server](#mcp-server) with 340 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -229,6 +229,7 @@ jc users lock jdoe                                 # Lock account
 jc users unlock jdoe                               # Unlock account
 jc users reset-mfa jdoe                            # Reset MFA enrollment
 jc users reset-password jdoe                       # Trigger password reset
+jc users groups jdoe                               # Groups this user belongs to, with names
 jc users ssh-keys jdoe                             # List SSH keys
 jc users ssh-key-add jdoe --name laptop --public-key "ssh-ed25519 AAAA..."
 jc users ssh-key-delete jdoe --key-id abc123...    # Delete an SSH key
@@ -465,6 +466,53 @@ jc app-templates list -t                         # Browse SSO app templates
 jc app-templates get <template-id>               # View template details
 ```
 
+### Password Manager
+
+```bash
+# Read-only. Writes are not exposed: the API creates a shared folder and
+# offers no way to delete one, so a write here is one-way on a live tenant.
+jc password-manager overview                     # Org vault health: enrolment, hygiene scores
+jc password-manager users list                   # Who is enrolled (NOT the same as who has an account)
+jc password-manager users get ada@example.com    # By vault name, email, UUID or JumpCloud user id
+jc password-manager users folders ada            # Which shared folders one person can reach
+jc password-manager folders list                 # Shared folders — the unit of shared access
+jc password-manager folders users <folder>       # Who can see one folder (access review)
+jc password-manager policies company             # Org vault settings, e.g. export allowed?
+```
+
+Password Manager ids are **UUIDs**, not the 24-character hex the rest of JumpCloud
+uses, and records link back to the directory only through `externalId`. `jc` accepts
+either and bridges them, so a JumpCloud user id works where you would expect it to.
+
+### Google EMM (Android Enterprise)
+
+```bash
+# Read-only. Six of the writes are device commands including erase-device, and
+# DELETE on an enterprise unbinds Android Enterprise for the whole org.
+jc google-emm enterprises list                   # The org's Android Enterprise bindings
+jc google-emm enterprises get <name>             # By display name, Google id, or object id
+jc google-emm enterprises connection-status <name>   # Is the link to Google still live?
+jc google-emm devices list <enterprise>          # Enrolled devices
+jc google-emm devices policy-results <device>    # How policies actually landed, not what was asked
+jc google-emm enrollment-tokens list <enterprise>    # Tokens that let a device join
+```
+
+The OpenAPI spec describes two id systems for this area; there is one. Every endpoint
+takes the 24-character `objectId` — Google's own id is display-only. `jc` accepts both
+and sends the one the API takes.
+
+### Workday Import
+
+```bash
+jc workday list                                  # HR-import integrations (a bare array, not an envelope)
+jc workday get <object-id>                       # One integration, by id
+```
+
+Deliberately two commands. JumpCloud also serves a workers listing and an import-results
+endpoint, and neither is implemented: no tenant available for testing has a Workday
+integration, so their response shapes have never been observed. Shipping a parser for a
+response nobody has seen is a guess, not a contract.
+
 ### Policy Management
 
 ```bash
@@ -676,7 +724,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**214 tools available** covering all 28 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
+**340 tools available** covering all 42 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -713,12 +761,13 @@ Supports Anthropic, OpenAI, and Ollama (local models). Use `--force` to skip con
 
 ### Recipes
 
-Recipes are YAML-defined multi-step workflows that automate common JumpCloud operations. jc ships with 11 built-in recipes:
+Recipes are YAML-defined multi-step workflows that automate common JumpCloud operations. jc ships with 12 built-in recipes:
 
 | Recipe | Description |
 |--------|-------------|
 | `onboard-user` | Create a new user, add to groups, verify |
 | `offboard-user` | Lock account, remove from all groups, reset MFA |
+| `offboarding-audit` | Verify a departed user is actually gone — account state, devices still bound, groups still joined |
 | `security-audit` | Check MFA adoption, auth failures, admin access |
 | `compliance-report` | MFA status, user inventory, device inventory |
 | `mfa-enforcement-check` | List users and their MFA enrollment status |
@@ -1099,21 +1148,30 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 28 resource types + utilities
+  cmd/                  CLI commands (Cobra) — 42 resource types + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
   resolve/              Name-to-ID resolution with file-based caching
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
-  tui/                  Interactive terminal UI (Bubbletea) — 28 resource views
-  mcp/                  MCP server (official Go SDK) — 214 tools
+  tui/                  Interactive terminal UI (Bubbletea) — 42 resource views
+  mcp/                  MCP server (official Go SDK) — 340 tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
-  schema/               Machine-readable CLI schema (27 resource schemas)
+  schema/               Machine-readable CLI schema (42 resource schemas)
   simulator/            Auth policy simulator (three-valued logic)
   plan/                 Plan mode rendering
   version/              Build-time version injection
+
+  Shared contract packages — one per area, so the CLI and the MCP server
+  cannot drift apart. Each encodes what a live tenant actually returns,
+  because the OpenAPI spec is wrong about several areas in ways that matter:
+  pwm/                  Password Manager — UUID ids, the externalId bridge
+  googleemm/            Google EMM — one id system, not the two the spec describes
+  workday/              Workday Import — bare-array list, and what is unprobed
+  usergroups/           Group membership + name join, shared by both surfaces
+  workflow/             Workflow DSL: validate, simulate, compare-run, health
 ```
 
 ---

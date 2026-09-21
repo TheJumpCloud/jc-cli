@@ -59,6 +59,15 @@ AREA_TO_COMMAND = {
     "Translation Rules": "ad/translation-rules",
     "Systems Organization Settings": "devices/settings",
     "Password Policy": "password-policies",
+    # Shipped 2026-09. Area-level entries: a command group exists. Per-operation
+    # coverage inside them is deliberately partial and recorded in the PRs —
+    # Password Manager reads only (writes are one-way on a live tenant),
+    # Google EMM reads only (six device commands include erase-device), and
+    # Workday 2 of 9 (no tenant available has an integration to probe against).
+    "Password Manager": "password-manager",
+    "PasswordManagerItem": "password-manager",
+    "Google EMM": "google-emm",
+    "Workday Import": "workday",
     "Workflows": "workflows",
     "System Group Associations": "graph",
     "IP Lists": "iplists",
@@ -152,11 +161,29 @@ def main():
                "resource. Per-operation completeness inside a covered area is "
                "tracked and closed as the program proceeds; see Phase 3.\n")
 
-    out.append("## Gap — areas with no command group\n")
-    out.append("| Ops | Resource area |\n|---:|---|")
-    for n, t in sorted(missing, reverse=True):
-        out.append(f"| {n} | {t} |")
-    out.append(f"\n**{missing_ops} operations** across **{len(missing)} areas** remain to be covered.\n")
+    # The gap table is suppressed entirely when there is no gap: an empty
+    # table under a "Gap" heading reads like a rendering fault, not a result.
+    if missing:
+        out.append("## Gap — areas with no command group\n")
+        out.append("| Ops | Resource area |\n|---:|---|")
+        for n, t in sorted(missing, reverse=True):
+            out.append(f"| {n} | {t} |")
+    if missing_ops:
+        out.append(f"\n**{missing_ops} operations** across **{len(missing)} areas** remain to be covered.\n")
+    else:
+        # 100% area-level coverage is a real milestone and also an easy thing to
+        # misread. Every area has a command group; that is NOT the same as every
+        # operation being exposed, and the difference is deliberate in three
+        # areas. Say so here rather than leaving the number to speak for itself.
+        out.append(
+            "\n**Every in-scope area has a command group.**\n\n"
+            "Area-level, not per-operation. Three areas are deliberately partial, "
+            "and the reason is recorded in each:\n\n"
+            "| Area | Shipped | Held back, and why |\n"
+            "|---|---|---|\n"
+            "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
+            "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
+            "| Workday Import | 2 of 9 | no tenant available has a Workday integration, so the other endpoints' response shapes have never been observed |\n")
 
     out.append("## Covered areas (command group exists)\n")
     out.append("| Ops | Resource area | `jc` command |\n|---:|---|---|")

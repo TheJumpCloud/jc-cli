@@ -141,7 +141,7 @@ Notable extra friction:
 
 ### MCP destructive ops
 
-The MCP server exposes 30 tools using the `destructiveInput` pattern (`internal/mcp/tools.go:55`):
+The MCP server exposes 149 tools using the `destructiveInput` pattern (`internal/mcp/tools.go:55`):
 
 ```go
 type destructiveInput struct {
