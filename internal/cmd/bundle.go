@@ -15,6 +15,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/mscp"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // bundleDefaultFields is the field subset for bundle list table output.
@@ -227,7 +228,7 @@ func runBundleStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(w, "  %-9s %s (member of the policy group but not in the bundle)\n", "orphan", o)
 	}
 	if report.InSync {
-		fmt.Fprintf(w, "Bundle %s v%s is in sync (%d units).\n", report.Bundle, report.Version, len(report.Units))
+		fmt.Fprintf(w, "Bundle %s v%s is in sync (%s).\n", report.Bundle, report.Version, text.Count(len(report.Units), "unit"))
 	} else {
 		fmt.Fprintf(w, "Bundle %s v%s has drifted.\n", report.Bundle, report.Version)
 	}
@@ -387,7 +388,7 @@ func runBundleList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "── %d bundles ──\n", len(data))
+	writeNounFooter(cmd, len(data), "bundle", "bundles")
 	return nil
 }
 

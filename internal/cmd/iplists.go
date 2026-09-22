@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // ipListDefaultFields is the default field subset shown for IP list output.
@@ -99,7 +100,7 @@ func runIPListsList(cmd *cobra.Command, limit int, sort string, filters []string
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -176,7 +177,7 @@ func runIPListsCreate(cmd *cobra.Command, name, description, ips string) error {
 	ipList := parseIPFlag(ips)
 
 	if viper.GetBool("plan") {
-		effects := []string{"name: " + name, fmt.Sprintf("ips: %d entries", len(ipList))}
+		effects := []string{"name: " + name, "ips: " + text.CountOf(len(ipList), "entry", "entries")}
 		if description != "" {
 			effects = append(effects, "description: "+description)
 		}

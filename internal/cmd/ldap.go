@@ -104,7 +104,7 @@ func runLDAPList(cmd *cobra.Command, limit int, sort string, filters []string) e
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -426,7 +426,7 @@ func runLDAPSambaDomainsList(cmd *cobra.Command, ldapIdentifier string) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

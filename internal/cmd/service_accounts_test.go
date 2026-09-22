@@ -94,7 +94,7 @@ func TestServiceAccountsList(t *testing.T) {
 	if len(rows) != 1 || rows[0]["name"] != "ci-bot" {
 		t.Errorf("rows = %v", rows)
 	}
-	if !strings.Contains(errBuf, "1 items") {
+	if !strings.Contains(errBuf, "── 1 item ──") {
 		t.Errorf("footer missing: %s", errBuf)
 	}
 }

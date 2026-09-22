@@ -145,7 +145,7 @@ func runRecipeList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "── %d recipes ──\n", len(data))
+	writeNounFooter(cmd, len(data), "recipe", "recipes")
 	return nil
 }
 

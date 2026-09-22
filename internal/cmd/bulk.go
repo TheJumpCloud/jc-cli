@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // bulkResult tracks the outcome of a single bulk operation row.
@@ -154,7 +155,7 @@ func runBulkUsers(cmd *cobra.Command, filePath string) error {
 	}
 
 	if unknown > 0 {
-		return fmt.Errorf("%d rows have unknown operation values. Valid operations: create, update, delete", unknown)
+		return fmt.Errorf("%s have unknown operation values. Valid operations: create, update, delete", text.Count(unknown, "row"))
 	}
 
 	// Show summary and confirm (unless --force or --plan).

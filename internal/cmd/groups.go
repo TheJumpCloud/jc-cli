@@ -143,7 +143,7 @@ func runGroupsUserList(cmd *cobra.Command, limit int, sort string, filters []str
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
+		writeCountFooter(cmd, len(data))
 	}
 
 	return nil
@@ -570,7 +570,7 @@ func runGroupsDeviceList(cmd *cobra.Command, limit int, sort string, filters []s
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
+		writeCountFooter(cmd, len(data))
 	}
 
 	return nil

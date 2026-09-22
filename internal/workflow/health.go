@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // Health reporting for jc_events workflows.
@@ -297,7 +299,7 @@ func lifetimeClampNote(w Workflow, windowStart time.Time) string {
 // countOf renders a count with its noun, so a report reads "1 group_create
 // event" rather than the "1 events" that makes a tool look unfinished.
 func countOf(n int, noun string) string {
-	return fmt.Sprintf("%d %s%s", n, noun, plural(n))
+	return text.Count(n, noun)
 }
 
 // SortHealth orders reports so the actionable ones come first.

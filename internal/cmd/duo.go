@@ -88,7 +88,7 @@ func runDuoList(cmd *cobra.Command, limit int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -312,7 +312,7 @@ func runDuoApps(cmd *cobra.Command, identifier string, limit int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

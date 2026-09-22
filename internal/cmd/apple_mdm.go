@@ -81,7 +81,7 @@ func runAppleMDMList(cmd *cobra.Command, limit int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -373,7 +373,7 @@ func runAppleMDMEnrollmentProfiles(cmd *cobra.Command, identifier string) error 
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -415,7 +415,7 @@ func runAppleMDMDevices(cmd *cobra.Command, identifier string) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

@@ -108,7 +108,7 @@ func runSaaSList(cmd *cobra.Command, limit int, sort string, filters []string) e
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -426,7 +426,7 @@ func runSaaSAccounts(cmd *cobra.Command, identifier string, limit int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -589,7 +589,7 @@ func runSaaSUsage(cmd *cobra.Command, identifier string, dayCount int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -636,7 +636,7 @@ func runSaaSLicenses(cmd *cobra.Command, limit int) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

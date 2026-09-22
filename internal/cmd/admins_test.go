@@ -313,9 +313,12 @@ func TestAdminsList_Footer(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
+	// The "N of TOTAL" form is for a short page. When the page is the whole
+	// list the footer collapses to the plain count, as it already did for
+	// users, devices, commands and every other paginated list.
 	footer := errBuf.String()
-	if !strings.Contains(footer, "3 of 3 items") {
-		t.Errorf("footer should contain '3 of 3 items', got: %q", footer)
+	if !strings.Contains(footer, "── 3 items ──") {
+		t.Errorf("footer should contain '── 3 items ──', got: %q", footer)
 	}
 }
 

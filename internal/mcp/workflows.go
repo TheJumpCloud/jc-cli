@@ -12,6 +12,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/text"
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
@@ -831,8 +832,8 @@ func (s *Server) registerWorkflowTools() {
 			}
 			if !detailed {
 				out["note"] = fmt.Sprintf(
-					"payload_fields omitted: %d matches exceeds %d. Narrow with service or search to get the fields a condition may reference.",
-					len(rows), detailThreshold)
+					"payload_fields omitted: %s exceeds %d. Narrow with service or search to get the fields a condition may reference.",
+					text.CountOf(len(rows), "match", "matches"), detailThreshold)
 			}
 			res, err := jsonResult(out)
 			if err != nil {

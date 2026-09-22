@@ -937,15 +937,6 @@ func renderPlan(cmd *cobra.Command, p *plan.Plan) error {
 	return &ExitError{Code: plan.ExitCodePlan}
 }
 
-// writeListFooter writes a "── N of TOTAL items ──" footer to stderr.
-func writeListFooter(cmd *cobra.Command, count, total int) {
-	if count == total {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", count)
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d items ──\n", count, total)
-	}
-}
-
 // newUsersGroupsCmd lists the groups a user belongs to.
 //
 // This did not exist before, and its absence was load-bearing: `jc users get`

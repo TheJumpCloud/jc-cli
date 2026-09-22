@@ -15,6 +15,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
 	"github.com/klaassen-consulting/jc/internal/simulator"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // authPolicyDefaultFields is the default field subset shown for auth policy output.
@@ -105,7 +106,7 @@ func runAuthPoliciesList(cmd *cobra.Command, limit int, sort string, filters []s
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -838,9 +839,9 @@ func runAuthPoliciesBlastRadius(cmd *cobra.Command, identifier string, limit int
 		return err
 	}
 
-	summary := fmt.Sprintf("── %d affected users across %d groups ──", len(members), len(policy.Targets.UserGroups))
+	summary := fmt.Sprintf("── %s across %s ──", text.Count(len(members), "affected user"), text.Count(len(policy.Targets.UserGroups), "group"))
 	if limit > 0 && len(members) >= limit {
-		summary = fmt.Sprintf("── %d affected users (limited, may be more) across %d groups ──", len(members), len(policy.Targets.UserGroups))
+		summary = fmt.Sprintf("── %s (limited, may be more) across %s ──", text.Count(len(members), "affected user"), text.Count(len(policy.Targets.UserGroups), "group"))
 	}
 	if !opts.Quiet && !opts.IDsOnly {
 		fmt.Fprintln(cmd.ErrOrStderr(), summary)
@@ -870,9 +871,9 @@ func listAllUsersForBlastRadius(cmd *cobra.Command, limit int) error {
 		return err
 	}
 
-	count := fmt.Sprintf("── %d users (all users targeted) ──", len(result.Data))
+	count := fmt.Sprintf("── %s (all users targeted) ──", text.Count(len(result.Data), "user"))
 	if limit > 0 && len(result.Data) >= limit {
-		count = fmt.Sprintf("── %d users shown (limited, all users targeted) ──", len(result.Data))
+		count = fmt.Sprintf("── %s shown (limited, all users targeted) ──", text.Count(len(result.Data), "user"))
 	}
 	if !opts.Quiet && !opts.IDsOnly {
 		fmt.Fprintln(cmd.ErrOrStderr(), count)

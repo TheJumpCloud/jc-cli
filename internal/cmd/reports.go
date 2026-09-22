@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -94,7 +93,7 @@ func newReportListCmd(f report.Family) *cobra.Command {
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+				writeCountFooter(cmd, len(result.Data))
 			}
 			return nil
 		},
@@ -171,7 +170,7 @@ func newReportScheduledRunsCmd(f report.Family) *cobra.Command {
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+				writeCountFooter(cmd, len(result.Data))
 			}
 			return nil
 		},

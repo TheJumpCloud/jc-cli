@@ -74,7 +74,7 @@ func TestSearch_AllResources(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("%s: missing %q in %s", sub, want, out)
 		}
-		if !strings.Contains(errBuf, "1 items") {
+		if !strings.Contains(errBuf, "── 1 item ──") {
 			t.Errorf("%s: footer missing: %s", sub, errBuf)
 		}
 	}

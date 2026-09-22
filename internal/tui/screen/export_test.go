@@ -51,8 +51,8 @@ func TestExportListToFile_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(flash, "1 items") {
-		t.Errorf("flash = %q, want to contain '1 items'", flash)
+	if !strings.Contains(flash, "1 item ") {
+		t.Errorf("flash = %q, want to contain '1 item'", flash)
 	}
 
 	data, err := os.ReadFile(path)
