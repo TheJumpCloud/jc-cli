@@ -36,6 +36,15 @@ var commandClass = map[string]string{
 	"jc ad translation-rules delete":          ClassDestructive,
 	"jc ad translation-rules bulk":            ClassDestructive,
 
+	// api — one raw request. Classed by worst-case capability: a raw DELETE
+	// can remove anything the key can reach, so every write verb is
+	// destructive regardless of the path it is pointed at.
+	"jc api delete": ClassDestructive,
+	"jc api get":    ClassReadOnly,
+	"jc api patch":  ClassDestructive,
+	"jc api post":   ClassDestructive,
+	"jc api put":    ClassDestructive,
+
 	// admins — JumpCloud admin user mgmt.
 	"jc admins create": ClassMutating,
 	"jc admins delete": ClassDestructive,

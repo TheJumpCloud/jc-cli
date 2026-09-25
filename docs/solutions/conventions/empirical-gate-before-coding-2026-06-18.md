@@ -40,6 +40,13 @@ reading won't:
 - Does the wire shape match the documented schema, or does the
   server tolerate (silently or with warnings) drift?
 
+`jc api` is that one-line probe (added 2026-09-25, after this convention
+had spent three months prescribing a command that did not exist). It
+resolves auth the same way every other command does, so the probe never
+requires materialising an API key, and it goes through the same client,
+retries and error decoding the real command will use — so what it proves
+is what jc will actually do.
+
 Concretely, for a new write path:
 
 ```bash
