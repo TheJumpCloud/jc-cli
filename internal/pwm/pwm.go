@@ -505,3 +505,56 @@ func oneOf[T any](items []T, kind, identifier string, pred func(T) bool, describ
 		return zero, &AmbiguousError{Kind: kind, Identifier: identifier, Candidates: cands}
 	}
 }
+
+// --- Migration to Password Vault ------------------------------------------
+//
+// JumpCloud is replacing Password Manager with Password Vault. Both surfaces
+// are live at once while customers migrate, and an org that has moved returns
+// 404 from EVERY /passwordmanager path — overview, users, sharedfolders, all
+// of them. A bare "resource not found" is a poor answer to `jc password-manager
+// overview` on such an org, because nothing is missing: the whole product was
+// replaced underneath them.
+//
+// Confirmed live on 2026-09-25: after deactivating Password Manager on an org
+// whose Password Vault was active, every /passwordmanager read returned
+// 404 {"message":"Not Found"}.
+
+// VaultStatusEndpoint is the Password Vault activation gate. It answers
+// without the caller being entitled to anything else in that tree, which is
+// what makes it usable as a probe.
+const VaultStatusEndpoint = "/password-vault/status"
+
+// VaultActive reports whether this org's Password Vault is active. It is
+// deliberately forgiving: any error, any undecodable body, and any absent
+// flag all mean "do not claim a migration". Guessing wrong here would
+// replace a true error with a misleading one.
+func VaultActive(ctx context.Context, fetch Fetcher) bool {
+	raw, err := fetch(ctx, VaultStatusEndpoint)
+	if err != nil {
+		return false
+	}
+	var status struct {
+		IsActive bool `json:"isActive"`
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return false
+	}
+	return status.IsActive
+}
+
+// MigrationHint is the error to surface when a Password Manager read 404s on
+// an org whose Password Vault is active.
+//
+// It does not name a `jc password-vault` command, because there is not one
+// yet. Pointing people at a command that does not exist is precisely the
+// mistake docs/solutions/conventions/empirical-gate-before-coding made for
+// three months. TestMigrationHint_NamesVaultCommandOnceItExists fails the
+// moment that command is registered, which is when this text gets updated.
+func MigrationHint(endpoint string) error {
+	return fmt.Errorf(
+		"Password Manager is not active on this organization (%s returned 404), "+
+			"but its Password Vault is. JumpCloud is replacing Password Manager "+
+			"with Password Vault; jc does not cover Password Vault yet, so use the "+
+			"JumpCloud console for those records. Password Manager commands keep "+
+			"working on organizations that have not migrated", endpoint)
+}

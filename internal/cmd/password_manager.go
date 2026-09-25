@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -53,13 +54,32 @@ here cannot be undone through the API.`,
 	return cmd
 }
 
-// pwmGet is the shared read path.
+// pwmGet is the shared read path, and the single choke point where a
+// migrated org is detected: on a migrated tenant EVERY /passwordmanager path
+// 404s, so one check here covers every command in the group. The extra
+// request is only ever made on the 404 path.
 func pwmGet(ctx context.Context, endpoint string) (json.RawMessage, error) {
+	raw, err := pwmRawGet(ctx, endpoint)
+	if err != nil && isNotFoundErr(err) && pwm.VaultActive(ctx, pwmRawGet) {
+		return nil, pwm.MigrationHint(endpoint)
+	}
+	return raw, err
+}
+
+// pwmRawGet is the unwrapped read. VaultActive uses it directly so that a
+// 404 from the Vault gate itself cannot recurse into another migration check.
+func pwmRawGet(ctx context.Context, endpoint string) (json.RawMessage, error) {
 	client, err := newV2Client()
 	if err != nil {
 		return nil, err
 	}
 	return client.Get(ctx, endpoint)
+}
+
+// isNotFoundErr reports whether err is an HTTP 404 from the JumpCloud API.
+func isNotFoundErr(err error) bool {
+	apiErr, ok := asAPIError(err)
+	return ok && apiErr.StatusCode == http.StatusNotFound
 }
 
 // resolvePWMUser adapts the shared bridge in internal/pwm to the CLI's
