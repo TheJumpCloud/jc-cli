@@ -1185,6 +1185,31 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc identity-risk",
+				Description: "Inspect and resolve identity risk detections",
+				Long: "Read JumpCloud's identity risk detections — the anomalous logins and " +
+					"access patterns it has flagged — and close them off once judged. Each " +
+					"detection carries a level and score, the identity and application it " +
+					"concerns, where the access came from, and whether MFA was satisfied; " +
+					"`identities get` returns the behavioural profile the scoring is measured " +
+					"against, so a flagged login can be compared with what is normal for that " +
+					"person. Time windows are not uniform: the aggregates (stats, login-types, " +
+					"geolocations, timeline, identities list) require --last or --start, while " +
+					"`events list` and `identities get` do not. RESOLVING CANNOT BE UNDONE — the " +
+					"API refuses every later change to a detection, including reopening it — so " +
+					"`events resolve` confirms like a delete and supports --plan.",
+				Subcommands: []string{"events", "identities", "stats", "login-types", "geolocations", "timeline"},
+				Flags: []FlagEntry{
+					{Name: "last", Type: "string", Description: "Relative window, e.g. 24h, 7d, 30d"},
+					{Name: "start", Type: "string", Description: "Window start (RFC3339, or relative like 30d)"},
+					{Name: "end", Type: "string", Description: "Window end (RFC3339); defaults to now"},
+					{Name: "level", Type: "string", Description: "Only this risk level: low, medium, high, critical"},
+					{Name: "state", Type: "string", Description: "On resolve: whether the access was legitimate — safe or unsafe"},
+					{Name: "status", Type: "string", Description: "On resolve: resolved, dismissed or mfa-resolved"},
+					{Name: "notes", Type: "string", Description: "On resolve: why — the only record of the judgement made"},
+				},
+			},
+			{
 				Path:        "jc auth-policies",
 				Description: "Manage authentication policies for conditional access",
 				Subcommands: []string{"list", "get", "create", "update", "delete", "enable", "disable", "simulate", "blast-radius"},

@@ -414,6 +414,57 @@
       ]
     },
     {
+      "path": "jc identity-risk",
+      "description": "Inspect and resolve identity risk detections",
+      "long": "Read JumpCloud's identity risk detections — the anomalous logins and access patterns it has flagged — and close them off once judged. Each detection carries a level and score, the identity and application it concerns, where the access came from, and whether MFA was satisfied; `identities get` returns the behavioural profile the scoring is measured against, so a flagged login can be compared with what is normal for that person. Time windows are not uniform: the aggregates (stats, login-types, geolocations, timeline, identities list) require --last or --start, while `events list` and `identities get` do not. RESOLVING CANNOT BE UNDONE — the API refuses every later change to a detection, including reopening it — so `events resolve` confirms like a delete and supports --plan.",
+      "category": "Insights",
+      "subcommands": [
+        "events",
+        "identities",
+        "stats",
+        "login-types",
+        "geolocations",
+        "timeline"
+      ],
+      "flags": [
+        {
+          "name": "last",
+          "type": "string",
+          "description": "Relative window, e.g. 24h, 7d, 30d"
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "description": "Window start (RFC3339, or relative like 30d)"
+        },
+        {
+          "name": "end",
+          "type": "string",
+          "description": "Window end (RFC3339); defaults to now"
+        },
+        {
+          "name": "level",
+          "type": "string",
+          "description": "Only this risk level: low, medium, high, critical"
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "On resolve: whether the access was legitimate — safe or unsafe"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "On resolve: resolved, dismissed or mfa-resolved"
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "description": "On resolve: why — the only record of the judgement made"
+        }
+      ]
+    },
+    {
       "path": "jc auth-policies",
       "description": "Manage authentication policies for conditional access",
       "category": "Identity \u0026 Access",
@@ -1578,6 +1629,7 @@
     "health-rule-templates",
     "health-rules",
     "identity-providers",
+    "identity-risk",
     "insights",
     "iplists",
     "ldap",
