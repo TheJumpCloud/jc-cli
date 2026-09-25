@@ -45,6 +45,22 @@ var commandClass = map[string]string{
 	"jc api post":   ClassDestructive,
 	"jc api put":    ClassDestructive,
 
+	// identity-risk — risk detections. Reads, plus one write that cannot be
+	// undone: the API refuses every change to a detection once it is
+	// resolved, including reopening it, so resolve is classed destructive
+	// on the worst-case rule rather than mutating.
+	"jc identity-risk events list":      ClassReadOnly,
+	"jc identity-risk events get":       ClassReadOnly,
+	"jc identity-risk events resolve":   ClassDestructive,
+	"jc identity-risk identities list":  ClassReadOnly,
+	"jc identity-risk identities get":   ClassReadOnly,
+	"jc identity-risk identities trend": ClassReadOnly,
+	"jc identity-risk stats":            ClassReadOnly,
+	"jc identity-risk login-types":      ClassReadOnly,
+	"jc identity-risk geolocations":     ClassReadOnly,
+	// A POST that reads: the body carries the filter, nothing changes.
+	"jc identity-risk timeline": ClassReadOnly,
+
 	// admins — JumpCloud admin user mgmt.
 	"jc admins create": ClassMutating,
 	"jc admins delete": ClassDestructive,
