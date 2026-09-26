@@ -235,6 +235,7 @@ this area.`,
 		[]string{"id", "username", "firstName", "lastName"}))
 
 	cmd.AddCommand(vaultColumnsCmd("credential", passwordvault.CredentialColumnsPath))
+	cmd.AddCommand(newPWVCredentialWriteCmds()...)
 	return cmd
 }
 
@@ -287,6 +288,7 @@ This is a superset of `+"`get`"+` and is what the writes will build on.`,
 		"The users who hold management rights over a folder.",
 		passwordvault.FolderManagers,
 		[]string{"id", "username", "firstName", "lastName"}))
+	cmd.AddCommand(newPWVFolderWriteCmds()...)
 
 	return cmd
 }
@@ -416,6 +418,7 @@ long to wait, and whether to submit automatically.`,
 		passwordvault.WebsiteParamsExtension))
 
 	cmd.AddCommand(vaultColumnsCmd("website", passwordvault.WebsiteColumnsPath))
+	cmd.AddCommand(newPWVWebsiteWriteCmds()...)
 	return cmd
 }
 

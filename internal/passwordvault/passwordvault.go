@@ -361,3 +361,147 @@ func ParseHistory(raw json.RawMessage) ([]json.RawMessage, string, error) {
 	}
 	return env.Items, env.ContinuationToken, nil
 }
+
+// --- Writes ---------------------------------------------------------------
+//
+// THE CENTRAL FACT ABOUT WRITING TO THIS API: a write returns 200 with an
+// empty body whether or not it did anything.
+//
+// Measured on 2026-09-25. POST /credentials/archive with a body of {} returns
+// 200 and archives nothing; only {"ids":[...]} takes effect. POST
+// /folders/{id}/items with {"ids":[...]} returns 200 and adds nothing; the key
+// is "credentialIds". In both cases the wrong body is indistinguishable from
+// the right one by its response.
+//
+// So a surface here must not report success from a 200. It reads the object
+// back and reports what the server actually holds. That doubles the calls on a
+// write, which is the correct trade when the alternative is telling somebody
+// their credentials are archived when they are not.
+const WriteReportsSuccessRegardless = "this API returns 200 with an empty body whether or " +
+	"not a write took effect, so jc reads the record back and reports the state the server " +
+	"actually holds rather than trusting the response"
+
+// ArchiveBody builds the body for the credential archive and unarchive
+// endpoints. The key is "ids"; an empty list is refused here because the
+// server would accept it, answer 200 and do nothing.
+func ArchiveBody(ids []string) (json.RawMessage, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no credential ids given — the API would accept this and " +
+			"report success without archiving anything")
+	}
+	for _, id := range ids {
+		if !IsObjectID(id) {
+			return nil, ErrNotVaultObjectID("credential", id)
+		}
+	}
+	b, err := json.Marshal(map[string][]string{"ids": ids})
+	if err != nil {
+		return nil, fmt.Errorf("encoding the archive body: %w", err)
+	}
+	return b, nil
+}
+
+// FolderItemsBody builds the body for adding items to a folder. The key is
+// "credentialIds" — "ids", which is what the archive endpoints take, returns
+// 200 here and adds nothing.
+func FolderItemsBody(credentialIDs []string) (json.RawMessage, error) {
+	if len(credentialIDs) == 0 {
+		return nil, fmt.Errorf("no credential ids given — the API would accept this and " +
+			"report success without adding anything")
+	}
+	for _, id := range credentialIDs {
+		if !IsObjectID(id) {
+			return nil, ErrNotVaultObjectID("credential", id)
+		}
+	}
+	b, err := json.Marshal(map[string][]string{"credentialIds": credentialIDs})
+	if err != nil {
+		return nil, fmt.Errorf("encoding the folder items body: %w", err)
+	}
+	return b, nil
+}
+
+// --- The lockout rule -----------------------------------------------------
+
+// Permission vocabularies, per family. They are not interchangeable, they are
+// nowhere in the spec, and they were recovered from 400 messages.
+var (
+	// CredentialPermissions also govern websites, which use the credential
+	// vocabulary rather than a namespaced one of their own.
+	CredentialPermissions = []string{"Manage", "View Detail", "Connect"}
+	// FolderPermissions are namespaced. Passing credential-vocabulary values
+	// to a folder is ACCEPTED at create time and then grants nothing.
+	FolderPermissions = []string{"Folder.Manage", "Folder.Item.Manage", "Folder.View", "Folder.Connect"}
+)
+
+// LockoutWarning is why every create must grant the caller full management.
+//
+// Deleting needs Manage (or Folder.Manage); changing an access policy needs
+// the same. So an object created without it cannot be managed OR repaired
+// through the API — there is no recovery path. An object created with
+// isPrivate and no users is worse: invisible to the listing, unreadable and
+// undeletable. Three such objects were stranded on the probe tenant before
+// this was understood.
+const LockoutWarning = "a Password Vault object created without full management permission " +
+	"for its creator cannot afterwards be deleted or have its permissions changed through " +
+	"the API — there is no recovery path, so jc always grants them"
+
+// AccessPolicyFor builds an access policy granting one user the full
+// management set for a family, which is the only shape that cannot strand the
+// object. userID is the INTEGER vault id, not a JumpCloud object id.
+func AccessPolicyFor(userID int, family string) (map[string]any, error) {
+	var perms []string
+	switch strings.ToLower(family) {
+	case "credential", "website":
+		perms = CredentialPermissions
+	case "folder":
+		perms = FolderPermissions
+	default:
+		return nil, fmt.Errorf("unknown Password Vault family %q: expected credential, website or folder", family)
+	}
+	if userID <= 0 {
+		return nil, fmt.Errorf("a vault user id is required — take it from `jc password-vault users self`")
+	}
+	return map[string]any{
+		"users": []map[string]any{{"id": userID, "permissions": perms}},
+	}, nil
+}
+
+// HeldBackWrites records the write operations this area serves that jc does
+// NOT expose, and why each one is held.
+//
+// The common reason is the one at the top of this section: a write here
+// answers 200 with an empty body whether or not it did anything. An operation
+// whose effect cannot be read back afterwards therefore cannot be reported
+// honestly — jc would be passing on a success it has no evidence for. Where
+// that is the reason, the entry says what would have to be observable before
+// the operation could ship.
+var HeldBackWrites = map[string]string{
+	"DELETE /credentials/bulk-delete": "takes a body rather than a path id, and the correct " +
+		"key was not established. A wrong key here answers 200 and deletes nothing, which is " +
+		"survivable — but the right key on a wrong list deletes credentials, which is not. " +
+		"`credentials delete` addresses one record by path and is confirmed by read-back.",
+
+	"DELETE /folders/{id}/items": "the add path takes credentialIds while the archive " +
+		"endpoints take ids; which key the remove path wants was not established, and the " +
+		"wrong one answers 200 and removes nothing. Probe it against a folder with known " +
+		"contents and confirm the item count changes before shipping.",
+
+	"POST /folders/{id}/items/move": "moves credentials between folders, which changes who " +
+		"can reach them — folder membership is an access grant here. Unverified, and the " +
+		"failure mode is silent.",
+
+	"POST /folders/{id}/items/move-to-default": "same, with no target to name: it moves " +
+		"everything out of a folder in one call.",
+
+	"PUT /folders/{id}/policies": "body shape unobserved. This writes the access policies, " +
+		"which is the one write that can strand an object beyond recovery — see " +
+		"LockoutWarning. It should not ship on a guess.",
+
+	"DELETE /folders/{id}/users/self": "removes the caller's own access to a folder. If the " +
+		"caller holds the only Folder.Manage grant, this strands the folder permanently: " +
+		"there is no API path back in. It is the lockout trap as a single call.",
+
+	"POST /websites/{id}/links":                        "link bodies unobserved; a website with no linked credentials answers 400 with an empty message, so the failure shape is not readable either.",
+	"POST /websites/{id}/links/{linkId}/confirmations": "depends on a link, which cannot be created yet.",
+}
