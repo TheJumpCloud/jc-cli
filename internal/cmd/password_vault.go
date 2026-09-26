@@ -53,6 +53,9 @@ trust the count.`,
 		newPWVUsersCmd(),
 		newPWVGroupsCmd(),
 		newPWVTagsCmd(),
+		newPWVCredentialsCmd(),
+		newPWVFoldersCmd(),
+		newPWVWebsitesCmd(),
 	)
 	return cmd
 }

@@ -2,6 +2,7 @@ package passwordvault
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -213,5 +214,80 @@ func TestDocumentedTraps(t *testing.T) {
 		if !strings.Contains(PaginationUnsafe, want) {
 			t.Errorf("PaginationUnsafe should mention %q: %q", want, PaginationUnsafe)
 		}
+	}
+}
+
+func TestErrNotVaultObjectID(t *testing.T) {
+	// A number is the mistake somebody makes after using groups or users in
+	// the same area, so it gets its own message.
+	err := ErrNotVaultObjectID("credential", "42")
+	if !strings.Contains(err.Error(), "only users and groups are numbered") {
+		t.Errorf("a numeric id should explain the split: %v", err)
+	}
+	err = ErrNotVaultObjectID("folder", "nonsense")
+	if !strings.Contains(err.Error(), "24-character hex") {
+		t.Errorf("message should name the shape: %v", err)
+	}
+}
+
+func TestDetailReadRefused(t *testing.T) {
+	// The exact server text, reproduced against a record granting the
+	// permission it asks for.
+	refusal := errors.New(`JumpCloud API error (HTTP 400) /password-vault/credentials/x: {"message":"For this resource , you need permissions View Detail.","status":"INVALID_ARGUMENT"}`)
+	if !DetailReadRefused(refusal) {
+		t.Error("the View Detail refusal should be recognised")
+	}
+	for _, other := range []error{nil, errors.New("connection reset"),
+		errors.New(`{"message":"Folder not found.","status":"INVALID_ARGUMENT"}`)} {
+		if DetailReadRefused(other) {
+			t.Errorf("unrelated error read as the refusal: %v", other)
+		}
+	}
+
+	// The message must say it is not the operator's to fix, or they will go
+	// and edit an access policy that is already correct.
+	msg := ErrDetailReadRefused("credential", "Use the listing for metadata.").Error()
+	for _, want := range []string{"holds", "defect", "Use the listing"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message should contain %q: %s", want, msg)
+		}
+	}
+}
+
+func TestFolderNotFoundIs400(t *testing.T) {
+	if !FolderNotFoundIs400(errors.New(`{"message":"Folder not found.","status":"INVALID_ARGUMENT"}`)) {
+		t.Error("the folder absence signal should be recognised")
+	}
+	if FolderNotFoundIs400(errors.New(`{"message":"Not Found"}`)) {
+		t.Error("a plain 404 is the credential/website signal, not the folder one")
+	}
+}
+
+func TestParseHistory(t *testing.T) {
+	items, token, err := ParseHistory(json.RawMessage(`{"continuationToken":"abc","items":[{"version":"1"},{"version":"2"}]}`))
+	if err != nil || len(items) != 2 || token != "abc" {
+		t.Errorf("= %d items, token %q, %v", len(items), token, err)
+	}
+	// An empty history is legitimate; an unreadable one is not.
+	items, token, err = ParseHistory(json.RawMessage(`{"items":[]}`))
+	if err != nil || len(items) != 0 || token != "" {
+		t.Errorf("empty = %d, %q, %v", len(items), token, err)
+	}
+	if _, _, err := ParseHistory(json.RawMessage(`[]`)); err == nil {
+		t.Error("a bare array must be an error")
+	}
+}
+
+func TestParseWrappedFolderAndColumns(t *testing.T) {
+	inner, err := ParseWrappedFolder(json.RawMessage(`{"folder":{"id":"abc","name":"x"}}`))
+	if err != nil || !strings.Contains(string(inner), `"abc"`) {
+		t.Errorf("folder unwrap = %s, %v", inner, err)
+	}
+	inner, err = ParseColumns(json.RawMessage(`{"columns":{"Name":"string"}}`))
+	if err != nil || !strings.Contains(string(inner), "Name") {
+		t.Errorf("columns unwrap = %s, %v", inner, err)
+	}
+	if _, err := ParseWrappedFolder(json.RawMessage(`{"notfolder":{}}`)); err == nil {
+		t.Error("a changed envelope must be an error")
 	}
 }

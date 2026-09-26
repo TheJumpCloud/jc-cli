@@ -483,7 +483,25 @@
         "groups members",
         "groups resources",
         "groups assignable-resources",
-        "tags list"
+        "tags list",
+        "credentials list",
+        "credentials get",
+        "credentials activities",
+        "credentials history",
+        "credentials managers",
+        "credentials columns",
+        "folders list",
+        "folders get",
+        "folders edit-view",
+        "folders items",
+        "folders managers",
+        "websites list",
+        "websites get",
+        "websites activities",
+        "websites managers",
+        "websites connect-links",
+        "websites parameters-extension",
+        "websites columns"
       ]
     },
     {
