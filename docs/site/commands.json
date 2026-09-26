@@ -465,6 +465,28 @@
       ]
     },
     {
+      "path": "jc password-vault",
+      "description": "Inspect JumpCloud Password Vault",
+      "long": "Password Vault is JumpCloud's replacement for Password Manager, and on an organization that has migrated every /passwordmanager endpoint returns 404 — both command groups are kept while customers move across. This group covers the tenant scope: the activation gate, org-wide settings and default permissions, the dashboard summary, enrolled users, groups and tags. Two things to know before using it. Group and user ids are INTEGERS here, not the 24-character object ids the rest of JumpCloud uses and not the UUIDs Password Manager uses. And the area ignores sort while its limit/skip paging both duplicates and omits records, so jc fetches these lists unpaginated and reports the server's own count; where a listing shows more rows than the count, that is the API including the calling user without counting them.",
+      "category": "AI \u0026 Automation",
+      "subcommands": [
+        "status",
+        "settings get",
+        "settings default-permissions",
+        "overview",
+        "users list",
+        "users self",
+        "users jc-managed",
+        "users active-pwm-tenants",
+        "groups list",
+        "groups all",
+        "groups members",
+        "groups resources",
+        "groups assignable-resources",
+        "tags list"
+      ]
+    },
+    {
       "path": "jc auth-policies",
       "description": "Manage authentication policies for conditional access",
       "category": "Identity \u0026 Access",
@@ -1637,6 +1659,7 @@
     "office365",
     "org",
     "password-manager",
+    "password-vault",
     "policies",
     "policy-groups",
     "policy-templates",

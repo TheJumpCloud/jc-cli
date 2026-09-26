@@ -1,0 +1,261 @@
+// Package passwordvault is the shared contract for JumpCloud Password Vault,
+// used by the CLI and the MCP tools so the two cannot drift.
+//
+// Password Vault replaces Password Manager. Both surfaces are live while
+// customers migrate, they model resources differently — Password Manager is
+// folders/items/backup-keys, Vault is credentials/folders/websites/groups —
+// and so they share no code beyond this comment. See internal/pwm.
+//
+// Internally this is JumpCloud's PAM product: every schema in the spec is
+// named jumpcloud.privileged_access.*, and the activation gate reports an
+// isPam flag alongside isActive.
+//
+// Everything here was established by probing a live tenant on 2026-09-25,
+// because the spec is wrong about this area in ways that would produce silent
+// data loss: it marks nothing required on bodies that reject an omitted
+// field with HTTP 500, and it documents query parameters the server does not
+// accept while requiring ones it does not document.
+package passwordvault
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// Endpoints. The tree is /password-vault, hyphenated — unlike Password
+// Manager's /passwordmanager, which is one word.
+const (
+	Endpoint                  = "/password-vault"
+	StatusEndpoint            = Endpoint + "/status"
+	TenantSettingsEndpoint    = Endpoint + "/tenant-settings"
+	DefaultPermsEndpoint      = TenantSettingsEndpoint + "/default-permissions"
+	DashboardOverviewEndpoint = Endpoint + "/dashboard-overview"
+	UsersEndpoint             = Endpoint + "/users"
+	UsersSelfEndpoint         = UsersEndpoint + "/self"
+	UsersSelfJCEndpoint       = UsersSelfEndpoint + "/jc-user"
+	ActivePWMTenantsEndpoint  = UsersEndpoint + "/active-pwm-tenants"
+	GroupsEndpoint            = Endpoint + "/groups"
+	GroupsAllEndpoint         = GroupsEndpoint + "/all"
+	TagsEndpoint              = Endpoint + "/tags"
+)
+
+// GroupEndpoint and friends address one group. Group ids are INTEGERS here,
+// not the 24-hex object ids the rest of JumpCloud uses and not the UUIDs
+// Password Manager uses.
+func GroupEndpoint(id int) string { return GroupsEndpoint + "/" + strconv.Itoa(id) }
+func GroupMembersEndpoint(id int) string {
+	return GroupEndpoint(id) + "/members"
+}
+func GroupResourcesEndpoint(id int) string {
+	return GroupEndpoint(id) + "/resources"
+}
+func GroupAssignableEndpoint(id int) string {
+	return GroupEndpoint(id) + "/assignable-resources"
+}
+func GroupDeactivateEndpoint(id int) string {
+	return GroupEndpoint(id) + "/deactivate"
+}
+
+// --- Activation gate ------------------------------------------------------
+
+// Status is the activation gate. It answers WITHOUT the caller being entitled
+// to anything else in the tree, which is what makes it usable as a probe:
+// before activation it returns 200 with isActive false while every other
+// Vault path returns 404.
+type Status struct {
+	IsActive   bool   `json:"isActive"`
+	IsPAM      bool   `json:"isPam"`
+	SSOAppID   string `json:"jumpcloudSsoApplicationId"`
+	ConsoleURL string `json:"vaultoneConsoleUrl"`
+}
+
+// ParseStatus decodes the gate. A body that will not decode is an error
+// rather than an inactive status: reporting "not activated" because the
+// response was unreadable would send an operator to enable something that is
+// already on.
+func ParseStatus(raw json.RawMessage) (Status, error) {
+	var s Status
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return Status{}, fmt.Errorf("decoding the Password Vault status: %w", err)
+	}
+	return s, nil
+}
+
+// ErrNotActivated is the message every surface shows when a Vault command is
+// run against an org that has not activated. It names the gate, because a
+// bare 404 from some other endpoint is what this exists to replace.
+func ErrNotActivated() error {
+	return fmt.Errorf("Password Vault is not active on this organization " +
+		"(GET /password-vault/status reports isActive false). Every other Password " +
+		"Vault endpoint returns 404 until it is activated, which is done from the " +
+		"JumpCloud console")
+}
+
+// --- Ids ------------------------------------------------------------------
+
+// objectIDPattern matches the 24-hex object ids used by credentials, folders
+// and websites. Users and groups use integers instead, so this area carries
+// two id shapes and a caller must know which resource it is addressing.
+var objectIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+
+// IsObjectID reports whether s is a 24-hex object id.
+func IsObjectID(s string) bool { return objectIDPattern.MatchString(s) }
+
+// ParseGroupID turns an operator-supplied group id into the integer the API
+// wants, rejecting the 24-hex and UUID shapes explicitly. Those are what a
+// user coming from anywhere else in JumpCloud — or from Password Manager —
+// will try first, and the server's own answer to them is unhelpful.
+func ParseGroupID(s string) (int, error) {
+	if n, err := strconv.Atoi(s); err == nil && n > 0 {
+		return n, nil
+	}
+	switch {
+	case IsObjectID(s):
+		return 0, fmt.Errorf("%q is a JumpCloud 24-character object id, but Password Vault "+
+			"groups are numbered: take the integer id from `jc password-vault groups list`", s)
+	case strings.Count(s, "-") == 4:
+		return 0, fmt.Errorf("%q is a UUID, which is what Password MANAGER uses. Password "+
+			"Vault groups are numbered: take the integer id from `jc password-vault groups list`", s)
+	}
+	return 0, fmt.Errorf("%q is not a Password Vault group id — groups are numbered, and the "+
+		"id comes from `jc password-vault groups list`", s)
+}
+
+// --- Required filters -----------------------------------------------------
+//
+// Two endpoints reject a call that omits a filter the spec marks optional,
+// and neither names a query parameter that actually works: /tags answers
+// "targetKind must be CREDENTIAL or RESOURCE" to a request that sets
+// ?targetKind=CREDENTIAL. The working form is jc's own filter syntax.
+
+// TagTargetKinds are the values /tags accepts.
+var TagTargetKinds = []string{"CREDENTIAL", "RESOURCE"}
+
+// TagsQuery builds the query string /tags requires. Unlike the category
+// filter below, this one IS validated by the server, so a bad value is
+// rejected here to keep the message useful.
+func TagsQuery(targetKind string) (url.Values, error) {
+	k := strings.ToUpper(strings.TrimSpace(targetKind))
+	for _, valid := range TagTargetKinds {
+		if k == valid {
+			v := url.Values{}
+			v.Set("filter", "targetKind:eq:"+k)
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid target kind %q: expected %s",
+		targetKind, strings.Join(TagTargetKinds, " or "))
+}
+
+// AssignableQuery builds the query string /groups/{id}/assignable-resources
+// requires. The server rejects a call with no category and then accepts ANY
+// category value, returning an empty list for one that means nothing — so a
+// typo is indistinguishable from a genuinely empty result. Callers should
+// surface the category they asked for alongside the answer.
+func AssignableQuery(category string) (url.Values, error) {
+	c := strings.ToUpper(strings.TrimSpace(category))
+	if c == "" {
+		return nil, fmt.Errorf("a resource category is required, e.g. CREDENTIAL or WEBSITE")
+	}
+	v := url.Values{}
+	v.Set("filter", "category:eq:"+c)
+	return v, nil
+}
+
+// CategoryUnvalidated documents the trap above for surfaces to repeat.
+const CategoryUnvalidated = "the API does not validate the category: an unrecognised one " +
+	"returns an empty list rather than an error, so an empty result here is not evidence " +
+	"that the group has no assignable resources of that kind"
+
+// --- Pagination -----------------------------------------------------------
+
+// PaginationUnsafe records why no surface pages this area.
+//
+// Measured on a four-user tenant: `sort` is accepted and ignored — id, name,
+// userName and -id all return byte-identical order — while limit and skip
+// produce pages that both duplicate and omit records. One user appeared at
+// skip=0, skip=2 and skip=3 of the same listing. The results are
+// deterministic across runs, so this is a server defect rather than a race.
+//
+// Fetching unpaginated and trusting totalCount is the only correct approach.
+const PaginationUnsafe = "Password Vault ignores sort, and its limit/skip paging both " +
+	"duplicates and omits records, so jc fetches these lists unpaginated"
+
+// --- Envelopes ------------------------------------------------------------
+//
+// Three shapes. Each parser reports a decode failure rather than an empty
+// result, because a caller that cannot tell "none" from "unreadable" reports
+// an empty vault when it cannot see one.
+
+func decode(raw json.RawMessage, v any, what string) error {
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("decoding the %s response: %w", what, err)
+	}
+	return nil
+}
+
+// ParseList reads {results, totalCount}, used by users, groups and the group
+// sub-listings.
+//
+// totalCount is the SERVER'S match count and is the number to trust.
+// len(results) is not: the users listing always includes the calling user
+// whether or not they match the query, so a search with no matches returns
+// one row with totalCount zero, and a limit of n returns n+1 rows. That is
+// not a paging off-by-one — it is the caller being injected.
+func ParseList(raw json.RawMessage, what string) ([]json.RawMessage, int, error) {
+	var env struct {
+		Results    []json.RawMessage `json:"results"`
+		TotalCount int               `json:"totalCount"`
+	}
+	if err := decode(raw, &env, what); err != nil {
+		return nil, 0, err
+	}
+	return env.Results, env.TotalCount, nil
+}
+
+// ParseResultsOnly reads {results} with NO count field — groups/all and tags.
+func ParseResultsOnly(raw json.RawMessage, what string) ([]json.RawMessage, error) {
+	var env struct {
+		Results []json.RawMessage `json:"results"`
+	}
+	if err := decode(raw, &env, what); err != nil {
+		return nil, err
+	}
+	return env.Results, nil
+}
+
+// SelfInjected documents the users-listing behaviour for surfaces to repeat.
+const SelfInjected = "the users listing always includes the calling user, matched or not, " +
+	"while the count excludes them — trust the count, not the number of rows"
+
+// ParseWrapped unwraps a single-key envelope — tenant-settings nests
+// everything under "values" and default-permissions under
+// "defaultPermissions", where every sibling single-object read in this area
+// returns the object directly.
+func ParseWrapped(raw json.RawMessage, key, what string) (json.RawMessage, error) {
+	var env map[string]json.RawMessage
+	if err := decode(raw, &env, what); err != nil {
+		return nil, err
+	}
+	inner, ok := env[key]
+	if !ok {
+		return nil, fmt.Errorf("the %s response has no %q field; the envelope has changed", what, key)
+	}
+	return inner, nil
+}
+
+// TenantSettingsBody wraps an updated settings object back into the envelope
+// the PUT expects. The GET nests under "values" and the PUT takes the same
+// shape, which is easy to get wrong in the direction that silently writes
+// nothing.
+func TenantSettingsBody(values json.RawMessage) (json.RawMessage, error) {
+	b, err := json.Marshal(map[string]json.RawMessage{"values": values})
+	if err != nil {
+		return nil, fmt.Errorf("encoding the tenant settings body: %w", err)
+	}
+	return b, nil
+}

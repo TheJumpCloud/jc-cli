@@ -757,6 +757,28 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	// password-vault — the replacement for Password Manager. Fields from a
+	// live record on an activated tenant. Note the INTEGER ids: this area
+	// uses them for users and groups where Password Manager uses UUIDs and
+	// the rest of JumpCloud uses 24-hex object ids.
+	"password-vault": {
+		Resource:      "password-vault",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "userName", "emailAddress", "isActive"},
+		Fields: []FieldDef{
+			{Name: "id", Type: "int", Description: "Password Vault id — an INTEGER, not a JumpCloud object id", ReadOnly: true},
+			{Name: "userName", Type: "string", Description: "Vault username", ReadOnly: true},
+			{Name: "emailAddress", Type: "string", Description: "Email on the vault record", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Given name", ReadOnly: true},
+			{Name: "surname", Type: "string", Description: "Family name", ReadOnly: true},
+			{Name: "isActive", Type: "bool", Description: "Whether the vault user is active", ReadOnly: true},
+			{Name: "isDeleted", Type: "bool", Description: "Whether the vault user is deleted", ReadOnly: true},
+			{Name: "isScim", Type: "bool", Description: "Whether the user arrived via SCIM provisioning", ReadOnly: true},
+			{Name: "adminExternalId", Type: "string", Description: "External id of the administrator record, when any", ReadOnly: true},
+		},
+	},
+
 	"workday": {
 		Resource:      "workday",
 		APIVersion:    "v2",
@@ -1208,6 +1230,25 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "status", Type: "string", Description: "On resolve: resolved, dismissed or mfa-resolved"},
 					{Name: "notes", Type: "string", Description: "On resolve: why — the only record of the judgement made"},
 				},
+			},
+			{
+				Path:        "jc password-vault",
+				Description: "Inspect JumpCloud Password Vault",
+				Long: "Password Vault is JumpCloud's replacement for Password Manager, and on an " +
+					"organization that has migrated every /passwordmanager endpoint returns 404 — " +
+					"both command groups are kept while customers move across. This group covers " +
+					"the tenant scope: the activation gate, org-wide settings and default " +
+					"permissions, the dashboard summary, enrolled users, groups and tags. Two " +
+					"things to know before using it. Group and user ids are INTEGERS here, not " +
+					"the 24-character object ids the rest of JumpCloud uses and not the UUIDs " +
+					"Password Manager uses. And the area ignores sort while its limit/skip paging " +
+					"both duplicates and omits records, so jc fetches these lists unpaginated and " +
+					"reports the server's own count; where a listing shows more rows than the " +
+					"count, that is the API including the calling user without counting them.",
+				Subcommands: []string{"status", "settings get", "settings default-permissions", "overview",
+					"users list", "users self", "users jc-managed", "users active-pwm-tenants",
+					"groups list", "groups all", "groups members", "groups resources",
+					"groups assignable-resources", "tags list"},
 			},
 			{
 				Path:        "jc auth-policies",

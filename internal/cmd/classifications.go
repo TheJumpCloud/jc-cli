@@ -61,6 +61,23 @@ var commandClass = map[string]string{
 	// A POST that reads: the body carries the filter, nothing changes.
 	"jc identity-risk timeline": ClassReadOnly,
 
+	// password-vault — the replacement for Password Manager. Tenant scope
+	// only in this PR: credentials, folders and websites follow.
+	"jc password-vault status":                       ClassReadOnly,
+	"jc password-vault settings get":                 ClassReadOnly,
+	"jc password-vault settings default-permissions": ClassReadOnly,
+	"jc password-vault overview":                     ClassReadOnly,
+	"jc password-vault users list":                   ClassReadOnly,
+	"jc password-vault users self":                   ClassReadOnly,
+	"jc password-vault users jc-managed":             ClassReadOnly,
+	"jc password-vault users active-pwm-tenants":     ClassReadOnly,
+	"jc password-vault groups list":                  ClassReadOnly,
+	"jc password-vault groups all":                   ClassReadOnly,
+	"jc password-vault groups members":               ClassReadOnly,
+	"jc password-vault groups resources":             ClassReadOnly,
+	"jc password-vault groups assignable-resources":  ClassReadOnly,
+	"jc password-vault tags list":                    ClassReadOnly,
+
 	// admins — JumpCloud admin user mgmt.
 	"jc admins create": ClassMutating,
 	"jc admins delete": ClassDestructive,

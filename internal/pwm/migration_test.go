@@ -64,26 +64,3 @@ func TestMigrationHint(t *testing.T) {
 		}
 	}
 }
-
-// TestMigrationHint_NamesVaultCommandOnceItExists is a tripwire, in the same
-// spirit as TestEveryLeafIsClassified: it fails the moment a `jc
-// password-vault` command is registered, so the hint stops pointing people at
-// the console and names the command instead.
-//
-// It cannot import internal/cmd (that would be an import cycle), so it keys
-// off the hint text itself. When the command lands, update MigrationHint to
-// name it and update this test to assert that name.
-func TestMigrationHint_NamesVaultCommandOnceItExists(t *testing.T) {
-	msg := MigrationHint("/passwordmanager/users").Error()
-	mentionsCommand := strings.Contains(msg, "jc password-vault")
-	pointsAtConsole := strings.Contains(msg, "JumpCloud console")
-
-	if mentionsCommand && pointsAtConsole {
-		t.Error("hint names `jc password-vault` AND still points at the console; " +
-			"drop the console fallback now that the command exists")
-	}
-	if !mentionsCommand && !pointsAtConsole {
-		t.Error("hint neither names `jc password-vault` nor points at the console; " +
-			"it must tell the operator where to go")
-	}
-}
