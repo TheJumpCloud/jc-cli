@@ -11,6 +11,8 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 - `jc users` — Manage JumpCloud system users
 - `jc groups` — Manage user and device groups
 - `jc admins` — Manage JumpCloud administrators
+- `jc service-accounts` — Manage JumpCloud service accounts
+- `jc roles` — Manage JumpCloud administrator roles
 - `jc auth-policies` — Manage authentication policies for conditional access
 - `jc iplists` — Manage IP lists for authentication policies
 - `jc identity-providers` — Manage JumpCloud identity providers for SSO/OIDC federation
@@ -31,6 +33,9 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 - `jc commands` — Manage JumpCloud commands
 - `jc policies` — Manage JumpCloud policies
+- `jc password-manager` — Inspect JumpCloud Password Manager
+- `jc password-policies` — Manage JumpCloud password policies
+- `jc bundle` — Apply versioned security-baseline bundles
 - `jc policy-templates` — View policy templates
 - `jc policy-groups` — Manage policy groups
 
@@ -38,10 +43,18 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 - `jc insights` — Query Directory Insights audit events
 - `jc identity-risk` — Inspect and resolve identity risk detections
+- `jc alerts` — List, inspect, annotate and resolve JumpCloud alerts
+- `jc reports` — Browse and export JumpCloud reports
+- `jc search` — Search the JumpCloud resource indexes
+- `jc notification-channels` — Manage JumpCloud notification channels
+- `jc saved-views` — Manage JumpCloud saved views
 - `jc system-insights` — Query osquery system insight tables
 
 ### Integrations
 
+- `jc directories` — One view over every directory integration
+- `jc google-emm` — Inspect the org's Android Enterprise (EMM) setup
+- `jc workday` — Inspect the org's Workday HR-import integrations
 - `jc software` — Manage JumpCloud software apps
 - `jc assets` — Manage JumpCloud assets (devices, accessories, locations)
 - `jc ldap` — Manage JumpCloud LDAP servers
@@ -62,6 +75,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 ### AI & Automation
 
+- `jc workflows` — Author, validate, run and diagnose JumpCloud Workflows
 - `jc recipe` — Manage and run automation recipes
 - `jc multi` — Run a jc command across multiple profiles and merge the results
 - `jc mcp` — MCP server for AI agent integration
