@@ -991,5 +991,12 @@ func runUsersGroups(cmd *cobra.Command, identifier string) error {
 		}
 		rows = append(rows, b)
 	}
-	return output.WriteList(cmd.OutOrStdout(), rows, output.CurrentOptions())
+	opts := output.CurrentOptions()
+	if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+		return err
+	}
+	if !opts.Quiet && !opts.IDsOnly {
+		writeCountFooter(cmd, len(rows))
+	}
+	return nil
 }
