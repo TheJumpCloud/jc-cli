@@ -15,7 +15,12 @@ import (
 )
 
 const (
-	// InsightsBaseURL is the JumpCloud Directory Insights API base URL.
+	// InsightsBaseURL is the Directory Insights base URL for the US region.
+	//
+	// Insights lives on api.jumpcloud.com rather than the console host, so it
+	// needs its own regional value — an org pointed at the EU console with
+	// Insights left here would query the wrong region's audit log and be told
+	// nothing was wrong.
 	InsightsBaseURL = "https://api.jumpcloud.com/insights/directory/v1"
 )
 
@@ -34,14 +39,14 @@ func NewInsightsClient() (*InsightsClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.BaseURL = InsightsBaseURL
+	c.BaseURL = ResolveInsightsBaseURL()
 	return &InsightsClient{Client: c}, nil
 }
 
 // NewInsightsClientWithKey creates a new Insights API client with the given API key.
 func NewInsightsClientWithKey(apiKey string) *InsightsClient {
 	c := NewClientWithKey(apiKey)
-	c.BaseURL = InsightsBaseURL
+	c.BaseURL = ResolveInsightsBaseURL()
 	return &InsightsClient{Client: c}
 }
 

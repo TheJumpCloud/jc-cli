@@ -16,7 +16,11 @@ import (
 )
 
 const (
-	// BaseURL is the JumpCloud API v1 base URL.
+	// BaseURL is the JumpCloud API v1 base URL for the US region.
+	//
+	// Clients no longer read this directly — ResolveV1BaseURL does, so that
+	// --region and JC_API_BASE_URL take effect. It remains the US value and
+	// the default, so nothing that referenced it has changed meaning.
 	BaseURL = "https://console.jumpcloud.com/api"
 
 	// DefaultTimeout is the default HTTP request timeout.
@@ -77,7 +81,7 @@ func NewClientWithKey(apiKey string) *Client {
 			Timeout:   DefaultTimeout,
 			Transport: transport,
 		},
-		BaseURL:    BaseURL,
+		BaseURL:    ResolveV1BaseURL(),
 		apiKey:     apiKey,
 		AuthMethod: "api_key",
 	}
@@ -98,7 +102,7 @@ func NewClientWithToken(tc *TokenCache) *Client {
 			Timeout:   DefaultTimeout,
 			Transport: transport,
 		},
-		BaseURL:    BaseURL,
+		BaseURL:    ResolveV1BaseURL(),
 		AuthMethod: "service_account",
 		TokenCache: tc,
 	}

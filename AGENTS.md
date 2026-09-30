@@ -22,6 +22,25 @@ for the frontmatter convention and authoring guidance.
 
 `jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 40+ resource types. Single Go binary, no dependencies.
 
+## Regions
+
+```bash
+# JumpCloud serves us (default), eu and in. An org lives in exactly one.
+jc --region eu users list
+jc config set region eu          # per profile
+export JC_REGION=eu
+
+# doctor reports where requests actually go, and why.
+jc doctor
+```
+
+The region moves ALL FOUR host families — v1, v2, Directory Insights and the
+OAuth token endpoint. Insights and OAuth are on different domains from the
+console, so a partial fix silently queries the wrong region's audit log.
+
+Individual hosts override the region: `JC_API_BASE_URL`, `JC_API_V2_BASE_URL`,
+`JC_INSIGHTS_BASE_URL`, `JC_OAUTH_TOKEN_URL`.
+
 ## Authentication
 
 ```bash

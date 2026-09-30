@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	// V2BaseURL is the JumpCloud API v2 base URL.
+	// V2BaseURL is the JumpCloud API v2 base URL for the US region. See the
+	// note on BaseURL: ResolveV2BaseURL is what clients resolve through.
 	V2BaseURL = "https://console.jumpcloud.com/api/v2"
 
 	// DefaultV2PageSize is the default number of results per page for V2 pagination.
@@ -32,14 +33,14 @@ func NewV2Client() (*V2Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.BaseURL = V2BaseURL
+	c.BaseURL = ResolveV2BaseURL()
 	return &V2Client{Client: c}, nil
 }
 
 // NewV2ClientWithKey creates a new V2 API client with the given API key.
 func NewV2ClientWithKey(apiKey string) *V2Client {
 	c := NewClientWithKey(apiKey)
-	c.BaseURL = V2BaseURL
+	c.BaseURL = ResolveV2BaseURL()
 	return &V2Client{Client: c}
 }
 

@@ -53,9 +53,9 @@ type profileSection struct {
 }
 
 type configSection struct {
-	Path    string `json:"path"`
-	Dir     string `json:"dir"`
-	Exists  bool   `json:"exists"`
+	Path     string `json:"path"`
+	Dir      string `json:"dir"`
+	Exists   bool   `json:"exists"`
 	FileMode string `json:"file_mode,omitempty"`
 	DirMode  string `json:"dir_mode,omitempty"`
 }
@@ -69,9 +69,15 @@ type authSection struct {
 }
 
 type apiSection struct {
-	V1BaseURL   string    `json:"v1_base_url"`
-	V2BaseURL   string    `json:"v2_base_url"`
-	Probe       *apiProbe `json:"probe,omitempty"`
+	Region          string    `json:"region"`
+	RegionName      string    `json:"region_name"`
+	RegionSource    string    `json:"region_source"`
+	V1BaseURL       string    `json:"v1_base_url"`
+	V2BaseURL       string    `json:"v2_base_url"`
+	InsightsBaseURL string    `json:"insights_base_url"`
+	OAuthTokenURL   string    `json:"oauth_token_url"`
+	Overridden      []string  `json:"overridden,omitempty"`
+	Probe           *apiProbe `json:"probe,omitempty"`
 }
 
 type apiProbe struct {
@@ -277,9 +283,19 @@ func collectAuth(flagAPIKeySet bool) authSection {
 }
 
 func collectAPI() apiSection {
+	// Resolved, not the constants. doctor reading the constants was the
+	// sharpest part of issue #127: on a patched build the first thing an
+	// operator checks confirmed a region the CLI was not using.
+	h := api.CurrentHosts()
 	return apiSection{
-		V1BaseURL: api.BaseURL,
-		V2BaseURL: api.V2BaseURL,
+		Region:          h.Region,
+		RegionName:      h.RegionName,
+		RegionSource:    h.Source,
+		V1BaseURL:       h.V1,
+		V2BaseURL:       h.V2,
+		InsightsBaseURL: h.Insights,
+		OAuthTokenURL:   h.OAuthToken,
+		Overridden:      h.Overridden,
 	}
 }
 
@@ -539,8 +555,11 @@ func printDoctorText(out io.Writer, rep doctorReport) error {
 	section("Auth", authKVs...)
 
 	apiKVs := [][2]string{
+		{"Region", fmt.Sprintf("%s (%s) — from %s", rep.API.Region, rep.API.RegionName, rep.API.RegionSource)},
 		{"V1", rep.API.V1BaseURL},
 		{"V2", rep.API.V2BaseURL},
+		{"Insights", rep.API.InsightsBaseURL},
+		{"OAuth token", rep.API.OAuthTokenURL},
 	}
 	if rep.API.Probe != nil {
 		p := rep.API.Probe

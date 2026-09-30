@@ -18,8 +18,18 @@ const (
 	OAuthTokenURL = "https://admin-oauth.id.jumpcloud.com/oauth2/token"
 )
 
-// oauthTokenURL is the token endpoint URL. Overridable in tests.
-var oauthTokenURL = OAuthTokenURL
+// oauthTokenURL overrides the token endpoint. Tests set it; when it is
+// empty the URL is resolved per-region at call time, so --region reaches
+// service-account auth as well as the API clients.
+var oauthTokenURL string
+
+// tokenURL returns the endpoint to authenticate against.
+func tokenURL() string {
+	if oauthTokenURL != "" {
+		return oauthTokenURL
+	}
+	return ResolveOAuthTokenURL()
+}
 
 // SetOAuthTokenURL overrides the OAuth token URL and returns the previous value.
 // Used by tests in other packages.
@@ -109,7 +119,7 @@ func (tc *TokenCache) fetchToken(ctx context.Context) (string, int, error) {
 	data.Set("grant_type", "client_credentials")
 	data.Set("scope", "api")
 
-	req, err := http.NewRequestWithContext(ctx, "POST", oauthTokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL(), strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}
