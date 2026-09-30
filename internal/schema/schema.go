@@ -1254,7 +1254,11 @@ func BuildCommandManifest() CommandManifest {
 					"folders list", "folders get", "folders edit-view", "folders items",
 					"folders managers", "websites list", "websites get", "websites activities",
 					"websites managers", "websites connect-links",
-					"websites parameters-extension", "websites columns"},
+					"websites parameters-extension", "websites columns",
+					"credentials create", "credentials delete", "credentials archive",
+					"credentials unarchive", "credentials clone",
+					"folders create", "folders rename", "folders delete", "folders add-items",
+					"websites create", "websites delete", "websites clone"},
 			},
 			{
 				Path:        "jc auth-policies",

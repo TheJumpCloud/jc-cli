@@ -94,6 +94,18 @@ var commandClass = map[string]string{
 	"jc password-vault websites list":                 ClassReadOnly,
 	"jc password-vault websites managers":             ClassReadOnly,
 	"jc password-vault websites parameters-extension": ClassReadOnly,
+	"jc password-vault credentials create":            ClassMutating,
+	"jc password-vault credentials delete":            ClassDestructive,
+	"jc password-vault credentials archive":           ClassMutating,
+	"jc password-vault credentials unarchive":         ClassMutating,
+	"jc password-vault credentials clone":             ClassDestructive,
+	"jc password-vault folders create":                ClassMutating,
+	"jc password-vault folders rename":                ClassMutating,
+	"jc password-vault folders delete":                ClassDestructive,
+	"jc password-vault folders add-items":             ClassMutating,
+	"jc password-vault websites create":               ClassMutating,
+	"jc password-vault websites delete":               ClassDestructive,
+	"jc password-vault websites clone":                ClassDestructive,
 	"jc password-vault tags list":                     ClassReadOnly,
 
 	// admins — JumpCloud admin user mgmt.
