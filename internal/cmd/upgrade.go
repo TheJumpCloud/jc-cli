@@ -110,11 +110,27 @@ A tool that administers an identity platform silently rewriting its own code
 would be a supply-chain surface, and it would break anyone pinning a version
 in CI or an MDM fleet.
 
-WHAT IS VERIFIED. The download is checked against the SHA-256 published in the
-release's checksums.txt, which establishes that the bytes arrived intact. It
-does NOT establish that the release is authentic — the checksums come from the
-same release as the archive, so anyone able to publish one could publish both.
-That needs signed artifacts, which jc does not have yet.
+WHAT IS VERIFIED HERE. The download is checked against the SHA-256 published
+in the release's checksums.txt. That establishes the bytes arrived intact. It
+does NOT by itself establish the release is authentic, because the checksums
+come from the same release as the archive.
+
+Releases ARE signed — checksums.txt carries a Sigstore signature from the
+release workflow's own identity — but jc does not check it, deliberately. A
+Go verifier would add about seventy modules to a CLI that ships with a
+hundred and forty-six lines of go.sum, and doubling the dependency tree in
+order to verify the dependency tree is a poor trade. Verify by hand when it
+matters:
+
+  scripts/verify-release.sh <version> <asset>
+
+or directly:
+
+  cosign verify-blob --bundle checksums.txt.sigstore.json \
+    --certificate-identity \
+      https://github.com/TheJumpCloud/jc-cli/.github/workflows/release.yml@refs/heads/main \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    checksums.txt
 
 If the binary is somewhere you cannot write — /usr/local/bin on most systems —
 jc says so and prints the command to run rather than asking for your password.`,
