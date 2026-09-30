@@ -271,6 +271,24 @@ func runRecipeRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The findings ARE the deliverable for a read-only recipe, and they were
+	// being computed and discarded: Execute collects every step's stdout into
+	// StepResult.Output and nothing here wrote it anywhere, so `jc recipe run`
+	// printed progress and a summary and no data at all.
+	//
+	// The shipped audit-inactive-users has told operators to "review the user
+	// list above" since the catalog began, when no list was ever above.
+	//
+	// Data on stdout, progress and messages on stderr — the same split the
+	// rest of jc uses, and what makes the output pipeable.
+	payload, merr := json.Marshal(result)
+	if merr != nil {
+		return merr
+	}
+	if werr := output.WriteSingle(cmd.OutOrStdout(), json.RawMessage(payload), output.CurrentOptions()); werr != nil {
+		return werr
+	}
+
 	// Show the completion message to stderr.
 	if result.Message != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), result.Message)

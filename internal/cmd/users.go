@@ -17,6 +17,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/usergroups"
 )
 
 // userDefaultFields is the default field subset shown for user list/table output.
@@ -51,6 +52,7 @@ func newUsersCmd() *cobra.Command {
 		Long:    "List, get, search, create, update, delete, lock, unlock, reset MFA, and reset password for JumpCloud system users.\n\nAliases: u, users",
 	}
 
+	cmd.AddCommand(newUsersGroupsCmd())
 	cmd.AddCommand(newUsersListCmd())
 	cmd.AddCommand(newUsersGetCmd())
 	cmd.AddCommand(newUsersSearchCmd())
@@ -551,8 +553,8 @@ func runUsersDelete(cmd *cobra.Command, identifier string) error {
 
 func newUsersLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "lock <username-or-id>",
-		Short: "Lock a user account",
+		Use:               "lock <username-or-id>",
+		Short:             "Lock a user account",
 		Long:              "Lock a JumpCloud user account by setting account_locked=true. Accepts a username or ID.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
@@ -566,8 +568,8 @@ func newUsersLockCmd() *cobra.Command {
 
 func newUsersUnlockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "unlock <username-or-id>",
-		Short: "Unlock a user account",
+		Use:               "unlock <username-or-id>",
+		Short:             "Unlock a user account",
 		Long:              "Unlock a JumpCloud user account by setting account_locked=false. Accepts a username or ID.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
@@ -645,7 +647,7 @@ Accepts a username or 24-character hex user ID.
 The user will need to re-enroll in MFA on their next login.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: batchRunE("user", "reset-mfa", runUsersResetMFA),
+		RunE:              batchRunE("user", "reset-mfa", runUsersResetMFA),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd
@@ -686,12 +688,12 @@ func runUsersResetMFA(cmd *cobra.Command, identifier string) error {
 
 func newUsersResetPasswordCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset-password <username-or-id>",
-		Short: "Trigger a password reset for a user",
+		Use:               "reset-password <username-or-id>",
+		Short:             "Trigger a password reset for a user",
 		Long:              "Trigger a password reset email for a JumpCloud user. Accepts a username or ID. The user's password will expire and they will be prompted to set a new one.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
-		RunE: batchRunE("user", "reset-password", runUsersResetPassword),
+		RunE:              batchRunE("user", "reset-password", runUsersResetPassword),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd
@@ -942,4 +944,61 @@ func writeListFooter(cmd *cobra.Command, count, total int) {
 	} else {
 		fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d items ──\n", count, total)
 	}
+}
+
+// newUsersGroupsCmd lists the groups a user belongs to.
+//
+// This did not exist before, and its absence was load-bearing: `jc users get`
+// returns 54 fields and not one of them is a group, `jc groups user` has no
+// membership query, and `jc graph traverse --from user:X --to user_group` is
+// rejected outright by the associations endpoint (HTTP 400). The only path is
+// /users/{id}/memberof, which the MCP view tools already used and the CLI
+// could not reach at all.
+func newUsersGroupsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "groups <username-or-id>",
+		Short: "List the groups a user belongs to",
+		Long: `List the user groups a JumpCloud user belongs to, with their names.
+
+Accepts a username or 24-character hex user ID.
+
+The membership endpoint returns ids and no names, so the names are joined from
+the group catalog in one fetch rather than one lookup per group. If the catalog
+cannot be read the groups are still listed, by id, with a warning — knowing
+someone is in eight groups matters more than knowing what they are called.`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.UserConfig),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUsersGroups(cmd, args[0])
+		},
+	}
+}
+
+func runUsersGroups(cmd *cobra.Command, identifier string) error {
+	v1, err := newV1Client()
+	if err != nil {
+		return err
+	}
+	id, err := resolveUser(cmd.Context(), v1, identifier)
+	if err != nil {
+		return err
+	}
+	v2, err := newV2Client()
+	if err != nil {
+		return err
+	}
+	warn := func(msg string) { fmt.Fprintln(cmd.ErrOrStderr(), "warning:", msg) }
+	refs, err := usergroups.Resolve(cmd.Context(), v2, usergroups.UserMemberOfPath(id), warn)
+	if err != nil {
+		return err
+	}
+	rows := make([]json.RawMessage, 0, len(refs))
+	for _, r := range refs {
+		b, merr := json.Marshal(r)
+		if merr != nil {
+			return merr
+		}
+		rows = append(rows, b)
+	}
+	return output.WriteList(cmd.OutOrStdout(), rows, output.CurrentOptions())
 }

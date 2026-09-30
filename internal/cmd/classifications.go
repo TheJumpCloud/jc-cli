@@ -505,6 +505,7 @@ var commandClass = map[string]string{
 	// users — user lifecycle + SSH keys.
 	"jc users create":         ClassMutating,
 	"jc users delete":         ClassDestructive,
+	"jc users groups":         ClassReadOnly,
 	"jc users get":            ClassReadOnly,
 	"jc users list":           ClassReadOnly,
 	"jc users lock":           ClassDestructive,

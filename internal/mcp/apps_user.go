@@ -12,6 +12,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/usergroups"
 )
 
 //go:embed apps_html/user.html
@@ -39,7 +40,7 @@ type userViewArgs struct {
 type userViewData struct {
 	User         userHeader        `json:"user"`
 	MFA          userMFA           `json:"mfa_enrollment"`
-	Groups       []GroupRef        `json:"groups"`
+	Groups       []usergroups.Ref  `json:"groups"`
 	SSHKeys      []userSSHKey      `json:"ssh_keys"`
 	RecentEvents []json.RawMessage `json:"recent_events"`
 	Warnings     []string          `json:"warnings,omitempty"`
@@ -183,7 +184,14 @@ func fetchUserViewData(ctx context.Context, args userViewArgs) (*userViewData, e
 		// associations (the membership endpoint is what the registry
 		// MemberOfTarget points at and the V1 user-groups endpoint
 		// returns).
-		groups := resolveGroupNames(ctx, v2, "/users/"+id+"/memberof", addWarning)
+		groups, gerr := usergroups.Resolve(ctx, v2, usergroups.UserMemberOfPath(id), addWarning)
+		if gerr != nil {
+			// Warn and leave the section empty, matching every other
+			// section in this view: one failed lookup must not fail the
+			// whole record.
+			addWarning(gerr.Error())
+			return
+		}
 		mu.Lock()
 		data.Groups = groups
 		mu.Unlock()

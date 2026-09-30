@@ -1,0 +1,46 @@
+name: offboarding-audit
+description: Verify a departed user is actually gone — account state, devices still bound, groups still joined
+author: jc
+version: "1.0"
+tags: [offboarding, audit, compliance, security, users]
+
+# The counterpart to offboard-user. That recipe performs the offboarding;
+# this one checks it happened, which is the part nobody does once the ticket
+# closes. Every step is read-only and runs fine under a Read Only role.
+#
+# The three questions an offboarding review actually asks:
+#   1. is the account still usable?          -> activated / suspended / account_locked / MFA
+#   2. is hardware still assigned to them?   -> devices where they are primary user
+#   3. can they still reach anything?        -> group memberships
+#
+# Step 2 needs the user's id rather than their username, which is why the id is
+# captured first: primarySystemUser.id is a structured filter and takes no name.
+
+parameters:
+  - name: user
+    description: Username or user ID to audit
+    required: true
+    type: string
+
+steps:
+  - name: resolve-user-id
+    command: 'users get {{ .user }} --ids'
+    capture: user_id
+
+  - name: account-state
+    command: 'users get {{ .user }} --fields username,email,activated,suspended,account_locked,mfa,mfaEnrollment'
+
+  - name: devices-still-assigned
+    command: 'search systems --filter primarySystemUser.id={{ .user_id }} --fields hostname,displayName,os,lastContact'
+
+  - name: groups-still-joined
+    command: 'users groups {{ .user }}'
+
+on_success:
+  message: >-
+    Offboarding audit complete for {{ .user }}. Review each section: an account that is
+    still activated, any device listed as still assigned, or any group still joined means
+    the offboarding is incomplete.
+
+on_failure:
+  message: 'Offboarding audit failed at step: {{ .failed_step }}'

@@ -12,6 +12,7 @@ import (
 
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/usergroups"
 )
 
 //go:embed apps_html/device.html
@@ -47,7 +48,7 @@ type deviceViewArgs struct {
 type deviceViewData struct {
 	Device         deviceHeader      `json:"device"`
 	Status         deviceStatusSnap  `json:"status"`
-	Groups         []GroupRef        `json:"groups"`
+	Groups         []usergroups.Ref  `json:"groups"`
 	Policies       []policyRef       `json:"policies"`
 	SystemInsights *deviceInsights   `json:"system_insights,omitempty"`
 	RecentEvents   []json.RawMessage `json:"recent_events"`
@@ -207,7 +208,14 @@ func fetchDeviceViewData(ctx context.Context, args deviceViewArgs) (*deviceViewD
 			addWarning(fmt.Sprintf("v2 client: %v", err))
 			return
 		}
-		groups := resolveGroupNames(ctx, v2, "/systems/"+id+"/memberof", addWarning)
+		groups, gerr := usergroups.Resolve(ctx, v2, usergroups.DeviceMemberOfPath(id), addWarning)
+		if gerr != nil {
+			// Warn and leave the section empty, matching every other
+			// section in this view: one failed lookup must not fail the
+			// whole record.
+			addWarning(gerr.Error())
+			return
+		}
 		mu.Lock()
 		data.Groups = groups
 		mu.Unlock()
