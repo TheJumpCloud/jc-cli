@@ -715,6 +715,48 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	// identity-risk — risk detections. Fields taken from a live record on a
+	// tenant that had real detections, not from the spec.
+	"identity-risk": {
+		Resource:      "identity-risk",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"objectId", "level", "score", "identityDisplayName", "resolutionStatus"},
+		Fields: []FieldDef{
+			{Name: "objectId", Type: "string", Description: "JumpCloud object id of the detection", ReadOnly: true},
+			{Name: "level", Type: "string", Description: "RISK_LEVEL_LOW | MEDIUM | HIGH | CRITICAL", ReadOnly: true},
+			{Name: "score", Type: "int", Description: "Risk score for the detection", ReadOnly: true},
+			{Name: "identityObjectId", Type: "string", Description: "The identity the detection is against", ReadOnly: true},
+			{Name: "identityDisplayName", Type: "string", Description: "Display name of that identity", ReadOnly: true},
+			{Name: "identityIdentifier", Type: "string", Description: "Username or email of that identity", ReadOnly: true},
+			{Name: "identityType", Type: "string", Description: "IDENTITY_TYPE_USER and friends", ReadOnly: true},
+			{Name: "applicationDisplayName", Type: "string", Description: "Application the access targeted", ReadOnly: true},
+			{Name: "loginResource", Type: "string", Description: "TARGET_RESOURCE_TYPE_APPLICATION and friends", ReadOnly: true},
+			{Name: "loginStatus", Type: "bool", Description: "Whether the login succeeded", ReadOnly: true},
+			{Name: "mfaStatus", Type: "bool", Description: "Whether MFA was satisfied", ReadOnly: true},
+			{Name: "mfaMethod", Type: "string", Description: "MFA method used, when any", ReadOnly: true},
+			{Name: "clientIp", Type: "string", Description: "Source address of the access", ReadOnly: true},
+			{Name: "countryCode", Type: "string", Description: "Country the access came from", ReadOnly: true},
+			{Name: "city", Type: "string", Description: "City the access came from", ReadOnly: true},
+			{Name: "regionName", Type: "string", Description: "Region the access came from", ReadOnly: true},
+			{Name: "location", Type: "string", Description: "Rendered location string", ReadOnly: true},
+			{Name: "occurrenceCount", Type: "int", Description: "How many times this detection has fired", ReadOnly: true},
+			{Name: "firstOccurrenceAt", Type: "datetime", Description: "First occurrence (RFC3339)", ReadOnly: true},
+			{Name: "lastOccurrenceAt", Type: "datetime", Description: "Most recent occurrence (RFC3339)", ReadOnly: true},
+			{Name: "riskPolicyName", Type: "string", Description: "Policy that produced the detection", ReadOnly: true},
+			{Name: "riskFactorTypes", Type: "array", Description: "RISK_FACTOR_TYPE_* values that contributed", ReadOnly: true},
+			{Name: "description", Type: "string", Description: "Human-readable summary of the detection", ReadOnly: true},
+			// Writable only through `events resolve`, and only once.
+			{Name: "resolutionStatus", Type: "string", Description: "RISK_RESOLUTION_STATUS_OPEN until resolved; resolving cannot be undone", ReadOnly: true},
+			{Name: "resolutionState", Type: "string", Description: "RISK_RESOLUTION_STATE_SAFE or _UNSAFE once resolved", ReadOnly: true},
+			{Name: "resolutionNotes", Type: "string", Description: "Why it was resolved — the only record of the judgement", ReadOnly: true},
+			{Name: "resolvedByEmail", Type: "string", Description: "Admin who resolved it", ReadOnly: true},
+			{Name: "sourceEventObjectId", Type: "string", Description: "Directory Insights event that produced it", ReadOnly: true},
+			{Name: "createdAt", Type: "datetime", Description: "When the detection was created (RFC3339)", ReadOnly: true},
+			{Name: "updatedAt", Type: "datetime", Description: "When it last changed (RFC3339)", ReadOnly: true},
+		},
+	},
+
 	"workday": {
 		Resource:      "workday",
 		APIVersion:    "v2",
@@ -1140,6 +1182,31 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "event-type", Type: "string", Description: "Filter by event type"},
 					{Name: "limit", Type: "int", Description: "Maximum events to return"},
 					{Name: "sort", Type: "string", Description: "Sort field"},
+				},
+			},
+			{
+				Path:        "jc identity-risk",
+				Description: "Inspect and resolve identity risk detections",
+				Long: "Read JumpCloud's identity risk detections — the anomalous logins and " +
+					"access patterns it has flagged — and close them off once judged. Each " +
+					"detection carries a level and score, the identity and application it " +
+					"concerns, where the access came from, and whether MFA was satisfied; " +
+					"`identities get` returns the behavioural profile the scoring is measured " +
+					"against, so a flagged login can be compared with what is normal for that " +
+					"person. Time windows are not uniform: the aggregates (stats, login-types, " +
+					"geolocations, timeline, identities list) require --last or --start, while " +
+					"`events list` and `identities get` do not. RESOLVING CANNOT BE UNDONE — the " +
+					"API refuses every later change to a detection, including reopening it — so " +
+					"`events resolve` confirms like a delete and supports --plan.",
+				Subcommands: []string{"events", "identities", "stats", "login-types", "geolocations", "timeline"},
+				Flags: []FlagEntry{
+					{Name: "last", Type: "string", Description: "Relative window, e.g. 24h, 7d, 30d"},
+					{Name: "start", Type: "string", Description: "Window start (RFC3339, or relative like 30d)"},
+					{Name: "end", Type: "string", Description: "Window end (RFC3339); defaults to now"},
+					{Name: "level", Type: "string", Description: "Only this risk level: low, medium, high, critical"},
+					{Name: "state", Type: "string", Description: "On resolve: whether the access was legitimate — safe or unsafe"},
+					{Name: "status", Type: "string", Description: "On resolve: resolved, dismissed or mfa-resolved"},
+					{Name: "notes", Type: "string", Description: "On resolve: why — the only record of the judgement made"},
 				},
 			},
 			{

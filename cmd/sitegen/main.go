@@ -54,7 +54,7 @@ var categories = []category{
 	},
 	{
 		Name:     "Insights",
-		Commands: []string{"jc insights", "jc system-insights"},
+		Commands: []string{"jc insights", "jc system-insights", "jc identity-risk"},
 	},
 	{
 		Name: "Integrations",

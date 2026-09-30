@@ -37,6 +37,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 ### Insights
 
 - `jc insights` — Query Directory Insights audit events
+- `jc identity-risk` — Inspect and resolve identity risk detections
 - `jc system-insights` — Query osquery system insight tables
 
 ### Integrations
