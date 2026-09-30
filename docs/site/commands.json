@@ -465,6 +465,245 @@
       ]
     },
     {
+      "path": "jc alerts",
+      "description": "List, inspect, annotate and resolve JumpCloud alerts",
+      "long": "The alert stream the console surfaces, plus the rules behind it. Alerts can be read one at a time or in bulk, annotated with a note that survives as the record of what was decided, and resolved or dismissed in batches. `rules` covers the definitions that raise them and `occurrences` the individual firings behind a single alert, so a noisy rule can be told apart from a recurring condition.",
+      "category": "Insights",
+      "subcommands": [
+        "list",
+        "get",
+        "status",
+        "add-note",
+        "notes",
+        "occurrences",
+        "stats",
+        "rules",
+        "delete",
+        "bulk-update",
+        "bulk-delete"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results"
+        },
+        {
+          "name": "filter",
+          "type": "string[]",
+          "description": "Filter expressions"
+        }
+      ]
+    },
+    {
+      "path": "jc workflows",
+      "description": "Author, validate, run and diagnose JumpCloud Workflows",
+      "long": "The Serverless Workflow DSL as JumpCloud implements it, with the jc_operation extension. Beyond the usual CRUD, this group is built around the fact that the API accepts a malformed workflow and only fails at run time: `validate` checks a document against the DSL rules and the operationId index before it is created, `explain` renders what a workflow will actually do including every side effect that reaches outside JumpCloud, `simulate` walks the graph without calling anything, and `lint` catches the traps that do not show up until a run goes wrong. `health` compares what a workflow's trigger event did against what the workflow did, which is how a workflow that never fires despite its event occurring gets found. Templates carry REPLACE_WITH_* markers that `templates init --set` fills by name.",
+      "category": "AI \u0026 Automation",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "trigger",
+        "runs",
+        "validate",
+        "explain",
+        "simulate",
+        "lint",
+        "health",
+        "templates",
+        "event-types"
+      ],
+      "flags": [
+        {
+          "name": "plan",
+          "type": "bool",
+          "description": "Preview without creating or running"
+        },
+        {
+          "name": "allow-side-effects",
+          "type": "bool",
+          "description": "Permit a workflow that emails or calls out of JumpCloud"
+        }
+      ]
+    },
+    {
+      "path": "jc reports",
+      "description": "Browse and export JumpCloud reports",
+      "long": "The report families the console exposes: built-in templates, custom reports, the report builder, saved definitions and scheduled deliveries. Reads are complete; the writes are held back deliberately, because a scheduled report's trigger sends mail to real recipients and there is no dry run for it.",
+      "category": "Insights",
+      "subcommands": [
+        "templates",
+        "custom",
+        "builder",
+        "saved",
+        "scheduled",
+        "export"
+      ]
+    },
+    {
+      "path": "jc search",
+      "description": "Search the JumpCloud resource indexes",
+      "long": "The v1 search API over users, devices, commands and command results. It takes a structured body rather than a query string, so it reaches fields that `--filter` cannot, and it is the right tool when you know a fragment rather than a field.",
+      "category": "Insights",
+      "subcommands": [
+        "users",
+        "systems",
+        "commands",
+        "command-results"
+      ],
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "description": "Maximum number of results"
+        },
+        {
+          "name": "fields",
+          "type": "string",
+          "description": "Fields to return"
+        }
+      ]
+    },
+    {
+      "path": "jc password-manager",
+      "description": "Inspect JumpCloud Password Manager",
+      "long": "Enrolled users and groups, shared folders, stored item counts, password-hygiene scores and the policies in force. Reads only: the API can create a shared folder and offers no way to delete one, so every write here is one-way on a live tenant. Ids in this area are UUIDs rather than the 24-character hex the rest of JumpCloud uses. NOTE that JumpCloud is replacing this product with Password Vault; on an organization that has migrated, every endpoint here returns 404 and jc says so.",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "overview",
+        "users",
+        "groups",
+        "folders",
+        "items",
+        "policies",
+        "backup-keys"
+      ]
+    },
+    {
+      "path": "jc password-policies",
+      "description": "Manage JumpCloud password policies",
+      "long": "The V2 group-bound password policies, with precedence. The LOWEST precedence number wins when several policies cover one user, which `for-user` and `for-group` resolve so you can see which policy actually governs somebody rather than inferring it.",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "set-precedence",
+        "for-user",
+        "for-group"
+      ]
+    },
+    {
+      "path": "jc service-accounts",
+      "description": "Manage JumpCloud service accounts",
+      "long": "OAuth service accounts — the credential type meant for automation, as opposed to a human's API key. Secrets can be rotated and revoked without deleting the account, which is what makes unattended credentials rotatable at all.",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "delete",
+        "rotate",
+        "revoke"
+      ]
+    },
+    {
+      "path": "jc notification-channels",
+      "description": "Manage JumpCloud notification channels",
+      "long": "Where alerts are delivered — email, webhook, Slack. A channel is referenced by alert rules, so deleting one silently stops delivery for every rule that used it.",
+      "category": "Insights",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "path": "jc saved-views",
+      "description": "Manage JumpCloud saved views",
+      "long": "Named, stored filters over the directory that the console surfaces as views. They are org-level objects rather than per-admin preferences, so a change is visible to everyone.",
+      "category": "Insights",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "path": "jc roles",
+      "description": "Manage JumpCloud administrator roles",
+      "long": "The role definitions that scope what an administrator may do. Workflows also take a role at creation time, and JumpCloud enforces that scope when the workflow runs rather than when it is authored.",
+      "category": "Identity \u0026 Access",
+      "subcommands": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "path": "jc directories",
+      "description": "One view over every directory integration",
+      "long": "A unified read across the directory integrations — Google Workspace, Office 365, Active Directory, LDAP and the rest — so \"what is connected to this org\" is one command rather than six.",
+      "category": "Integrations",
+      "subcommands": [
+        "list"
+      ]
+    },
+    {
+      "path": "jc google-emm",
+      "description": "Inspect the org's Android Enterprise (EMM) setup",
+      "long": "The Android Enterprise binding, the devices enrolled through it and the enrollment tokens issued. Reads only. Note that an enterprise id of the right shape that does not exist returns an empty device list rather than a 404, so absence of devices is not evidence the enterprise is real — jc confirms existence before reporting.",
+      "category": "Integrations",
+      "subcommands": [
+        "enterprises",
+        "devices",
+        "enrollment-tokens"
+      ]
+    },
+    {
+      "path": "jc workday",
+      "description": "Inspect the org's Workday HR-import integrations",
+      "long": "The Workday integrations that feed employee records from HR into the directory. Deliberately incomplete: the workers listing and the import-results endpoint are not implemented because no tenant available has an integration configured and their response shapes have never been observed. The import write is held back too — it creates and updates real directory users from HR data with no dry run.",
+      "category": "Integrations",
+      "subcommands": [
+        "list",
+        "get"
+      ]
+    },
+    {
+      "path": "jc bundle",
+      "description": "Apply versioned security-baseline bundles",
+      "long": "Bundles group Apple configuration profiles and Windows OMA-URI/registry policies into one versioned YAML artifact, so a baseline is applied and checked as a unit. `apply` creates one policy per unit plus a policy group and binds it to a device group; `status` reports drift at the value level, including policies that went missing and group members that were added outside the bundle. Apply is create-only: name conflicts are rejected up front and a mid-apply failure is never rolled back — the exact cleanup commands are printed instead.",
+      "category": "Policies \u0026 Commands",
+      "subcommands": [
+        "list",
+        "show",
+        "apply",
+        "status",
+        "validate",
+        "import",
+        "export"
+      ],
+      "flags": [
+        {
+          "name": "plan",
+          "type": "bool",
+          "description": "Preview what apply would create"
+        }
+      ]
+    },
+    {
       "path": "jc auth-policies",
       "description": "Manage authentication policies for conditional access",
       "category": "Identity \u0026 Access",

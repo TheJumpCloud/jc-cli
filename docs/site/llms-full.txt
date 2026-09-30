@@ -68,6 +68,22 @@ Manage JumpCloud administrators
 - `--enable-mfa` `<bool>` — Enable multi-factor authentication (create/update)
 - `--disable-mfa` `<bool>` — Disable multi-factor authentication (update)
 
+#### `jc service-accounts`
+
+Manage JumpCloud service accounts
+
+OAuth service accounts — the credential type meant for automation, as opposed to a human's API key. Secrets can be rotated and revoked without deleting the account, which is what makes unattended credentials rotatable at all.
+
+**Subcommands:** `list`, `get`, `create`, `delete`, `rotate`, `revoke`
+
+#### `jc roles`
+
+Manage JumpCloud administrator roles
+
+The role definitions that scope what an administrator may do. Workflows also take a role at creation time, and JumpCloud enforces that scope when the workflow runs rather than when it is authored.
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
 #### `jc auth-policies`
 
 Manage authentication policies for conditional access
@@ -245,6 +261,34 @@ Manage JumpCloud policies
 - `--sort` `<string>` — Sort field (list)
 - `--filter` `<string[]>` — Filter expressions (list)
 
+#### `jc password-manager`
+
+Inspect JumpCloud Password Manager
+
+Enrolled users and groups, shared folders, stored item counts, password-hygiene scores and the policies in force. Reads only: the API can create a shared folder and offers no way to delete one, so every write here is one-way on a live tenant. Ids in this area are UUIDs rather than the 24-character hex the rest of JumpCloud uses. NOTE that JumpCloud is replacing this product with Password Vault; on an organization that has migrated, every endpoint here returns 404 and jc says so.
+
+**Subcommands:** `overview`, `users`, `groups`, `folders`, `items`, `policies`, `backup-keys`
+
+#### `jc password-policies`
+
+Manage JumpCloud password policies
+
+The V2 group-bound password policies, with precedence. The LOWEST precedence number wins when several policies cover one user, which `for-user` and `for-group` resolve so you can see which policy actually governs somebody rather than inferring it.
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `set-precedence`, `for-user`, `for-group`
+
+#### `jc bundle`
+
+Apply versioned security-baseline bundles
+
+Bundles group Apple configuration profiles and Windows OMA-URI/registry policies into one versioned YAML artifact, so a baseline is applied and checked as a unit. `apply` creates one policy per unit plus a policy group and binds it to a device group; `status` reports drift at the value level, including policies that went missing and group members that were added outside the bundle. Apply is create-only: name conflicts are rejected up front and a mid-apply failure is never rolled back — the exact cleanup commands are printed instead.
+
+**Subcommands:** `list`, `show`, `apply`, `status`, `validate`, `import`, `export`
+
+**Flags:**
+
+- `--plan` `<bool>` — Preview what apply would create
+
 #### `jc policy-templates`
 
 View policy templates
@@ -306,6 +350,56 @@ Read JumpCloud's identity risk detections — the anomalous logins and access pa
 - `--status` `<string>` — On resolve: resolved, dismissed or mfa-resolved
 - `--notes` `<string>` — On resolve: why — the only record of the judgement made
 
+#### `jc alerts`
+
+List, inspect, annotate and resolve JumpCloud alerts
+
+The alert stream the console surfaces, plus the rules behind it. Alerts can be read one at a time or in bulk, annotated with a note that survives as the record of what was decided, and resolved or dismissed in batches. `rules` covers the definitions that raise them and `occurrences` the individual firings behind a single alert, so a noisy rule can be told apart from a recurring condition.
+
+**Subcommands:** `list`, `get`, `status`, `add-note`, `notes`, `occurrences`, `stats`, `rules`, `delete`, `bulk-update`, `bulk-delete`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results
+- `--filter` `<string[]>` — Filter expressions
+
+#### `jc reports`
+
+Browse and export JumpCloud reports
+
+The report families the console exposes: built-in templates, custom reports, the report builder, saved definitions and scheduled deliveries. Reads are complete; the writes are held back deliberately, because a scheduled report's trigger sends mail to real recipients and there is no dry run for it.
+
+**Subcommands:** `templates`, `custom`, `builder`, `saved`, `scheduled`, `export`
+
+#### `jc search`
+
+Search the JumpCloud resource indexes
+
+The v1 search API over users, devices, commands and command results. It takes a structured body rather than a query string, so it reaches fields that `--filter` cannot, and it is the right tool when you know a fragment rather than a field.
+
+**Subcommands:** `users`, `systems`, `commands`, `command-results`
+
+**Flags:**
+
+- `--limit` `<int>` — Maximum number of results
+- `--fields` `<string>` — Fields to return
+
+#### `jc notification-channels`
+
+Manage JumpCloud notification channels
+
+Where alerts are delivered — email, webhook, Slack. A channel is referenced by alert rules, so deleting one silently stops delivery for every rule that used it.
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
+#### `jc saved-views`
+
+Manage JumpCloud saved views
+
+Named, stored filters over the directory that the console surfaces as views. They are org-level objects rather than per-admin preferences, so a change is visible to everyone.
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`
+
 #### `jc system-insights`
 
 Query osquery system insight tables
@@ -320,6 +414,30 @@ Query osquery system insight tables
 - `--sort` `<string>` — Sort field
 
 ### Integrations
+
+#### `jc directories`
+
+One view over every directory integration
+
+A unified read across the directory integrations — Google Workspace, Office 365, Active Directory, LDAP and the rest — so "what is connected to this org" is one command rather than six.
+
+**Subcommands:** `list`
+
+#### `jc google-emm`
+
+Inspect the org's Android Enterprise (EMM) setup
+
+The Android Enterprise binding, the devices enrolled through it and the enrollment tokens issued. Reads only. Note that an enterprise id of the right shape that does not exist returns an empty device list rather than a 404, so absence of devices is not evidence the enterprise is real — jc confirms existence before reporting.
+
+**Subcommands:** `enterprises`, `devices`, `enrollment-tokens`
+
+#### `jc workday`
+
+Inspect the org's Workday HR-import integrations
+
+The Workday integrations that feed employee records from HR into the directory. Deliberately incomplete: the workers listing and the import-results endpoint are not implemented because no tenant available has an integration configured and their response shapes have never been observed. The import write is held back too — it creates and updates real directory users from HR data with no dry run.
+
+**Subcommands:** `list`, `get`
 
 #### `jc software`
 
@@ -512,6 +630,19 @@ CSV-driven batch operations. `jc bulk <resource> --file <csv>` processes one ope
 - `--file` `<string>` — Path to CSV file (required)
 
 ### AI & Automation
+
+#### `jc workflows`
+
+Author, validate, run and diagnose JumpCloud Workflows
+
+The Serverless Workflow DSL as JumpCloud implements it, with the jc_operation extension. Beyond the usual CRUD, this group is built around the fact that the API accepts a malformed workflow and only fails at run time: `validate` checks a document against the DSL rules and the operationId index before it is created, `explain` renders what a workflow will actually do including every side effect that reaches outside JumpCloud, `simulate` walks the graph without calling anything, and `lint` catches the traps that do not show up until a run goes wrong. `health` compares what a workflow's trigger event did against what the workflow did, which is how a workflow that never fires despite its event occurring gets found. Templates carry REPLACE_WITH_* markers that `templates init --set` fills by name.
+
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `trigger`, `runs`, `validate`, `explain`, `simulate`, `lint`, `health`, `templates`, `event-types`
+
+**Flags:**
+
+- `--plan` `<bool>` — Preview without creating or running
+- `--allow-side-effects` `<bool>` — Permit a workflow that emails or calls out of JumpCloud
 
 #### `jc recipe`
 
