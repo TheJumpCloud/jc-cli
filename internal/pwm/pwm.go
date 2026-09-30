@@ -545,16 +545,17 @@ func VaultActive(ctx context.Context, fetch Fetcher) bool {
 // MigrationHint is the error to surface when a Password Manager read 404s on
 // an org whose Password Vault is active.
 //
-// It does not name a `jc password-vault` command, because there is not one
-// yet. Pointing people at a command that does not exist is precisely the
-// mistake docs/solutions/conventions/empirical-gate-before-coding made for
-// three months. TestMigrationHint_NamesVaultCommandOnceItExists fails the
-// moment that command is registered, which is when this text gets updated.
+// It names `jc password-vault`, which exists as of this change. It did not
+// before, and did not say so, because pointing people at a command that does
+// not exist is precisely the mistake
+// docs/solutions/conventions/empirical-gate-before-coding made for three
+// months. internal/cmd.TestMigrationHintNamesTheVaultCommand is what holds
+// the two in step: it can see the Cobra tree, which this package cannot.
 func MigrationHint(endpoint string) error {
 	return fmt.Errorf(
 		"Password Manager is not active on this organization (%s returned 404), "+
 			"but its Password Vault is. JumpCloud is replacing Password Manager "+
-			"with Password Vault; jc does not cover Password Vault yet, so use the "+
-			"JumpCloud console for those records. Password Manager commands keep "+
-			"working on organizations that have not migrated", endpoint)
+			"with Password Vault — use `jc password-vault` for those records. "+
+			"Password Manager commands keep working on organizations that have "+
+			"not migrated", endpoint)
 }

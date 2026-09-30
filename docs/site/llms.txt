@@ -62,6 +62,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 ### AI & Automation
 
+- `jc password-vault` — Inspect JumpCloud Password Vault
 - `jc recipe` — Manage and run automation recipes
 - `jc multi` — Run a jc command across multiple profiles and merge the results
 - `jc mcp` — MCP server for AI agent integration
