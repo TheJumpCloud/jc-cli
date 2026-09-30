@@ -95,6 +95,11 @@ func setDefaults() {
 	viper.SetDefault("defaults.confirm_destructive", true)
 	viper.SetDefault("defaults.color", true)
 	viper.SetDefault("defaults.pager", "")
+
+	// The launch update check. On by default, and suppressed automatically
+	// whenever stderr is not a terminal, in CI, under --quiet, and in
+	// `mcp serve` — so it never reaches a pipeline or a protocol stream.
+	viper.SetDefault("update.check", true)
 	viper.SetDefault("cache.enabled", true)
 	viper.SetDefault("cache.ttl", 300)
 	viper.SetDefault("cache.directory", "")
@@ -290,11 +295,29 @@ var isTerminalFunc = func(fd int) bool {
 	return term.IsTerminal(fd)
 }
 
+// SetTerminalFuncForTest swaps TTY detection and returns a restore func.
+// The update-check suppression rules depend on it, and getting one of those
+// wrong puts a version notice into a pipeline — so they need testing.
+func SetTerminalFuncForTest(f func(fd int) bool) func() {
+	prev := isTerminalFunc
+	isTerminalFunc = f
+	return func() { isTerminalFunc = prev }
+}
+
 // IsStdoutTerminal returns true if stdout is connected to a terminal (TTY).
 // When stdout is piped (|), redirected (>), or captured ($(...)), this
 // returns false.
 func IsStdoutTerminal() bool {
 	return isTerminalFunc(int(os.Stdout.Fd()))
+}
+
+// IsStderrTerminal reports whether stderr is connected to a terminal.
+//
+// Notices and prompts go to stderr, so when deciding whether anyone is there
+// to read something, this is the stream that matters — a command whose stdout
+// is piped into jq may still have a person watching stderr.
+func IsStderrTerminal() bool {
+	return isTerminalFunc(int(os.Stderr.Fd()))
 }
 
 // NoColor returns true if color output should be disabled.

@@ -177,6 +177,23 @@ There is deliberately **no MCP tool** for this: a raw-request tool would
 hand an agent the whole API unclassified, defeating the per-tool
 destructive classification and the step-up auth gate.
 
+## Staying current
+
+```bash
+jc upgrade              # download + verify + replace this binary
+jc upgrade --plan       # show what would happen, download nothing
+jc upgrade --force      # skip the confirmation
+
+jc config set update.check false     # silence the launch notice
+export JC_NO_UPDATE_CHECK=1          # same, per-shell
+```
+
+jc never updates itself. A cached daily check prints one line on stderr when a
+newer release exists; it is suppressed whenever stderr is not a terminal, under
+`--quiet`/`--ids`, in CI, and in `mcp serve`, so it cannot reach a pipeline or a
+protocol stream. Downloads are verified against the release's `checksums.txt` —
+integrity, not authenticity; signed artifacts do not exist yet.
+
 ## Machine-readable schema
 
 ```bash

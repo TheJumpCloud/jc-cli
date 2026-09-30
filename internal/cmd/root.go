@@ -37,6 +37,12 @@ interface.`,
 		Version:       strings.TrimPrefix(version.Describe(), "v"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Runs after the command, so a version check can never delay output,
+		// and only when it succeeded — a failing command should not also be
+		// told it is out of date.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			maybeNotifyUpdate(cmd)
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// --org overrides the active profile for this command only.
 			if org := viper.GetString("org"); org != "" {
@@ -168,7 +174,7 @@ interface.`,
 	// Setup & Config
 	addToGroup(rootCmd, "config",
 		newSetupCmd(), newAuthCmd(), newAuditCmd(), newConfigCmd(),
-		newDoctorCmd(), newVersionCmd(), newCompletionCmd(), newTUICmd(),
+		newDoctorCmd(), newVersionCmd(), newUpgradeCmd(), newCompletionCmd(), newTUICmd(),
 		newAPICmd(),
 	)
 

@@ -34,6 +34,7 @@ var notAResource = map[string]string{
 	"setup":    "local configuration",
 	"profile":  "local configuration",
 	"version":  "build metadata",
+	"upgrade":  "replaces jc's own binary; not a JumpCloud resource",
 	"doctor":   "environment diagnostics",
 	"login":    "authentication",
 	"logout":   "authentication",

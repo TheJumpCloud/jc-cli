@@ -108,6 +108,12 @@ var commandClass = map[string]string{
 	"jc password-vault websites clone":                ClassDestructive,
 	"jc password-vault tags list":                     ClassReadOnly,
 
+	// upgrade — replaces jc's own binary. Never touches the JumpCloud API,
+	// so it is internal by the letter of the rule; but it rewrites the
+	// executable, which is as consequential as anything here, and the
+	// command confirms and supports --plan accordingly.
+	"jc upgrade": ClassInternal,
+
 	// admins — JumpCloud admin user mgmt.
 	"jc admins create": ClassMutating,
 	"jc admins delete": ClassDestructive,
