@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/recipe"
 	"github.com/klaassen-consulting/jc/internal/version"
@@ -72,6 +73,16 @@ interface.`,
 					fmt.Sprintf("unknown output format %q. Valid formats: %s",
 						format, strings.Join(validOutputFormats, ", ")),
 					"Use one of: json, table, csv, human, yaml, ndjson")
+			}
+
+			// Validate the region here rather than letting it fall back.
+			// A silent fallback would send an EU org's requests to the US
+			// console and report "not found" for records that exist.
+			if r := viper.GetString("region"); r != "" {
+				if _, err := api.LookupRegion(r); err != nil {
+					return NewCLIError(ErrCodeValidationError, err.Error(),
+						"Use one of: "+strings.Join(api.RegionCodes(), ", "))
+				}
 			}
 
 			// Validate --fields and --exclude are mutually exclusive.
@@ -173,6 +184,8 @@ interface.`,
 	rootCmd.PersistentFlags().Bool("plan", false, "Preview changes without executing")
 	rootCmd.PersistentFlags().Bool("dry-run", false, "Preview changes without executing (alias for --plan)")
 	rootCmd.PersistentFlags().String("org", "", "Override active profile for this command")
+	rootCmd.PersistentFlags().String("region", "",
+		"JumpCloud service region: "+strings.Join(api.RegionCodes(), ", ")+" (default us)")
 	rootCmd.PersistentFlags().String("api-key", "", "Override API key for this command")
 	rootCmd.PersistentFlags().Bool("ids", false, "Output one ID per line (for piping)")
 	rootCmd.PersistentFlags().String("fields", "", "Comma-separated list of fields to include (e.g. 'username,email,department')")
@@ -204,6 +217,7 @@ interface.`,
 	_ = viper.BindPFlag("no-cache", rootCmd.PersistentFlags().Lookup("no-cache"))
 	_ = viper.BindPFlag("no-color", rootCmd.PersistentFlags().Lookup("no-color"))
 	_ = viper.BindPFlag("plan", rootCmd.PersistentFlags().Lookup("plan"))
+	_ = viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
 	_ = viper.BindPFlag("org", rootCmd.PersistentFlags().Lookup("org"))
 	_ = viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	_ = viper.BindPFlag("ids", rootCmd.PersistentFlags().Lookup("ids"))
