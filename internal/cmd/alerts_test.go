@@ -95,7 +95,7 @@ func TestAlertsList(t *testing.T) {
 	if rows[0]["title"] != "Device Uptime Monitoring" {
 		t.Errorf("row = %v", rows[0])
 	}
-	if !strings.Contains(errBuf, "1 items") {
+	if !strings.Contains(errBuf, "── 1 item ──") {
 		t.Errorf("footer missing: %s", errBuf)
 	}
 }

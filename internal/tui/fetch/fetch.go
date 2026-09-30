@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/filter"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // Default TTLs for cache entries.
@@ -546,7 +547,7 @@ func (f *Fetcher) FetchV2DetailViaList(resourceKey, endpoint, id string, gen int
 		}
 		return DetailResultMsg{
 			ResourceKey: resourceKey, ID: id, Generation: gen,
-			Err: fmt.Errorf("no %s object with id %s in the list response (%d items)", resourceKey, id, len(result.Data)),
+			Err: fmt.Errorf("no %s object with id %s in the list response (%s)", resourceKey, id, text.Count(len(result.Data), "item")),
 		}
 	}
 }

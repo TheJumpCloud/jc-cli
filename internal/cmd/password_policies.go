@@ -14,6 +14,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/pwpolicy"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 func newPasswordPoliciesCmd() *cobra.Command {
@@ -136,7 +137,7 @@ func runPasswordPoliciesList(cmd *cobra.Command) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+		writeCountFooter(cmd, len(rows))
 	}
 	return nil
 }
@@ -735,7 +736,7 @@ func runPasswordPoliciesDelete(cmd *cobra.Command, identifiers []string) error {
 			label = fmt.Sprintf("%s (%s)", label, id)
 		}
 		if n := len(d.Groups); n > 0 {
-			label += fmt.Sprintf(", %s bound", fmt.Sprintf("%d group%s", n, plural(n)))
+			label += fmt.Sprintf(", %s bound", text.Count(n, "group"))
 		}
 		targets = append(targets, target{id: id, label: label})
 	}
@@ -860,19 +861,13 @@ func runPasswordPoliciesSetPrecedence(cmd *cobra.Command, args []string) error {
 
 // pwPolicyPlural renders a bare policy count, spelling the irregular plural.
 func pwPolicyPlural(n int) string {
-	if n == 1 {
-		return "1 policy"
-	}
-	return fmt.Sprintf("%d policies", n)
+	return text.CountOf(n, "policy", "policies")
 }
 
 // pwPolicyCount renders a policy count with the irregular plural spelled out,
 // so confirmation prompts read as English rather than "1 policies".
 func pwPolicyCount(n int) string {
-	if n == 1 {
-		return "1 password policy"
-	}
-	return fmt.Sprintf("%d password policies", n)
+	return text.CountOf(n, "password policy", "password policies")
 }
 
 // askYesNo prompts on stderr and reports whether the user agreed. Callers must

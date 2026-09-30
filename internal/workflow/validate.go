@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/expr-lang/expr"
+
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // Severity separates what will fail from what is merely suspect.
@@ -71,18 +73,11 @@ func (r Result) Err() error {
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "workflow DSL is invalid (%d problem%s):", len(errs), plural(len(errs)))
+	fmt.Fprintf(&b, "workflow DSL is invalid (%s):", text.Count(len(errs), "problem"))
 	for _, f := range errs {
 		fmt.Fprintf(&b, "\n  %s", f.String())
 	}
 	return fmt.Errorf("%s", b.String())
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 // Validate checks a DSL document against the rules JumpCloud's Workflows DSL

@@ -15,6 +15,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/klaassen-consulting/jc/internal/text"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 	"github.com/klaassen-consulting/jc/internal/workflow"
 )
@@ -141,7 +142,7 @@ func newWorkflowsListCmd() *cobra.Command {
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+				writeCountFooter(cmd, len(rows))
 			}
 			return nil
 		},
@@ -230,7 +231,7 @@ not scoped under a workflow.`,
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+				writeCountFooter(cmd, len(rows))
 			}
 			return nil
 		},
@@ -347,7 +348,7 @@ can supply.`,
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(rows))
+				writeCountFooter(cmd, len(rows))
 			}
 			return nil
 		},
@@ -971,7 +972,7 @@ func checkSideEffects(cmd *cobra.Command, res workflow.Result, allow bool) error
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "this workflow reaches outside JumpCloud (%d step%s):", len(res.SideEffects), plural(len(res.SideEffects)))
+	fmt.Fprintf(&b, "this workflow reaches outside JumpCloud (%s):", text.Count(len(res.SideEffects), "step"))
 	for _, se := range res.SideEffects {
 		fmt.Fprintf(&b, "\n  %s — %s", se.Task, se.What)
 		for _, tg := range se.Targets {
@@ -1790,8 +1791,8 @@ func writeHealthReport(cmd *cobra.Command, reports []workflow.HealthReport, days
 		fmt.Fprintf(out, "      %s\n", style.Subtitle.Render(r.Detail))
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %d workflows over %d days; %d never fired despite their event occurring ──\n",
-		len(reports), days, broken)
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n── %s over %s; %d never fired despite their event occurring ──\n",
+		text.Count(len(reports), "workflow"), text.Count(days, "day"), broken)
 	return nil
 }
 

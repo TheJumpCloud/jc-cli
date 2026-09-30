@@ -130,7 +130,7 @@ func runSystemInsightsList(cmd *cobra.Command, table string, limit int, sortFiel
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

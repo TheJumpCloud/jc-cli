@@ -109,7 +109,7 @@ func TestReports_AllFamilyLists(t *testing.T) {
 		if e := json.Unmarshal([]byte(out), &rows); e != nil || len(rows) != 1 {
 			t.Fatalf("%s: envelope not unwrapped: %v\n%s", fam, e, out)
 		}
-		if !strings.Contains(errBuf, "1 items") {
+		if !strings.Contains(errBuf, "── 1 item ──") {
 			t.Errorf("%s: footer missing: %s", fam, errBuf)
 		}
 	}

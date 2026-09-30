@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // exportListToClipboard renders rows as JSON and copies to clipboard.
@@ -26,7 +27,7 @@ func exportListToClipboard(rows []json.RawMessage, fields []string) (string, err
 	if err := clipboardWriteFunc(buf.String()); err != nil {
 		return "", fmt.Errorf("clipboard error: %w", err)
 	}
-	return fmt.Sprintf("Copied %d items as JSON", len(rows)), nil
+	return fmt.Sprintf("Copied %s as JSON", text.Count(len(rows), "item")), nil
 }
 
 // exportListToFile writes rows to a file in the given format.
@@ -49,7 +50,7 @@ func exportListToFile(rows []json.RawMessage, fields []string, format output.For
 		return "", err
 	}
 
-	return fmt.Sprintf("Exported %d items to %s", len(rows), path), nil
+	return fmt.Sprintf("Exported %s to %s", text.Count(len(rows), "item"), path), nil
 }
 
 // exportListToFileAt is a testable variant that writes to a specific path.
@@ -70,7 +71,7 @@ func exportListToFileAt(rows []json.RawMessage, fields []string, format output.F
 		return "", err
 	}
 
-	return fmt.Sprintf("Exported %d items to %s", len(rows), path), nil
+	return fmt.Sprintf("Exported %s to %s", text.Count(len(rows), "item"), path), nil
 }
 
 // exportSingleToClipboard renders a single object as JSON and copies to clipboard.

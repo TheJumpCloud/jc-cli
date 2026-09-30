@@ -102,7 +102,7 @@ func runAdminsList(cmd *cobra.Command, limit int, sort string, filters []string)
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %d items ──\n", len(result.Data), result.TotalCount)
+		writeListFooter(cmd, len(result.Data), result.TotalCount)
 	}
 
 	return nil

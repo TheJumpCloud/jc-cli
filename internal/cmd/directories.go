@@ -69,7 +69,7 @@ func runDirectoriesList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(flattened))
+		writeCountFooter(cmd, len(flattened))
 	}
 	return nil
 }

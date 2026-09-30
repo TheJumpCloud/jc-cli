@@ -137,7 +137,7 @@ func runADTranslationRulesList(cmd *cobra.Command, identifier string, limit int,
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(raw))
+		writeCountFooter(cmd, len(raw))
 	}
 
 	return nil
@@ -201,7 +201,7 @@ func runADTranslationRulesRecommendations(cmd *cobra.Command, limit int, sort st
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

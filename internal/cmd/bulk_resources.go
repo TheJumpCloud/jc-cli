@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 // Generalized CSV bulk engine (KLA-466) — extends `jc bulk` beyond
@@ -329,7 +330,7 @@ func runBulkResource(cmd *cobra.Command, spec bulkResourceSpec, filePath string)
 	// Same batch gate as the KLA-446 identifier lists: unattended by
 	// design, so demand the explicit skip-confirmation signal.
 	if !shouldSkipConfirm() {
-		return fmt.Errorf("bulk %s of %d rows requires --force or --non-interactive (or preview with --plan first)", spec.Use, len(planned))
+		return fmt.Errorf("bulk %s of %s requires --force or --non-interactive (or preview with --plan first)", spec.Use, text.Count(len(planned), "row"))
 	}
 
 	client, resolveID, err := spec.setup()

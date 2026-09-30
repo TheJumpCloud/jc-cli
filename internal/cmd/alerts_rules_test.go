@@ -100,7 +100,7 @@ func TestHealthRulesList_Unwrap(t *testing.T) {
 	if rows[0]["name"] != "Command Execution Failure" {
 		t.Errorf("row = %v", rows[0])
 	}
-	if !strings.Contains(errBuf, "1 items") {
+	if !strings.Contains(errBuf, "── 1 item ──") {
 		t.Errorf("footer missing: %s", errBuf)
 	}
 }

@@ -142,7 +142,7 @@ func runInsightsQuery(cmd *cobra.Command, service, last, start, end, eventType s
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil
@@ -316,7 +316,7 @@ func runInsightsDistinct(cmd *cobra.Command, service, last, start, end, eventTyp
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(items))
+		writeCountFooter(cmd, len(items))
 	}
 
 	return nil
@@ -617,7 +617,7 @@ func runInsightsSaved(cmd *cobra.Command) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d saved searches ──\n", len(items))
+		writeNounFooter(cmd, len(items), "saved search", "saved searches")
 	}
 
 	return nil

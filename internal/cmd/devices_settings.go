@@ -128,7 +128,7 @@ Default fields: osFamily, enabled, defaultPermission.`,
 				return err
 			}
 			if !opts.Quiet && !opts.IDsOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(items))
+				writeCountFooter(cmd, len(items))
 			}
 			return nil
 		},

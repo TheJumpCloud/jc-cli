@@ -90,7 +90,7 @@ func runAccessRequestsList(cmd *cobra.Command, limit int, sort string, filters [
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 
 	return nil

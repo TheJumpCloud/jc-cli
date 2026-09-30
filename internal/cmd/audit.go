@@ -18,6 +18,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/mcp"
 	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/klaassen-consulting/jc/internal/text"
 )
 
 func newAuditCmd() *cobra.Command {
@@ -336,7 +337,7 @@ func writeAuditHuman(w io.Writer, results []audit.CheckResult, warnings []string
 	// no other findings looked like "OK — checks ran clean" (Bugbot
 	// PR #47 review).
 	if totalFindings == 0 && totalErrors == 0 {
-		fmt.Fprintf(w, "OK — %d checks ran clean, no findings.\n", len(results))
+		fmt.Fprintf(w, "OK — %s ran clean, no findings.\n", text.Count(len(results), "check"))
 		writeAuditWarnings(w, warnings)
 		return nil
 	}
@@ -365,20 +366,13 @@ func writeAuditHuman(w io.Writer, results []audit.CheckResult, warnings []string
 		}
 	}
 
-	summary := fmt.Sprintf("\n%d findings across %d checks", totalFindings, len(results))
+	summary := fmt.Sprintf("\n%s across %s", text.Count(totalFindings, "finding"), text.Count(len(results), "check"))
 	if totalErrors > 0 {
-		summary += fmt.Sprintf(" (%d check error%s)", totalErrors, plural(totalErrors))
+		summary += fmt.Sprintf(" (%s)", text.Count(totalErrors, "check error"))
 	}
 	fmt.Fprintln(w, summary+".")
 	writeAuditWarnings(w, warnings)
 	return nil
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 func writeAuditWarnings(w io.Writer, warnings []string) {
@@ -445,10 +439,10 @@ investigating a host whose config might itself be tampered with.`,
 
 			verified, verr := mcp.VerifyManifestStream(f, ed25519.PublicKey(pubBytes))
 			if verr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Verified %d manifest(s) before failure: %v\n", verified, verr)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Verified %s before failure: %v\n", text.Count(verified, "manifest"), verr)
 				return &ExitError{Code: 1, Err: verr}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "OK — verified %d signed manifest(s) for profile %q.\n", verified, profile)
+			fmt.Fprintf(cmd.OutOrStdout(), "OK — verified %s for profile %q.\n", text.Count(verified, "signed manifest"), profile)
 			return nil
 		},
 	}

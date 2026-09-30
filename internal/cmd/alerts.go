@@ -301,7 +301,7 @@ func runAlertsList(cmd *cobra.Command, limit int, sort string, filters []string)
 		return err
 	}
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(result.Data))
+		writeCountFooter(cmd, len(result.Data))
 	}
 	return nil
 }
@@ -415,7 +415,7 @@ func runAlertsSubList(cmd *cobra.Command, identifier, subPath, key string) error
 		return err
 	}
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(items))
+		writeCountFooter(cmd, len(items))
 	}
 	return nil
 }

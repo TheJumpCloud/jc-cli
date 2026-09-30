@@ -167,7 +167,7 @@ func runGraphTraverse(cmd *cobra.Command, from, to string) error {
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		fmt.Fprintf(cmd.ErrOrStderr(), "── %d items ──\n", len(data))
+		writeCountFooter(cmd, len(data))
 	}
 
 	return nil

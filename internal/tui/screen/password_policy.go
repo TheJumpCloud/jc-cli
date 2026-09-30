@@ -16,6 +16,7 @@ import (
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/pwpolicy"
 	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/klaassen-consulting/jc/internal/text"
 	"github.com/klaassen-consulting/jc/internal/tui"
 	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
@@ -586,8 +587,5 @@ func (s *PasswordPolicyScreen) groupPolicyLines() []string {
 }
 
 func pluralGroups(n int) string {
-	if n == 1 {
-		return "1 group"
-	}
-	return fmt.Sprintf("%d groups", n)
+	return text.Count(n, "group")
 }

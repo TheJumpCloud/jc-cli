@@ -228,7 +228,7 @@ func runMcpTools(cmd *cobra.Command, readOnly bool) error {
 	for _, name := range tools {
 		fmt.Fprintln(cmd.OutOrStdout(), name)
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "── %d tools ──\n", len(tools))
+	writeNounFooter(cmd, len(tools), "tool", "tools")
 	return nil
 }
 
