@@ -22,6 +22,7 @@ import (
 // dependency cannot run the other way.
 var notAResource = map[string]string{
 	// Tooling and meta-commands: no backing resource collection.
+	"api":      "one raw request at a path the caller supplies; the resource is whatever they point it at",
 	"ask":      "natural-language translation, not a resource",
 	"bulk":     "CSV-driven operations over other resources",
 	"explain":  "explains a command, not a resource",

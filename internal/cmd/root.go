@@ -158,6 +158,7 @@ interface.`,
 	addToGroup(rootCmd, "config",
 		newSetupCmd(), newAuthCmd(), newAuditCmd(), newConfigCmd(),
 		newDoctorCmd(), newVersionCmd(), newCompletionCmd(), newTUICmd(),
+		newAPICmd(),
 	)
 
 	// Persistent flags (global)

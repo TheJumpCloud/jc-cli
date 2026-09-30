@@ -132,6 +132,32 @@ jc insights query --service all --last 7d --filter 'event_type:eq:user_login_att
 jc insights saved-searches list
 ```
 
+## Raw API requests (the empirical gate)
+
+```bash
+# Version comes from the path, so a path pasted out of the API reference
+# works unchanged; a bare path uses --api (default v2).
+jc api get /api/v2/password-vault/status
+jc api get /v1/systemusers --param limit=1
+jc api get /policytemplates --query '[].{id:id,name:name}'
+
+# One invocation is one HTTP request — no pagination. Widen with --param.
+jc api get /api/v2/systems --param limit=100
+
+# Writes confirm, honour --force/--non-interactive, and preview with --plan.
+jc api post /api/v2/usergroups -d '{"name":"x"}' --plan
+jc api put  /api/v2/systems/abc -d @body.json
+echo '{"name":"x"}' | jc api post /api/v2/usergroups -d -
+```
+
+Auth is resolved exactly as for every other command (`--api-key` >
+`JC_API_KEY` > profile), so probing never requires reading a key out of
+the keychain. Use this before implementing any new API surface — see
+`docs/solutions/conventions/empirical-gate-before-coding-2026-06-18.md`.
+There is deliberately **no MCP tool** for this: a raw-request tool would
+hand an agent the whole API unclassified, defeating the per-tool
+destructive classification and the step-up auth gate.
+
 ## Machine-readable schema
 
 ```bash
