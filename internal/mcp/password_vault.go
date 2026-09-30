@@ -216,3 +216,119 @@ func pwvGetMCPRaw(ctx context.Context, endpoint string, v url.Values) (json.RawM
 	}
 	return client.Get(ctx, endpoint)
 }
+
+// --- credentials, folders and websites (reads) ----------------------------
+
+type pwvObjectInput struct {
+	ID string `json:"id" jsonschema:"The record's 24-character hex id, taken from the listing. Note that users and groups in this same area are numbered instead."`
+}
+
+func (s *Server) registerPasswordVaultResourceTools() {
+	addTypedTool(s, "password_vault_credentials_list", "The credentials stored in the vault, with their type, folder, owner permissions and password strength — but NOT their secrets. This is the only working read for credential metadata: the per-credential detail endpoint is defective and refuses with a demand for a permission the caller holds, reproduced against a freshly created credential that granted it explicitly. Fetched unpaginated because this area ignores sort and its paging duplicates and omits records.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			return pwvObjectList(ctx, passwordvault.CredentialsEndpoint, nil, "credentials")
+		},
+	)
+
+	addTypedTool(s, "password_vault_credential_history", "The version history of one credential, newest first. This is the one listing in Password Vault that pages with a continuation token rather than skip and limit, and so the only paging here that can be trusted. It reports WHEN a credential changed, not what it changed to.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args pwvObjectInput) (*mcp.CallToolResult, any, error) {
+			if !passwordvault.IsObjectID(args.ID) {
+				return errorResult(passwordvault.ErrNotVaultObjectID("credential", args.ID).Error()), nil, nil
+			}
+			raw, err := pwvGetMCP(ctx, passwordvault.CredentialHistory(args.ID), nil)
+			if err != nil {
+				return errorResult(fmt.Sprintf("reading the credential history: %v", err)), nil, nil
+			}
+			items, token, perr := passwordvault.ParseHistory(raw)
+			if perr != nil {
+				return errorResult(perr.Error()), nil, nil
+			}
+			out := map[string]any{"items": items, "count": len(items)}
+			if token != "" {
+				out["continuationToken"] = token
+			}
+			res, jerr := jsonResult(out)
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
+			}
+			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "password_vault_credential_managers", "Who holds management rights over one credential. Note that a credential id that does not exist is reported here as 400 \"Credential not found.\" rather than the 404 the detail endpoint gives — absence has more than one shape in this area, so do not read a 400 as a malformed request.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args pwvObjectInput) (*mcp.CallToolResult, any, error) {
+			if !passwordvault.IsObjectID(args.ID) {
+				return errorResult(passwordvault.ErrNotVaultObjectID("credential", args.ID).Error()), nil, nil
+			}
+			return pwvObjectList(ctx, passwordvault.CredentialManagers(args.ID), nil, "credential managers")
+		},
+	)
+
+	addTypedTool(s, "password_vault_folders_list", "The folders credentials and websites are organised into, with their sharing state and the caller's permissions on each. Folders use their own permission vocabulary — Folder.Manage, Folder.Item.Manage, Folder.View, Folder.Connect — where credentials and websites use Manage and View Detail.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			return pwvObjectList(ctx, passwordvault.FoldersEndpoint, nil, "folders")
+		},
+	)
+
+	addTypedTool(s, "password_vault_folder_get", "One folder, including its access policies and the ids of the credentials and resources inside it. IMPORTANT: a folder that does not exist is reported as 400 \"Folder not found.\" rather than 404 — that is absence, not a malformed request, and it differs from how credentials and websites report the same thing.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args pwvObjectInput) (*mcp.CallToolResult, any, error) {
+			if !passwordvault.IsObjectID(args.ID) {
+				return errorResult(passwordvault.ErrNotVaultObjectID("folder", args.ID).Error()), nil, nil
+			}
+			raw, err := pwvGetMCP(ctx, passwordvault.FolderEditEndpoint(args.ID), nil)
+			if err != nil {
+				if passwordvault.FolderNotFoundIs400(err) {
+					return errorResult(fmt.Sprintf("no Password Vault folder with id %s (the API "+
+						"reports this as a 400 rather than a 404, but it means absence)", args.ID)), nil, nil
+				}
+				return errorResult(fmt.Sprintf("reading the folder: %v", err)), nil, nil
+			}
+			inner, perr := passwordvault.ParseWrappedFolder(raw)
+			if perr != nil {
+				return errorResult(perr.Error()), nil, nil
+			}
+			return textResult(string(inner)), nil, nil
+		},
+	)
+
+	addTypedTool(s, "password_vault_folder_items", "The credentials and saved websites that live inside one folder — what a person granted access to that folder can therefore reach. It lists the items, not their secrets, and an item appears here by membership rather than by any permission granted on it directly.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args pwvObjectInput) (*mcp.CallToolResult, any, error) {
+			if !passwordvault.IsObjectID(args.ID) {
+				return errorResult(passwordvault.ErrNotVaultObjectID("folder", args.ID).Error()), nil, nil
+			}
+			return pwvObjectList(ctx, passwordvault.FolderItemsEndpoint(args.ID), nil, "folder items")
+		},
+	)
+
+	addTypedTool(s, "password_vault_websites_list", "The websites saved in the vault, with their URI, folder and tags. Saved websites are what the browser extension fills credentials into, so this is the map between a credential and where it gets used.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			return pwvObjectList(ctx, passwordvault.WebsitesEndpoint, nil, "websites")
+		},
+	)
+
+	addTypedTool(s, "password_vault_website_get", "One saved website in full: its access policies, the ids of the credentials linked to it, and its session-recording and isolation settings. This reads the EDIT view, because the endpoint the API documents for a website detail read is defective — it refuses with a demand for a permission the caller holds. The edit view answers and returns a superset, so nothing is lost.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args pwvObjectInput) (*mcp.CallToolResult, any, error) {
+			if !passwordvault.IsObjectID(args.ID) {
+				return errorResult(passwordvault.ErrNotVaultObjectID("website", args.ID).Error()), nil, nil
+			}
+			raw, err := pwvGetMCP(ctx, passwordvault.WebsiteEditEndpoint(args.ID), nil)
+			if err != nil {
+				return errorResult(fmt.Sprintf("reading the website: %v", err)), nil, nil
+			}
+			return textResult(string(raw)), nil, nil
+		},
+	)
+}
+
+// pwvObjectList is the shared body of the resource listings.
+func pwvObjectList(ctx context.Context, endpoint string, v url.Values, what string) (*mcp.CallToolResult, any, error) {
+	raw, err := pwvGetMCP(ctx, endpoint, v)
+	if err != nil {
+		return errorResult(fmt.Sprintf("listing %s: %v", what, err)), nil, nil
+	}
+	rows, total, perr := passwordvault.ParseList(raw, what)
+	if perr != nil {
+		return errorResult(perr.Error()), nil, nil
+	}
+	return listEnvelope(rows, &total)
+}

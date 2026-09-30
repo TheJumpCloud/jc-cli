@@ -259,3 +259,105 @@ func TenantSettingsBody(values json.RawMessage) (json.RawMessage, error) {
 	}
 	return b, nil
 }
+
+// --- Credentials, folders and websites ------------------------------------
+
+const (
+	CredentialsEndpoint   = Endpoint + "/credentials"
+	CredentialColumnsPath = CredentialsEndpoint + "/excel/columns"
+	FoldersEndpoint       = Endpoint + "/folders"
+	WebsitesEndpoint      = Endpoint + "/websites"
+	WebsiteColumnsPath    = WebsitesEndpoint + "/excel/columns"
+)
+
+func CredentialEndpoint(id string) string   { return CredentialsEndpoint + "/" + id }
+func CredentialActivities(id string) string { return CredentialEndpoint(id) + "/activities" }
+func CredentialHistory(id string) string    { return CredentialEndpoint(id) + "/history" }
+func CredentialManagers(id string) string   { return CredentialEndpoint(id) + "/managers" }
+
+func FolderEndpoint(id string) string      { return FoldersEndpoint + "/" + id }
+func FolderEditEndpoint(id string) string  { return FolderEndpoint(id) + "/edit" }
+func FolderItemsEndpoint(id string) string { return FolderEndpoint(id) + "/items" }
+func FolderManagers(id string) string      { return FolderEndpoint(id) + "/managers" }
+
+func WebsiteEndpoint(id string) string     { return WebsitesEndpoint + "/" + id }
+func WebsiteEditEndpoint(id string) string { return WebsiteEndpoint(id) + "/edit" }
+func WebsiteActivities(id string) string   { return WebsiteEndpoint(id) + "/activities" }
+func WebsiteManagers(id string) string     { return WebsiteEndpoint(id) + "/managers" }
+func WebsiteConnectLinks(id string) string { return WebsiteEndpoint(id) + "/connect-links" }
+func WebsiteParamsExtension(id string) string {
+	return WebsiteEndpoint(id) + "/parameters-extension"
+}
+
+// ErrNotVaultObjectID explains a malformed id before it reaches the API.
+// Credentials, folders and websites use 24-hex object ids — unlike users and
+// groups in the same area, which are numbered.
+func ErrNotVaultObjectID(kind, s string) error {
+	if _, err := strconv.Atoi(s); err == nil {
+		return fmt.Errorf("%q is a number, and Password Vault %ss are addressed by a "+
+			"24-character hex id — only users and groups are numbered in this area", s, kind)
+	}
+	return fmt.Errorf("%q is not a Password Vault %s id — take the 24-character hex id "+
+		"from the listing", s, kind)
+}
+
+// DetailReadRefused reports whether an error is the server refusing a detail
+// read for a permission the caller demonstrably holds.
+//
+// Reproduced on 2026-09-25 against a freshly created credential whose access
+// policy granted the calling user Manage, View Detail and Connect:
+// GET /credentials/{id} and GET /credentials/{id}/activities both answered
+// 400 {"message":"For this resource , you need permissions View Detail."}
+// while /history and /managers answered 200. The same refusal appears on
+// GET /websites/{id}. It is not a permission problem the operator can fix.
+func DetailReadRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "you need permissions View Detail")
+}
+
+// ErrDetailReadRefused turns that refusal into something actionable, naming
+// the read that does work for the family in question.
+func ErrDetailReadRefused(kind, alternative string) error {
+	msg := fmt.Sprintf("the API refused this %s detail read, asking for a \"View Detail\" "+
+		"permission that the calling user holds — reproduced against a freshly created "+
+		"record granting it explicitly, so it is a defect in the endpoint rather than "+
+		"something to fix in the access policy", kind)
+	if alternative != "" {
+		msg += ". " + alternative
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+// FolderNotFoundIs400 records that a folder that does not exist is reported
+// with 400 INVALID_ARGUMENT "Folder not found." rather than 404, while an
+// absent credential or website gives 404 — and an absent credential's
+// /managers gives 400 "Credential not found." So three absence signals across
+// three families, and two within one of them.
+func FolderNotFoundIs400(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Folder not found")
+}
+
+// ParseWrappedFolder unwraps {folder:{...}}, which both the folder detail and
+// the folder edit view return where every sibling read returns the object
+// directly.
+func ParseWrappedFolder(raw json.RawMessage) (json.RawMessage, error) {
+	return ParseWrapped(raw, "folder", "folder")
+}
+
+// ParseColumns unwraps {columns:{...}} from the Excel column metadata.
+func ParseColumns(raw json.RawMessage) (json.RawMessage, error) {
+	return ParseWrapped(raw, "columns", "import/export columns")
+}
+
+// ParseHistory reads {continuationToken, items} — the one endpoint in this
+// area that pages with a token rather than skip/limit, and the only paging
+// here that can be trusted.
+func ParseHistory(raw json.RawMessage) ([]json.RawMessage, string, error) {
+	var env struct {
+		Items             []json.RawMessage `json:"items"`
+		ContinuationToken string            `json:"continuationToken"`
+	}
+	if err := decode(raw, &env, "credential history"); err != nil {
+		return nil, "", err
+	}
+	return env.Items, env.ContinuationToken, nil
+}
