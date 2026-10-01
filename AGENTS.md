@@ -191,8 +191,19 @@ export JC_NO_UPDATE_CHECK=1          # same, per-shell
 jc never updates itself. A cached daily check prints one line on stderr when a
 newer release exists; it is suppressed whenever stderr is not a terminal, under
 `--quiet`/`--ids`, in CI, and in `mcp serve`, so it cannot reach a pipeline or a
-protocol stream. Downloads are verified against the release's `checksums.txt` —
-integrity, not authenticity; signed artifacts do not exist yet.
+protocol stream.
+
+`jc upgrade` checks the download against `checksums.txt` — integrity. For
+authenticity, releases sign `checksums.txt` with Sigstore (keyless, from the
+release workflow's own identity, logged in Rekor):
+
+```bash
+scripts/verify-release.sh 1.47.0 jc-darwin-arm64.tar.gz
+```
+
+jc does not verify the signature itself, deliberately: a Go verifier adds ~70
+modules to a 146-line go.sum, and doubling the dependency tree to verify the
+dependency tree is a poor trade.
 
 ## Machine-readable schema
 

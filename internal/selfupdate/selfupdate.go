@@ -275,9 +275,17 @@ func ChecksumFor(checksums []byte, asset string) (string, error) {
 // WHAT THIS DOES AND DOES NOT PROVE. checksums.txt is fetched from the same
 // release as the archive, so this establishes that the bytes arrived intact —
 // not that the release is authentic. Anyone able to publish a release can
-// publish a matching checksum. Protecting against that needs the artifacts to
-// be signed, which jc does not do yet; until then this is an integrity check,
-// and calling it anything more would be dishonest.
+// publish a matching checksum.
+//
+// Releases carry a Sigstore signature over checksums.txt, which does close
+// that gap, and this function does not check it. That is a decision rather
+// than an omission: sigstore-go pulls in roughly seventy modules against a
+// go.sum of a hundred and forty-six lines, and doubling the dependency tree
+// to verify the dependency tree is not obviously a gain — the verifier is
+// itself code that has to be trusted. Signature checking lives in
+// scripts/verify-release.sh, for the cases where it matters.
+//
+// So: this is an integrity check. Calling it more would be dishonest.
 func VerifyChecksum(archive []byte, want string) error {
 	sum := sha256.Sum256(archive)
 	got := hex.EncodeToString(sum[:])
