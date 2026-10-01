@@ -1097,6 +1097,26 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc upgrade",
+				Description: "Install the newest jc release",
+				Long: "Download the newest published release and replace this binary with it. " +
+					"jc never updates itself in the background — a tool that administers an " +
+					"identity platform silently rewriting its own code would be a supply-chain " +
+					"surface, and it would break anyone pinning a version in CI or an MDM fleet. " +
+					"Instead a cached daily check prints a one-line notice on stderr when a newer " +
+					"release exists, suppressed whenever stderr is not a terminal, under --quiet " +
+					"or --ids, in CI, and in `mcp serve`, so it can never reach a pipeline or a " +
+					"protocol stream. The download is checked against the SHA-256 in the " +
+					"release's checksums.txt, which proves the bytes arrived intact but not that " +
+					"the release is authentic — that needs signed artifacts, which jc does not " +
+					"have yet. Disable the notice with `jc config set update.check false` or " +
+					"JC_NO_UPDATE_CHECK.",
+				Flags: []FlagEntry{
+					{Name: "force", Type: "bool", Description: "Replace without confirming"},
+					{Name: "plan", Type: "bool", Description: "Show what would happen and download nothing"},
+				},
+			},
+			{
 				Path:        "jc doctor",
 				Description: "No-auth diagnostic — env, config, auth resolution, API connectivity",
 				Long:        "A pre-flight check for any environment where `jc` is about to run. Reports the active profile, credential source (flag / env / keychain / config), fingerprint of the resolved key, config file location, and runs a single read-only probe against the JumpCloud API to confirm the credentials actually authenticate. Works without auth (skips the API probe gracefully) so it's safe to run in a Dockerfile build step or fresh-clone sanity check. Useful as the first command in a runbook or on-call playbook — when something's wrong with `jc`, this is the fastest path to the cause.",
