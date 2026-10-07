@@ -127,7 +127,7 @@ func (wiz *setupWizard) stepProfile() (string, error) {
 	if len(profiles) > 0 {
 		fmt.Fprintf(wiz.w, "Profile [%s]: ", active)
 	} else {
-		fmt.Fprintf(wiz.w, "Profile name [default]: ", )
+		fmt.Fprintf(wiz.w, "Profile name [default]: ")
 		active = "default"
 	}
 

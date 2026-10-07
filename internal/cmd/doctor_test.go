@@ -47,8 +47,8 @@ func withTempConfig(t *testing.T, body string) string {
 func TestFingerprint(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"", "(unset)"},
-		{"abcd", "****"},          // ≤4 chars → all masked
-		{"abcdefgh", "****efgh"},  // last 4 only
+		{"abcd", "****"},         // ≤4 chars → all masked
+		{"abcdefgh", "****efgh"}, // last 4 only
 		{"sk-ant-1234567890abcd", "****abcd"},
 	}
 	for _, tc := range cases {

@@ -304,7 +304,7 @@ Shows the IP list name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IPListConfig),
-		RunE: batchRunE("IP list", "delete", runIPListsDelete),
+		RunE:              batchRunE("IP list", "delete", runIPListsDelete),
 	}
 
 	addBatchSourceFlags(cmd)

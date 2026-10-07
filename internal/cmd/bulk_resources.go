@@ -120,10 +120,10 @@ func bulkResourceSpecs() []bulkResourceSpec {
 			Fields: map[string]bulkFieldSpec{
 				// The four fields the single-item update exposes — the
 				// schema lists 17 but the rest aren't writable.
-				"displayname":                     {APIKey: "displayName", Type: "string", Update: true},
-				"allowsshpasswordauthentication":  {APIKey: "allowSshPasswordAuthentication", Type: "bool", Update: true},
-				"allowmultifactorauthentication":  {APIKey: "allowMultiFactorAuthentication", Type: "bool", Update: true},
-				"allowpublickeyauthentication":    {APIKey: "allowPublicKeyAuthentication", Type: "bool", Update: true},
+				"displayname":                    {APIKey: "displayName", Type: "string", Update: true},
+				"allowsshpasswordauthentication": {APIKey: "allowSshPasswordAuthentication", Type: "bool", Update: true},
+				"allowmultifactorauthentication": {APIKey: "allowMultiFactorAuthentication", Type: "bool", Update: true},
+				"allowpublickeyauthentication":   {APIKey: "allowPublicKeyAuthentication", Type: "bool", Update: true},
 			},
 			setup: func() (bulkClient, func(context.Context, string) (string, error), error) {
 				c, err := newV1Client()

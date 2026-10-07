@@ -195,7 +195,7 @@ Shows the Duo account name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.DuoAccountConfig),
-		RunE: batchRunE("Duo integration", "delete", runDuoDelete),
+		RunE:              batchRunE("Duo integration", "delete", runDuoDelete),
 	}
 
 	addBatchSourceFlags(cmd)

@@ -357,7 +357,7 @@ Shows the policy name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AuthPolicyConfig),
-		RunE: batchRunE("auth policy", "delete", runAuthPoliciesDelete),
+		RunE:              batchRunE("auth policy", "delete", runAuthPoliciesDelete),
 	}
 
 	addBatchSourceFlags(cmd)

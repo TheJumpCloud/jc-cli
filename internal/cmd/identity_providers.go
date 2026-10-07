@@ -116,9 +116,9 @@ func runIdentityProvidersList(cmd *cobra.Command, limit int) error {
 
 func newIdentityProvidersGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get [name-or-id]",
-		Short: "Get an identity provider",
-		Long:  "Get a JumpCloud identity provider by name or ID.",
+		Use:               "get [name-or-id]",
+		Short:             "Get an identity provider",
+		Long:              "Get a JumpCloud identity provider by name or ID.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -219,9 +219,9 @@ func runIdentityProvidersCreate(cmd *cobra.Command, name, idpType, clientID, cli
 func newIdentityProvidersUpdateCmd() *cobra.Command {
 	var name, idpType, clientID, clientSecret, url string
 	cmd := &cobra.Command{
-		Use:   "update [name-or-id]",
-		Short: "Update an identity provider",
-		Long:  "Update an existing JumpCloud identity provider.",
+		Use:               "update [name-or-id]",
+		Short:             "Update an identity provider",
+		Long:              "Update an existing JumpCloud identity provider.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -304,12 +304,12 @@ func runIdentityProvidersUpdate(cmd *cobra.Command, identifier, name, idpType, c
 
 func newIdentityProvidersDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [name-or-id]",
-		Short: "Delete an identity provider",
-		Long:  "Delete a JumpCloud identity provider. This action is irreversible.",
+		Use:               "delete [name-or-id]",
+		Short:             "Delete an identity provider",
+		Long:              "Delete a JumpCloud identity provider. This action is irreversible.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.IdentityProviderConfig),
-		RunE: batchRunE("identity provider", "delete", runIdentityProvidersDelete),
+		RunE:              batchRunE("identity provider", "delete", runIdentityProvidersDelete),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd

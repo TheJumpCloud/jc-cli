@@ -31,6 +31,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: gofmt
+        # Thirty-four files had drifted out of gofmt before this gate existed,
+        # which made every PR's diff carry formatting noise from files it had
+        # not meaningfully touched — and twice nearly let an unrelated file
+        # into a commit. Cheap to check, tedious to clean up in bulk.
+        run: make fmt-check
+
       - name: go vet
         run: go vet ./...
 

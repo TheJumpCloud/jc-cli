@@ -287,7 +287,7 @@ Shows the group name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.PolicyGroupConfig),
-		RunE: batchRunE("policy group", "delete", runPolicyGroupsDelete),
+		RunE:              batchRunE("policy group", "delete", runPolicyGroupsDelete),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd

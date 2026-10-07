@@ -85,10 +85,10 @@ Examples:
 
 // askResult describes a proposed command and its execution outcome.
 type askResult struct {
-	Command  string `json:"command"`
-	Status   string `json:"status"` // proposed, approved, rejected, executed, failed
-	Output   string `json:"output,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Command string `json:"command"`
+	Status  string `json:"status"` // proposed, approved, rejected, executed, failed
+	Output  string `json:"output,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 func runAsk(cmd *cobra.Command, args []string) error {

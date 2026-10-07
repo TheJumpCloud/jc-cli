@@ -348,9 +348,9 @@ func TestParse_ColonOpValue(t *testing.T) {
 
 func TestParse_ColonOpValue_AllOps(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantOp   string
-		wantVal  string
+		input   string
+		wantOp  string
+		wantVal string
 	}{
 		{"x:eq:1", "eq", "1"},
 		{"x:ne:2", "ne", "2"},

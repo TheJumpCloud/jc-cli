@@ -126,12 +126,12 @@ func runAccessRequestsGet(cmd *cobra.Command, id string) error {
 
 func newAccessRequestsCreateCmd() *cobra.Command {
 	var (
-		userFlag        string
-		deviceFlag      string
-		expiryFlag      string
-		sudoFlag        bool
+		userFlag         string
+		deviceFlag       string
+		expiryFlag       string
+		sudoFlag         bool
 		sudoNoPasswdFlag bool
-		remarksFlag     string
+		remarksFlag      string
 	)
 
 	cmd := &cobra.Command{

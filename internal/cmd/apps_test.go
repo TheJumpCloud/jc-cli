@@ -146,17 +146,17 @@ func sampleAppAssociations() map[string]map[string][]map[string]any {
 		"aabbccddee112233aabb2001": {
 			"user_group": {
 				{
-					"to":   map[string]any{"id": "ug001ug001ug001ug001ug01", "type": "user_group"},
+					"to":         map[string]any{"id": "ug001ug001ug001ug001ug01", "type": "user_group"},
 					"attributes": map[string]any{},
 				},
 				{
-					"to":   map[string]any{"id": "ug002ug002ug002ug002ug02", "type": "user_group"},
+					"to":         map[string]any{"id": "ug002ug002ug002ug002ug02", "type": "user_group"},
 					"attributes": map[string]any{},
 				},
 			},
 			"system_group": {
 				{
-					"to":   map[string]any{"id": "sg001sg001sg001sg001sg01", "type": "system_group"},
+					"to":         map[string]any{"id": "sg001sg001sg001sg001sg01", "type": "system_group"},
 					"attributes": map[string]any{},
 				},
 			},
