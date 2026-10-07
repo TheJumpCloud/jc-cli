@@ -129,6 +129,12 @@ jobs:
   Release:
     needs: [Check-PR-Labels, Compute-Version]
     if: needs.Check-PR-Labels.outputs.RELEASE_TYPE != 'none'
+    permissions:
+      contents: write     # gh release create
+      id-token: write     # Fulcio needs an OIDC token to issue the signing
+                          # certificate. Scoped to this job rather than the
+                          # workflow: nothing else here signs anything, and an
+                          # id-token is a credential other jobs should not hold.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -147,6 +153,39 @@ jobs:
       - name: Build release archives
         run: make release VERSION=${{ needs.Compute-Version.outputs.VERSION }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums.txt
+        # One signature covers everything: it signs checksums.txt, and
+        # checksums.txt covers every archive. Signing each archive separately
+        # would produce five signatures that all say the same thing.
+        #
+        # Keyless — the signing certificate is issued to this workflow's OIDC
+        # identity and expires in minutes, so there is no private key to store,
+        # rotate or leak. The signature is recorded in Rekor's public
+        # transparency log, which is what makes a later forgery detectable.
+        run: |
+          cosign sign-blob --yes \
+            --bundle dist/checksums.txt.sigstore.json \
+            dist/checksums.txt
+
+      - name: Verify the signature we just made
+        # The certificate identity is a string this workflow cannot be tested
+        # against locally, so CI proves it: if it is wrong the release fails
+        # here rather than publishing a signature nobody can verify.
+        #
+        # GITHUB_WORKFLOW_REF is exactly owner/repo/.github/workflows/file@ref,
+        # so the expected identity is derived rather than written down, and
+        # cannot drift if this file is renamed or the branch changes.
+        run: |
+          cosign verify-blob \
+            --bundle dist/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_WORKFLOW_REF}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            dist/checksums.txt
+          echo "verified as https://github.com/${GITHUB_WORKFLOW_REF}"
+
       - name: Create tag + GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -160,4 +199,5 @@ jobs:
             --generate-notes \
             dist/*.tar.gz \
             dist/*.zip \
-            dist/checksums.txt
+            dist/checksums.txt \
+            dist/checksums.txt.sigstore.json
