@@ -271,7 +271,7 @@ Accepts a configuration name or 24-character hex ID.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
-		RunE: batchRunE("Apple MDM config", "delete", runAppleMDMDelete),
+		RunE:              batchRunE("Apple MDM config", "delete", runAppleMDMDelete),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd
@@ -339,9 +339,9 @@ func runAppleMDMDelete(cmd *cobra.Command, identifier string) error {
 
 func newAppleMDMEnrollmentProfilesCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "enrollment-profiles <name-or-id>",
-		Short: "List enrollment profiles for an Apple MDM configuration",
-		Long:  "List all enrollment profiles associated with a JumpCloud Apple MDM configuration.",
+		Use:               "enrollment-profiles <name-or-id>",
+		Short:             "List enrollment profiles for an Apple MDM configuration",
+		Long:              "List all enrollment profiles associated with a JumpCloud Apple MDM configuration.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -381,9 +381,9 @@ func runAppleMDMEnrollmentProfiles(cmd *cobra.Command, identifier string) error 
 
 func newAppleMDMDevicesCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "devices <name-or-id>",
-		Short: "List managed devices for an Apple MDM configuration",
-		Long:  "List all devices managed by a JumpCloud Apple MDM configuration.",
+		Use:               "devices <name-or-id>",
+		Short:             "List managed devices for an Apple MDM configuration",
+		Long:              "List all devices managed by a JumpCloud Apple MDM configuration.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.AppleMDMConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {

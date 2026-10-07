@@ -121,8 +121,8 @@ func newCommandsGetCmd() *cobra.Command {
 
 Accepts a command name (e.g., "Update Agents") or a 24-character hex command ID.
 Command names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsGet(cmd, args[0])
 		},
@@ -250,8 +250,8 @@ Note: JumpCloud's command update is a full-object replace, so this command
 reads the current command, applies your changes, and writes it back — a
 partial update no longer silently resets unspecified fields such as
 commandType or shell (KLA-484).`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsUpdate(cmd, args[0], name, commandBody, commandType, shell)
 		},
@@ -356,9 +356,9 @@ func newCommandsDeleteCmd() *cobra.Command {
 Accepts a command name or 24-character hex command ID.
 Shows the command name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:               cobra.MaximumNArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
-		RunE: batchRunE("command", "delete", runCommandsDelete),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.CommandConfig),
+		RunE:              batchRunE("command", "delete", runCommandsDelete),
 	}
 
 	addBatchSourceFlags(cmd)
@@ -436,8 +436,8 @@ Examples:
   jc commands run "Update Agents" --on JDOE-MBP
   jc commands run "Update Agents" --on "macOS Fleet"
   jc commands run aaa111aaa111aaa111aaa111 --on bbb222bbb222bbb222bbb222 --force`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsRun(cmd, args[0], onFlag)
 		},
@@ -550,8 +550,8 @@ Results show the device, exit code, stdout, stderr, and timestamp for each execu
 
 Default fields: system, exitCode, requestTime, responseTime, stdout, stderr.
 Use --output table for quick scanning of results.`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.CommandConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.CommandConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommandsResults(cmd, args[0], limitFlag, sortFlag)
 		},

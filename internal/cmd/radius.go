@@ -302,7 +302,7 @@ Shows the server name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.RADIUSServerConfig),
-		RunE: batchRunE("RADIUS server", "delete", runRADIUSDelete),
+		RunE:              batchRunE("RADIUS server", "delete", runRADIUSDelete),
 	}
 	addBatchSourceFlags(cmd)
 	return cmd

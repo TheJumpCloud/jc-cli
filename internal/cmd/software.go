@@ -685,7 +685,7 @@ Shows the software app name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.SoftwareAppConfig),
-		RunE: batchRunE("software app", "delete", runSoftwareDelete),
+		RunE:              batchRunE("software app", "delete", runSoftwareDelete),
 	}
 
 	addBatchSourceFlags(cmd)

@@ -190,9 +190,9 @@ type OpenAIClient struct {
 
 // openAIRequest is the OpenAI Chat Completions API request body.
 type openAIRequest struct {
-	Model    string             `json:"model"`
-	Messages []openAIMessage    `json:"messages"`
-	MaxTokens int               `json:"max_tokens"`
+	Model     string          `json:"model"`
+	Messages  []openAIMessage `json:"messages"`
+	MaxTokens int             `json:"max_tokens"`
 }
 
 // openAIMessage is a single message in the OpenAI API.

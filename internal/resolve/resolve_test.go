@@ -90,7 +90,7 @@ func TestIsID_Invalid(t *testing.T) {
 		"alice",
 		"jdoe-mbp",
 		"short123",
-		"507f1f77bcf86cd79943901",  // 23 chars
+		"507f1f77bcf86cd79943901",   // 23 chars
 		"507f1f77bcf86cd7994390111", // 25 chars
 		"507f1f77bcf86cd79943901g",  // non-hex 'g'
 		"",

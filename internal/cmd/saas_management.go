@@ -154,8 +154,8 @@ func runSaaSGet(cmd *cobra.Command, identifier string) error {
 
 func newSaaSCreateCmd() *cobra.Command {
 	var (
-		catalogAppID    string
-		status          string
+		catalogAppID      string
+		status            string
 		accessRestriction string
 	)
 
@@ -221,7 +221,7 @@ func runSaaSCreate(cmd *cobra.Command, catalogAppID, status, accessRestriction s
 
 func newSaaSUpdateCmd() *cobra.Command {
 	var (
-		status          string
+		status            string
 		accessRestriction string
 	)
 
@@ -305,7 +305,7 @@ Shows the application catalog ID before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.SaaSManagementConfig),
-		RunE: batchRunE("SaaS account", "delete", runSaaSDelete),
+		RunE:              batchRunE("SaaS account", "delete", runSaaSDelete),
 	}
 
 	addBatchSourceFlags(cmd)

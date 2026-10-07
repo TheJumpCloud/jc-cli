@@ -18,26 +18,26 @@ func sampleCommands() []map[string]any {
 	return []map[string]any{
 		{
 			"_id":                "aaa111aaa111aaa111aaa111",
-			"name":              "Update Agents",
-			"command":           "apt update && apt upgrade -y",
-			"commandType":       "linux",
-			"schedule":          "daily",
+			"name":               "Update Agents",
+			"command":            "apt update && apt upgrade -y",
+			"commandType":        "linux",
+			"schedule":           "daily",
 			"scheduleRepeatType": "day",
 		},
 		{
 			"_id":                "bbb222bbb222bbb222bbb222",
-			"name":              "Restart Service",
-			"command":           "systemctl restart nginx",
-			"commandType":       "linux",
-			"schedule":          "",
+			"name":               "Restart Service",
+			"command":            "systemctl restart nginx",
+			"commandType":        "linux",
+			"schedule":           "",
 			"scheduleRepeatType": "",
 		},
 		{
 			"_id":                "ccc333ccc333ccc333ccc333",
-			"name":              "Collect Logs",
-			"command":           "tar czf /tmp/logs.tar.gz /var/log",
-			"commandType":       "mac",
-			"schedule":          "weekly",
+			"name":               "Collect Logs",
+			"command":            "tar czf /tmp/logs.tar.gz /var/log",
+			"commandType":        "mac",
+			"schedule":           "weekly",
 			"scheduleRepeatType": "week",
 		},
 	}
@@ -1145,12 +1145,12 @@ type triggerRecord struct {
 func sampleCommandResults() []map[string]any {
 	return []map[string]any{
 		{
-			"_id":         "res111res111res111res111",
-			"command":     "aaa111aaa111aaa111aaa111",
-			"system":      "alice-mbp.local",
-			"systemId":    "ddd444ddd444ddd444ddd444",
-			"exitCode":    0,
-			"requestTime": "2026-02-13T10:00:00Z",
+			"_id":          "res111res111res111res111",
+			"command":      "aaa111aaa111aaa111aaa111",
+			"system":       "alice-mbp.local",
+			"systemId":     "ddd444ddd444ddd444ddd444",
+			"exitCode":     0,
+			"requestTime":  "2026-02-13T10:00:00Z",
 			"responseTime": "2026-02-13T10:00:05Z",
 			"response": map[string]any{
 				"data": map[string]any{
@@ -1160,12 +1160,12 @@ func sampleCommandResults() []map[string]any {
 			},
 		},
 		{
-			"_id":         "res222res222res222res222",
-			"command":     "aaa111aaa111aaa111aaa111",
-			"system":      "bob-linux.local",
-			"systemId":    "eee555eee555eee555eee555",
-			"exitCode":    1,
-			"requestTime": "2026-02-13T10:00:00Z",
+			"_id":          "res222res222res222res222",
+			"command":      "aaa111aaa111aaa111aaa111",
+			"system":       "bob-linux.local",
+			"systemId":     "eee555eee555eee555eee555",
+			"exitCode":     1,
+			"requestTime":  "2026-02-13T10:00:00Z",
 			"responseTime": "2026-02-13T10:00:10Z",
 			"response": map[string]any{
 				"data": map[string]any{

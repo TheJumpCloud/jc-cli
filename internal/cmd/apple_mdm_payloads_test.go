@@ -145,9 +145,9 @@ func TestCanonicalApplePlatform(t *testing.T) {
 // manage those platforms today.
 func TestJCOSFamily(t *testing.T) {
 	tests := []struct {
-		in      string
-		want    string
-		wantErr bool
+		in        string
+		want      string
+		wantErr   bool
 		errSubstr string
 	}{
 		{"macOS", apple_mdm.OSFamilyDarwin, false, ""},

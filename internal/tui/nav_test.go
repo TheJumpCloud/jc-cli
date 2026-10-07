@@ -11,10 +11,10 @@ type mockScreen struct {
 	title string
 }
 
-func (m *mockScreen) Title() string                           { return m.title }
-func (m *mockScreen) Init() tea.Cmd                           { return nil }
-func (m *mockScreen) Update(tea.Msg) (tea.Model, tea.Cmd)     { return m, nil }
-func (m *mockScreen) View() string                            { return m.title }
+func (m *mockScreen) Title() string                       { return m.title }
+func (m *mockScreen) Init() tea.Cmd                       { return nil }
+func (m *mockScreen) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+func (m *mockScreen) View() string                        { return m.title }
 
 func TestNavStack_PushAndCurrent(t *testing.T) {
 	nav := &NavStack{}

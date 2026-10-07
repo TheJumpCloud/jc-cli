@@ -16,6 +16,20 @@ test:
 lint: vet
 	@echo "lint: go vet passed"
 
+# Fail if anything is unformatted. `gofmt -l` prints offenders and exits 0
+# either way, so the test for emptiness is what makes this a gate — an
+# earlier attempt at this check used `gofmt -l || echo` and passed always.
+fmt-check:
+	@out="$$(gofmt -l . | grep -v '^dist/' || true)"; \
+		if [ -n "$$out" ]; then \
+			echo "these files are not gofmt'd — run 'make fmt':"; \
+			echo "$$out"; \
+			exit 1; \
+		fi
+
+fmt:
+	gofmt -w $$(git ls-files '*.go')
+
 vet:
 	go vet ./...
 

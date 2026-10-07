@@ -57,10 +57,10 @@ type InsightsClientFactory func() (*api.InsightsClient, error)
 
 // Fetcher handles async data fetching for the TUI.
 type Fetcher struct {
-	Cache          *Cache
-	NewV1Client    V1ClientFactory
-	NewV2Client    V2ClientFactory
-	NewInsights    InsightsClientFactory
+	Cache       *Cache
+	NewV1Client V1ClientFactory
+	NewV2Client V2ClientFactory
+	NewInsights InsightsClientFactory
 }
 
 // NewFetcher creates a Fetcher with default client factories.

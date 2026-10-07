@@ -2711,4 +2711,3 @@ func TestGroupsRemoveMember_HelpShowsFlags(t *testing.T) {
 		t.Errorf("help missing --all: %s", out)
 	}
 }
-

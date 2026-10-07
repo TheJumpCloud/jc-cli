@@ -292,7 +292,7 @@ Shows the AD domain before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.ActiveDirectoryConfig),
-		RunE: batchRunE("AD integration", "delete", runADDelete),
+		RunE:              batchRunE("AD integration", "delete", runADDelete),
 	}
 
 	addBatchSourceFlags(cmd)

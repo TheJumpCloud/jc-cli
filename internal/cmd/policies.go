@@ -118,8 +118,8 @@ func newPoliciesGetCmd() *cobra.Command {
 
 Accepts a policy name (e.g., "Disk Encryption") or a 24-character hex policy ID.
 Policy names are resolved to IDs automatically with caching (use --no-cache to bypass).`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.PolicyConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPoliciesGet(cmd, args[0])
 		},
@@ -164,8 +164,8 @@ Results show the device, status (applied/pending/failed), and timestamp for each
 
 Default fields: id, policyID, systemID, status, startedAt, endedAt.
 Use --output table for quick scanning of results.`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.PolicyConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPoliciesResults(cmd, args[0], limitFlag, sortFlag)
 		},
@@ -296,8 +296,8 @@ func newPoliciesUpdateCmd() *cobra.Command {
 
 Accepts a policy name or 24-character hex ID.
 Specify only the fields you want to change. The updated policy object is returned.`,
-		Args:               cobra.ExactArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.PolicyConfig),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPoliciesUpdate(cmd, args[0], name, values)
 		},
@@ -371,9 +371,9 @@ func newPoliciesDeleteCmd() *cobra.Command {
 Accepts a policy name or 24-character hex ID.
 Shows the policy name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
-		Args:               cobra.MaximumNArgs(1),
-		ValidArgsFunction:  completeResourceNames(resolve.PolicyConfig),
-		RunE: batchRunE("policy", "delete", runPoliciesDelete),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeResourceNames(resolve.PolicyConfig),
+		RunE:              batchRunE("policy", "delete", runPoliciesDelete),
 	}
 
 	addBatchSourceFlags(cmd)

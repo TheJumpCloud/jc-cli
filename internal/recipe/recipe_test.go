@@ -1089,8 +1089,8 @@ type mockCobraCmd struct {
 }
 
 func (m *mockCobraCmd) SetArgs(a []string) { m.args = a }
-func (m *mockCobraCmd) SetOut(w io.Writer)  { m.out = w }
-func (m *mockCobraCmd) SetErr(w io.Writer)  { m.errW = w }
+func (m *mockCobraCmd) SetOut(w io.Writer) { m.out = w }
+func (m *mockCobraCmd) SetErr(w io.Writer) { m.errW = w }
 func (m *mockCobraCmd) Execute() error {
 	if m.stderrFunc != nil && m.errW != nil {
 		m.stderrFunc(m.errW)

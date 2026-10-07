@@ -865,9 +865,9 @@ func TestGraphCmd_HelpShowsTraverse(t *testing.T) {
 
 func TestParseFromFlag_Valid(t *testing.T) {
 	tests := []struct {
-		input      string
-		wantType   string
-		wantIdent  string
+		input     string
+		wantType  string
+		wantIdent string
 	}{
 		{"user:jdoe", "user", "jdoe"},
 		{"device:JDOE-MBP", "device", "JDOE-MBP"},
