@@ -15,7 +15,7 @@ name: PR Label Check
 # makes a re-run mean something.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
     branches: [main]
 
 permissions:
