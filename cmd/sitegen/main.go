@@ -36,6 +36,7 @@ var categories = []category{
 		Commands: []string{
 			"jc users", "jc groups", "jc admins",
 			"jc auth-policies", "jc iplists", "jc identity-providers",
+			"jc roles", "jc service-accounts",
 		},
 	},
 	{
@@ -50,17 +51,21 @@ var categories = []category{
 		Name: "Policies & Commands",
 		Commands: []string{
 			"jc policies", "jc policy-templates", "jc policy-groups", "jc commands",
+			"jc password-policies", "jc password-manager", "jc bundle",
 		},
 	},
 	{
-		Name:     "Insights",
-		Commands: []string{"jc insights", "jc system-insights", "jc identity-risk"},
+		Name: "Insights",
+		Commands: []string{"jc insights", "jc system-insights", "jc identity-risk",
+			"jc alerts", "jc notification-channels", "jc reports", "jc search",
+			"jc saved-views"},
 	},
 	{
 		Name: "Integrations",
 		Commands: []string{
 			"jc ad", "jc gsuite", "jc office365", "jc duo",
 			"jc ldap", "jc radius", "jc software", "jc assets",
+			"jc directories", "jc google-emm", "jc workday",
 		},
 	},
 	{
@@ -75,6 +80,7 @@ var categories = []category{
 		Commands: []string{
 			"jc recipe", "jc multi", "jc mcp", "jc ask", "jc explain", "jc schema",
 			"jc password-vault",
+			"jc workflows",
 		},
 	},
 	{

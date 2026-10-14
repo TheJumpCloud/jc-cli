@@ -1281,6 +1281,163 @@ func BuildCommandManifest() CommandManifest {
 					"websites create", "websites delete", "websites clone"},
 			},
 			{
+				Path:        "jc alerts",
+				Description: "List, inspect, annotate and resolve JumpCloud alerts",
+				Long: "The alert stream the console surfaces, plus the rules behind it. Alerts can " +
+					"be read one at a time or in bulk, annotated with a note that survives as the " +
+					"record of what was decided, and resolved or dismissed in batches. `rules` " +
+					"covers the definitions that raise them and `occurrences` the individual " +
+					"firings behind a single alert, so a noisy rule can be told apart from a " +
+					"recurring condition.",
+				Subcommands: []string{"list", "get", "status", "add-note", "notes", "occurrences", "stats", "rules", "delete", "bulk-update", "bulk-delete"},
+				Flags: []FlagEntry{
+					{Name: "limit", Type: "int", Description: "Maximum number of results"},
+					{Name: "filter", Type: "string[]", Description: "Filter expressions"},
+				},
+			},
+			{
+				Path:        "jc workflows",
+				Description: "Author, validate, run and diagnose JumpCloud Workflows",
+				Long: "The Serverless Workflow DSL as JumpCloud implements it, with the " +
+					"jc_operation extension. Beyond the usual CRUD, this group is built around " +
+					"the fact that the API accepts a malformed workflow and only fails at run " +
+					"time: `validate` checks a document against the DSL rules and the operationId " +
+					"index before it is created, `explain` renders what a workflow will actually " +
+					"do including every side effect that reaches outside JumpCloud, `simulate` " +
+					"walks the graph without calling anything, and `lint` catches the traps that " +
+					"do not show up until a run goes wrong. `health` compares what a workflow's " +
+					"trigger event did against what the workflow did, which is how a workflow " +
+					"that never fires despite its event occurring gets found. Templates carry " +
+					"REPLACE_WITH_* markers that `templates init --set` fills by name.",
+				Subcommands: []string{"list", "get", "create", "update", "delete", "trigger", "runs", "validate", "explain", "simulate", "lint", "health", "templates", "event-types"},
+				Flags: []FlagEntry{
+					{Name: "plan", Type: "bool", Description: "Preview without creating or running"},
+					{Name: "allow-side-effects", Type: "bool", Description: "Permit a workflow that emails or calls out of JumpCloud"},
+				},
+			},
+			{
+				Path:        "jc reports",
+				Description: "Browse and export JumpCloud reports",
+				Long: "The report families the console exposes: built-in templates, custom reports, " +
+					"the report builder, saved definitions and scheduled deliveries. Reads are " +
+					"complete; the writes are held back deliberately, because a scheduled " +
+					"report's trigger sends mail to real recipients and there is no dry run for " +
+					"it.",
+				Subcommands: []string{"templates", "custom", "builder", "saved", "scheduled", "export"},
+			},
+			{
+				Path:        "jc search",
+				Description: "Search the JumpCloud resource indexes",
+				Long: "The v1 search API over users, devices, commands and command results. It " +
+					"takes a structured body rather than a query string, so it reaches fields " +
+					"that `--filter` cannot, and it is the right tool when you know a fragment " +
+					"rather than a field.",
+				Subcommands: []string{"users", "systems", "commands", "command-results"},
+				Flags: []FlagEntry{
+					{Name: "limit", Type: "int", Description: "Maximum number of results"},
+					{Name: "fields", Type: "string", Description: "Fields to return"},
+				},
+			},
+			{
+				Path:        "jc password-manager",
+				Description: "Inspect JumpCloud Password Manager",
+				Long: "Enrolled users and groups, shared folders, stored item counts, " +
+					"password-hygiene scores and the policies in force. Reads only: the API can " +
+					"create a shared folder and offers no way to delete one, so every write here " +
+					"is one-way on a live tenant. Ids in this area are UUIDs rather than the " +
+					"24-character hex the rest of JumpCloud uses. NOTE that JumpCloud is " +
+					"replacing this product with Password Vault; on an organization that has " +
+					"migrated, every endpoint here returns 404 and jc says so.",
+				Subcommands: []string{"overview", "users", "groups", "folders", "items", "policies", "backup-keys"},
+			},
+			{
+				Path:        "jc password-policies",
+				Description: "Manage JumpCloud password policies",
+				Long: "The V2 group-bound password policies, with precedence. The LOWEST precedence " +
+					"number wins when several policies cover one user, which `for-user` and " +
+					"`for-group` resolve so you can see which policy actually governs somebody " +
+					"rather than inferring it.",
+				Subcommands: []string{"list", "get", "create", "update", "delete", "set-precedence", "for-user", "for-group"},
+			},
+			{
+				Path:        "jc service-accounts",
+				Description: "Manage JumpCloud service accounts",
+				Long: "OAuth service accounts \u2014 the credential type meant for automation, as " +
+					"opposed to a human's API key. Secrets can be rotated and revoked without " +
+					"deleting the account, which is what makes unattended credentials rotatable " +
+					"at all.",
+				Subcommands: []string{"list", "get", "create", "delete", "rotate", "revoke"},
+			},
+			{
+				Path:        "jc notification-channels",
+				Description: "Manage JumpCloud notification channels",
+				Long: "Where alerts are delivered \u2014 email, webhook, Slack. A channel is referenced " +
+					"by alert rules, so deleting one silently stops delivery for every rule that " +
+					"used it.",
+				Subcommands: []string{"list", "get", "create", "update", "delete"},
+			},
+			{
+				Path:        "jc saved-views",
+				Description: "Manage JumpCloud saved views",
+				Long: "Named, stored filters over the directory that the console surfaces as views. " +
+					"They are org-level objects rather than per-admin preferences, so a change is " +
+					"visible to everyone.",
+				Subcommands: []string{"list", "get", "create", "update", "delete"},
+			},
+			{
+				Path:        "jc roles",
+				Description: "Manage JumpCloud administrator roles",
+				Long: "The role definitions that scope what an administrator may do. Workflows also " +
+					"take a role at creation time, and JumpCloud enforces that scope when the " +
+					"workflow runs rather than when it is authored.",
+				Subcommands: []string{"list", "get", "create", "update", "delete"},
+			},
+			{
+				Path:        "jc directories",
+				Description: "One view over every directory integration",
+				Long: "A unified read across the directory integrations \u2014 Google Workspace, Office " +
+					"365, Active Directory, LDAP and the rest \u2014 so \"what is connected to this " +
+					"org\" is one command rather than six.",
+				Subcommands: []string{"list"},
+			},
+			{
+				Path:        "jc google-emm",
+				Description: "Inspect the org's Android Enterprise (EMM) setup",
+				Long: "The Android Enterprise binding, the devices enrolled through it and the " +
+					"enrollment tokens issued. Reads only. Note that an enterprise id of the " +
+					"right shape that does not exist returns an empty device list rather than a " +
+					"404, so absence of devices is not evidence the enterprise is real \u2014 jc " +
+					"confirms existence before reporting.",
+				Subcommands: []string{"enterprises", "devices", "enrollment-tokens"},
+			},
+			{
+				Path:        "jc workday",
+				Description: "Inspect the org's Workday HR-import integrations",
+				Long: "The Workday integrations that feed employee records from HR into the " +
+					"directory. Deliberately incomplete: the workers listing and the " +
+					"import-results endpoint are not implemented because no tenant available has " +
+					"an integration configured and their response shapes have never been " +
+					"observed. The import write is held back too \u2014 it creates and updates real " +
+					"directory users from HR data with no dry run.",
+				Subcommands: []string{"list", "get"},
+			},
+			{
+				Path:        "jc bundle",
+				Description: "Apply versioned security-baseline bundles",
+				Long: "Bundles group Apple configuration profiles and Windows OMA-URI/registry " +
+					"policies into one versioned YAML artifact, so a baseline is applied and " +
+					"checked as a unit. `apply` creates one policy per unit plus a policy group " +
+					"and binds it to a device group; `status` reports drift at the value level, " +
+					"including policies that went missing and group members that were added " +
+					"outside the bundle. Apply is create-only: name conflicts are rejected up " +
+					"front and a mid-apply failure is never rolled back \u2014 the exact cleanup " +
+					"commands are printed instead.",
+				Subcommands: []string{"list", "show", "apply", "status", "validate", "import", "export"},
+				Flags: []FlagEntry{
+					{Name: "plan", Type: "bool", Description: "Preview what apply would create"},
+				},
+			},
+			{
 				Path:        "jc auth-policies",
 				Description: "Manage authentication policies for conditional access",
 				Subcommands: []string{"list", "get", "create", "update", "delete", "enable", "disable", "simulate", "blast-radius"},
