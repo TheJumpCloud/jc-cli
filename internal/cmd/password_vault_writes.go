@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
+	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 
+	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/passwordvault"
 	"github.com/klaassen-consulting/jc/internal/plan"
@@ -180,6 +185,7 @@ const lockoutLong = "\n\nThis grants you the family's full management permission
 
 func newPWVCredentialWriteCmds() []*cobra.Command {
 	var credType, username, notes string
+	var passwordStdin bool
 
 	create := &cobra.Command{
 		Use:   "create <name>",
@@ -211,6 +217,19 @@ func newPWVCredentialWriteCmds() []*cobra.Command {
 			if notes != "" {
 				body["notes"] = notes
 			}
+
+			// A PASSWORD credential is rejected without one: the API answers
+			// 400 ": [Password required for password type]". There is
+			// deliberately NO --password flag — a secret on argv lands in
+			// shell history and in `ps` output for every user on the host.
+			// It is read with no echo from the terminal, or from a pipe.
+			if needsSecret(credType) {
+				secret, serr := readCredentialSecret(cmd, passwordStdin)
+				if serr != nil {
+					return serr
+				}
+				body["password"] = secret
+			}
 			raw, err := pwvPut(cmd.Context(), passwordvault.CredentialsEndpoint, body)
 			if err != nil {
 				return err
@@ -230,6 +249,8 @@ func newPWVCredentialWriteCmds() []*cobra.Command {
 		"Credential type: PASSWORD, KEY, CONNECTION_STRING, SECURE_NOTE, TWO_FA, CREDIT_CARD, ID_CARD, IDENTITY")
 	create.Flags().StringVar(&username, "username", "", "Username stored on the credential")
 	create.Flags().StringVar(&notes, "notes", "", "Free-text notes")
+	create.Flags().BoolVar(&passwordStdin, "password-stdin", false,
+		"Read the secret from stdin rather than prompting (for scripts)")
 
 	del := &cobra.Command{
 		Use:   "delete <id>",
@@ -673,4 +694,43 @@ func mustValues(k, v string) url.Values {
 	out := url.Values{}
 	out.Set(k, v)
 	return out
+}
+
+// needsSecret reports whether a credential type requires a secret value at
+// creation. PASSWORD is the one the API enforces; the others accept an empty
+// record and are filled in later.
+func needsSecret(credType string) bool {
+	return strings.EqualFold(strings.TrimSpace(credType), "PASSWORD")
+}
+
+// readCredentialSecret obtains the secret without it ever appearing in argv.
+//
+// From a terminal it prompts with echo off, the same way `jc auth login`
+// reads an API key. From a pipe it reads stdin, so a script can supply it
+// without a flag. There is no third option on purpose.
+func readCredentialSecret(cmd *cobra.Command, fromStdin bool) (string, error) {
+	if fromStdin || !config.IsStdinTerminal() {
+		data, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return "", fmt.Errorf("reading the secret from stdin: %w", err)
+		}
+		secret := strings.TrimRight(string(data), "\r\n")
+		if secret == "" {
+			return "", fmt.Errorf("no secret on stdin — a PASSWORD credential cannot be " +
+				"created without one")
+		}
+		return secret, nil
+	}
+
+	fmt.Fprint(cmd.ErrOrStderr(), "Password (not echoed): ")
+	raw, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Fprintln(cmd.ErrOrStderr())
+	if err != nil {
+		return "", fmt.Errorf("reading the password: %w", err)
+	}
+	secret := strings.TrimSpace(string(raw))
+	if secret == "" {
+		return "", fmt.Errorf("no password entered")
+	}
+	return secret, nil
 }

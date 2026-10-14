@@ -106,7 +106,15 @@ var commandClass = map[string]string{
 	"jc password-vault websites create":               ClassMutating,
 	"jc password-vault websites delete":               ClassDestructive,
 	"jc password-vault websites clone":                ClassDestructive,
-	"jc password-vault tags list":                     ClassReadOnly,
+	// The secret readers. read-only by the letter of the rule — they mutate
+	// nothing — and that is exactly why they are CLI-only: the MCP safety
+	// model classifies by mutation, so these would pass every gate it has
+	// while the harm happens the moment a value reaches a transcript.
+	"jc password-vault credentials secret":      ClassReadOnly,
+	"jc password-vault credentials secret-v2":   ClassReadOnly,
+	"jc password-vault credentials with-secret": ClassReadOnly,
+	"jc password-vault credentials mfa-code":    ClassReadOnly,
+	"jc password-vault tags list":               ClassReadOnly,
 
 	// upgrade — replaces jc's own binary. Never touches the JumpCloud API,
 	// so it is internal by the letter of the rule; but it rewrites the
