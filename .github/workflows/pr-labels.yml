@@ -24,8 +24,6 @@ permissions:
 
 jobs:
   Check-PR-Labels:
-    # Skip a title/body edit; run when the base branch changed.
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     steps:
       - name: Parse PR labels

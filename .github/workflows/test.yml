@@ -15,9 +15,16 @@ name: Test
 # meant closing and reopening the PR by hand, which happened four times in
 # one afternoon during the KLA-485 merge queue.
 #
-# `edited` also fires on title and body edits, which is not worth a test run,
-# so the job guards on github.event.changes.base — present only when the base
-# actually moved.
+# `edited` also fires on title and body edits, so this re-runs on those too.
+# That is deliberate. The obvious optimisation — guard the job on
+# github.event.changes.base, which is populated only when the base moved —
+# makes the job SKIP on a title edit, and a skipped job still produces a check
+# run. GitHub counts a skipped check as satisfying a required status check, so
+# the guard would let the last event on a PR replace a real test result with a
+# skip that passes. These checks are not required today, which makes that
+# latent rather than live, but it is a trap to leave for whoever makes them
+# required. A wasted five-minute run on a title edit is the cheaper mistake,
+# and `concurrency: cancel-in-progress` bounds it.
 on:
   pull_request:
     branches: [main]
@@ -34,8 +41,6 @@ concurrency:
 
 jobs:
   test:
-    # Skip a title/body edit; run when the base branch changed.
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
