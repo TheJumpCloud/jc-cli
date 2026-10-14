@@ -6,9 +6,22 @@ name: Test
 # contributors' machines, and every green checkmark on a PR came from
 # linting/labels/security scanning. Caught during the KLA-464 arc.
 
+
+# A base-branch change fires `edited`, and nothing else. When a stacked PR's
+# parent merges, GitHub retargets the child automatically — which changes the
+# PR but creates no commit, so none of opened/synchronize/reopened fire and
+# required checks sit in "Expected — waiting for status to be reported"
+# forever, blocking a merge on a run that will never start. Recovering it
+# meant closing and reopening the PR by hand, which happened four times in
+# one afternoon during the KLA-485 merge queue.
+#
+# `edited` also fires on title and body edits, which is not worth a test run,
+# so the job guards on github.event.changes.base — present only when the base
+# actually moved.
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -21,6 +34,8 @@ concurrency:
 
 jobs:
   test:
+    # Skip a title/body edit; run when the base branch changed.
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -15,7 +15,7 @@ name: PR Label Check
 # makes a re-run mean something.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
     branches: [main]
 
 permissions:
@@ -24,6 +24,8 @@ permissions:
 
 jobs:
   Check-PR-Labels:
+    # Skip a title/body edit; run when the base branch changed.
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     steps:
       - name: Parse PR labels
