@@ -84,16 +84,24 @@ func describeHeld(cmd *cobra.Command, id string, sec passwordvault.Secret, v2 bo
 		}
 	}
 
+	// FIELD NAMES ONLY, and deliberately not their lengths. An earlier version
+	// of this printed len(value) per field, which a background security review
+	// flagged as sensitive-data-exposure — correctly. An exact password length
+	// materially narrows a brute-force or credential-stuffing search, and this
+	// is the path that runs with no flags, the one meant to be safe to use in
+	// front of other people. The field's presence already answers the question
+	// this output exists for — "does this credential have a TOTP key?" — and
+	// the length adds nothing the caller needs to know.
 	rows := make([]json.RawMessage, 0, len(names))
 	for _, n := range names {
-		b, err := json.Marshal(map[string]any{"field": n, "length": len(fields[n])})
+		b, err := json.Marshal(map[string]any{"field": n, "set": true})
 		if err != nil {
 			return err
 		}
 		rows = append(rows, b)
 	}
 	opts := output.CurrentOptions()
-	opts.DefaultFields = []string{"field", "length"}
+	opts.DefaultFields = []string{"field", "set"}
 	if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
 		return err
 	}
@@ -177,9 +185,10 @@ func newPWVSecretCmds() []*cobra.Command {
 		Short: "What secrets a credential holds, and optionally their values",
 		Long: `Read a credential's stored secrets.
 
-WITH NO FLAGS THIS PRINTS NO VALUES. It lists which fields the credential
-holds and how long each is — enough to answer "does this record have a TOTP
-key?" without putting a password into scrollback, a CI log or a screen share.
+WITH NO FLAGS THIS PRINTS NO VALUES AND NO LENGTHS. It lists which fields the
+credential holds — enough to answer "does this record have a TOTP key?"
+without putting a password into scrollback, a CI log or a screen share, and
+without disclosing a length that would narrow a guess at one.
 
   --clipboard   copy one value, print nothing
   --reveal      print the values to stdout
