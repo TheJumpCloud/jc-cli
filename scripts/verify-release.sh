@@ -8,6 +8,11 @@
 #   scripts/verify-release.sh 1.47.0 jc-darwin-arm64.tar.gz
 #
 # Requires cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+#
+# Verified against release 1.46.58 on 2026-10-14 with cosign v3.1.3, including
+# the cases that make it mean something: a wrong --certificate-identity, a
+# wrong --certificate-oidc-issuer, and a one-byte change to checksums.txt are
+# each rejected.
 set -euo pipefail
 
 VERSION="${1:-}"
@@ -36,7 +41,13 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "fetching ${VERSION} ..."
 curl -fsSL "${BASE}/checksums.txt"                 -o "$tmp/checksums.txt"
-curl -fsSL "${BASE}/checksums.txt.sigstore.json"   -o "$tmp/bundle.json"
+# Releases 1.46.57 and 1.46.58 published the bundle as
+# checksums.txt.sigstore.json before it was renamed to say which format it
+# actually is. Try the current name, fall back to the old one, so a release
+# that already exists stays verifiable.
+if ! curl -fsSL "${BASE}/checksums.txt.cosign.bundle" -o "$tmp/bundle.json" 2>/dev/null; then
+  curl -fsSL "${BASE}/checksums.txt.sigstore.json" -o "$tmp/bundle.json"
+fi
 curl -fsSL "${BASE}/${ASSET}"                      -o "$tmp/${ASSET}"
 
 echo

@@ -126,7 +126,7 @@ matters:
 
 or directly:
 
-  cosign verify-blob --bundle checksums.txt.sigstore.json \
+  cosign verify-blob --bundle checksums.txt.cosign.bundle \
     --certificate-identity \
       https://github.com/TheJumpCloud/jc-cli/.github/workflows/release.yml@refs/heads/main \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
