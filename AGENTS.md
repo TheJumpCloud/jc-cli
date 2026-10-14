@@ -195,7 +195,8 @@ protocol stream.
 
 `jc upgrade` checks the download against `checksums.txt` — integrity. For
 authenticity, releases sign `checksums.txt` with Sigstore (keyless, from the
-release workflow's own identity, logged in Rekor):
+release workflow's own identity, logged in Rekor, published as
+`checksums.txt.cosign.bundle`):
 
 ```bash
 scripts/verify-release.sh 1.47.0 jc-darwin-arm64.tar.gz
