@@ -311,6 +311,15 @@ func IsStdoutTerminal() bool {
 	return isTerminalFunc(int(os.Stdout.Fd()))
 }
 
+// IsStdinTerminal reports whether stdin is connected to a terminal.
+//
+// It decides whether a secret can be prompted for with echo off, or has to
+// be read from a pipe — the two ways of supplying one that do not put it in
+// argv, where it would reach shell history and every user's `ps`.
+func IsStdinTerminal() bool {
+	return isTerminalFunc(int(os.Stdin.Fd()))
+}
+
 // IsStderrTerminal reports whether stderr is connected to a terminal.
 //
 // Notices and prompts go to stderr, so when deciding whether anyone is there

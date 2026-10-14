@@ -532,7 +532,11 @@
         "folders add-items",
         "websites create",
         "websites delete",
-        "websites clone"
+        "websites clone",
+        "credentials secret",
+        "credentials secret-v2",
+        "credentials with-secret",
+        "credentials mfa-code"
       ]
     },
     {
