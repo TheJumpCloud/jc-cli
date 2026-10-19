@@ -11,11 +11,12 @@ import (
 // The row-count footer every list command writes to stderr, so that piping
 // stdout to a file or another process never picks it up.
 //
-// There are three entry points. A command that knows only how many rows it is
+// There are four entry points. A command that knows only how many rows it is
 // about to print calls writeCountFooter; one that also knows the server-side
 // total calls writeListFooter, which says "N of TOTAL" whenever the page falls
 // short of the whole list; a list whose rows have a better name than "item"
-// calls writeNounFooter. All of them go through text.Count, so a one-row list
+// calls writeNounFooter, or writeNounListFooter when it has a total too. All
+// of them go through text.Count, so a one-row list
 // reads "── 1 item ──" rather than the "── 1 items ──" that makes a tool look
 // unfinished.
 
@@ -34,9 +35,17 @@ func writeNounFooter(cmd *cobra.Command, count int, singular, plural string) {
 // writeListFooter writes a "── N of TOTAL items ──" footer to stderr, or the
 // plain "── N items ──" form when this page is the whole list.
 func writeListFooter(cmd *cobra.Command, count, total int) {
+	writeNounListFooter(cmd, count, total, "item", "items")
+}
+
+// writeNounListFooter is writeListFooter for a list whose rows have a better
+// name than "item". It exists because the two halves could otherwise disagree:
+// a paged list of agents read "3 of 7 items" when short and "3 items" when
+// whole, losing the noun exactly when the page was complete.
+func writeNounListFooter(cmd *cobra.Command, count, total int, singular, plural string) {
 	if count == total {
-		writeCountFooter(cmd, count)
+		writeNounFooter(cmd, count, singular, plural)
 		return
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %s ──\n", count, text.Count(total, "item"))
+	fmt.Fprintf(cmd.ErrOrStderr(), "── %d of %s ──\n", count, text.CountOf(total, singular, plural))
 }

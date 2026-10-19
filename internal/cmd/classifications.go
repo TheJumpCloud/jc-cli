@@ -45,6 +45,25 @@ var commandClass = map[string]string{
 	"jc api post":   ClassDestructive,
 	"jc api put":    ClassDestructive,
 
+	// agents / agent-groups — AI Agent Identities. Reads only in this PR;
+	// lifecycle and membership writes follow, and the three credential
+	// writes ship CLI-only.
+	//
+	// "agents credentials list" is read-only on the strength of a property
+	// of the endpoint, not of the name: it returns a client id, type, status
+	// and expiry, and never a secret — verified against every agent on a
+	// live tenant. Creating a credential is the call that returns one, and
+	// it is not in this PR.
+	"jc agents list":               ClassReadOnly,
+	"jc agents get":                ClassReadOnly,
+	"jc agents memberof":           ClassReadOnly,
+	"jc agents applications":       ClassReadOnly,
+	"jc agents credentials list":   ClassReadOnly,
+	"jc agent-groups list":         ClassReadOnly,
+	"jc agent-groups get":          ClassReadOnly,
+	"jc agent-groups members":      ClassReadOnly,
+	"jc agent-groups associations": ClassReadOnly,
+
 	// identity-risk — risk detections. Reads, plus one write that cannot be
 	// undone: the API refuses every change to a detection once it is
 	// resolved, including reopening it, so resolve is classed destructive

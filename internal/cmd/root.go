@@ -137,7 +137,7 @@ interface.`,
 		newUsersCmd(), newGroupsCmd(), newAdminsCmd(),
 		newAppsCmd(), newAppTemplatesCmd(), newAuthPoliciesCmd(),
 		newIdentityProvidersCmd(), newUserStatesCmd(), newAccessRequestsCmd(),
-		newServiceAccountsCmd(),
+		newServiceAccountsCmd(), newAgentsCmd(), newAgentGroupsCmd(),
 	)
 
 	// Devices & MDM

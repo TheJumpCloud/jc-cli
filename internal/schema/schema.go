@@ -715,6 +715,57 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	// agents — AI Agent Identities. Fields taken from live records on a
+	// tenant with real agents, not from the spec.
+	//
+	// filter_support is true but narrow: the endpoint accepts name, email
+	// and state with eq and ne, and rejects everything else with a 400.
+	// sort_support is false because this listing ACCEPTS sort and ignores
+	// it, which is worse than refusing it.
+	"agents": {
+		Resource:      "agents",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "email", "state", "ownerId"},
+		FilterSupport: true,
+		SortSupport:   false,
+		IDField:       "id",
+		NameField:     "name",
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "JumpCloud object id of the agent", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Display name of the agent"},
+			{Name: "email", Type: "string", Description: "Email identifying the agent; required at creation"},
+			{Name: "description", Type: "string", Description: "Free-text description"},
+			{Name: "ownerId", Type: "string", Description: "JumpCloud user id of the owning admin; required at creation"},
+			{Name: "state", Type: "string", Description: "active or suspended; changed through suspend/activate, not a write to this field", ReadOnly: true},
+			{Name: "organizationId", Type: "string", Description: "Organization the agent belongs to", ReadOnly: true},
+			{Name: "allowedAudiences", Type: "array", Description: "OAuth audiences the agent's tokens may target"},
+		},
+	},
+
+	// agent-groups — the collections through which agents reach
+	// applications. A bare-array listing with no total count.
+	"agent-groups": {
+		Resource:      "agent-groups",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"id", "name", "description", "type"},
+		FilterSupport: true,
+		SortSupport:   true,
+		SortFields:    []string{"name"},
+		IDField:       "id",
+		NameField:     "name",
+		Fields: []FieldDef{
+			{Name: "id", Type: "string", Description: "JumpCloud object id of the group", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Display name of the group"},
+			{Name: "description", Type: "string", Description: "Free-text description"},
+			{Name: "email", Type: "string", Description: "Group email, empty on every group observed", ReadOnly: true},
+			{Name: "type", Type: "string", Description: "Always agent_group", ReadOnly: true},
+			{Name: "attributes", Type: "object", Description: "Group attributes; null on every group observed", ReadOnly: true},
+			{Name: "organizationObjectId", Type: "string", Description: "Organization the group belongs to — note the spelling differs from an agent's organizationId", ReadOnly: true},
+		},
+	},
+
 	// identity-risk — risk detections. Fields taken from a live record on a
 	// tenant that had real detections, not from the spec.
 	"identity-risk": {
@@ -1224,6 +1275,51 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "event-type", Type: "string", Description: "Filter by event type"},
 					{Name: "limit", Type: "int", Description: "Maximum events to return"},
 					{Name: "sort", Type: "string", Description: "Sort field"},
+				},
+			},
+			{
+				Path:        "jc agents",
+				Description: "Inspect JumpCloud AI agent identities",
+				Long: "AI Agent Identities give an autonomous workload its own JumpCloud " +
+					"identity: a name, an owning admin, its own OAuth client credentials, and " +
+					"membership in agent groups that are assigned to applications. This group " +
+					"reads them. `list` pages by cursor rather than by limit and skip, and " +
+					"filters on name, email or state with eq and ne only — there is no " +
+					"substring match and no sort, because the endpoint accepts a sort " +
+					"parameter and ignores it. `applications` reports not just which " +
+					"applications an agent can reach but which group granted each one, which " +
+					"is the one question the raw response cannot answer. `credentials list` " +
+					"shows how an agent authenticates and never returns a secret: a client " +
+					"secret is returned once, by the call that creates it, and by nothing " +
+					"afterwards. Most of these endpoints require an organization id header " +
+					"that the API spec marks optional, so jc sends the active profile's own " +
+					"and there is no flag for it.",
+				Subcommands: []string{"list", "get", "memberof", "applications", "credentials"},
+				Flags: []FlagEntry{
+					{Name: "filter", Type: "string", Description: "field:operator:value — name, email or state, with eq or ne"},
+					{Name: "limit", Type: "int", Description: "Return one page of this size instead of every agent"},
+					{Name: "page-token", Type: "string", Description: "Continue from a cursor reported by a previous page"},
+				},
+			},
+			{
+				Path:        "jc agent-groups",
+				Description: "Inspect JumpCloud AI agent groups",
+				Long: "Agent groups are the collections through which AI agents are granted " +
+					"access to applications — and to nothing else: no policies, no commands, " +
+					"no devices, so `associations` has exactly one kind of target and jc " +
+					"supplies it, since the API requires it and the spec does not say so. " +
+					"This half of the area behaves differently from `jc agents` in four ways, " +
+					"all of them the server's: no organization id header is needed, listings " +
+					"page by offset rather than by cursor, --sort works here and is ignored " +
+					"there, and the two accept different filter fields. `members` and " +
+					"`associations` return ids and types with no names, so jc joins the names " +
+					"in from the agent and application catalogs.",
+				Subcommands: []string{"list", "get", "members", "associations"},
+				Flags: []FlagEntry{
+					{Name: "filter", Type: "string", Description: "field:operator:value — name or type, with eq or ne"},
+					{Name: "limit", Type: "int", Description: "Maximum groups to return"},
+					{Name: "sort", Type: "string", Description: "Sort field; prefix with - for descending"},
+					{Name: "target", Type: "string", Description: "On associations: the target type, which is application"},
 				},
 			},
 			{
