@@ -549,3 +549,54 @@ func assertNoSecret(t *testing.T, where, text string) {
 		t.Errorf("the secret appeared on %s: %q", where, text)
 	}
 }
+
+// The listing and the update both print a record through generic output, so
+// a secret appearing in either response would reach every output format. The
+// commands sanitise; these prove it end to end.
+func TestCredentialsList_SanitisesTheRecord(t *testing.T) {
+	srv := &credServer{}
+	srv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A hypothetical API regression: a secret in the LISTING.
+		_, _ = w.Write([]byte(`{"credentials":[{"clientId":"` + fakeClientID +
+			`","status":"active","clientSecret":"` + fakeSecret + `"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	out, errOut, _, err := runCred(t, srv, "agents", "credentials", "list", testAgentID, "-o", "json")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertNoSecret(t, "stdout", out)
+	assertNoSecret(t, "stderr", errOut)
+	// The row itself must survive, or the command reports nothing.
+	if !strings.Contains(out, fakeClientID) {
+		t.Errorf("sanitising removed the whole record: %s", out)
+	}
+}
+
+func TestCredentialsUpdate_SanitisesTheRecord(t *testing.T) {
+	srv := &credServer{}
+	srv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPatch {
+			_, _ = w.Write([]byte(`{"clientId":"` + fakeClientID +
+				`","tokenEndpointAuthMethod":"client_secret_post","clientSecret":"` + fakeSecret + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	out, errOut, _, err := runCred(t, srv, "agents", "credentials", "update", testAgentID, fakeClientID,
+		"--auth-method", "client_secret_post", "-o", "json")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertNoSecret(t, "stdout", out)
+	assertNoSecret(t, "stderr", errOut)
+	// The update now shows what changed, which is the point of printing it.
+	if !strings.Contains(out, "client_secret_post") {
+		t.Errorf("the updated record was not reported: %s", out)
+	}
+}

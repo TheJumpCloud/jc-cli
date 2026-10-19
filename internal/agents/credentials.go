@@ -261,3 +261,63 @@ func CredentialNotFound(err error) bool {
 const DeleteIsTheOnlyRevocation = "deleting a credential is the only way to stop it working, " +
 	"and it is the agent's only credential — the agent cannot authenticate until a new one is " +
 	"created"
+
+// --- Keeping secrets out of generic output -------------------------------
+
+// secretBearingKeys are the field names that must never reach a generic
+// output formatter, a table, a log or a clipboard by accident.
+var secretBearingKeys = []string{
+	"clientSecret", "client_secret", "secret", "password", "privateKey", "private_key",
+}
+
+// SanitizeCredential strips any secret-bearing field from a credential
+// record before it is handed to generic output.
+//
+// Today no read returns a secret — verified against every credential on a
+// live tenant, and the update response was checked field by field. This
+// exists because that is an assumption about a server, and the whole design
+// of this area rests on it: `credentials list` and `credentials update` both
+// print the record through jc's ordinary output path, so if the API ever
+// started including a secret there, every output format would carry it and
+// no test of ours would notice.
+//
+// Enforcing the invariant costs one pass over a small object. Assuming it
+// costs a disclosure.
+//
+// A record that will not decode is returned untouched rather than dropped —
+// the caller still has something to show — but it cannot have been a JSON
+// object, so there is no field to strip.
+func SanitizeCredential(raw json.RawMessage) json.RawMessage {
+	var rec map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return raw
+	}
+	stripped := false
+	for _, k := range secretBearingKeys {
+		if _, ok := rec[k]; ok {
+			delete(rec, k)
+			stripped = true
+		}
+	}
+	if !stripped {
+		return raw
+	}
+	out, err := json.Marshal(rec)
+	if err != nil {
+		// Marshalling a map that just came from Unmarshal should not fail,
+		// but returning the original here would hand back the secret this
+		// function exists to remove. An empty object is useless; it is not
+		// harmful.
+		return json.RawMessage(`{}`)
+	}
+	return out
+}
+
+// SanitizeCredentials applies SanitizeCredential to a listing.
+func SanitizeCredentials(rows []json.RawMessage) []json.RawMessage {
+	out := make([]json.RawMessage, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, SanitizeCredential(r))
+	}
+	return out
+}

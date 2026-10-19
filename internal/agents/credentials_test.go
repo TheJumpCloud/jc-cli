@@ -323,3 +323,76 @@ func TestConstantsStateTheConstraints(t *testing.T) {
 		t.Error("CredentialPatchChangesOnlyTheAuthMethod no longer says the other fields are dropped")
 	}
 }
+
+// --- The sanitiser --------------------------------------------------------
+
+// No read returns a secret today. This enforces the invariant rather than
+// assuming it, because `credentials list` and `credentials update` both
+// print the record through jc's ordinary output path — so an API that
+// started including a secret would leak it in every output format at once,
+// and no test of the fixtures would notice.
+func TestSanitizeCredential_RemovesEverySecretBearingKey(t *testing.T) {
+	for _, key := range []string{
+		"clientSecret", "client_secret", "secret", "password", "privateKey", "private_key",
+	} {
+		raw := json.RawMessage(`{"clientId":"agent-x-1","status":"active","` + key + `":"` + testSecret + `"}`)
+		got := SanitizeCredential(raw)
+
+		if strings.Contains(string(got), testSecret) {
+			t.Errorf("%s survived sanitising: %s", key, got)
+		}
+		var rec map[string]any
+		if err := json.Unmarshal(got, &rec); err != nil {
+			t.Fatalf("sanitised output does not decode: %v", err)
+		}
+		if _, ok := rec[key]; ok {
+			t.Errorf("the key %q is still present", key)
+		}
+		// The useful fields must survive, or the command has nothing to show.
+		if rec["clientId"] != "agent-x-1" || rec["status"] != "active" {
+			t.Errorf("sanitising dropped harmless fields: %v", rec)
+		}
+	}
+}
+
+// tokenEndpointAuthMethod's VALUE is "client_secret_basic". A sanitiser that
+// matched on substrings would mangle it; this one matches keys.
+func TestSanitizeCredential_LeavesTheLiveRecordAlone(t *testing.T) {
+	const live = `{"authType":"client_credentials","clientId":"agent-x-1",` +
+		`"createdAt":"2026-09-14T16:16:04Z","expiresAt":"2027-09-14T16:16:04Z",` +
+		`"status":"active","tokenEndpointAuthMethod":"client_secret_basic",` +
+		`"updatedAt":"2026-09-14T16:16:04Z"}`
+
+	got := SanitizeCredential(json.RawMessage(live))
+	if string(got) != live {
+		t.Errorf("a record with no secret was rewritten.\n got: %s\nwant: %s", got, live)
+	}
+	if !strings.Contains(string(got), "client_secret_basic") {
+		t.Error("the auth method was stripped; it names a method and discloses nothing")
+	}
+}
+
+func TestSanitizeCredential_NonObjectIsReturnedUnchanged(t *testing.T) {
+	// Not an object, so there is no field to strip and nothing to hide.
+	for _, in := range []string{`"a string"`, `[1,2,3]`, `not json`} {
+		if got := string(SanitizeCredential(json.RawMessage(in))); got != in {
+			t.Errorf("SanitizeCredential(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestSanitizeCredentials_AppliesToEveryRow(t *testing.T) {
+	rows := []json.RawMessage{
+		json.RawMessage(`{"clientId":"a","clientSecret":"` + testSecret + `"}`),
+		json.RawMessage(`{"clientId":"b"}`),
+	}
+	got := SanitizeCredentials(rows)
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2", len(got))
+	}
+	for i, r := range got {
+		if strings.Contains(string(r), testSecret) {
+			t.Errorf("row %d still carries the secret: %s", i, r)
+		}
+	}
+}

@@ -464,6 +464,11 @@ rather than recovered.`,
 			if err != nil {
 				return err
 			}
+			// No read returns a secret today. Sanitised anyway, because
+			// these rows go straight to generic output in every format jc
+			// supports, so an API that started including one would leak it
+			// everywhere at once.
+			rows = agents.SanitizeCredentials(rows)
 
 			opts := output.CurrentOptions()
 			opts.DefaultFields = []string{"clientId", "authType", "status", "expiresAt", "createdAt"}

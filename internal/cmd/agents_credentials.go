@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/klaassen-consulting/jc/internal/agents"
+	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
@@ -386,16 +387,16 @@ No secret is returned by this call.`,
 				return explainAgentsError(err)
 			}
 
-			// The update response is the credential record, which carries no
-			// secret — so unlike the create, it is safe for generic output.
-			rows, err := agents.ParseCredentials(
-				[]byte(`{"credentials":[` + string(raw) + `]}`))
-			if err != nil || len(rows) == 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Updated credential %s\n", clientID)
-				return nil
-			}
+			// The update response IS the credential record, and it carries no
+			// secret — verified field by field against a live tenant, where
+			// a PATCH answered with authType, clientId, createdAt,
+			// expiresAt, status, tokenEndpointAuthMethod and updatedAt and
+			// nothing else. It is sanitised anyway, because that is an
+			// assumption about a server and this is the one place in the
+			// area where a record reaches generic output.
 			fmt.Fprintf(cmd.ErrOrStderr(), "── updated credential %s ──\n", clientID)
-			return nil
+			return output.WriteSingle(cmd.OutOrStdout(),
+				agents.SanitizeCredential(raw), output.CurrentOptions())
 		},
 	}
 	cmd.Flags().StringVar(&authMethod, "auth-method", "",
