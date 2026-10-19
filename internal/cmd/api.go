@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -226,6 +227,7 @@ func newAPIVerbCmd(use, method string) *cobra.Command {
 	var (
 		data      string
 		params    []string
+		headers   []string
 		apiFlag   string
 		shortVerb = strings.ToLower(method)
 	)
@@ -296,7 +298,12 @@ func newAPIVerbCmd(use, method string) *cobra.Command {
 				}
 			}
 
-			resp, err := doAPIRequest(cmd, version, method, endpoint, body)
+			hdr, err := parseHeaders(headers)
+			if err != nil {
+				return err
+			}
+
+			resp, err := doAPIRequestWithHeaders(cmd, version, method, endpoint, body, hdr)
 			if err != nil {
 				return err
 			}
@@ -306,6 +313,9 @@ func newAPIVerbCmd(use, method string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&data, "data", "d", "", "Request body: inline JSON, @file, or - for stdin")
 	cmd.Flags().StringArrayVar(&params, "param", nil, "Query parameter as key=value (repeatable)")
+	cmd.Flags().StringArrayVar(&headers, "header", nil,
+		"Extra request header as 'Name: value' (repeatable). Some endpoints require one the "+
+			"spec marks optional — /agents rejects a call with no x-org-id.")
 	cmd.Flags().StringVar(&apiFlag, "api", "v2", "API version for a path with no version prefix: v1 or v2")
 	if method == "GET" {
 		// A GET has no body; leaving the flag registered but rejected at run
@@ -373,4 +383,41 @@ func doAPIRequest(cmd *cobra.Command, version apiVersion, method, endpoint strin
 		return client.Delete(ctx, endpoint)
 	}
 	return nil, fmt.Errorf("unsupported method %q", method)
+}
+
+// parseHeaders turns repeated --header 'Name: value' into a header map.
+func parseHeaders(raw []string) (http.Header, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	h := http.Header{}
+	for _, entry := range raw {
+		name, value, ok := strings.Cut(entry, ":")
+		if !ok {
+			return nil, fmt.Errorf("invalid --header %q: expected 'Name: value'", entry)
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("invalid --header %q: empty name", entry)
+		}
+		// An Authorization header here would fight the client's own auth and
+		// is more likely a mistake than an intention.
+		if strings.EqualFold(name, "authorization") || strings.EqualFold(name, "x-api-key") {
+			return nil, fmt.Errorf("--header %s is refused: jc supplies authentication itself, "+
+				"and overriding it here would send a credential this command did not resolve", name)
+		}
+		h.Add(name, strings.TrimSpace(value))
+	}
+	return h, nil
+}
+
+// doAPIRequestWithHeaders is doAPIRequest with extra headers attached to the
+// client for the duration of the call.
+func doAPIRequestWithHeaders(cmd *cobra.Command, version apiVersion, method, endpoint string, body json.RawMessage, hdr http.Header) (json.RawMessage, error) {
+	if len(hdr) == 0 {
+		return doAPIRequest(cmd, version, method, endpoint, body)
+	}
+	restore := api.SetExtraHeaders(hdr)
+	defer restore()
+	return doAPIRequest(cmd, version, method, endpoint, body)
 }

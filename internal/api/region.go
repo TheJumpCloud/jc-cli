@@ -2,9 +2,11 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
 )
@@ -211,4 +213,58 @@ func CurrentHosts() ResolvedHosts {
 		}
 	}
 	return h
+}
+
+// --- Extra request headers ------------------------------------------------
+
+// extraHeaders are added to every outbound request. They exist for one
+// reason: a handful of endpoints require a header the OpenAPI spec marks
+// optional, and there was no way to send one.
+//
+// GET /api/v2/agents answers 400 {"message":"x-org-id is required"} without
+// it, while GET /api/v2/agentgroups — the same feature, released the same
+// day — does not need it at all. The spec declares it required:false on both.
+//
+// This is a process-wide variable rather than a per-client field because the
+// clients are constructed deep inside command code that has no place
+// threading a header through; callers set it for the duration of a call and
+// restore it. Authentication headers are refused by the caller that uses
+// this, so it cannot be used to substitute a credential.
+//
+// The mutex is not optional. applyExtraHeaders runs inside RoundTrip, on
+// whatever goroutine the transport happens to be on, while SetExtraHeaders
+// runs on the command's goroutine -- an unsynchronised global read there is
+// a data race whether or not a test has caught it yet.
+var (
+	extraHeadersMu sync.RWMutex
+	extraHeaders   http.Header
+)
+
+// SetExtraHeaders installs headers for subsequent requests and returns a
+// function that restores the previous set.
+func SetExtraHeaders(h http.Header) func() {
+	extraHeadersMu.Lock()
+	defer extraHeadersMu.Unlock()
+	prev := extraHeaders
+	extraHeaders = h.Clone()
+	return func() {
+		extraHeadersMu.Lock()
+		defer extraHeadersMu.Unlock()
+		extraHeaders = prev
+	}
+}
+
+// applyExtraHeaders adds the installed headers to a request, without
+// overwriting one the client set itself.
+func applyExtraHeaders(req *http.Request) {
+	extraHeadersMu.RLock()
+	defer extraHeadersMu.RUnlock()
+	for name, values := range extraHeaders {
+		if req.Header.Get(name) != "" {
+			continue
+		}
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
+	}
 }
