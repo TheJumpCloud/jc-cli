@@ -675,6 +675,12 @@ request.`,
 			if err := resolveAgentID("agent group", groupID); err != nil {
 				return err
 			}
+			if strings.TrimSpace(targetID) == "" {
+				// Without this, an omitted flag reports `"" is not a
+				// JumpCloud object id`, which describes the empty string
+				// rather than the missing flag.
+				return fmt.Errorf("which %s? pass --%s with its JumpCloud id", objType, targetFlag)
+			}
 			body, err := agents.MembershipBody(op, targetID, objType)
 			if err != nil {
 				return err
@@ -717,7 +723,7 @@ request.`,
 			return verifyMembership(cmd, client, endpoint, isApp, op, objType, targetID, groupID)
 		},
 	}
-	cmd.Flags().StringVar(&targetID, ""+targetFlag, "",
+	cmd.Flags().StringVar(&targetID, targetFlag, "",
 		"JumpCloud id of the "+objType+" to link (required)")
 	return cmd
 }

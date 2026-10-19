@@ -610,3 +610,37 @@ func TestAgentGroupsUpdate_PlanStillReadsButDoesNotWrite(t *testing.T) {
 		}
 	}
 }
+
+// An omitted --agent or --app must name the flag. Without the check it
+// reported `"" is not a JumpCloud object id`, which describes the empty
+// string rather than the missing flag — and `agents register` already got
+// this right, so the two halves of the area disagreed.
+func TestAgentGroupsMembership_MissingFlagNamesTheFlag(t *testing.T) {
+	cases := []struct {
+		args []string
+		flag string
+	}{
+		{[]string{"agent-groups", "add-member", testGroupID}, "--agent"},
+		{[]string{"agent-groups", "remove-member", testGroupID}, "--agent"},
+		{[]string{"agent-groups", "assign-app", testGroupID}, "--app"},
+		{[]string{"agent-groups", "unassign-app", testGroupID}, "--app"},
+	}
+	for _, c := range cases {
+		srv := startWriteServer(t)
+		_, _, err := runWrite(t, srv, c.args...)
+		if err == nil {
+			t.Errorf("%v was accepted with no target", c.args)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.flag) {
+			t.Errorf("%v: the error does not name %s: %v", c.args, c.flag, err)
+		}
+		if strings.Contains(err.Error(), `"" is not`) {
+			t.Errorf("%v: the error describes the empty string rather than the missing flag: %v",
+				c.args, err)
+		}
+		if len(srv.seen()) != 0 {
+			t.Errorf("%v made requests with no target", c.args)
+		}
+	}
+}
