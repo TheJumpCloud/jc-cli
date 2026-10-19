@@ -194,11 +194,6 @@ type loggingTransport struct {
 }
 
 func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Every request from every client passes through here, which makes it
-	// the one place extra headers can be attached without threading them
-	// through each constructor.
-	applyExtraHeaders(req)
-
 	verbose := viper.GetBool("verbose")
 	debug := viper.GetBool("debug")
 	if !verbose && !debug {

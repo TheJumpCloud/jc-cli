@@ -57,11 +57,10 @@ func (s *Server) registerAgentsTools() {
 					return errorResult(err.Error()), nil, nil
 				}
 			}
-			client, restore, err := agentsClientMCP(agents.AgentsEndpoint)
+			client, err := agentsClientMCP(agents.AgentsEndpoint)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			defer restore()
 
 			if args.Limit > 0 {
 				page, perr := agents.GetAgentsPage(ctx, client, args.Filter, args.Limit, "")
@@ -102,11 +101,10 @@ func (s *Server) registerAgentsTools() {
 				return errorResult(agents.ErrNotObjectID("agent", args.AgentID).Error()), nil, nil
 			}
 			endpoint := agents.AgentCredentialsEndpoint(args.AgentID)
-			client, restore, err := agentsClientMCP(endpoint)
+			client, err := agentsClientMCP(endpoint)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			defer restore()
 
 			raw, err := client.Get(ctx, endpoint)
 			if err != nil {
@@ -127,11 +125,10 @@ func (s *Server) registerAgentsTools() {
 					return errorResult(err.Error()), nil, nil
 				}
 			}
-			client, restore, err := agentsClientMCP(agents.GroupsEndpoint)
+			client, err := agentsClientMCP(agents.GroupsEndpoint)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			defer restore()
 
 			rows, lerr := agents.ListGroups(ctx, client, args.Filter, args.Limit, args.Sort)
 			if lerr != nil {
@@ -164,37 +161,38 @@ func (s *Server) registerAgentsTools() {
 	)
 }
 
-// agentsClientMCP mirrors the CLI's agentsClient: it installs the active
-// profile's organization id as a request header for the duration of the call.
+// agentsClientMCP mirrors the CLI's agentsClient: it returns a client that
+// sends the active profile's organization id with every request IT makes.
 //
-// The header is required on most of this area's endpoints and the API spec
-// marks it optional. Sending it where it is not required is harmless, and
-// having one place decide that is what keeps the CLI and these tools from
-// disagreeing about which calls need it.
-func agentsClientMCP(endpoint string) (*api.V2Client, func(), error) {
+// Per-client rather than process-wide matters more here than in the CLI.
+// This server is long-lived and serves tool calls concurrently, so a
+// process-wide header would ride along on whatever else was in flight — and
+// for a multi-tenant key x-org-id SELECTS the organization, which would mean
+// answering a call against an organization its caller never named.
+func agentsClientMCP(endpoint string) (*api.V2Client, error) {
 	client, err := newV2ClientFunc()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	orgID := config.OrgID()
 	if orgID == "" {
 		if agents.RequiresOrgID(endpoint) {
-			return nil, nil, agents.ErrNoOrgID()
+			return nil, agents.ErrNoOrgID()
 		}
-		return client, func() {}, nil
+		return client, nil
 	}
-	return client, api.SetExtraHeaders(http.Header{agents.OrgHeader: []string{orgID}}), nil
+	client.SetExtraHeaders(http.Header{agents.OrgHeader: []string{orgID}})
+	return client, nil
 }
 
 func agentSingleRead(ctx context.Context, id, kind, endpoint, what string) (*mcp.CallToolResult, any, error) {
 	if !agents.IsObjectID(id) {
 		return errorResult(agents.ErrNotObjectID(kind, id).Error()), nil, nil
 	}
-	client, restore, err := agentsClientMCP(endpoint)
+	client, err := agentsClientMCP(endpoint)
 	if err != nil {
 		return errorResult(err.Error()), nil, nil
 	}
-	defer restore()
 
 	raw, err := client.Get(ctx, endpoint)
 	if err != nil {
@@ -209,11 +207,10 @@ func agentGraphRead(ctx context.Context, agentID, endpoint, what string) (*mcp.C
 	if !agents.IsObjectID(agentID) {
 		return errorResult(agents.ErrNotObjectID("agent", agentID).Error()), nil, nil
 	}
-	client, restore, err := agentsClientMCP(endpoint)
+	client, err := agentsClientMCP(endpoint)
 	if err != nil {
 		return errorResult(err.Error()), nil, nil
 	}
-	defer restore()
 
 	raw, err := agents.GetBareArray(ctx, client, endpoint, nil)
 	if err != nil {
@@ -236,11 +233,10 @@ func agentMembershipRead(ctx context.Context, groupID, endpoint, rawQuery, what 
 	if !agents.IsObjectID(groupID) {
 		return errorResult(agents.ErrNotObjectID("agent group", groupID).Error()), nil, nil
 	}
-	client, restore, err := agentsClientMCP(endpoint)
+	client, err := agentsClientMCP(endpoint)
 	if err != nil {
 		return errorResult(err.Error()), nil, nil
 	}
-	defer restore()
 
 	path := endpoint
 	if rawQuery != "" {

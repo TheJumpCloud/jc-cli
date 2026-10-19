@@ -102,35 +102,36 @@ two accept different filter fields.`,
 
 // --- Shared plumbing ------------------------------------------------------
 
-// agentsClient returns a v2 client with the organization id installed as a
-// request header, and a function that removes it again.
+// agentsClient returns a v2 client that sends the organization id with every
+// request it makes.
 //
-// The header goes on for the whole command rather than per request: sending
-// it to the endpoints in this area that do not require it is harmless
-// (verified against every read), while threading it through each call site
-// is how two surfaces end up disagreeing about which calls need it.
+// The header is set on THIS client, not process-wide: it applies to the
+// calls this command makes and to nothing else. Sending it to the endpoints
+// in the area that do not require it is harmless (verified against every
+// read), so one decision covers the command's primary request and the
+// catalog lookups its name resolution needs.
 //
 // endpoint is the command's primary request. When it requires an org id and
 // the profile has none, this fails here — naming the config an operator can
 // actually set, rather than forwarding a server error that names a header no
-// flag is called. A command whose primary endpoint does not require one still
-// installs it when available, so its name lookups work.
-func agentsClient(endpoint string) (*api.V2Client, func(), error) {
+// flag is called. A command whose primary endpoint does not require one is
+// still given the header when there is one, so its name lookups work.
+func agentsClient(endpoint string) (*api.V2Client, error) {
 	client, err := newV2Client()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	orgID := config.OrgID()
 	if orgID == "" {
 		if agents.RequiresOrgID(endpoint) {
-			return nil, nil, agents.ErrNoOrgID()
+			return nil, agents.ErrNoOrgID()
 		}
-		return client, func() {}, nil
+		return client, nil
 	}
 
-	restore := api.SetExtraHeaders(http.Header{agents.OrgHeader: []string{orgID}})
-	return client, restore, nil
+	client.SetExtraHeaders(http.Header{agents.OrgHeader: []string{orgID}})
+	return client, nil
 }
 
 // agentsWarn reports a degraded name lookup on stderr, where it cannot
@@ -240,11 +241,10 @@ because this endpoint ignores it.`,
 				}
 			}
 
-			client, restore, err := agentsClient(agents.AgentsEndpoint)
+			client, err := agentsClient(agents.AgentsEndpoint)
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			var (
 				rows  []json.RawMessage
@@ -303,11 +303,10 @@ Agents are addressed by id only — there is no lookup by name. Use
 			if err := resolveAgentID("agent", args[0]); err != nil {
 				return err
 			}
-			client, restore, err := agentsClient(agents.AgentEndpoint(args[0]))
+			client, err := agentsClient(agents.AgentEndpoint(args[0]))
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			raw, err := client.Get(cmd.Context(), agents.AgentEndpoint(args[0]))
 			if err != nil {
@@ -337,11 +336,10 @@ missing name is cosmetic, a missing membership is not.`,
 				return err
 			}
 			endpoint := agents.AgentMemberOfEndpoint(args[0])
-			client, restore, err := agentsClient(endpoint)
+			client, err := agentsClient(endpoint)
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			refs, err := readGraph(cmd.Context(), client, endpoint, "memberof")
 			if err != nil {
@@ -375,11 +373,10 @@ command does not simply print what the API returned.`,
 				return err
 			}
 			endpoint := agents.AgentApplicationsEndpoint(args[0])
-			client, restore, err := agentsClient(endpoint)
+			client, err := agentsClient(endpoint)
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			refs, err := readGraph(cmd.Context(), client, endpoint, "applications")
 			if err != nil {
@@ -437,11 +434,10 @@ rather than recovered.`,
 				return err
 			}
 			endpoint := agents.AgentCredentialsEndpoint(args[0])
-			client, restore, err := agentsClient(endpoint)
+			client, err := agentsClient(endpoint)
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			raw, err := client.Get(cmd.Context(), endpoint)
 			if err != nil {
@@ -495,11 +491,10 @@ with an internal error that names nothing an operator typed.
 				}
 			}
 
-			client, restore, err := agentsClient(agents.GroupsEndpoint)
+			client, err := agentsClient(agents.GroupsEndpoint)
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			rows, err := agents.ListGroups(cmd.Context(), client, filters, limit, sortBy)
 			if err != nil {
@@ -537,11 +532,10 @@ func newAgentGroupsGetCmd() *cobra.Command {
 			if err := resolveAgentID("agent group", args[0]); err != nil {
 				return err
 			}
-			client, restore, err := agentsClient(agents.GroupEndpoint(args[0]))
+			client, err := agentsClient(agents.GroupEndpoint(args[0]))
 			if err != nil {
 				return err
 			}
-			defer restore()
 
 			raw, err := client.Get(cmd.Context(), agents.GroupEndpoint(args[0]))
 			if err != nil {
@@ -604,11 +598,10 @@ func runGroupMembership(cmd *cobra.Command, groupID, endpoint, rawQuery, what, s
 	if err := resolveAgentID("agent group", groupID); err != nil {
 		return err
 	}
-	client, restore, err := agentsClient(endpoint)
+	client, err := agentsClient(endpoint)
 	if err != nil {
 		return err
 	}
-	defer restore()
 
 	path := endpoint
 	if rawQuery != "" {

@@ -303,7 +303,7 @@ func newAPIVerbCmd(use, method string) *cobra.Command {
 				return err
 			}
 
-			resp, err := doAPIRequestWithHeaders(cmd, version, method, endpoint, body, hdr)
+			resp, err := doAPIRequest(cmd, version, method, endpoint, body, hdr)
 			if err != nil {
 				return err
 			}
@@ -338,7 +338,7 @@ func truncateForPlan(s string) string {
 // doAPIRequest dispatches to the client for the resolved version. Each client
 // method is the same one the typed commands use, so retries, rate limiting and
 // error decoding are identical.
-func doAPIRequest(cmd *cobra.Command, version apiVersion, method, endpoint string, body json.RawMessage) (json.RawMessage, error) {
+func doAPIRequest(cmd *cobra.Command, version apiVersion, method, endpoint string, body json.RawMessage, hdr http.Header) (json.RawMessage, error) {
 	ctx := cmd.Context()
 
 	if version == apiV1 {
@@ -346,6 +346,9 @@ func doAPIRequest(cmd *cobra.Command, version apiVersion, method, endpoint strin
 		if err != nil {
 			return nil, err
 		}
+		// Scoped to this client, so --header affects this request and
+		// nothing else in the process.
+		client.SetExtraHeaders(hdr)
 		switch method {
 		case "GET":
 			return client.Get(ctx, endpoint)
@@ -365,6 +368,7 @@ func doAPIRequest(cmd *cobra.Command, version apiVersion, method, endpoint strin
 	if err != nil {
 		return nil, err
 	}
+	client.SetExtraHeaders(hdr)
 	switch method {
 	case "GET":
 		return client.Get(ctx, endpoint)
@@ -409,15 +413,4 @@ func parseHeaders(raw []string) (http.Header, error) {
 		h.Add(name, strings.TrimSpace(value))
 	}
 	return h, nil
-}
-
-// doAPIRequestWithHeaders is doAPIRequest with extra headers attached to the
-// client for the duration of the call.
-func doAPIRequestWithHeaders(cmd *cobra.Command, version apiVersion, method, endpoint string, body json.RawMessage, hdr http.Header) (json.RawMessage, error) {
-	if len(hdr) == 0 {
-		return doAPIRequest(cmd, version, method, endpoint, body)
-	}
-	restore := api.SetExtraHeaders(hdr)
-	defer restore()
-	return doAPIRequest(cmd, version, method, endpoint, body)
 }
