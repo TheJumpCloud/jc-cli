@@ -548,8 +548,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 378 {
-		t.Errorf("expected 378 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 390 {
+		t.Errorf("expected 390 tools, got %d", len(result.Tools))
 	}
 }
 

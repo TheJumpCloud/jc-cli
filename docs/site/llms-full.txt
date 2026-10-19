@@ -774,23 +774,28 @@ Download the newest published release and replace this binary with it. jc never 
 
 Inspect JumpCloud AI agent identities
 
-AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it.
+AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it. `register` needs a name, an email no other agent uses, and the user id of an activated admin to own it — the spec marks none of the three required and all three are. `update` is genuinely partial: only the fields you pass change. An agent's state is never set by an update; `suspend` stops its credentials working immediately and `activate` puts it back, and both are idempotent. `delete` removes the agent, its credentials and its memberships and cannot be undone, so `suspend` is almost always the right choice for stopping an agent.
 
-**Subcommands:** `list`, `get`, `memberof`, `applications`, `credentials`
+**Subcommands:** `list`, `get`, `memberof`, `applications`, `credentials`, `register`, `update`, `suspend`, `activate`, `delete`
 
 **Flags:**
 
 - `--filter` `<string>` — field:operator:value — name, email or state, with eq or ne
 - `--limit` `<int>` — Return one page of this size instead of every agent
 - `--page-token` `<string>` — Continue from a cursor reported by a previous page
+- `--name` `<string>` — On register/update: the agent's display name
+- `--email` `<string>` — On register/update: the email identifying the agent, unique per org
+- `--owner` `<string>` — On register/update: JumpCloud user id of the owning admin, which must be an activated user
+- `--description` `<string>` — On register/update: free text; "" clears it
+- `--audience` `<string>` — On register/update: an OAuth audience the agent's tokens may target (repeatable)
 
 #### `jc agent-groups`
 
 Inspect JumpCloud AI agent groups
 
-Agent groups are the collections through which AI agents are granted access to applications — and to nothing else: no policies, no commands, no devices, so `associations` has exactly one kind of target and jc supplies it, since the API requires it and the spec does not say so. This half of the area behaves differently from `jc agents` in four ways, all of them the server's: no organization id header is needed, listings page by offset rather than by cursor, --sort works here and is ignored there, and the two accept different filter fields. `members` and `associations` return ids and types with no names, so jc joins the names in from the agent and application catalogs.
+Agent groups are the collections through which AI agents are granted access to applications — and to nothing else: no policies, no commands, no devices, so `associations` has exactly one kind of target and jc supplies it, since the API requires it and the spec does not say so. This half of the area behaves differently from `jc agents` in four ways, all of them the server's: no organization id header is needed, listings page by offset rather than by cursor, --sort works here and is ignored there, and the two accept different filter fields. `members` and `associations` return ids and types with no names, so jc joins the names in from the agent and application catalogs. `update` REPLACES the group: the API requires the name on every update and clears any field it is not given, so jc reads the group first and merges — the opposite of `jc agents update`, and the difference is the server's. Membership and application assignment each go through one endpoint that takes a direction, which is why there are four commands for two operations; each returns an empty body, so jc reads the membership back rather than echoing the request.
 
-**Subcommands:** `list`, `get`, `members`, `associations`
+**Subcommands:** `list`, `get`, `members`, `associations`, `create`, `update`, `delete`, `add-member`, `remove-member`, `assign-app`, `unassign-app`
 
 **Flags:**
 
@@ -798,6 +803,10 @@ Agent groups are the collections through which AI agents are granted access to a
 - `--limit` `<int>` — Maximum groups to return
 - `--sort` `<string>` — Sort field; prefix with - for descending
 - `--target` `<string>` — On associations: the target type, which is application
+- `--name` `<string>` — On create/update: the group's display name, unique per org
+- `--description` `<string>` — On create/update: free text; "" clears it
+- `--agent` `<string>` — On add-member/remove-member: the agent's JumpCloud id
+- `--app` `<string>` — On assign-app/unassign-app: the application's JumpCloud id
 
 ## Resource types
 

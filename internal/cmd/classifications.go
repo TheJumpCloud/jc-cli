@@ -64,6 +64,31 @@ var commandClass = map[string]string{
 	"jc agent-groups members":      ClassReadOnly,
 	"jc agent-groups associations": ClassReadOnly,
 
+	// The lifecycle and membership writes. Ten API operations become twelve
+	// commands, because the two membership endpoints each serve both
+	// directions through an "op" field — there is no DELETE on either.
+	//
+	// suspend is destructive and activate is mutating, on the precedent of
+	// `jc users lock` and `jc users unlock`: suspending an agent stops its
+	// credentials working immediately, so the harm is to the work in flight
+	// even though the record is untouched and the change is reversible.
+	//
+	// The two remove verbs are destructive for the same reason `jc groups
+	// remove-member` is: revoking access interrupts whatever was using it.
+	"jc agents register": ClassMutating,
+	"jc agents update":   ClassMutating,
+	"jc agents suspend":  ClassDestructive,
+	"jc agents activate": ClassMutating,
+	"jc agents delete":   ClassDestructive,
+
+	"jc agent-groups create":        ClassMutating,
+	"jc agent-groups update":        ClassMutating,
+	"jc agent-groups delete":        ClassDestructive,
+	"jc agent-groups add-member":    ClassMutating,
+	"jc agent-groups remove-member": ClassDestructive,
+	"jc agent-groups assign-app":    ClassMutating,
+	"jc agent-groups unassign-app":  ClassDestructive,
+
 	// identity-risk — risk detections. Reads, plus one write that cannot be
 	// undone: the API refuses every change to a detection once it is
 	// resolved, including reopening it, so resolve is classed destructive

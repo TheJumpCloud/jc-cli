@@ -58,6 +58,11 @@ by the call that creates it.`,
 		newAgentsMemberOfCmd(),
 		newAgentsApplicationsCmd(),
 		newAgentsCredentialsCmd(),
+		newAgentsRegisterCmd(),
+		newAgentsUpdateCmd(),
+		newAgentsSuspendCmd(),
+		newAgentsActivateCmd(),
+		newAgentsDeleteCmd(),
 	)
 	return cmd
 }
@@ -96,6 +101,13 @@ two accept different filter fields.`,
 		newAgentGroupsGetCmd(),
 		newAgentGroupsMembersCmd(),
 		newAgentGroupsAssociationsCmd(),
+		newAgentGroupsCreateCmd(),
+		newAgentGroupsUpdateCmd(),
+		newAgentGroupsDeleteCmd(),
+		newAgentGroupsAddMemberCmd(),
+		newAgentGroupsRemoveMemberCmd(),
+		newAgentGroupsAssignAppCmd(),
+		newAgentGroupsUnassignAppCmd(),
 	)
 	return cmd
 }
