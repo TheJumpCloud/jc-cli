@@ -1278,7 +1278,9 @@ func BuildCommandManifest() CommandManifest {
 					"credentials create", "credentials delete", "credentials archive",
 					"credentials unarchive", "credentials clone",
 					"folders create", "folders rename", "folders delete", "folders add-items",
-					"websites create", "websites delete", "websites clone"},
+					"websites create", "websites delete", "websites clone",
+					"credentials secret", "credentials secret-v2",
+					"credentials with-secret", "credentials mfa-code"},
 			},
 			{
 				Path:        "jc alerts",

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -504,4 +505,178 @@ var HeldBackWrites = map[string]string{
 
 	"POST /websites/{id}/links":                        "link bodies unobserved; a website with no linked credentials answers 400 with an empty message, so the failure shape is not readable either.",
 	"POST /websites/{id}/links/{linkId}/confirmations": "depends on a link, which cannot be created yet.",
+}
+
+// --- Secrets --------------------------------------------------------------
+//
+// The four endpoints that return the thing the vault exists to hold. They are
+// CLI-only and deliberately absent from internal/mcp: the MCP server's
+// per-tool destructive classification and step-up gate are about mutation,
+// and neither helps here, because reading a secret is not a mutation and the
+// damage is done the moment the value reaches a transcript. An agent that can
+// read every credential in an organization is not a capability this CLI
+// should hand out, whatever the tool description says.
+
+const (
+	credentialSecretSuffix     = "/secret"
+	credentialSecretV2Suffix   = "/secret/v2"
+	credentialWithSecretSuffix = "/with-secret"
+	credentialMFACodeSuffix    = "/mfa-code"
+)
+
+func CredentialSecret(id string) string   { return CredentialEndpoint(id) + credentialSecretSuffix }
+func CredentialSecretV2(id string) string { return CredentialEndpoint(id) + credentialSecretV2Suffix }
+func CredentialWithSecret(id string) string {
+	return CredentialEndpoint(id) + credentialWithSecretSuffix
+}
+func CredentialMFACode(id string) string { return CredentialEndpoint(id) + credentialMFACodeSuffix }
+
+// secretFieldNames are the fields each secret envelope may carry, in the
+// order a reader is most likely to want them. The two endpoints disagree
+// about names for the same thing — /secret calls it "password" and
+// /secret/v2 calls it "pass" — so both are listed and whichever is present
+// wins.
+var secretFieldNames = []string{
+	"password", "pass", // /secret vs /secret/v2
+	"secureNoteContent",
+	"privateKey", "publicKey", "passphrase",
+	"connectionString", "connectionStringValue",
+	"mfaKey", "twoFaSecret",
+	"cardNumber", "securityCode",
+}
+
+// Secret is what a secret read returned, and crucially whether the caller
+// was allowed to see it.
+type Secret struct {
+	// Fields holds the NON-EMPTY values, which is what lets a caller say
+	// which secrets a credential holds without printing any of them.
+	Fields map[string]string
+	// CanView is the server's own answer to "may this caller see the
+	// values". Only /secret/v2 reports it.
+	CanView bool
+	// CanViewKnown is false for /secret, which does not report it — and
+	// that distinction is the whole point of this type. See below.
+	CanViewKnown bool
+}
+
+// Held reports whether any value came back.
+func (s Secret) Held() bool { return len(s.Fields) > 0 }
+
+// Withheld reports whether the server said no. A caller must check this
+// before concluding a credential has no secret.
+func (s Secret) Withheld() bool { return s.CanViewKnown && !s.CanView }
+
+// Ambiguous reports the case that matters most: nothing came back, and the
+// endpoint does not say whether that is because there is nothing or because
+// the caller may not see it.
+//
+// /credentials/{id}/secret answers 200 with every field an EMPTY STRING when
+// the caller is not permitted to view them. There is no flag, no error and no
+// difference from a credential that genuinely holds nothing. Confirmed on
+// 2026-10-14 against a credential created seconds earlier whose access policy
+// granted the caller Manage, View Detail and Connect: /secret returned empty
+// strings and /secret/v2 returned the same values with canView false.
+//
+// So a surface reading /secret must never report "this credential holds no
+// secret". It cannot know that. Telling an administrator a credential has no
+// password when they simply cannot see it is the worst version of this
+// area's recurring defect.
+func (s Secret) Ambiguous() bool { return !s.Held() && !s.CanViewKnown }
+
+// ParseSecret pulls the populated secret fields out of either envelope.
+//
+// /secret nests under "secret"; /secret/v2 nests under "result", renames half
+// the fields, and adds canView.
+func ParseSecret(raw json.RawMessage) (Secret, error) {
+	var env map[string]json.RawMessage
+	if err := decode(raw, &env, "credential secret"); err != nil {
+		return Secret{}, err
+	}
+	inner := env["secret"]
+	if inner == nil {
+		inner = env["result"]
+	}
+	if inner == nil {
+		return Secret{}, fmt.Errorf("the secret response has neither a \"secret\" nor a " +
+			"\"result\" field; the envelope has changed and no value will be read from it")
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(inner, &fields); err != nil {
+		return Secret{}, fmt.Errorf("decoding the secret payload: %w", err)
+	}
+
+	result := Secret{Fields: map[string]string{}}
+	if cv, ok := fields["canView"].(bool); ok {
+		result.CanView, result.CanViewKnown = cv, true
+	}
+	out := result.Fields
+	for _, name := range secretFieldNames {
+		v, ok := fields[name]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok || s == "" {
+			continue
+		}
+		out[name] = s
+	}
+	return result, nil
+}
+
+// SecretFieldOrder returns the populated field names in a stable order, so
+// listing what a credential holds does not vary between runs.
+func SecretFieldOrder(fields map[string]string) []string {
+	out := make([]string, 0, len(fields))
+	for _, name := range secretFieldNames {
+		if _, ok := fields[name]; ok {
+			out = append(out, name)
+		}
+	}
+	// Anything the server added that this package does not know about still
+	// gets listed — an unknown secret field is worth surfacing, not hiding.
+	known := map[string]bool{}
+	for _, n := range secretFieldNames {
+		known[n] = true
+	}
+	extra := make([]string, 0)
+	for n := range fields {
+		if !known[n] {
+			extra = append(extra, n)
+		}
+	}
+	sort.Strings(extra)
+	return append(out, extra...)
+}
+
+// MFACodeUnavailable recognises the refusal that means the caller lacks the
+// Connect permission, which is the one the MFA code needs — not View Detail.
+func MFACodeUnavailable(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "permissions Connect")
+}
+
+// HeldBackSecretOps records the five Excel import/export operations and why
+// each is not implemented.
+var HeldBackSecretOps = map[string]string{
+	"POST /credentials/excel/exports": "the declared response is an empty object, and live it " +
+		"returns {} — so where the exported file goes is unobservable from the API. A command " +
+		"that produces no locatable output cannot be shipped. Find out how the console " +
+		"retrieves the file before implementing.",
+
+	"POST /websites/excel/exports": "same empty response, same reason.",
+
+	"POST /credentials/excel/extract-columns": "needs a binary request body — it answers " +
+		"400 \"file content is required\" to anything else — and jc api validates its --data " +
+		"as JSON, so this could not be probed. It is the harmless half of the import flow " +
+		"(upload a spreadsheet, get back the detected columns and a fileToken) and is useless " +
+		"without the half below.",
+
+	"POST /credentials/excel/import": "same binary body, and it creates credentials in bulk " +
+		"from a spreadsheet in JumpCloud's own column layout. Unprobed, and the failure mode " +
+		"is credentials appearing in a vault.",
+
+	"POST /credentials/excel/import-custom": "takes the fileToken from extract-columns plus a " +
+		"column_mapping, and creates credentials in bulk. Rejects an empty mapping with " +
+		"\"column_mapping is required\", which is as far as it could be taken without being " +
+		"able to upload a file.",
 }

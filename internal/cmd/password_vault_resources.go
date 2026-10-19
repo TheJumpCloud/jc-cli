@@ -236,6 +236,7 @@ this area.`,
 
 	cmd.AddCommand(vaultColumnsCmd("credential", passwordvault.CredentialColumnsPath))
 	cmd.AddCommand(newPWVCredentialWriteCmds()...)
+	cmd.AddCommand(newPWVSecretCmds()...)
 	return cmd
 }
 
