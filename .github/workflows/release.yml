@@ -155,6 +155,14 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
+        with:
+          # PINNED, and it matters: the installer's default version decides
+          # which bundle FORMAT `--bundle` writes. cosign 2.x writes the
+          # legacy {base64Signature, cert, rekorBundle} shape, which is what
+          # every documented verify command here expects. Letting the default
+          # drift to 3.x would change the published artifact's shape with no
+          # commit in this repo, and silently break anyone verifying.
+          cosign-release: v2.5.2
 
       - name: Sign checksums.txt
         # One signature covers everything: it signs checksums.txt, and
@@ -167,7 +175,7 @@ jobs:
         # transparency log, which is what makes a later forgery detectable.
         run: |
           cosign sign-blob --yes \
-            --bundle dist/checksums.txt.sigstore.json \
+            --bundle dist/checksums.txt.cosign.bundle \
             dist/checksums.txt
 
       - name: Verify the signature we just made
@@ -180,7 +188,7 @@ jobs:
         # cannot drift if this file is renamed or the branch changes.
         run: |
           cosign verify-blob \
-            --bundle dist/checksums.txt.sigstore.json \
+            --bundle dist/checksums.txt.cosign.bundle \
             --certificate-identity "https://github.com/${GITHUB_WORKFLOW_REF}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             dist/checksums.txt
@@ -200,4 +208,4 @@ jobs:
             dist/*.tar.gz \
             dist/*.zip \
             dist/checksums.txt \
-            dist/checksums.txt.sigstore.json
+            dist/checksums.txt.cosign.bundle
