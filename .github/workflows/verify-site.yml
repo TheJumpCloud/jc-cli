@@ -6,9 +6,29 @@ name: Verify site
 # tells them how to fix it. Complements the deploy-site workflow, which
 # regenerates at deploy time but only after merge.
 
+
+# A base-branch change fires `edited`, and nothing else. When a stacked PR's
+# parent merges, GitHub retargets the child automatically — which changes the
+# PR but creates no commit, so none of opened/synchronize/reopened fire and
+# required checks sit in "Expected — waiting for status to be reported"
+# forever, blocking a merge on a run that will never start. Recovering it
+# meant closing and reopening the PR by hand, which happened four times in
+# one afternoon during the KLA-485 merge queue.
+#
+# `edited` also fires on title and body edits, so this re-runs on those too.
+# That is deliberate. The obvious optimisation — guard the job on
+# github.event.changes.base, which is populated only when the base moved —
+# makes the job SKIP on a title edit, and a skipped job still produces a check
+# run. GitHub counts a skipped check as satisfying a required status check, so
+# the guard would let the last event on a PR replace a real test result with a
+# skip that passes. These checks are not required today, which makes that
+# latent rather than live, but it is a trap to leave for whoever makes them
+# required. A wasted five-minute run on a title edit is the cheaper mistake,
+# and `concurrency: cancel-in-progress` bounds it.
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'internal/schema/**'
       - 'cmd/sitegen/**'
