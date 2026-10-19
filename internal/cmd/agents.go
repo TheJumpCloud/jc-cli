@@ -425,7 +425,12 @@ agent uses to reach something else.
 
 Listing them reveals no secret. ` + agents.SecretIsShowOnce + `.`,
 	}
-	cmd.AddCommand(newAgentsCredentialsListCmd())
+	cmd.AddCommand(
+		newAgentsCredentialsListCmd(),
+		newAgentsCredentialsCreateCmd(),
+		newAgentsCredentialsUpdateCmd(),
+		newAgentsCredentialsDeleteCmd(),
+	)
 	return cmd
 }
 

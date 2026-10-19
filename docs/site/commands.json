@@ -435,7 +435,7 @@
     {
       "path": "jc agents",
       "description": "Inspect JumpCloud AI agent identities",
-      "long": "AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it. `register` needs a name, an email no other agent uses, and the user id of an activated admin to own it — the spec marks none of the three required and all three are. `update` is genuinely partial: only the fields you pass change. An agent's state is never set by an update; `suspend` stops its credentials working immediately and `activate` puts it back, and both are idempotent. `delete` removes the agent, its credentials and its memberships and cannot be undone, so `suspend` is almost always the right choice for stopping an agent.",
+      "long": "AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it. `register` needs a name, an email no other agent uses, and the user id of an activated admin to own it — the spec marks none of the three required and all three are. `update` is genuinely partial: only the fields you pass change. An agent's state is never set by an update; `suspend` stops its credentials working immediately and `activate` puts it back, and both are idempotent. `delete` removes the agent, its credentials and its memberships and cannot be undone, so `suspend` is almost always the right choice for stopping an agent. `credentials create` is the only call in this API that returns a client secret, and it returns it ONCE — so it requires an explicit destination (--out, --stdout or --clipboard), checks that destination is usable before creating anything, and never prints the secret or its length. An agent can hold only one credential, so rotation is delete-then-create and the agent cannot authenticate in between. A credential update can change only its token endpoint auth method: the API accepts a status or lifetime change and discards it, so jc refuses those rather than reporting a success that did not happen. These three writes are CLI-only and have no MCP tools.",
       "category": "Other",
       "subcommands": [
         "list",
@@ -489,6 +489,31 @@
           "name": "audience",
           "type": "string",
           "description": "On register/update: an OAuth audience the agent's tokens may target (repeatable)"
+        },
+        {
+          "name": "lifetime",
+          "type": "int",
+          "description": "On credentials create: days until expiry — 0, 30, 60, 90 or 365, where 0 means never"
+        },
+        {
+          "name": "out",
+          "type": "string",
+          "description": "On credentials create: write the one-shot secret to this new file, mode 0600"
+        },
+        {
+          "name": "stdout",
+          "type": "bool",
+          "description": "On credentials create: print the secret on stdout, for piping into a secret manager"
+        },
+        {
+          "name": "clipboard",
+          "type": "bool",
+          "description": "On credentials create: copy the secret to the clipboard and print nothing"
+        },
+        {
+          "name": "auth-method",
+          "type": "string",
+          "description": "On credentials update: client_secret_basic or client_secret_post — the only field an update can change"
         }
       ]
     },
