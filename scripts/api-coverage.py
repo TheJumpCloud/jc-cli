@@ -99,6 +99,18 @@ AREA_TO_COMMAND = {
     "Microsoft MDM": "windows-mdm",
     "Object Storage": "apple-mdm",
     "fde": "devices",
+    # Surfaces that appeared in the spec after July 2026 and have since
+    # shipped command groups. Without these the next regeneration reports
+    # them as hard coverage gaps, which is the opposite of true.
+    #
+    # The keys are the tag names as the published reference spells them
+    # (docs.jumpcloud.com/new/reference #console/tag/<Tag>), with hyphens
+    # read back as spaces. Worth confirming against index.yaml on the next
+    # run: a key that does not match a tag silently maps nothing.
+    "Identity Risk": "identity-risk",
+    "Password Vault": "password-vault",
+    "Agents": "agents",
+    "Agent Groups": "agent-groups",
 }
 
 # Areas intentionally out of scope for the CLI coverage program (needs a

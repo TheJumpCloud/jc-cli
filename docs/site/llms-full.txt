@@ -770,6 +770,35 @@ Download the newest published release and replace this binary with it. jc never 
 - `--force` `<bool>` — Replace without confirming
 - `--plan` `<bool>` — Show what would happen and download nothing
 
+#### `jc agents`
+
+Inspect JumpCloud AI agent identities
+
+AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it.
+
+**Subcommands:** `list`, `get`, `memberof`, `applications`, `credentials`
+
+**Flags:**
+
+- `--filter` `<string>` — field:operator:value — name, email or state, with eq or ne
+- `--limit` `<int>` — Return one page of this size instead of every agent
+- `--page-token` `<string>` — Continue from a cursor reported by a previous page
+
+#### `jc agent-groups`
+
+Inspect JumpCloud AI agent groups
+
+Agent groups are the collections through which AI agents are granted access to applications — and to nothing else: no policies, no commands, no devices, so `associations` has exactly one kind of target and jc supplies it, since the API requires it and the spec does not say so. This half of the area behaves differently from `jc agents` in four ways, all of them the server's: no organization id header is needed, listings page by offset rather than by cursor, --sort works here and is ignored there, and the two accept different filter fields. `members` and `associations` return ids and types with no names, so jc joins the names in from the agent and application catalogs.
+
+**Subcommands:** `list`, `get`, `members`, `associations`
+
+**Flags:**
+
+- `--filter` `<string>` — field:operator:value — name or type, with eq or ne
+- `--limit` `<int>` — Maximum groups to return
+- `--sort` `<string>` — Sort field; prefix with - for descending
+- `--target` `<string>` — On associations: the target type, which is application
+
 ## Resource types
 
 Every resource has a JSON schema available via `jc schema <resource>`:
@@ -777,6 +806,8 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `access-requests`
 - `ad`
 - `admins`
+- `agent-groups`
+- `agents`
 - `alerts`
 - `app-templates`
 - `apple-mdm`

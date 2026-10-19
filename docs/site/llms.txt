@@ -97,6 +97,8 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 ### Other
 
 - `jc upgrade` — Install the newest jc release
+- `jc agents` — Inspect JumpCloud AI agent identities
+- `jc agent-groups` — Inspect JumpCloud AI agent groups
 
 ## See also
 

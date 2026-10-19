@@ -47,6 +47,53 @@ func TestNoSecretReadingTools(t *testing.T) {
 	}
 }
 
+// TestNoCredentialIssuingTools guards the same decision for AI agent
+// credentials, where the shape of the risk is inverted.
+//
+// A Password Vault secret leaks on a READ. An agent credential leaks on a
+// WRITE: POST /agents/{id}/inbound-credentials returns a clientSecret exactly
+// once, and no read returns it afterwards. So the dangerous call here is a
+// creation — which classifies as mutating, gets a plan and a confirmation,
+// and still puts a live secret into the transcript when it succeeds. The
+// gates are about undoing a change; nothing undoes a disclosed secret.
+//
+// Listing credentials is fine and is exposed: that endpoint returns a client
+// id, type, status and timestamps and no secret, verified against every agent
+// on a live tenant. So this cannot ban the word "credential" — it bans
+// credential tools that ISSUE, which is the subset that returns a value.
+//
+// Written before any such tool exists, so the three credential writes cannot
+// arrive in MCP by accident later.
+func TestNoCredentialIssuingTools(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	issuing := []string{"create", "add", "new", "issue", "rotate", "regenerate", "renew", "reset", "replace"}
+
+	for _, tool := range res.Tools {
+		lower := strings.ToLower(tool.Name)
+		if !strings.Contains(lower, "credential") {
+			continue
+		}
+		for _, verb := range issuing {
+			if !strings.Contains(lower, verb) {
+				continue
+			}
+			t.Errorf("tool %q issues a credential.\n\n"+
+				"The call that creates an agent credential is the only call that ever "+
+				"returns its clientSecret, so a successful tool invocation puts a live "+
+				"secret into the transcript — and it classifies as mutating, which means "+
+				"the plan and the confirmation both pass it. These writes are CLI-only on "+
+				"purpose; see internal/cmd/agents_credentials.go. If this is a false "+
+				"positive, rename the tool rather than relaxing this test.", tool.Name)
+		}
+	}
+}
+
 // TestNoToolDescribesReadingASecret catches the same thing arriving under an
 // innocuous name — a tool called password_vault_credential_detail whose
 // description offers to return the password.
