@@ -84,9 +84,30 @@ type agentAppAssignInput struct {
 	Execute       bool   `json:"execute,omitempty" jsonschema:"Set to true to apply. Without this the tool returns a plan."`
 }
 
+// refuseReadOnly is the gate on Options.ReadOnly, which disables every
+// mutation tool this server offers.
+//
+// It is checked on execute rather than on entry, because producing a plan
+// writes nothing and is useful in a read-only server: an operator can still
+// ask what a change WOULD do. The apply is what is refused.
+//
+// Centralised deliberately. The first version of this file omitted the check
+// on all twelve write tools — a background security review caught it — and
+// twelve copies of an `if` is twelve chances to leave one out again.
+func (s *Server) refuseReadOnly(tool string, execute bool) *mcp.CallToolResult {
+	if s.readOnly && execute {
+		return errorResult("server is in read-only mode; " + tool +
+			" with execute=true is not allowed")
+	}
+	return nil
+}
+
 func (s *Server) registerAgentsWriteTools() {
 	addTypedTool(s, "agent_register", "Create an AI agent identity. Requires a name, an email that no other agent in the organization uses, and the JumpCloud USER id of an activated admin to own it — the API's own spec marks none of the three as required, but all three are. A new agent starts active, belongs to no group, and cannot authenticate until a credential is created for it (which the CLI does; there is no tool for it). Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentRegisterInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_register", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			body, err := agents.BuildAgentCreate(agents.AgentCreate{
 				Name: args.Name, Email: args.Email, OwnerID: args.OwnerID,
 				Description: args.Description, AllowedAudiences: args.Audiences,
@@ -103,6 +124,9 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_update", "Change an AI agent's name, email, owner, description or allowed audiences. ONLY THE FIELDS YOU PASS ARE CHANGED — this endpoint is genuinely partial, unlike agent_group_update, which replaces the group. An agent's STATE cannot be changed here: use agent_suspend or agent_activate. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentUpdateInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_update", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			if !agents.IsObjectID(args.AgentID) {
 				return errorResult(agents.ErrNotObjectID("agent", args.AgentID).Error()), nil, nil
 			}
@@ -120,18 +144,27 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_suspend", "Suspend an AI agent so its credentials stop working immediately. This is the kill switch for a misbehaving agent: anything it is doing stops. It is REVERSIBLE with agent_activate, and suspending an already-suspended agent changes nothing, so a retry is safe. Prefer this over agent_delete when the goal is to stop an agent rather than to remove it. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentActionInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_suspend", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentStateTool(ctx, args, "suspend", "suspended")
 		},
 	)
 
 	addTypedTool(s, "agent_activate", "Return a suspended AI agent to service, so its credentials work again. Activating an already-active agent changes nothing. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentActionInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_activate", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentStateTool(ctx, args, "activate", "active")
 		},
 	)
 
 	addTypedTool(s, "agent_delete", "Delete an AI agent identity. THIS CANNOT BE UNDONE: the agent, its credentials and its group memberships all go. If the goal is to stop the agent working, agent_suspend does that reversibly and is almost always the right choice instead. The agent's groups and the applications they grant are not affected — only this agent's membership in them. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentActionInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_delete", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			if !agents.IsObjectID(args.AgentID) {
 				return errorResult(agents.ErrNotObjectID("agent", args.AgentID).Error()), nil, nil
 			}
@@ -146,6 +179,9 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_group_create", "Create an AI agent group — the collection through which agents are granted access to applications. Only a name is required, and group names are unique within the organization. A new group has no members and grants nothing until it is associated with an application. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentGroupCreateInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_create", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			body, err := agents.BuildGroupCreate(args.Name, args.Description)
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
@@ -159,6 +195,9 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_group_update", "Rename an AI agent group or change its description. THIS ENDPOINT REPLACES THE GROUP: the API requires the name on every update and clears any field it is not given, so this tool reads the group first and merges the change onto what is already there. That is the opposite of agent_update, which is partial — the difference is the server's. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentGroupUpdateInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_update", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			if !agents.IsObjectID(args.GroupID) {
 				return errorResult(agents.ErrNotObjectID("agent group", args.GroupID).Error()), nil, nil
 			}
@@ -190,6 +229,9 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_group_delete", "Delete an AI agent group. THIS CANNOT BE UNDONE, and every agent in the group loses the access the group granted. The agents themselves are NOT deleted — nothing cascades. Read agent_group_members first to see who is affected. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentGroupActionInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_delete", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			if !agents.IsObjectID(args.GroupID) {
 				return errorResult(agents.ErrNotObjectID("agent group", args.GroupID).Error()), nil, nil
 			}
@@ -204,24 +246,36 @@ func (s *Server) registerAgentsWriteTools() {
 
 	addTypedTool(s, "agent_group_add_member", "Add an AI agent to a group, granting it everything the group is associated with. Adding an agent that is already in the group is REFUSED rather than ignored, so this is not idempotent and a retry after a timeout can report a failure for a change that already took effect. The membership is read back afterwards, because the write itself returns an empty body. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentMembershipInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_add_member", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentMembershipTool(ctx, args.GroupID, args.AgentID, agents.MemberTypeAgent, agents.OpAdd, args.Execute)
 		},
 	)
 
 	addTypedTool(s, "agent_group_remove_member", "Remove an AI agent from a group, revoking everything the group granted it. The agent is not deleted and keeps any access it has through other groups. The membership is read back afterwards. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentMembershipInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_remove_member", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentMembershipTool(ctx, args.GroupID, args.AgentID, agents.MemberTypeAgent, agents.OpRemove, args.Execute)
 		},
 	)
 
 	addTypedTool(s, "agent_group_assign_app", "Associate an AI agent group with an application, granting every agent in the group access to it. Applications are the only thing an agent group can be associated with. The association is read back afterwards. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentAppAssignInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_assign_app", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentMembershipTool(ctx, args.GroupID, args.ApplicationID, agents.AssociationTargetApplication, agents.OpAdd, args.Execute)
 		},
 	)
 
 	addTypedTool(s, "agent_group_unassign_app", "Remove an AI agent group's association with an application, revoking it for every agent in the group. The association is read back afterwards. Returns a plan unless execute is true.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args agentAppAssignInput) (*mcp.CallToolResult, any, error) {
+			if res := s.refuseReadOnly("agent_group_unassign_app", args.Execute); res != nil {
+				return res, nil, nil
+			}
 			return agentMembershipTool(ctx, args.GroupID, args.ApplicationID, agents.AssociationTargetApplication, agents.OpRemove, args.Execute)
 		},
 	)
