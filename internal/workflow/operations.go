@@ -237,7 +237,7 @@ func min3(a, b, c int) int {
 var pathParamPattern = regexp.MustCompile(`\{(\w+)\}`)
 
 // PathParams returns the placeholder names an operation's path requires, in
-// the order they appear. 509 of the 732 catalogued operations take at least
+// the order they appear. 602 of the 894 catalogued operations take at least
 // one, and the names are not uniform — id, user_id, group_id, UUID,
 // provider_id — which is exactly why supplying the wrong one is easy.
 func (o Operation) PathParams() []string {
