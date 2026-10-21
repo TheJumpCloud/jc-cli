@@ -459,7 +459,18 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		// Policy Templates
 		"policy_templates_list", "policy_templates_get",
 		// Apple MDM
-		"apple_mdm_list", "apple_mdm_get", "apple_mdm_create", "apple_mdm_update", "apple_mdm_delete",
+		"apple_mdm_list",
+		"apple_mdm_ade_tokens_list",
+		"apple_mdm_ade_token_get",
+		"apple_mdm_ade_tokens_stats",
+		"apple_mdm_ade_token_org_names",
+		"apple_mdm_ade_settings_list",
+		"apple_mdm_ade_settings_get",
+		"apple_mdm_abm_devices_list",
+		"apple_mdm_background_tasks_list",
+		"apple_mdm_adue_get",
+		"apple_mdm_adue_config",
+		"apple_mdm_adue_validate", "apple_mdm_get", "apple_mdm_create", "apple_mdm_update", "apple_mdm_delete",
 		"apple_mdm_enrollment_profiles", "apple_mdm_devices",
 		// Policy Groups
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
@@ -548,8 +559,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 390 {
-		t.Errorf("expected 390 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 401 {
+		t.Errorf("expected 401 tools, got %d", len(result.Tools))
 	}
 }
 

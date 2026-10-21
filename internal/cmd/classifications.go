@@ -256,6 +256,22 @@ var commandClass = map[string]string{
 	"jc apple-mdm enrollment-profiles": ClassReadOnly,
 	"jc apple-mdm get":                 ClassReadOnly,
 	"jc apple-mdm list":                ClassReadOnly,
+
+	// ADE / ABM / ADUE reads (KLA-485). All read-only: every one of these is
+	// a GET, and none returns a secret. The two secret-bearing reads in this
+	// area -- recovery lock password and device lock PIN -- are deliberately
+	// not here, and ship separately.
+	"jc apple-mdm abm-devices":          ClassReadOnly,
+	"jc apple-mdm ade-settings get":     ClassReadOnly,
+	"jc apple-mdm ade-settings list":    ClassReadOnly,
+	"jc apple-mdm ade-tokens get":       ClassReadOnly,
+	"jc apple-mdm ade-tokens list":      ClassReadOnly,
+	"jc apple-mdm ade-tokens org-names": ClassReadOnly,
+	"jc apple-mdm ade-tokens stats":     ClassReadOnly,
+	"jc apple-mdm adue config":          ClassReadOnly,
+	"jc apple-mdm adue get":             ClassReadOnly,
+	"jc apple-mdm adue validate":        ClassReadOnly,
+	"jc apple-mdm background-tasks":     ClassReadOnly,
 	// payloads compose: --create-policy turns this into a JC POST
 	// (same wire shape as create-policy), so worst-case capability is
 	// mutating, not internal. Cursor Bugbot PR #62 catch.

@@ -461,9 +461,17 @@ var Resources = map[string]ResourceSchema{
 		NameField:     "name",
 	},
 	"apple-mdm": {
-		Resource:      "apple-mdm",
-		APIVersion:    "v2",
-		Verbs:         []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices"},
+		Resource:   "apple-mdm",
+		APIVersion: "v2",
+		// `payloads` was already missing here before the ADE verbs were added;
+		// included now rather than leaving the list arbitrarily half-true.
+		// Only create/update/delete are consulted behaviourally (the TUI uses
+		// them to decide which actions to offer), so the read verbs are
+		// discovery surface for `jc schema resources` and the home-screen
+		// count.
+		Verbs: []string{"list", "get", "create", "update", "delete",
+			"enrollment-profiles", "devices", "payloads",
+			"ade-tokens", "ade-settings", "abm-devices", "background-tasks", "adue"},
 		DefaultFields: []string{"id", "name", "orgName", "defaultIosUserEnrollmentDeviceGroupID"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique Apple MDM configuration identifier"},
