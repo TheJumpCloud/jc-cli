@@ -12,10 +12,15 @@ import (
 
 // operationsJSON is the operationId index generated from JumpCloud's OpenAPI
 // spec by scripts/gen-operation-index.py. Workflow DSL invokes JumpCloud's own
-// API by operationId, and nothing server-side validates that id at create
-// time, so a typo yields a workflow that only fails once it runs. Embedding
-// the index lets validation catch it at author time and lets `explain` render
-// each step as METHOD /path.
+// API by operationId, and the server DOES check that id at create time --
+// POST /workflows answers 400 "operation not found in API specification".
+// Embedding the index is what lets validation answer before the round trip,
+// without creating anything on the tenant, and name the id you probably meant;
+// it also lets `explain` render each step as METHOD /path.
+//
+// The consequence of that ordering is that a stale index is worse than none:
+// it rejects ids the API would have accepted. See the package doc for what the
+// API checks and what it does not.
 //
 //go:embed operations.json
 var operationsJSON []byte

@@ -81,10 +81,17 @@ func (r Result) Err() error {
 }
 
 // Validate checks a DSL document against the rules JumpCloud's Workflows DSL
-// guide documents, plus the operationId index. It is deliberately local: the
-// API accepts a malformed DSL and fails at run time, so catching problems here
-// is the difference between an error at author time and a workflow that
-// silently never works.
+// guide documents, plus the operationId index.
+//
+// It is deliberately local, but not because the API is permissive -- that was
+// the original premise and probing it proved otherwise. POST /workflows
+// rejects an unknown operationId, a missing required path parameter, an Expr
+// expression that will not compile (with line and column), and a workflow
+// whose execution role lacks a needed scope. Being local buys three things
+// instead: an answer before the round trip and without creating anything on
+// the tenant, a "did you mean" the API does not offer, and the checks the API
+// genuinely skips -- event types are accepted unvalidated, so a typo there
+// yields a trigger that silently never fires.
 func ValidateRaw(raw json.RawMessage) Result {
 	d, err := ParseDSL(raw)
 	if err != nil {
