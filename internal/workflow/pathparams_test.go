@@ -181,7 +181,7 @@ func TestSimulateAndValidateAgreeOnPathParams(t *testing.T) {
 }
 
 // The correct document must still plan, or the check has just broken simulate
-// for every workflow that uses a path parameter — which is 509 of 732
+// for every workflow that uses a path parameter — which is 602 of 894
 // operations.
 func TestSimulate_CorrectPathParamsStillPlans(t *testing.T) {
 	d, err := ParseDSL(json.RawMessage(`{"schedule":{"on":{"one":{"with":{"source":"external"}}}},
@@ -206,7 +206,7 @@ func TestSimulate_CorrectPathParamsStillPlans(t *testing.T) {
 // knew of, and three (a, b, d) are forms observed succeeding in real runs
 // earlier in this project — so these are known-good documents, not guesses.
 //
-// This is the direction that matters. 509 of 732 catalogued operations take a
+// This is the direction that matters. 602 of 894 catalogued operations take a
 // path parameter, so a rule that over-fires breaks simulate for most real
 // workflows: rejecting a correct document is a worse defect than the one this
 // rule was added to catch.
