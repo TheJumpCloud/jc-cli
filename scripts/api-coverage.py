@@ -183,19 +183,26 @@ def main():
     if missing_ops:
         out.append(f"\n**{missing_ops} operations** across **{len(missing)} areas** remain to be covered.\n")
     else:
-        # 100% area-level coverage is a real milestone and also an easy thing to
-        # misread. Every area has a command group; that is NOT the same as every
-        # operation being exposed, and the difference is deliberate in three
-        # areas. Say so here rather than leaving the number to speak for itself.
-        out.append(
-            "\n**Every in-scope area has a command group.**\n\n"
-            "Area-level, not per-operation. Three areas are deliberately partial, "
-            "and the reason is recorded in each:\n\n"
-            "| Area | Shipped | Held back, and why |\n"
-            "|---|---|---|\n"
-            "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
-            "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
-            "| Workday Import | 2 of 9 | no tenant available has a Workday integration, so the other endpoints' response shapes have never been observed |\n")
+        out.append("\n**Every in-scope area has a command group.**\n")
+
+    # Area coverage is NOT per-operation coverage, and the difference is
+    # deliberate in four areas.
+    #
+    # This table used to be emitted only in the zero-gap branch, on the
+    # reasoning that 100% was the number most likely to be misread. That got
+    # it backwards: when the spec grew and a new uncovered area appeared, the
+    # whole record of what is deliberately partial silently disappeared from
+    # the document — exactly when the picture had become harder to read, not
+    # easier. The caveat belongs with the number in every case.
+    out.append(
+        "Area-level, not per-operation. Four areas are deliberately partial, "
+        "and the reason is recorded in each:\n\n"
+        "| Area | Shipped | Held back, and why |\n"
+        "|---|---|---|\n"
+        "| Password Vault | reads and most writes | 22 ops held back, the folder writes among them |\n"
+        "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
+        "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
+        "| Workday Import | 2 of 9 | no tenant available has a Workday integration, so the other endpoints' response shapes have never been observed |\n")
 
     out.append("## Covered areas (command group exists)\n")
     out.append("| Ops | Resource area | `jc` command |\n|---:|---|---|")
