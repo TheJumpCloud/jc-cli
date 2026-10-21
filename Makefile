@@ -5,7 +5,7 @@ BIN      := jc
 DIST     := dist
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release site verify-site
+.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release site verify-site refresh-generated verify-generated
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jc
@@ -101,3 +101,52 @@ verify-site:
 		done && \
 		rm -rf $$tmp && \
 		echo "verify-site: docs/site/ is up to date"
+
+# The two OpenAPI documents every spec-derived artifact in this repo comes
+# from. They are published and stable; the download button in the docs UI
+# hands you a `blob:` URL instead, which is a browser-local object valid only
+# inside the tab that made it, so it cannot be used from a script.
+SPEC_CONSOLE  ?= https://docs.jumpcloud.com/new/console/index.yaml
+SPEC_INSIGHTS ?= https://docs.jumpcloud.com/new/api/insights/directory/index.yaml
+
+# Rebuild the spec-derived artifacts in place, from the published specs.
+#
+# Neither generated file carries a timestamp, deliberately: a date would make
+# every regeneration a diff and `verify-generated` below could no longer tell
+# "the spec moved" from "someone reran the script".
+refresh-generated:
+	@tmp=$$(mktemp -d) && \
+		curl -fsSL -o $$tmp/console.yaml "$(SPEC_CONSOLE)" && \
+		curl -fsSL -o $$tmp/insights.yaml "$(SPEC_INSIGHTS)" && \
+		python3 -I scripts/api-coverage.py $$tmp/console.yaml $$tmp/insights.yaml && \
+		python3 -I scripts/gen-operation-index.py $$tmp/console.yaml && \
+		rm -rf $$tmp
+
+# Fail when a spec-derived artifact has fallen behind the published specs.
+#
+# This exists because staleness here is silent and has shipped twice. The
+# operationId index went 162 ids behind and `jc workflows validate` rejected
+# real operations as typos; the coverage scorecard read 100% while five areas
+# had no command group. Neither could be caught by a unit test, because each
+# artifact is the test's source of truth as well as the code's — it agrees
+# with itself by construction. Only the spec can say it is out of date.
+#
+# NOT wired into the PR gate on purpose: it reaches a third-party site, so a
+# docs outage would fail PRs that have nothing to do with the spec. It runs on
+# a schedule instead (.github/workflows/spec-drift.yml) and by hand here.
+verify-generated:
+	@tmp=$$(mktemp -d) && \
+		curl -fsSL -o $$tmp/console.yaml "$(SPEC_CONSOLE)" && \
+		curl -fsSL -o $$tmp/insights.yaml "$(SPEC_INSIGHTS)" && \
+		python3 -I scripts/api-coverage.py $$tmp/console.yaml $$tmp/insights.yaml --out=$$tmp/API_COVERAGE.md >/dev/null && \
+		python3 -I scripts/gen-operation-index.py $$tmp/console.yaml --out=$$tmp/operations.json >/dev/null && \
+		diff -u docs/API_COVERAGE.md $$tmp/API_COVERAGE.md || { \
+			echo "verify-generated: docs/API_COVERAGE.md is stale — run 'make refresh-generated' and commit"; \
+			rm -rf $$tmp; exit 1; \
+		} && \
+		diff -q internal/workflow/operations.json $$tmp/operations.json || { \
+			echo "verify-generated: internal/workflow/operations.json is stale — run 'make refresh-generated' and commit"; \
+			rm -rf $$tmp; exit 1; \
+		} && \
+		rm -rf $$tmp && \
+		echo "verify-generated: spec-derived artifacts are up to date"

@@ -37,10 +37,15 @@ SUMMARY_MAX = 80
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit("usage: gen-operation-index.py /path/to/index.yaml")
+    args = [a for a in sys.argv[1:] if not a.startswith("--out")]
+    out = OUT
+    for a in sys.argv[1:]:
+        if a.startswith("--out="):
+            out = a.split("=", 1)[1]
+    if not args:
+        sys.exit("usage: gen-operation-index.py /path/to/index.yaml [--out=PATH]")
 
-    spec = yaml.safe_load(open(sys.argv[1]))
+    spec = yaml.safe_load(open(args[0]))
     index = {}
     for path, item in (spec.get("paths") or {}).items():
         if not isinstance(item, dict):
@@ -71,13 +76,13 @@ def main():
     if not index:
         sys.exit("no operationIds found — wrong file?")
 
-    with open(OUT, "w") as f:
+    with open(out, "w") as f:
         json.dump(index, f, separators=(",", ":"), sort_keys=True)
         f.write("\n")
 
     v2 = sum(1 for v in index.values() if v["p"].startswith("/api/v2"))
     scoped = sum(1 for v in index.values() if v.get("sc"))
-    print(f"wrote {OUT} — {len(index)} operationIds ({v2} v2, {len(index) - v2} v1), "
+    print(f"wrote {out} — {len(index)} operationIds ({v2} v2, {len(index) - v2} v1), "
           f"{scoped} with declared scopes")
 
 
