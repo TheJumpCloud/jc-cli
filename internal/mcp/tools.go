@@ -628,6 +628,7 @@ func (s *Server) registerTools() {
 	s.registerWorkdayTools()
 	s.registerIdentityRiskTools()
 	s.registerAgentsTools()
+	s.registerAgentsWriteTools()
 	s.registerPasswordVaultTools()
 	s.registerPasswordVaultResourceTools()
 	s.registerWorkflowTools()

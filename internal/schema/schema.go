@@ -725,7 +725,7 @@ var Resources = map[string]ResourceSchema{
 	"agents": {
 		Resource:      "agents",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get"},
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
 		DefaultFields: []string{"id", "name", "email", "state", "ownerId"},
 		FilterSupport: true,
 		SortSupport:   false,
@@ -737,7 +737,7 @@ var Resources = map[string]ResourceSchema{
 			{Name: "email", Type: "string", Description: "Email identifying the agent; required at creation"},
 			{Name: "description", Type: "string", Description: "Free-text description"},
 			{Name: "ownerId", Type: "string", Description: "JumpCloud user id of the owning admin; required at creation"},
-			{Name: "state", Type: "string", Description: "active or suspended; changed through suspend/activate, not a write to this field", ReadOnly: true},
+			{Name: "state", Type: "string", Description: "active or suspended; changed with `agents suspend`/`agents activate`, never by updating this field — the API refuses that", ReadOnly: true},
 			{Name: "organizationId", Type: "string", Description: "Organization the agent belongs to", ReadOnly: true},
 			{Name: "allowedAudiences", Type: "array", Description: "OAuth audiences the agent's tokens may target"},
 		},
@@ -748,7 +748,7 @@ var Resources = map[string]ResourceSchema{
 	"agent-groups": {
 		Resource:      "agent-groups",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get"},
+		Verbs:         []string{"list", "get", "create", "update", "delete"},
 		DefaultFields: []string{"id", "name", "description", "type"},
 		FilterSupport: true,
 		SortSupport:   true,
@@ -1293,12 +1293,25 @@ func BuildCommandManifest() CommandManifest {
 					"secret is returned once, by the call that creates it, and by nothing " +
 					"afterwards. Most of these endpoints require an organization id header " +
 					"that the API spec marks optional, so jc sends the active profile's own " +
-					"and there is no flag for it.",
-				Subcommands: []string{"list", "get", "memberof", "applications", "credentials"},
+					"and there is no flag for it. `register` needs a name, an email no other " +
+					"agent uses, and the user id of an activated admin to own it — the spec " +
+					"marks none of the three required and all three are. `update` is genuinely " +
+					"partial: only the fields you pass change. An agent's state is never set by " +
+					"an update; `suspend` stops its credentials working immediately and " +
+					"`activate` puts it back, and both are idempotent. `delete` removes the " +
+					"agent, its credentials and its memberships and cannot be undone, so " +
+					"`suspend` is almost always the right choice for stopping an agent.",
+				Subcommands: []string{"list", "get", "memberof", "applications", "credentials",
+					"register", "update", "suspend", "activate", "delete"},
 				Flags: []FlagEntry{
 					{Name: "filter", Type: "string", Description: "field:operator:value — name, email or state, with eq or ne"},
 					{Name: "limit", Type: "int", Description: "Return one page of this size instead of every agent"},
 					{Name: "page-token", Type: "string", Description: "Continue from a cursor reported by a previous page"},
+					{Name: "name", Type: "string", Description: "On register/update: the agent's display name"},
+					{Name: "email", Type: "string", Description: "On register/update: the email identifying the agent, unique per org"},
+					{Name: "owner", Type: "string", Description: "On register/update: JumpCloud user id of the owning admin, which must be an activated user"},
+					{Name: "description", Type: "string", Description: `On register/update: free text; "" clears it`},
+					{Name: "audience", Type: "string", Description: "On register/update: an OAuth audience the agent's tokens may target (repeatable)"},
 				},
 			},
 			{
@@ -1313,13 +1326,24 @@ func BuildCommandManifest() CommandManifest {
 					"page by offset rather than by cursor, --sort works here and is ignored " +
 					"there, and the two accept different filter fields. `members` and " +
 					"`associations` return ids and types with no names, so jc joins the names " +
-					"in from the agent and application catalogs.",
-				Subcommands: []string{"list", "get", "members", "associations"},
+					"in from the agent and application catalogs. `update` REPLACES the group: " +
+					"the API requires the name on every update and clears any field it is not " +
+					"given, so jc reads the group first and merges — the opposite of `jc agents " +
+					"update`, and the difference is the server's. Membership and application " +
+					"assignment each go through one endpoint that takes a direction, which is " +
+					"why there are four commands for two operations; each returns an empty body, " +
+					"so jc reads the membership back rather than echoing the request.",
+				Subcommands: []string{"list", "get", "members", "associations", "create", "update",
+					"delete", "add-member", "remove-member", "assign-app", "unassign-app"},
 				Flags: []FlagEntry{
 					{Name: "filter", Type: "string", Description: "field:operator:value — name or type, with eq or ne"},
 					{Name: "limit", Type: "int", Description: "Maximum groups to return"},
 					{Name: "sort", Type: "string", Description: "Sort field; prefix with - for descending"},
 					{Name: "target", Type: "string", Description: "On associations: the target type, which is application"},
+					{Name: "name", Type: "string", Description: "On create/update: the group's display name, unique per org"},
+					{Name: "description", Type: "string", Description: `On create/update: free text; "" clears it`},
+					{Name: "agent", Type: "string", Description: "On add-member/remove-member: the agent's JumpCloud id"},
+					{Name: "app", Type: "string", Description: "On assign-app/unassign-app: the application's JumpCloud id"},
 				},
 			},
 			{
