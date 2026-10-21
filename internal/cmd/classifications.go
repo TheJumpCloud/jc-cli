@@ -54,11 +54,27 @@ var commandClass = map[string]string{
 	// and expiry, and never a secret — verified against every agent on a
 	// live tenant. Creating a credential is the call that returns one, and
 	// it is not in this PR.
-	"jc agents list":               ClassReadOnly,
-	"jc agents get":                ClassReadOnly,
-	"jc agents memberof":           ClassReadOnly,
-	"jc agents applications":       ClassReadOnly,
-	"jc agents credentials list":   ClassReadOnly,
+	"jc agents list":             ClassReadOnly,
+	"jc agents get":              ClassReadOnly,
+	"jc agents memberof":         ClassReadOnly,
+	"jc agents applications":     ClassReadOnly,
+	"jc agents credentials list": ClassReadOnly,
+	// The three credential writes. CLI-only: no MCP tool exists for any of
+	// them, and internal/mcp/no_secret_tools_test.go enforces that.
+	//
+	// create is DESTRUCTIVE rather than mutating, which looks wrong for a
+	// verb that creates something and is not. It is the only call in this
+	// API that returns a client secret, and the secret is returned once —
+	// so the irrecoverable thing is not the record but the disclosure. The
+	// worst-case rule is about what cannot be undone, and a disclosed
+	// secret cannot.
+	//
+	// delete is destructive for the ordinary reason, with an extra edge: an
+	// agent holds only one credential, so deleting it locks the agent out
+	// until a new one is created.
+	"jc agents credentials create": ClassDestructive,
+	"jc agents credentials update": ClassMutating,
+	"jc agents credentials delete": ClassDestructive,
 	"jc agent-groups list":         ClassReadOnly,
 	"jc agent-groups get":          ClassReadOnly,
 	"jc agent-groups members":      ClassReadOnly,

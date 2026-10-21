@@ -1300,7 +1300,16 @@ func BuildCommandManifest() CommandManifest {
 					"an update; `suspend` stops its credentials working immediately and " +
 					"`activate` puts it back, and both are idempotent. `delete` removes the " +
 					"agent, its credentials and its memberships and cannot be undone, so " +
-					"`suspend` is almost always the right choice for stopping an agent.",
+					"`suspend` is almost always the right choice for stopping an agent. " +
+					"`credentials create` is the only call in this API that returns a client " +
+					"secret, and it returns it ONCE — so it requires an explicit destination " +
+					"(--out, --stdout or --clipboard), checks that destination is usable before " +
+					"creating anything, and never prints the secret or its length. An agent can " +
+					"hold only one credential, so rotation is delete-then-create and the agent " +
+					"cannot authenticate in between. A credential update can change only its " +
+					"token endpoint auth method: the API accepts a status or lifetime change and " +
+					"discards it, so jc refuses those rather than reporting a success that did " +
+					"not happen. These three writes are CLI-only and have no MCP tools.",
 				Subcommands: []string{"list", "get", "memberof", "applications", "credentials",
 					"register", "update", "suspend", "activate", "delete"},
 				Flags: []FlagEntry{
@@ -1312,6 +1321,11 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "owner", Type: "string", Description: "On register/update: JumpCloud user id of the owning admin, which must be an activated user"},
 					{Name: "description", Type: "string", Description: `On register/update: free text; "" clears it`},
 					{Name: "audience", Type: "string", Description: "On register/update: an OAuth audience the agent's tokens may target (repeatable)"},
+					{Name: "lifetime", Type: "int", Description: "On credentials create: days until expiry — 0, 30, 60, 90 or 365, where 0 means never"},
+					{Name: "out", Type: "string", Description: "On credentials create: write the one-shot secret to this new file, mode 0600"},
+					{Name: "stdout", Type: "bool", Description: "On credentials create: print the secret on stdout, for piping into a secret manager"},
+					{Name: "clipboard", Type: "bool", Description: "On credentials create: copy the secret to the clipboard and print nothing"},
+					{Name: "auth-method", Type: "string", Description: "On credentials update: client_secret_basic or client_secret_post — the only field an update can change"},
 				},
 			},
 			{
