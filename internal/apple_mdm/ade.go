@@ -14,6 +14,7 @@ package apple_mdm
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -29,6 +30,41 @@ const (
 	// of the other as far as anyone can tell from one tenant.
 	ABMDevicesEndpoint = "/applemdms/abm_devices"
 )
+
+// --- Ids ------------------------------------------------------------------
+
+var objectIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+
+// IsObjectID reports whether s is a JumpCloud 24-hex object id. Every
+// identifier this area addresses -- ADE tokens, ADE settings, Apple MDM
+// configurations, managed devices -- is one.
+func IsObjectID(s string) bool { return objectIDPattern.MatchString(s) }
+
+// ErrNotObjectID explains a malformed id before it reaches the API.
+//
+// Checking locally is not only about saving a round trip here. Every
+// identifier in this area is interpolated straight into a URL path, and the
+// MCP server exposes these reads as individually grantable tools — so an
+// unvalidated id is the difference between a tool that reads ADE tokens and
+// a tool that constructs arbitrary request paths. The traversal does not
+// currently escape: `/applemdms/ade_tokens/../../systemusers` and three
+// encoded variants were all refused with 400 or 404, because the API does
+// not normalise `..` in a path. But that is the upstream server's behaviour,
+// not a property jc controls, and a proxy or a later API version that
+// normalises would turn a narrowly granted read into a general one. Five
+// sibling contract packages already validate ids for the same reason.
+func ErrNotObjectID(kind, s string) error {
+	return fmt.Errorf("%q is not a JumpCloud object id — %s is addressed by its "+
+		"24-character hex id, which you take from the listing", s, kind)
+}
+
+// RequireObjectID validates an identifier before it becomes part of a path.
+func RequireObjectID(kind, s string) error {
+	if !IsObjectID(s) {
+		return ErrNotObjectID(kind, s)
+	}
+	return nil
+}
 
 // ADETokenEndpoint is one ADE token by its objectId.
 func ADETokenEndpoint(tokenID string) string {

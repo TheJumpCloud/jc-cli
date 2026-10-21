@@ -258,3 +258,52 @@ func TestADUE_SiblingEndpointsHaveUnrelatedShapes(t *testing.T) {
 		t.Error("the config response must not decode as a redirect")
 	}
 }
+
+// Every identifier in this area is interpolated into a URL path, and the MCP
+// server grants these reads as individually allowable tools — so an
+// unvalidated id turns one read into a request-path builder. The traversal
+// does not escape against JumpCloud today (four variants were refused with
+// 400 or 404, because it does not normalise `..`), but that is the upstream
+// server's behaviour, not jc's.
+func TestRequireObjectID_RefusesAnythingThatIsNotAnID(t *testing.T) {
+	for _, bad := range []string{
+		"", "../../systemusers", "x/../../systemusers", "/systemusers",
+		"%2e%2e%2fsystemusers", "6a7e1bb88cf0be0001a4e3cd/../..",
+		"6a7e1bb88cf0be0001a4e3cd?limit=1", "6a7e1bb88cf0be0001a4e3c", // 23 chars
+		"6a7e1bb88cf0be0001a4e3cdd", // 25 chars
+		"zzzzzzzzzzzzzzzzzzzzzzzz",  // right length, not hex
+		"6a7e1bb8 8cf0be0001a4e3c",  // space
+	} {
+		if IsObjectID(bad) {
+			t.Errorf("%q must not pass as an object id", bad)
+		}
+		if err := RequireObjectID("an ADE token", bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	for _, good := range []string{
+		"6a7e1bb88cf0be0001a4e3cd", "690b6c939c0bf5000100039a",
+		"6A7E1BB88CF0BE0001A4E3CD", // the API's ids are lower case, but hex is hex
+	} {
+		if !IsObjectID(good) {
+			t.Errorf("%q is a real object id and was refused", good)
+		}
+		if err := RequireObjectID("an ADE token", good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+}
+
+// The message has to name what was wrong, or an operator pasting a device
+// name instead of an id gets no idea what the command wanted.
+func TestErrNotObjectID_SaysWhatIsExpected(t *testing.T) {
+	err := RequireObjectID("an ADE token", "my-token")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"my-token", "24-character hex", "ADE token"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should mention %q, got %q", want, err)
+		}
+	}
+}

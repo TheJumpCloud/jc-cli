@@ -85,6 +85,9 @@ func newADETokenGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := apple_mdm.RequireObjectID("an ADE token", args[0]); err != nil {
+				return err
+			}
 			raw, err := client.Get(cmd.Context(), apple_mdm.ADETokenEndpoint(args[0]))
 			if err != nil {
 				return err
@@ -230,6 +233,9 @@ func newADESettingsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := apple_mdm.RequireObjectID("an ADE token", args[0]); err != nil {
+				return err
+			}
 			raw, err := client.Get(cmd.Context(), apple_mdm.ADESettingsEndpoint(args[0]))
 			if err != nil {
 				return err
@@ -251,6 +257,9 @@ func newADESettingGetCmd() *cobra.Command {
   jc apple-mdm ade-settings get 6a7e1bb88cf0be0001a4e3cd ios`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := apple_mdm.RequireObjectID("an ADE token", args[0]); err != nil {
+				return err
+			}
 			osFamily, err := apple_mdm.NormalizeOSFamily(args[1])
 			if err != nil {
 				return err
@@ -331,6 +340,9 @@ position in the path as one.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := newV2Client()
 			if err != nil {
+				return err
+			}
+			if err := apple_mdm.RequireObjectID("a managed device", args[0]); err != nil {
 				return err
 			}
 			raw, err := client.Get(cmd.Context(), apple_mdm.BackgroundTasksEndpoint(args[0]))

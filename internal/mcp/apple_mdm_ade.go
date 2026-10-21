@@ -67,8 +67,8 @@ func (s *Server) registerAppleMDMADETools() {
 	addTypedTool(s, "apple_mdm_ade_token_get",
 		"Get one Automated Device Enrollment token by its objectId — ABM organization name, server name, expiry, device count and last sync time. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args adeTokenInput) (*mcp.CallToolResult, any, error) {
-			if args.TokenID == "" {
-				return errorResult("token_id is required"), nil, nil
+			if err := apple_mdm.RequireObjectID("an ADE token", args.TokenID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			raw, err := adeGet(ctx, apple_mdm.ADETokenEndpoint(args.TokenID))
 			if err != nil {
@@ -121,8 +121,8 @@ func (s *Server) registerAppleMDMADETools() {
 	addTypedTool(s, "apple_mdm_ade_settings_list",
 		"What enrollment experience do ADE devices get? Lists the Automated Device Enrollment settings held for each OS family on one ADE token — the setup-assistant panes that are skipped, the welcome screen text, whether enrollment is mandatory. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args adeTokenInput) (*mcp.CallToolResult, any, error) {
-			if args.TokenID == "" {
-				return errorResult("token_id is required"), nil, nil
+			if err := apple_mdm.RequireObjectID("an ADE token", args.TokenID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			raw, err := adeGet(ctx, apple_mdm.ADESettingsEndpoint(args.TokenID))
 			if err != nil {
@@ -139,8 +139,8 @@ func (s *Server) registerAppleMDMADETools() {
 	addTypedTool(s, "apple_mdm_ade_settings_get",
 		"Get the Automated Device Enrollment settings for one OS family on one ADE token. The API names the families DARWIN (for macOS) and IOS; macos and ios are accepted here and translated. The spec also lists UNKNOWN, which the API rejects with HTTP 400, so it is refused before the call. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args adeSettingInput) (*mcp.CallToolResult, any, error) {
-			if args.TokenID == "" {
-				return errorResult("token_id is required"), nil, nil
+			if err := apple_mdm.RequireObjectID("an ADE token", args.TokenID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			osFamily, err := apple_mdm.NormalizeOSFamily(args.OSFamily)
 			if err != nil {
@@ -163,6 +163,9 @@ func (s *Server) registerAppleMDMADETools() {
 		func(ctx context.Context, req *mcp.CallToolRequest, args abmDevicesInput) (*mcp.CallToolResult, any, error) {
 			endpoint := apple_mdm.ABMDevicesEndpoint
 			if args.AppleMDMID != "" {
+				if err := apple_mdm.RequireObjectID("an Apple MDM configuration", args.AppleMDMID); err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
 				endpoint = apple_mdm.ManagerABMDevicesEndpoint(args.AppleMDMID)
 			}
 			raw, err := adeGet(ctx, endpoint)
@@ -180,8 +183,8 @@ func (s *Server) registerAppleMDMADETools() {
 	addTypedTool(s, "apple_mdm_background_tasks_list",
 		"What MDM background tasks are queued on this device? Lists the launch daemons and agents MDM has queued for one managed device, with each task's identifier, label and state. The id is a DEVICE id, not an Apple MDM id, despite sitting in the same path position as one. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args deviceTasksInput) (*mcp.CallToolResult, any, error) {
-			if args.DeviceID == "" {
-				return errorResult("device_id is required"), nil, nil
+			if err := apple_mdm.RequireObjectID("a managed device", args.DeviceID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			raw, err := adeGet(ctx, apple_mdm.BackgroundTasksEndpoint(args.DeviceID))
 			if err != nil {
@@ -236,8 +239,8 @@ func (s *Server) registerAppleMDMADETools() {
 	addTypedTool(s, "apple_mdm_adue_validate",
 		"Does this Apple MDM have a usable service discovery URL? IMPORTANT: the API reports a MISSING URL as HTTP 200 with responseCode NOT_FOUND, so the status code proves nothing — read the ok field in the answer, not the absence of an error. Read-only.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args appleMDMIDInput) (*mcp.CallToolResult, any, error) {
-			if args.AppleMDMID == "" {
-				return errorResult("apple_mdm_id is required"), nil, nil
+			if err := apple_mdm.RequireObjectID("an Apple MDM configuration", args.AppleMDMID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			raw, err := adeGet(ctx, apple_mdm.ValidateServiceDiscoveryURLEndpoint(args.AppleMDMID))
 			if err != nil {
