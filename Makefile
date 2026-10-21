@@ -111,15 +111,20 @@ SPEC_INSIGHTS ?= https://docs.jumpcloud.com/new/api/insights/directory/index.yam
 
 # Rebuild the spec-derived artifacts in place, from the published specs.
 #
-# Neither generated file carries a timestamp, deliberately: a date would make
+# No generated file here carries a timestamp, deliberately: a date would make
 # every regeneration a diff and `verify-generated` below could no longer tell
-# "the spec moved" from "someone reran the script".
+# "the spec moved" from "someone reran the script". The date was never the
+# missing information -- git holds it, and `docs/spec-provenance.md` records
+# what git cannot: which upstream document each artifact was built from.
 refresh-generated:
 	@tmp=$$(mktemp -d) && \
 		curl -fsSL -o $$tmp/console.yaml "$(SPEC_CONSOLE)" && \
 		curl -fsSL -o $$tmp/insights.yaml "$(SPEC_INSIGHTS)" && \
 		python3 -I scripts/api-coverage.py $$tmp/console.yaml $$tmp/insights.yaml && \
 		python3 -I scripts/gen-operation-index.py $$tmp/console.yaml && \
+		python3 -I scripts/spec-provenance.py \
+			"$(SPEC_CONSOLE)=$$tmp/console.yaml" \
+			"$(SPEC_INSIGHTS)=$$tmp/insights.yaml" && \
 		rm -rf $$tmp
 
 # Fail when a spec-derived artifact has fallen behind the published specs.
@@ -146,6 +151,14 @@ verify-generated:
 		} && \
 		diff -q internal/workflow/operations.json $$tmp/operations.json || { \
 			echo "verify-generated: internal/workflow/operations.json is stale — run 'make refresh-generated' and commit"; \
+			rm -rf $$tmp; exit 1; \
+		} && \
+		python3 -I scripts/spec-provenance.py \
+			"$(SPEC_CONSOLE)=$$tmp/console.yaml" \
+			"$(SPEC_INSIGHTS)=$$tmp/insights.yaml" --out=$$tmp/spec-provenance.md >/dev/null && \
+		diff -u docs/spec-provenance.md $$tmp/spec-provenance.md || { \
+			echo "verify-generated: upstream republished — run 'make refresh-generated' and commit"; \
+			echo "  (a digest-only diff means the document changed but nothing jc derives did)"; \
 			rm -rf $$tmp; exit 1; \
 		} && \
 		rm -rf $$tmp && \
