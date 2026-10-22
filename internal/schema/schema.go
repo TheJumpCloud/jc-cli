@@ -471,7 +471,8 @@ var Resources = map[string]ResourceSchema{
 		// count.
 		Verbs: []string{"list", "get", "create", "update", "delete",
 			"enrollment-profiles", "devices", "payloads",
-			"ade-tokens", "ade-settings", "abm-devices", "background-tasks", "adue"},
+			"ade-tokens", "ade-settings", "abm-devices", "background-tasks", "adue",
+			"device", "csr", "recovery-lock", "device-lock"},
 		DefaultFields: []string{"id", "name", "orgName", "defaultIosUserEnrollmentDeviceGroupID"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique Apple MDM configuration identifier"},

@@ -471,6 +471,13 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"apple_mdm_adue_get",
 		"apple_mdm_adue_config",
 		"apple_mdm_adue_validate", "apple_mdm_get", "apple_mdm_create", "apple_mdm_update", "apple_mdm_delete",
+		// The device reads. Four tools for six CLI commands: the recovery-lock
+		// password and the device lock PIN are CLI-only, and
+		// no_secret_tools_test.go enforces their absence.
+		"apple_mdm_device_get",
+		"apple_mdm_device_lock_state",
+		"apple_mdm_recovery_lock_config",
+		"apple_mdm_csr_get",
 		"apple_mdm_enrollment_profiles", "apple_mdm_devices",
 		// Policy Groups
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
@@ -559,8 +566,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 401 {
-		t.Errorf("expected 401 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 405 {
+		t.Errorf("expected 405 tools, got %d", len(result.Tools))
 	}
 }
 

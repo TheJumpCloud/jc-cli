@@ -43,6 +43,10 @@ func newAppleMDMCmd() *cobra.Command {
 	cmd.AddCommand(newAppleMDMABMDevicesCmd())
 	cmd.AddCommand(newAppleMDMBackgroundTasksCmd())
 	cmd.AddCommand(newAppleMDMADUECmd())
+	cmd.AddCommand(newAppleMDMDeviceCmd())
+	cmd.AddCommand(newAppleMDMCSRCmd())
+	cmd.AddCommand(newAppleMDMRecoveryLockCmd())
+	cmd.AddCommand(newAppleMDMDeviceLockCmd())
 
 	return cmd
 }
