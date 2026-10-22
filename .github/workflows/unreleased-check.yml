@@ -1,0 +1,49 @@
+name: Unreleased check
+
+# Asks one question: does main carry merged, release-labelled work that no tag
+# covers?
+#
+# It exists because release.yml can silently skip a release. Its concurrency
+# group holds at most one running plus one pending run, and a third queued run
+# cancels the pending one -- which happened on 2026-10-22, when five labelled
+# PRs merged in 94 seconds and two of their release runs were cancelled. A
+# cancelled run runs no steps, so it cannot report that it died, and nothing
+# else was watching. That is the whole gap this closes.
+#
+# Why a schedule rather than the PR gate or a push trigger: right after a merge
+# there is legitimately no tag yet, because the release run takes 3-5 minutes.
+# A push-triggered check would fire on every merge and be wrong every time. The
+# script carries a 20-minute grace period for the same reason, and names the
+# in-flight PRs separately from the ones genuinely owed a release.
+
+on:
+  schedule:
+    # 07:23 UTC daily. Offset from the hour on purpose: GitHub delays cron runs
+    # when the whole platform is asking for runners on the hour.
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read        # checkout, and the tags the check reads
+  pull-requests: read   # gh pr view, to read each merge's release label
+
+concurrency:
+  group: unreleased-check
+  cancel-in-progress: false
+
+jobs:
+  Check-Unreleased:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The check compares the newest tag against the merges after it, so
+          # it needs the tags and the history. A shallow clone has neither, and
+          # the script fails loudly rather than reporting "nothing owed" --
+          # which is the one wrong answer it must never give.
+          fetch-depth: 0
+
+      - name: Check for merged work with no release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/unreleased-check.sh

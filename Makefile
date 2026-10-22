@@ -5,7 +5,7 @@ BIN      := jc
 DIST     := dist
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release site verify-site refresh-generated verify-generated
+.PHONY: build test lint install clean vet integration-test integration-test-readonly clean-dist dist release site verify-site refresh-generated verify-generated check-unreleased
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jc
@@ -126,6 +126,19 @@ refresh-generated:
 			"$(SPEC_CONSOLE)=$$tmp/console.yaml" \
 			"$(SPEC_INSIGHTS)=$$tmp/insights.yaml" && \
 		rm -rf $$tmp
+
+# Fail when main carries merged, release-labelled work that no tag covers.
+#
+# Same family as verify-generated below: a silent gap that no unit test can
+# see, because the thing that would report it is the thing that didn't run.
+# release.yml can drop a release outright -- its concurrency group holds one
+# running plus one pending run, and a third queued run cancels the pending one.
+# That happened on 2026-10-22 and nothing said so.
+#
+# Needs tags and history, so it is useless in a shallow clone (it says so
+# rather than reporting nothing owed). Reads PR labels, so it needs gh auth.
+check-unreleased:
+	@./scripts/unreleased-check.sh
 
 # Fail when a spec-derived artifact has fallen behind the published specs.
 #
