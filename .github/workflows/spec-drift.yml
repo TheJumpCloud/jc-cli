@@ -1,0 +1,114 @@
+name: Spec drift
+
+# Two files in this repo are generated from JumpCloud's published OpenAPI
+# documents: docs/API_COVERAGE.md and internal/workflow/operations.json.
+# Nothing told anyone when they fell behind, and both shipped stale.
+#
+#   * internal/workflow/operations.json went 162 operationIds behind, so
+#     `jc workflows validate` reported real operations as typos — including
+#     the operations behind jc's own newest command groups — and its "did you
+#     mean" named plausible neighbours, which reads like a corrected mistake
+#     rather than a missing entry.
+#   * docs/API_COVERAGE.md reported 100% area coverage while five areas had
+#     no command group at all, because the spec had grown by 162 operations
+#     since the file was last regenerated.
+#
+# Neither was catchable by a unit test. Each artifact is the test's source of
+# truth as well as the code's, so it agrees with itself by construction; only
+# the upstream spec can say it is out of date. Hence a job that fetches the
+# spec on a schedule rather than an assertion in the suite.
+#
+# Scheduled rather than part of the PR gate on purpose: this reaches a
+# third-party site, and a docs outage must not fail PRs that have nothing to
+# do with the spec. `make verify-generated` runs the same check by hand.
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Off the hour because every cron scheduled on the
+    # hour competes for the same runner capacity and gets delayed.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # push the branch holding the regenerated artifacts
+  pull-requests: write   # open the PR, and label it
+
+concurrency:
+  group: spec-drift
+  cancel-in-progress: false
+
+jobs:
+  Check-Spec-Drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Regenerate from the published specs
+        run: make refresh-generated
+
+      - name: Is anything stale?
+        id: drift
+        run: |
+          paths="docs/API_COVERAGE.md internal/workflow/operations.json"
+          if [ -z "$(git status --porcelain -- $paths)" ]; then
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+            echo "Spec-derived artifacts are up to date."
+          else
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat -- $paths
+          fi
+
+      - name: Count what moved
+        if: steps.drift.outputs.drifted == 'true'
+        id: summary
+        run: |
+          # The operation count is the number worth putting in the title: it
+          # is what actually moved, and a reviewer can check it against the
+          # coverage table at a glance.
+          ops=$(python3 -c "import json;print(len(json.load(open('internal/workflow/operations.json'))))")
+          was=$(git show HEAD:internal/workflow/operations.json | python3 -c "import json,sys;print(len(json.load(sys.stdin)))")
+          echo "ops=$ops" >> "$GITHUB_OUTPUT"
+          echo "was=$was" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR with the regenerated artifacts
+        if: steps.drift.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPS: ${{ steps.summary.outputs.ops }}
+          WAS: ${{ steps.summary.outputs.was }}
+        run: |
+          set -euo pipefail
+          branch="spec-drift/$(date -u +%Y-%m-%d)"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add docs/API_COVERAGE.md internal/workflow/operations.json
+          git commit -m "chore: regenerate spec-derived artifacts ($WAS -> $OPS operations)"
+
+          # Force, because a branch already there means an earlier run opened a
+          # PR nobody merged. Update that one rather than accumulate a PR per
+          # week for the same drift.
+          git push --force origin "$branch"
+
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" != "0" ]; then
+            echo "A PR for $branch is already open; branch updated in place."
+            exit 0
+          fi
+
+          sed -e "s/__WAS__/$WAS/g" -e "s/__OPS__/$OPS/g" \
+            .github/spec-drift-pr-body.md > /tmp/spec-drift-body.md
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --label patch \
+            --title "chore: regenerate spec-derived artifacts ($WAS → $OPS operations)" \
+            --body-file /tmp/spec-drift-body.md
