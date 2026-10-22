@@ -660,11 +660,17 @@ func newWorkflowsValidateCmd() *cobra.Command {
 		Short: "Validate a workflow DSL file, a template, or a saved workflow",
 		Long: `Check a workflow file before it reaches the API.
 
-JumpCloud accepts a malformed DSL and fails only when the workflow runs, so
-these checks are the difference between an error now and a workflow that
-silently never works. Validation covers the trigger, task structure, control
-flow, pagination, every Expr expression (compiled with the same engine), and
-every operationId (against JumpCloud's own OpenAPI operations).
+JumpCloud's API does reject a good deal at create time -- an unknown
+operationId, a missing path parameter, an expression that will not compile, a
+workflow its execution role may not run. These checks answer before that round
+trip, without creating anything on the tenant, and they name the id you
+probably meant. They also catch what the API accepts without checking: an
+unrecognised event type is taken at face value, so a typo there yields a
+trigger that silently never fires.
+
+Validation covers the trigger, task structure, control flow, pagination, every
+Expr expression (compiled with the same engine), and every operationId
+(against JumpCloud's own OpenAPI operations).
 
 With --role, each step is also checked against that role's API scopes. The
 execution role is the only thing between an unattended workflow and the API —

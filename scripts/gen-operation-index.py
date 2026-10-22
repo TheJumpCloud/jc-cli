@@ -9,9 +9,18 @@ Workflow DSL invokes JumpCloud's own API by operationId:
 
     {"call": "jc_operation", "with": {"operationId": "getApiSystemusers"}}
 
-Nothing in the workflow API validates that id, so a typo produces a workflow
-that only fails once it runs. This index lets validation catch it at author
-time, and lets `jc workflows explain` render each step as METHOD /path.
+The workflow API refuses an id it does not recognise -- POST /workflows
+answers 400 "operation not found in API specification" -- so this index is not
+the only guard against a typo. It is the earlier and more useful one: it
+answers before the round trip, without creating anything on the tenant, and it
+names the id you probably meant. It also lets `jc workflows explain` render
+each step as METHOD /path.
+
+Which means a STALE index is worse than no index: every operationId the spec
+has gained since the last run is reported as a typo, and the suggestion names
+plausible neighbours, so it reads like a corrected mistake rather than a gap.
+That shipped once -- 162 ids behind, rejecting the operations behind jc's own
+newest command groups.
 
 Like scripts/api-coverage.py, the spec is large (~1.8MB) and lives outside the
 repo, so it is passed by path rather than vendored. The generated index IS
