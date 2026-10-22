@@ -92,7 +92,15 @@ AREA_TO_COMMAND = {
     "Command Triggers": "commands",
     "Directories": "directories",
     "Identity Providers": "identity-providers",
-    "Directory Insights": "insights",
+    # Directory Insights ships as its own spec document, and it does not tag
+    # anything "Directory Insights" -- it tags by query kind. An entry under
+    # that name matched nothing in either document and was pure decoration.
+    "EventQuery": "insights",              # /events, /events/count
+    "EventDistinctQuery": "insights",      # /events/distinct
+    # Deliberately absent, so they count as the gap they are: EventIntervalQuery
+    # (/events/interval), "Reports (Directory Insights)" (DI's own report
+    # family -- NOT the Console Reports the `reports` group covers), and SIEM
+    # Integration (/data-export). Nothing in internal/ references any of them.
     "Groups": "groups",
     "Rules": "graph",
     "mdm": "apple-mdm/windows-mdm",
@@ -126,25 +134,73 @@ OUT_OF_SCOPE = {
 
 METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 
+# Short label per spec document, used to qualify a tag that more than one
+# document carries. Keyed on info.title so an unrecognised spec still works --
+# it just gets its full title as the label.
+SPEC_LABELS = {
+    "JumpCloud Console API": "Console",
+    "Directory Insights API": "Directory Insights",
+}
+
+
+def read_spec(path):
+    """Return (label, title, {tag: op_count}) for one spec document."""
+    spec = yaml.safe_load(open(path))
+    title = spec.get("info", {}).get("title") or "API"
+    counts = collections.Counter()
+    for _, item in (spec.get("paths") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        for m, op in item.items():
+            if m.lower() in METHODS and isinstance(op, dict):
+                counts[(op.get("tags") or ["(untagged)"])[0]] += 1
+    if not counts:
+        sys.exit(f"no tagged operations found in {path} — wrong file?")
+    return SPEC_LABELS.get(title, title), title, counts
+
+
+def merge_specs(paths):
+    """Bucket every operation across several specs by resource area.
+
+    Tag names are unique only WITHIN a document. Directory Insights and the
+    Console API both tag operations `Reports`, and they are not the same
+    reports: `jc reports` covers the Console family and nothing covers DI's.
+    Bucketing the two specs on the bare tag would silently file three
+    uncovered DI operations under a command group that cannot reach them —
+    coverage invented by a name collision.
+
+    So a colliding tag is qualified with its source. Only the LATER spec's
+    tag is renamed, never the first one's. Qualifying both would change the
+    key an already-mapped area is looked up under, which turned 25 covered
+    Console `Reports` operations into a reported gap the first time this was
+    written — a false gap manufactured by the very fix meant to prevent a
+    false coverage. The first spec passed is the baseline and its tags are
+    always bare, so AREA_TO_COMMAND keeps working unchanged whether it is
+    run against one document or several.
+    """
+    per_spec = [read_spec(p) for p in paths]
+
+    counts = collections.Counter()
+    claimed = set()
+    for i, (label, _, spec_counts) in enumerate(per_spec):
+        for tag, n in spec_counts.items():
+            name = f"{tag} ({label})" if i and tag in claimed else tag
+            counts[name] += n
+        claimed |= set(spec_counts)
+    titles = [t for _, t, _ in per_spec]
+    return titles, counts
+
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: api-coverage.py /path/to/index.yaml")
+        sys.exit("usage: api-coverage.py /path/to/index.yaml [more-specs.yaml ...]")
     # The covered and out-of-scope buckets are counted independently, so a
     # tag in both would be double-counted and break covered + gap == in_scope.
     overlap = set(AREA_TO_COMMAND) & OUT_OF_SCOPE
     if overlap:
         sys.exit(f"area(s) in both AREA_TO_COMMAND and OUT_OF_SCOPE: {sorted(overlap)}")
-    spec = yaml.safe_load(open(sys.argv[1]))
-    title = spec.get("info", {}).get("title", "API")
-    counts = collections.Counter()
-    for path, item in (spec.get("paths") or {}).items():
-        if not isinstance(item, dict):
-            continue
-        for m, op in item.items():
-            if m.lower() in METHODS and isinstance(op, dict):
-                tag = (op.get("tags") or ["(untagged)"])[0]
-                counts[tag] += 1
+    titles, counts = merge_specs(sys.argv[1:])
+    title = titles[0] if len(titles) == 1 else " + ".join(titles)
 
     total = sum(counts.values())
     covered = [(n, t, AREA_TO_COMMAND[t]) for t, n in counts.items() if t in AREA_TO_COMMAND]
