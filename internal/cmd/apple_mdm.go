@@ -38,6 +38,11 @@ func newAppleMDMCmd() *cobra.Command {
 	cmd.AddCommand(newAppleMDMEnrollmentProfilesCmd())
 	cmd.AddCommand(newAppleMDMDevicesCmd())
 	cmd.AddCommand(newAppleMDMPayloadsCmd())
+	cmd.AddCommand(newAppleMDMADETokensCmd())
+	cmd.AddCommand(newAppleMDMADESettingsCmd())
+	cmd.AddCommand(newAppleMDMABMDevicesCmd())
+	cmd.AddCommand(newAppleMDMBackgroundTasksCmd())
+	cmd.AddCommand(newAppleMDMADUECmd())
 
 	return cmd
 }
