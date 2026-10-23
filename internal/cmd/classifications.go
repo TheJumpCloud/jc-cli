@@ -272,6 +272,20 @@ var commandClass = map[string]string{
 	"jc apple-mdm adue get":             ClassReadOnly,
 	"jc apple-mdm adue validate":        ClassReadOnly,
 	"jc apple-mdm background-tasks":     ClassReadOnly,
+
+	// The device reads (slice 2). All GETs, so read-only by the letter of the
+	// rule — but two of them return the credentials that unlock a Mac, and
+	// read-only is exactly why they need saying out loud: a secret read
+	// mutates nothing, so it passes every gate built around undoing a change.
+	// Both are CLI-only, both print nothing without --reveal, and
+	// internal/mcp/no_secret_tools_test.go enforces that no MCP tool reaches
+	// them.
+	"jc apple-mdm device":                 ClassReadOnly,
+	"jc apple-mdm csr":                    ClassReadOnly,
+	"jc apple-mdm recovery-lock config":   ClassReadOnly,
+	"jc apple-mdm recovery-lock password": ClassReadOnly,
+	"jc apple-mdm device-lock state":      ClassReadOnly,
+	"jc apple-mdm device-lock pin":        ClassReadOnly,
 	// payloads compose: --create-policy turns this into a JC POST
 	// (same wire shape as create-policy), so worst-case capability is
 	// mutating, not internal. Cursor Bugbot PR #62 catch.
