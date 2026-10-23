@@ -478,6 +478,23 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"apple_mdm_device_lock_state",
 		"apple_mdm_recovery_lock_config",
 		"apple_mdm_csr_get",
+		// The device actions. Thirteen tools for fourteen operations: the
+		// fourteenth, lockwithgeneratedpin, locks the machine AND returns the
+		// PIN that unlocks it, so it is CLI-only for the same reason the two
+		// reads above are.
+		"apple_mdm_device_erase",
+		"apple_mdm_device_lock",
+		"apple_mdm_device_restart",
+		"apple_mdm_device_shutdown",
+		"apple_mdm_device_unenroll",
+		"apple_mdm_device_clear_passcode",
+		"apple_mdm_device_clear_restrictions_password",
+		"apple_mdm_device_clear_activation_lock",
+		"apple_mdm_device_refresh_activation_lock",
+		"apple_mdm_device_os_update_status",
+		"apple_mdm_device_schedule_os_update",
+		"apple_mdm_device_lost_mode",
+		"apple_mdm_refresh_dep_devices",
 		"apple_mdm_enrollment_profiles", "apple_mdm_devices",
 		// Policy Groups
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
@@ -566,8 +583,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 405 {
-		t.Errorf("expected 405 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 418 {
+		t.Errorf("expected 418 tools, got %d", len(result.Tools))
 	}
 }
 

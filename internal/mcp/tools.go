@@ -629,6 +629,7 @@ func (s *Server) registerTools() {
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
 	s.registerAppleMDMDeviceTools()
+	s.registerAppleMDMDeviceActionTools()
 	s.registerAgentsTools()
 	s.registerAgentsWriteTools()
 	s.registerPasswordVaultTools()
