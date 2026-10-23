@@ -142,7 +142,10 @@ func ValidatePIN(pin string) error {
 		return nil
 	}
 	if !pinPattern.MatchString(pin) {
-		return fmt.Errorf("a lock/erase PIN must be exactly six digits, got %q", pin)
+		// The rejected value is NOT echoed. It is a credential the operator
+		// chose, a near-miss of it is still worth protecting, and an error
+		// message is one of the places values go on to be logged.
+		return fmt.Errorf("a lock/erase PIN must be exactly six digits")
 	}
 	return nil
 }

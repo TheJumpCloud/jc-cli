@@ -72,8 +72,16 @@ func TestValidatePIN(t *testing.T) {
 	// Each of these was rejected live by the gateway with
 	// `must match pattern "^[0-9]{6}$"`.
 	for _, bad := range []string{"abc", "1", "1234567", "12345a", " 123456", "123456 "} {
-		if err := ValidatePIN(bad); err == nil {
+		err := ValidatePIN(bad)
+		if err == nil {
 			t.Errorf("ValidatePIN(%q) = nil, want an error", bad)
+			continue
+		}
+		// The rejected value must not appear in the message: an error string
+		// travels into logs and transcripts, and a near-miss of a PIN is
+		// still a PIN.
+		if strings.Contains(err.Error(), bad) {
+			t.Errorf("ValidatePIN(%q) echoed the rejected value: %v", bad, err)
 		}
 	}
 }
