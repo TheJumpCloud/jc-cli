@@ -47,6 +47,18 @@ func newAppleMDMCmd() *cobra.Command {
 	cmd.AddCommand(newAppleMDMCSRCmd())
 	cmd.AddCommand(newAppleMDMRecoveryLockCmd())
 	cmd.AddCommand(newAppleMDMDeviceLockCmd())
+	// The device actions (KLA-485 slice 3).
+	cmd.AddCommand(newAppleMDMEraseCmd())
+	cmd.AddCommand(newAppleMDMRestartCmd())
+	cmd.AddCommand(newAppleMDMShutdownCmd())
+	cmd.AddCommand(newAppleMDMUnenrollCmd())
+	cmd.AddCommand(newAppleMDMClearPasscodeCmd())
+	cmd.AddCommand(newAppleMDMClearRestrictionsPasswordCmd())
+	cmd.AddCommand(newAppleMDMClearActivationLockCmd())
+	cmd.AddCommand(newAppleMDMRefreshActivationLockCmd())
+	cmd.AddCommand(newAppleMDMOSUpdateCmd())
+	cmd.AddCommand(newAppleMDMLostModeCmd())
+	cmd.AddCommand(newAppleMDMRefreshDEPDevicesCmd())
 
 	return cmd
 }

@@ -472,7 +472,10 @@ var Resources = map[string]ResourceSchema{
 		Verbs: []string{"list", "get", "create", "update", "delete",
 			"enrollment-profiles", "devices", "payloads",
 			"ade-tokens", "ade-settings", "abm-devices", "background-tasks", "adue",
-			"device", "csr", "recovery-lock", "device-lock"},
+			"device", "csr", "recovery-lock", "device-lock",
+			"erase", "restart", "shutdown", "unenroll", "clear-passcode",
+			"clear-restrictions-password", "clear-activation-lock",
+			"refresh-activation-lock", "os-update", "lost-mode", "refresh-dep-devices"},
 		DefaultFields: []string{"id", "name", "orgName", "defaultIosUserEnrollmentDeviceGroupID"},
 		Fields: []FieldDef{
 			{Name: "id", Type: "string", Description: "Unique Apple MDM configuration identifier"},

@@ -39,6 +39,17 @@ var validIDFor = map[string]string{
 // extraArgs carries the non-id arguments a tool needs to reach its id check.
 var extraArgs = map[string]map[string]any{
 	"apple_mdm_ade_settings_get": {"os_family": "DARWIN"},
+	// These two carry required properties of their own, and the MCP schema
+	// layer rejects a call missing them before the handler's id check can
+	// run — so without these the test would report the tool as accepting a
+	// traversal when in fact it never got that far.
+	"apple_mdm_device_schedule_os_update": {
+		"install_action": "DOWNLOAD_ONLY",
+		"product_key":    "MSU_UPDATE_24A348_patch_15.1",
+	},
+	// false is the disable side of the oneof: a valid request that needs no
+	// message or phone number, so the id check is what fails.
+	"apple_mdm_device_lost_mode": {"enable": false},
 }
 
 // idTakingAppleMDMTools is every Apple MDM tool that puts a caller-supplied
@@ -63,6 +74,24 @@ var idTakingAppleMDMTools = map[string][]string{
 	"apple_mdm_device_lock_state":    nil,
 	"apple_mdm_recovery_lock_config": nil,
 	"apple_mdm_csr_get":              nil,
+	// The device actions (slice 3). Every one of these interpolates both ids
+	// into a request path that then performs an action, so the check matters
+	// more here than on the reads: a traversal that reached the wire would be
+	// a POST, not a GET. They were all caught by the structural test below
+	// when they were added, which is what the exclusion-list rewrite was for.
+	"apple_mdm_device_erase":                       nil,
+	"apple_mdm_device_lock":                        nil,
+	"apple_mdm_device_restart":                     nil,
+	"apple_mdm_device_shutdown":                    nil,
+	"apple_mdm_device_unenroll":                    nil,
+	"apple_mdm_device_clear_passcode":              nil,
+	"apple_mdm_device_clear_restrictions_password": nil,
+	"apple_mdm_device_clear_activation_lock":       nil,
+	"apple_mdm_device_refresh_activation_lock":     nil,
+	"apple_mdm_device_os_update_status":            nil,
+	"apple_mdm_device_schedule_os_update":          nil,
+	"apple_mdm_device_lost_mode":                   nil,
+	"apple_mdm_refresh_dep_devices":                nil,
 }
 
 // payloadTypeArg is the one id-shaped argument in this area that is NOT an
