@@ -5,21 +5,60 @@ on:
     types: [closed]
     branches: [main]
 
+  # The recovery path for a release that never happened. See the concurrency
+  # note below: a cancelled run executes no steps, so it cannot retry itself,
+  # and `gh run rerun` on it answers "Must have admin rights to Repository" --
+  # which made the originally documented recovery unavailable to everyone who
+  # actually merges here. This gives the same outcome to anyone with write
+  # access:
+  #
+  #   gh workflow run release.yml -f pr=173
+  #
+  # It takes the PR number rather than a version or a sha because the PR is
+  # what holds the label and the merge commit, so a recovered release is
+  # computed exactly like the original would have been. Refuses a PR that is
+  # not merged, was not merged into main, or whose work a release already
+  # contains.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Merged PR number whose release run never ran'
+        required: true
+        type: string
+
 permissions:
   contents: write       # gh release create (creates tag + release)
-                        # + listTags via API. That's all GITHUB_TOKEN needs;
-                        # labels are read from the event payload, not the API.
+                        # + listTags and compareCommits via API.
+  pull-requests: read   # pulls.get, for the workflow_dispatch path only: a
+                        # dispatch carries no PR payload, so the label and the
+                        # merge commit have to be read back from the API.
 
 # Serialize release runs so two PRs merging back-to-back don't both
 # compute the same next version and race on `gh release create`.
 #
-# GitHub Actions concurrency guarantees at most ONE running + ONE pending
-# run per group. If a third run is queued while one is running and one is
-# pending, the third cancels the pending one. For jc-cli's merge cadence
-# (single-digit PRs/day, ~3-5min release runtime) this is a theoretical
-# edge case — if it ever bites, the cancelled run shows up in the Actions
-# tab and can be re-triggered manually. If it becomes a real problem,
-# swap this block for a proper queueing action.
+# GitHub Actions concurrency guarantees at most ONE running + ONE pending run
+# per group. If a third run is queued while one is running and one is pending,
+# the third cancels the pending one. This file used to call that a theoretical
+# edge case. It is not: on 2026-10-22, PRs #172, #174, #173, #175 and #33
+# merged inside 94 seconds and produced three releases instead of five. The
+# runs for #173 and #175 were cancelled while pending.
+#
+# That cost nothing, for a reason worth writing down: the next run that DID
+# succeed cut its tag from main after all five merges, so the artifact
+# contained every change, and `--generate-notes` spans tag-to-tag rather than
+# PR-to-PR, so the notes named all three PRs it had swept up. A dropped run
+# costs version *numbers*, not content.
+#
+# There is deliberately no queueing action here. GitHub cannot queue more than
+# one pending run per group, so the alternative is to drop the group entirely
+# and make version selection collision-safe instead -- reserve the tag ref
+# before building, retry on 422. That is the right end state and it is not a
+# change anyone can verify before merging it, since this workflow only runs on
+# a merge to main and a mistake in it breaks every release. So instead the two
+# cheap halves are covered: the drop is now DETECTED
+# (scripts/unreleased-check.sh, run by unreleased-check.yml) and RECOVERABLE
+# (the workflow_dispatch above). The dangerous shape was never the collision
+# itself -- it was a collision nobody was told about.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -32,18 +71,105 @@ jobs:
   # == same pattern as internal common-github-actions/create_release.
   # =================================================================
   Check-PR-Labels:
-    if: github.event.pull_request.merged == true
+    # On a dispatch there is no pull_request payload at all, so the merged
+    # check moves into the script, where it is made against the API instead.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       RELEASE_TYPE: ${{ steps.labels.outputs.RELEASE_TYPE }}
+      # The merge commit everything downstream builds and tags. It used to be
+      # read as github.event.pull_request.merge_commit_sha in two places in the
+      # Release job; a dispatch has no such payload, so it is resolved once
+      # here and passed along.
+      MERGE_SHA: ${{ steps.labels.outputs.MERGE_SHA }}
+      PR_NUMBER: ${{ steps.labels.outputs.PR_NUMBER }}
     steps:
       - name: Parse PR labels
         id: labels
         uses: actions/github-script@v9
+        env:
+          PR_INPUT: ${{ inputs.pr }}
         with:
           script: |
             const valid = ['major', 'minor', 'patch', 'no version'];
-            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const isDispatch = context.eventName === 'workflow_dispatch';
+
+            let pull;
+            if (isDispatch) {
+              const num = Number.parseInt(process.env.PR_INPUT ?? '', 10);
+              if (!Number.isInteger(num) || num <= 0) {
+                core.setFailed(`'pr' must be a pull request number. Got '${process.env.PR_INPUT}'.`);
+                return;
+              }
+              ({ data: pull } = await github.rest.pulls.get({
+                ...context.repo, pull_number: num,
+              }));
+
+              // A dispatch is a hand-typed number, so everything the webhook
+              // would have guaranteed has to be checked here instead.
+              if (!pull.merged) {
+                core.setFailed(`#${num} is not merged. Only a merged PR can be released.`);
+                return;
+              }
+              if (!pull.merge_commit_sha) {
+                core.setFailed(
+                  `#${num} reports no merge commit. Nothing can be built from it.`
+                );
+                return;
+              }
+              if (pull.base.ref !== 'main') {
+                core.setFailed(
+                  `#${num} was merged into '${pull.base.ref}', not main. ` +
+                  `Releases are cut from main only.`
+                );
+                return;
+              }
+
+              // The trap this guard exists for. A dropped release is harmless
+              // precisely because a LATER successful run sweeps the work up,
+              // so by the time anyone notices, re-releasing the same PR
+              // usually means publishing a second version with identical
+              // content. Compare the merge commit against the newest release:
+              // if the release already contains it, there is nothing to
+              // recover. ('ahead'/'identical' = the tag is at or past the
+              // merge commit, i.e. it contains it.)
+              let latest = null;
+              try {
+                ({ data: latest } = await github.rest.repos.getLatestRelease({ ...context.repo }));
+              } catch (e) {
+                if (e.status !== 404) throw e;   // 404 = no releases yet, fine
+              }
+              if (latest) {
+                // github.request with the raw endpoint rather than
+                // github.rest.repos.compareCommitsWithBasehead: the REST route
+                // is part of GitHub's API contract, the convenience method
+                // name is part of whatever octokit version github-script@v9
+                // happens to bundle. Nothing here can test which, so prefer
+                // the one that cannot move.
+                const { data: cmp } = await github.request(
+                  'GET /repos/{owner}/{repo}/compare/{basehead}',
+                  { ...context.repo, basehead: `${pull.merge_commit_sha}...${latest.tag_name}` },
+                );
+                if (cmp.status === 'ahead' || cmp.status === 'identical') {
+                  core.setFailed(
+                    `#${num} is already released: ${latest.tag_name} contains its merge commit ` +
+                    `(${pull.merge_commit_sha.slice(0, 9)}). Releasing again would publish a ` +
+                    `second version with identical content. Check that release's notes — ` +
+                    `--generate-notes spans tag to tag, so a run that was cancelled still has ` +
+                    `its PR credited in whichever release came next.`
+                  );
+                  return;
+                }
+              }
+              core.info(`Recovering the release for #${num} (dispatched by hand)`);
+            } else {
+              pull = context.payload.pull_request;
+            }
+
+            core.setOutput('PR_NUMBER', String(pull.number));
+            core.setOutput('MERGE_SHA', pull.merge_commit_sha);
+
+            const labels = pull.labels.map(l => l.name);
             core.info(`Labels on PR: ${labels.join(', ') || '(none)'}`);
 
             const matches = labels.filter(name => valid.includes(name));
@@ -139,7 +265,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ needs.Check-PR-Labels.outputs.MERGE_SHA }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -199,7 +325,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.Compute-Version.outputs.VERSION }}"
-          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          SHA="${{ needs.Check-PR-Labels.outputs.MERGE_SHA }}"
 
           gh release create "$VERSION" \
             --target "$SHA" \
