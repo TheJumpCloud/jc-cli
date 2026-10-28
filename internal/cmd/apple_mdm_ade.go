@@ -1,7 +1,7 @@
 package cmd
 
 // Automated Device Enrollment, Apple Business Manager and Account-Driven User
-// Enrollment: the read commands.
+// Enrollment: the read commands. The writes are in apple_mdm_ade_writes.go.
 //
 // None of these endpoints pages. Each answers one envelope carrying its rows
 // and a totalCount, so they go through client.Get and the shared parsers in
@@ -48,6 +48,7 @@ usually the first thing worth reading.`,
 	cmd.AddCommand(newADETokenGetCmd())
 	cmd.AddCommand(newADETokensStatsCmd())
 	cmd.AddCommand(newADETokenOrgNamesCmd())
+	cmd.AddCommand(newADETokenRefreshABMCmd())
 	return cmd
 }
 
@@ -209,9 +210,9 @@ func newAppleMDMADESettingsCmd() *cobra.Command {
 		Use:     "ade-settings",
 		Aliases: []string{"ade-setting"},
 		Short:   "Automated Device Enrollment settings per OS family",
-		Long: `Read the enrollment experience configured for an ADE token — the setup
-assistant panes that are skipped, the welcome screen text, whether enrollment
-is mandatory.
+		Long: `Read and change the enrollment experience configured for an ADE token —
+the setup assistant panes that are skipped, the welcome screen text, whether
+enrollment is mandatory, the device groups new devices join.
 
 Settings are held per OS family. The API names them DARWIN and IOS, not macOS
 and iOS; jc accepts either spelling. The spec also lists UNKNOWN, which the API
@@ -219,6 +220,7 @@ answers with HTTP 400, so jc refuses it here rather than passing it on.`,
 	}
 	cmd.AddCommand(newADESettingsListCmd())
 	cmd.AddCommand(newADESettingGetCmd())
+	cmd.AddCommand(newADESettingUpdateCmd())
 	return cmd
 }
 
@@ -362,13 +364,15 @@ func newAppleMDMADUECmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "adue",
 		Short: "Account-Driven User Enrollment",
-		Long: `Inspect Account-Driven User Enrollment (ADUE) — the BYOD path where a
-user enrolls a personal device by signing in with their JumpCloud account
-rather than through Apple Business Manager.`,
+		Long: `Inspect and switch Account-Driven User Enrollment (ADUE) — the BYOD path
+where a user enrolls a personal device by signing in with their JumpCloud
+account rather than through Apple Business Manager.`,
 	}
 	cmd.AddCommand(newADUEGetCmd())
 	cmd.AddCommand(newADUEConfigCmd())
 	cmd.AddCommand(newADUEValidateCmd())
+	cmd.AddCommand(newADUEEnableCmd())
+	cmd.AddCommand(newADUEDisableCmd())
 	return cmd
 }
 
@@ -486,7 +490,7 @@ has no URL at all. jc reads the body and exits 1 when the URL does not resolve.`
 				return &CLIError{
 					Code:       ErrCodeGeneral,
 					Message:    res.Describe(),
-					Suggestion: "configure a service discovery URL for this Apple MDM, or use `jc apple-mdm adue config` to see what the organization currently points at",
+					Suggestion: "turn it on with `jc apple-mdm adue enable " + args[0] + "`, or use `jc apple-mdm adue config` to see what the organization currently points at",
 				}
 			}
 			if !opts.Quiet && !opts.IDsOnly {

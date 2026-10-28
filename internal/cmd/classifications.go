@@ -273,6 +273,15 @@ var commandClass = map[string]string{
 	"jc apple-mdm adue validate":        ClassReadOnly,
 	"jc apple-mdm background-tasks":     ClassReadOnly,
 
+	// Slice 4: the ADE/ADUE writes. Mutating, not destructive: each is
+	// reversible by the same command, and none reaches a device directly.
+	// ade-settings update changes what the NEXT enrollment looks like; adue
+	// disable stops new sign-in enrollments until re-enabled.
+	"jc apple-mdm ade-settings update":            ClassMutating,
+	"jc apple-mdm ade-tokens refresh-abm-devices": ClassMutating,
+	"jc apple-mdm adue enable":                    ClassMutating,
+	"jc apple-mdm adue disable":                   ClassMutating,
+
 	// The device reads (slice 2). All GETs, so read-only by the letter of the
 	// rule — but two of them return the credentials that unlock a Mac, and
 	// read-only is exactly why they need saying out loud: a secret read
