@@ -300,6 +300,11 @@ for that.`,
 	}
 	cmd.AddCommand(newAppleMDMLockStateCmd())
 	cmd.AddCommand(newAppleMDMLockPINCmd())
+	// The two lock ACTIONS live in apple_mdm_device_actions.go; they are
+	// grouped here so the lock family -- read the state, read the PIN, send
+	// the lock, send a lock with a generated PIN -- is in one place.
+	cmd.AddCommand(newAppleMDMDeviceLockSendCmd())
+	cmd.AddCommand(newAppleMDMLockWithGeneratedPINCmd())
 	return cmd
 }
 

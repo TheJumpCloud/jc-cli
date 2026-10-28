@@ -556,7 +556,20 @@ func newAuditLogger(path string) *auditLogger {
 	return al
 }
 
-// sensitiveParamKeys are parameter names that should be redacted in audit logs.
+// sensitiveParamKeys are parameter names that should be redacted in audit
+// logs and in the signed manifests of destructive operations.
+//
+// `pin` was added when the Apple MDM device actions landed, after a security
+// review caught the leak: apple_mdm_device_erase and apple_mdm_device_lock
+// were the first tools to take a credential as an argument, and a six-digit
+// PIN is the only way past a locked Mac's firmware lock. Without the entry it
+// was written to the audit log in clear text, verified by reading the file —
+// see TestAuditLogDoesNotRecordADeviceLockPIN.
+//
+// This map is an INCLUSION LIST, which fails open: a parameter nobody adds
+// here is logged verbatim. TestEverySecretishToolArgumentIsRedacted closes
+// that loop structurally — a new argument whose name looks like a credential
+// must be either listed here or explicitly declared not to be one.
 var sensitiveParamKeys = map[string]bool{
 	"shared_secret": true,
 	"password":      true,
@@ -568,6 +581,17 @@ var sensitiveParamKeys = map[string]bool{
 	"apiKey":        true,
 	"publicKey":     true,
 	"token":         true,
+	"pin":           true,
+	"lock_pin":      true,
+	"lockPin":       true,
+	"passcode":      true,
+	"secret":        true,
+	// auth_token is notification_channels_create's webhook bearer token. It
+	// was already being written to the audit log in clear text before the
+	// Apple MDM actions existed; TestEverySecretishToolArgumentIsRedacted
+	// found it on its first run, which is the argument for having the test.
+	"auth_token": true,
+	"authToken":  true,
 }
 
 // redactParams replaces sensitive parameter values in a JSON object with a placeholder.

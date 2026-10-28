@@ -286,6 +286,31 @@ var commandClass = map[string]string{
 	"jc apple-mdm recovery-lock password": ClassReadOnly,
 	"jc apple-mdm device-lock state":      ClassReadOnly,
 	"jc apple-mdm device-lock pin":        ClassReadOnly,
+	// The device actions (slice 3). Classed by worst-case capability, which
+	// for most of this family is "a machine someone is using stops being
+	// usable". `devices restart` is already destructive here for interrupting
+	// user work, and these are the same commands on the Apple MDM route.
+	//
+	// The three that only ask a question are mutating rather than read-only
+	// because they POST and queue a command on the device; none of them
+	// changes anything a user would notice.
+	"jc apple-mdm erase":                       ClassDestructive,
+	"jc apple-mdm unenroll":                    ClassDestructive,
+	"jc apple-mdm shutdown":                    ClassDestructive,
+	"jc apple-mdm restart":                     ClassDestructive, // interrupts user work
+	"jc apple-mdm clear-passcode":              ClassDestructive, // removes a security control
+	"jc apple-mdm clear-restrictions-password": ClassDestructive,
+	"jc apple-mdm clear-activation-lock":       ClassDestructive,
+	"jc apple-mdm lost-mode enable":            ClassDestructive, // locks the device
+	"jc apple-mdm lost-mode disable":           ClassDestructive, // unlocks a device reported lost
+	"jc apple-mdm os-update schedule":          ClassDestructive, // INSTALL_FORCE_RESTART restarts without asking
+	// device-lock send and with-generated-pin lock the machine; the second
+	// also returns the PIN, which is why it has no MCP tool at all.
+	"jc apple-mdm device-lock send":               ClassDestructive,
+	"jc apple-mdm device-lock with-generated-pin": ClassDestructive,
+	"jc apple-mdm refresh-activation-lock":        ClassMutating,
+	"jc apple-mdm os-update status":               ClassMutating,
+	"jc apple-mdm refresh-dep-devices":            ClassMutating,
 	// payloads compose: --create-policy turns this into a JC POST
 	// (same wire shape as create-policy), so worst-case capability is
 	// mutating, not internal. Cursor Bugbot PR #62 catch.

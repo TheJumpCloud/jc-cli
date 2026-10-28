@@ -125,3 +125,57 @@ func TestNoToolDescribesReadingASecret(t *testing.T) {
 		}
 	}
 }
+
+// TestNoToolLocksADeviceAndHandsBackThePIN guards the fourteenth Apple MDM
+// device action, which is the only one with no tool.
+//
+// POST …/devices/{id}/lockwithgeneratedpin locks a Mac AND returns the PIN
+// that unlocks it, which puts it in both categories this file exists for: it
+// is destructive, so it would get a plan, a step-up prompt and a signed
+// manifest -- and all of that is about undoing a change, while the damage
+// here is a credential in a transcript that nothing can retract. The lock
+// itself is available through apple_mdm_device_lock, where the caller
+// supplies the PIN and the API never returns one.
+//
+// Written when the actions landed, so the tool cannot arrive later by
+// analogy with its twelve neighbours.
+func TestNoToolLocksADeviceAndHandsBackThePIN(t *testing.T) {
+	setupToolTest(t)
+	cs := connectToolTestServer(t, Options{})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	// Name fragments that would indicate the generated-PIN route was wired
+	// up. "pin" alone is not one of them: apple_mdm_device_lock legitimately
+	// talks about the PIN the caller supplies.
+	bannedName := []string{"generated_pin", "generatedpin", "lockpin", "lock_pin", "with_generated"}
+	// And the same thing arriving under another name, promising the value.
+	promises := []string{
+		"returns the pin", "return the pin", "returns a pin", "returns the generated pin",
+		"generates a pin and returns", "hands back the pin",
+	}
+
+	for _, tool := range res.Tools {
+		lower := strings.ToLower(tool.Name)
+		for _, b := range bannedName {
+			if strings.Contains(lower, b) {
+				t.Errorf("tool %q looks like the lockwithgeneratedpin route.\n\n"+
+					"That call locks a device and returns the PIN that unlocks it. Being "+
+					"destructive it would get a plan and a step-up prompt, and neither "+
+					"un-writes a credential from a transcript. It is CLI-only; see "+
+					"internal/cmd/apple_mdm_device_actions.go. Use apple_mdm_device_lock, "+
+					"where the caller supplies the PIN.", tool.Name)
+			}
+		}
+		desc := strings.ToLower(tool.Description)
+		for _, p := range promises {
+			if strings.Contains(desc, p) {
+				t.Errorf("tool %q describes returning a device lock PIN: %q found in its "+
+					"description. That read is CLI-only; see "+
+					"internal/cmd/apple_mdm_device_actions.go", tool.Name, p)
+			}
+		}
+	}
+}
