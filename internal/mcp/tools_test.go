@@ -495,6 +495,12 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"apple_mdm_device_schedule_os_update",
 		"apple_mdm_device_lost_mode",
 		"apple_mdm_refresh_dep_devices",
+		// MDM slice 4: the ADE/ADUE writes. Four tools for the CLI's four
+		// commands; the ADE token upload/renew are held back in both.
+		"apple_mdm_ade_settings_update",
+		"apple_mdm_ade_token_refresh_abm_devices",
+		"apple_mdm_adue_enable",
+		"apple_mdm_adue_disable",
 		"apple_mdm_enrollment_profiles", "apple_mdm_devices",
 		// Policy Groups
 		"policy_groups_list", "policy_groups_get", "policy_groups_create", "policy_groups_update", "policy_groups_delete",
@@ -583,8 +589,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 418 {
-		t.Errorf("expected 418 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 422 {
+		t.Errorf("expected 422 tools, got %d", len(result.Tools))
 	}
 }
 

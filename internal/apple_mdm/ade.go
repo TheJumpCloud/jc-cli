@@ -335,7 +335,11 @@ const AbsenceArrivesAsHTTP200 = "a missing service-discovery URL is reported as 
 // responseCodeOK is the one value that means the URL resolves. Matched
 // exactly: the other observed value is NOT_FOUND, and treating "anything that
 // is not NOT_FOUND" as success would call an unrecognised code a pass.
-const responseCodeOK = "OK"
+//
+// It is SUCCESS, not OK. This constant was "OK" until 2026-10-28 — written
+// when only NOT_FOUND had ever been seen, because no tenant had a URL. Turning
+// one on showed SUCCESS, so every working URL had been reported as failing.
+const responseCodeOK = "SUCCESS"
 
 // OK reports whether the service-discovery URL resolves.
 func (r ServiceDiscoveryResult) OK() bool { return r.ResponseCode == responseCodeOK }

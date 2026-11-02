@@ -183,9 +183,22 @@ func TestServiceDiscovery_NotFoundIsNotSuccess(t *testing.T) {
 		t.Errorf("describe should say what is missing, got %q", r.Describe())
 	}
 
-	ok, err := ParseServiceDiscovery(json.RawMessage(`{"responseCode":"OK"}`))
+	// SUCCESS is what the live API answered once a URL was enabled
+	// (2026-10-28). "OK" was a guess and is NOT success: had it stayed, every
+	// working URL would have been reported as failing.
+	ok, err := ParseServiceDiscovery(json.RawMessage(`{"responseCode":"SUCCESS"}`))
 	if err != nil || !ok.OK() {
-		t.Errorf("OK must read as OK: %+v %v", ok, err)
+		t.Errorf("SUCCESS must read as OK: %+v %v", ok, err)
+	}
+	if !strings.Contains(ok.Describe(), "resolves") {
+		t.Errorf("describe should say the URL resolves, got %q", ok.Describe())
+	}
+	guessed, err := ParseServiceDiscovery(json.RawMessage(`{"responseCode":"OK"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guessed.OK() {
+		t.Error("\"OK\" was never observed and must not read as success")
 	}
 
 	// An unrecognised code is NOT success. Matching "not NOT_FOUND" would

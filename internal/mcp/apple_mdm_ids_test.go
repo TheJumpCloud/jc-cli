@@ -50,6 +50,9 @@ var extraArgs = map[string]map[string]any{
 	// false is the disable side of the oneof: a valid request that needs no
 	// message or phone number, so the id check is what fails.
 	"apple_mdm_device_lost_mode": {"enable": false},
+	// One real change, so that a well-formed id gets past "nothing to change"
+	// and the id check is the only thing left to fail.
+	"apple_mdm_ade_settings_update": {"os_family": "IOS", "zero_touch": true},
 }
 
 // idTakingAppleMDMTools is every Apple MDM tool that puts a caller-supplied
@@ -92,6 +95,12 @@ var idTakingAppleMDMTools = map[string][]string{
 	"apple_mdm_device_schedule_os_update":          nil,
 	"apple_mdm_device_lost_mode":                   nil,
 	"apple_mdm_refresh_dep_devices":                nil,
+	// Slice 4: the ADE/ADUE writes. All four were caught by the structural
+	// test before they were listed here.
+	"apple_mdm_ade_settings_update":           nil,
+	"apple_mdm_ade_token_refresh_abm_devices": nil,
+	"apple_mdm_adue_enable":                   nil,
+	"apple_mdm_adue_disable":                  nil,
 }
 
 // payloadTypeArg is the one id-shaped argument in this area that is NOT an

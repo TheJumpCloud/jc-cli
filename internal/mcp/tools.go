@@ -628,6 +628,7 @@ func (s *Server) registerTools() {
 	s.registerWorkdayTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
+	s.registerAppleMDMADEWriteTools()
 	s.registerAppleMDMDeviceTools()
 	s.registerAppleMDMDeviceActionTools()
 	s.registerAgentsTools()
