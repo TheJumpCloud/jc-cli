@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestPlan_RenderHuman_Delete(t *testing.T) {
@@ -203,5 +204,65 @@ func TestPlan_Render_UsesFormat(t *testing.T) {
 func TestExitCodePlan(t *testing.T) {
 	if ExitCodePlan != 10 {
 		t.Errorf("ExitCodePlan = %d, want 10", ExitCodePlan)
+	}
+}
+
+func TestPlan_RenderHuman_Wrap(t *testing.T) {
+	words := strings.TrimSpace(strings.Repeat("alpha beta gamma delta ", 6)) // 143 runes
+	words = words[:120]
+	words = strings.TrimSpace(words)
+	token := strings.Repeat("x", 80)
+	tests := []struct {
+		name     string
+		plan     Plan
+		wantRows int // minimum number of box rows; 0 = don't check
+		wrapped  bool
+		joined   string // expected text rejoined from the box, "" = skip
+	}{
+		{"fits", Plan{Action: "update", Resource: "user", Target: "jdoe", Effects: []string{"a: b"}}, 0, false, ""},
+		{"worded effect", Plan{Action: "update", Resource: "user", Target: "jdoe", Effects: []string{"note: " + words}}, 0, true, "note: " + words},
+		{"long token target", Plan{Action: "update", Resource: "user", Target: token}, 0, true, ""},
+		{"arrow effect", Plan{Action: "update", Resource: "ade", Target: "t", Effects: []string{"zero-touch: false → true"}}, 0, false, ""},
+		{"46 rune arrow effect", Plan{Action: "update", Resource: "ade", Target: "t", Effects: []string{"k: " + strings.Repeat("→", 43)}}, 0, false, ""},
+		{"long title", Plan{Action: strings.Repeat("act ", 20), Resource: "r", Target: "t"}, 0, true, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := tc.plan.RenderHuman(&buf); err != nil {
+				t.Fatal(err)
+			}
+			rows := 0
+			var effect []string
+			for _, l := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
+				if strings.HasPrefix(l, "No changes made") {
+					continue
+				}
+				rows++
+				if n := utf8.RuneCountInString(l); n != 52 {
+					t.Errorf("line is %d runes, want 52: %q", n, l)
+				}
+				if strings.HasPrefix(l, "│   ") {
+					effect = append(effect, strings.TrimSpace(strings.Trim(l, "│ ")))
+				}
+			}
+			out := buf.String()
+			if tc.joined != "" {
+				if got := strings.Join(effect, " "); got != tc.joined {
+					t.Errorf("rejoined effect = %q, want %q", got, tc.joined)
+				}
+			}
+			for _, e := range tc.plan.Effects {
+				if !tc.wrapped && !strings.Contains(out, e) {
+					t.Errorf("effect %q was wrapped", e)
+				}
+			}
+			if tc.name == "long token target" {
+				got := strings.Join(strings.FieldsFunc(out, func(r rune) bool { return r != 'x' }), "")
+				if got != token {
+					t.Errorf("token chars = %q, want %q", got, token)
+				}
+			}
+		})
 	}
 }
