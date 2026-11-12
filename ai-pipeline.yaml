@@ -1,0 +1,58 @@
+# ai-pipeline.yaml: contract with the JumpCloud Labs tickets pipeline (project key JCCLI).
+# Schema: TheJumpCloud/jumpcloud-labs-tickets-poc backend/pipeline/schema/ai-pipeline.schema.json
+#
+# jc is a single Go binary with no service to deploy, so the pipeline deploys nothing (`stacks: []`)
+# and QA is manual. The live checks run against the dedicated JumpCloud test org and need its API key
+# (JC_API_KEY, JC_ORG_ID); the pipeline has no way to hand a secret to QA, so a person claims QA,
+# runs `JC=./jc ./scripts/integration-test.sh [--skip-mutable]` plus the ticket's live checks from
+# tkt/<KEY>, reports the results with evidence and hands back. Never point either at a real org.
+#
+# Tickets land on tickets-main; a person promotes tickets-main to main with a labelled PR (release.yml
+# releases from main). The Develop stage cannot edit this file; a person applies changes to it.
+version: 1
+
+build:
+  install:
+    # Go exactly as go.mod names it, from go.dev, checked against the sha256 go.dev publishes for it.
+    # The build image may carry another Go earlier on PATH, so every `go`/`gofmt` on PATH is pointed at
+    # /usr/local/go; the last check fails the install unless `go version` prints the go.mod version.
+    - >-
+      V=$(sed -n 's/^go //p' go.mod);
+      A=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/');
+      if [ "$(/usr/local/go/bin/go version 2>/dev/null | awk '{print $3}')" != "go$V" ]; then
+      S=$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | python3 -I -c 'import json,sys; v,a=sys.argv[1:]; print(next(f["sha256"] for r in json.load(sys.stdin) if r["version"]=="go"+v for f in r["files"] if f["os"]=="linux" and f["arch"]==a and f["kind"]=="archive"))' "$V" "$A")
+      && curl -fsSL -o /tmp/go.tgz "https://go.dev/dl/go$V.linux-$A.tar.gz"
+      && echo "$S  /tmp/go.tgz" | sha256sum -c -
+      && rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz; fi
+      && for b in go gofmt; do for p in $(which -a $b 2>/dev/null) /usr/local/bin/$b; do
+      [ "$(readlink -f "$p")" = "/usr/local/go/bin/$b" ] || ln -sf /usr/local/go/bin/$b "$p"; done; done
+      && go version | grep -q "go$V " && go version
+    # The race detector needs cgo and a C compiler.
+    - command -v gcc >/dev/null || dnf install -y -q gcc
+    - go mod download
+  commands:
+    - make build
+  test:
+    # Same gate as .github/workflows/test.yml and verify-site.yml.
+    - make fmt-check
+    - go vet ./...
+    - go test -race -count=1 ./...
+    - make verify-site
+  # docs/site/ is generated from the command tree; Develop regenerates it instead of hand-merging a
+  # conflict in it. docs/API_COVERAGE.md, internal/workflow/operations.json and docs/spec-provenance.md
+  # are NOT listed: they come from `make refresh-generated`, which a person runs.
+  generate:
+    - make site
+  generated:
+    - docs/site/commands.json
+    - docs/site/llms.txt
+    - docs/site/llms-full.txt
+
+stacks: [] # nothing the pipeline deploys
+
+qa:
+  mode: manual
+
+mergeQueue:
+  # No ticket stack to redeploy: re-verifying a candidate means building it and running the test gate.
+  reverify: build
