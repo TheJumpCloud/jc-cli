@@ -65,7 +65,7 @@ var categories = []category{
 		Commands: []string{
 			"jc ad", "jc gsuite", "jc office365", "jc duo",
 			"jc ldap", "jc radius", "jc software", "jc assets",
-			"jc directories", "jc google-emm", "jc workday",
+			"jc directories", "jc google-emm", "jc workday", "jc access-cert",
 		},
 	},
 	{

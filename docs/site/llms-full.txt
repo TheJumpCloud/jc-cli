@@ -431,6 +431,14 @@ The Android Enterprise binding, the devices enrolled through it and the enrollme
 
 **Subcommands:** `enterprises`, `devices`, `enrollment-tokens`
 
+#### `jc access-cert`
+
+Read Access Certification campaigns, runs, review items and audit reports
+
+Read-only view of Access Certification: settings, campaign templates, campaign runs, review items, the admin queue and audit-report metadata. Runs list shows active runs only unless --status closed or --status all is given. Audit-report downloads are pre-signed URLs; --no-urls strips them. No write operation is exposed.
+
+**Subcommands:** `settings`, `campaigns`, `runs`, `admin-queue`
+
 #### `jc workday`
 
 Inspect the org's Workday HR-import integrations
@@ -817,6 +825,7 @@ Agent groups are the collections through which AI agents are granted access to a
 
 Every resource has a JSON schema available via `jc schema <resource>`:
 
+- `access-cert`
 - `access-requests`
 - `ad`
 - `admins`
