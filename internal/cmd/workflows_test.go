@@ -382,7 +382,8 @@ func TestWorkflows_CreatePlanWarnsOnAdminRole(t *testing.T) {
 
 	path := writeTemp(t, `{"name":"probe","dsl":`+probeDSL+`}`)
 	out, errOut, _ := runWFCmd(t, "workflows", "create", "--file", path, "--role", "Administrator", "--plan")
-	combined := out + errOut
+	// The plan box wraps long effects; drop the borders and rejoin the lines.
+	combined := strings.Join(strings.Fields(strings.ReplaceAll(out+errOut, "│", " ")), " ")
 	if !strings.Contains(combined, "administrator role is a broad standing grant") {
 		t.Errorf("binding an admin role to an unattended workflow should be called out: %s", combined)
 	}
