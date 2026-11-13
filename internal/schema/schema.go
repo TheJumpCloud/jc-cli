@@ -842,6 +842,26 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	"access-cert": {
+		Resource:      "access-cert",
+		APIVersion:    "v2",
+		Verbs:         []string{"list", "get"},
+		DefaultFields: []string{"name", "id", "status", "enabled", "scopeType", "scheduleMode", "lastRunAt"},
+		Fields: []FieldDef{
+			// Campaign template summary row, read-only. The single-template
+			// shape from `get` is nested and differs.
+			{Name: "id", Type: "string", Description: "Campaign template id (24-hex object id)", ReadOnly: true},
+			{Name: "name", Type: "string", Description: "Campaign name", ReadOnly: true},
+			{Name: "enabled", Type: "bool", Description: "Whether the campaign is enabled", ReadOnly: true},
+			{Name: "status", Type: "string", Description: "Campaign status", ReadOnly: true},
+			{Name: "scheduleMode", Type: "string", Description: "How runs are scheduled", ReadOnly: true},
+			{Name: "scopeType", Type: "string", Description: "Type of the reviewed scope", ReadOnly: true},
+			{Name: "scopeTargetId", Type: "string", Description: "Id of the reviewed scope target", ReadOnly: true},
+			{Name: "reviewerType", Type: "string", Description: "Who reviews", ReadOnly: true},
+			{Name: "lastRunAt", Type: "string", Description: "When the campaign last ran", ReadOnly: true},
+		},
+	},
+
 	"workday": {
 		Resource:      "workday",
 		APIVersion:    "v2",
@@ -1557,6 +1577,16 @@ func BuildCommandManifest() CommandManifest {
 					"404, so absence of devices is not evidence the enterprise is real \u2014 jc " +
 					"confirms existence before reporting.",
 				Subcommands: []string{"enterprises", "devices", "enrollment-tokens"},
+			},
+			{
+				Path:        "jc access-cert",
+				Description: "Read Access Certification campaigns, runs, review items and audit reports",
+				Long: "Read-only view of Access Certification: settings, campaign templates, " +
+					"campaign runs, review items, the admin queue and audit-report metadata. " +
+					"Runs list shows active runs only unless --status closed or --status all is " +
+					"given. Audit-report downloads are pre-signed URLs; --no-urls strips them. " +
+					"No write operation is exposed.",
+				Subcommands: []string{"settings", "campaigns", "runs", "admin-queue"},
 			},
 			{
 				Path:        "jc workday",

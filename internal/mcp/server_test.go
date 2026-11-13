@@ -373,9 +373,9 @@ func TestMCP_ReadResource_SchemaResources(t *testing.T) {
 		t.Errorf("expected at least 8 resource schemas, got %d", len(schemas))
 	}
 
-	// Check sorted order — first should be "access-requests" (alphabetical).
-	if schemas[0]["resource"] != "access-requests" {
-		t.Errorf("expected first resource to be 'access-requests', got %v", schemas[0]["resource"])
+	// Check sorted order — first should be "access-cert" (alphabetical).
+	if schemas[0]["resource"] != "access-cert" {
+		t.Errorf("expected first resource to be 'access-cert', got %v", schemas[0]["resource"])
 	}
 
 	// Find users schema and verify structure.
