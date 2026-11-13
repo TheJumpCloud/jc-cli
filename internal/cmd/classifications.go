@@ -478,6 +478,15 @@ var commandClass = map[string]string{
 	"jc password-manager users get":               ClassReadOnly,
 	"jc password-manager users items":             ClassReadOnly,
 	"jc password-manager users list":              ClassReadOnly,
+	// Access Certification: the read-only half; see internal/accesscert.
+	"jc access-cert admin-queue":       ClassReadOnly,
+	"jc access-cert campaigns get":     ClassReadOnly,
+	"jc access-cert campaigns list":    ClassReadOnly,
+	"jc access-cert runs audit-report": ClassReadOnly,
+	"jc access-cert runs get":          ClassReadOnly,
+	"jc access-cert runs items":        ClassReadOnly,
+	"jc access-cert runs list":         ClassReadOnly,
+	"jc access-cert settings get":      ClassReadOnly,
 	// Workday: only the two verified reads exist; see internal/workday.
 	"jc workday get":  ClassReadOnly,
 	"jc workday list": ClassReadOnly,
