@@ -23,13 +23,13 @@ type accessCertListInput struct {
 
 type accessCertCampaignsListInput struct {
 	accessCertListInput
-	Metadata bool `json:"metadata,omitempty" jsonschema:"Also return metadata with applicationIds and userGroupIds."`
+	Metadata bool `json:"metadata,omitempty" jsonschema:"Return only the applicationIds and userGroupIds referenced by the matching campaigns (the API returns no rows in this mode)."`
 }
 
 type accessCertRunsListInput struct {
 	accessCertListInput
 	Status   string `json:"status,omitempty" jsonschema:"active (default), closed, canceled or all. all queries each status and concatenates."`
-	Metadata bool   `json:"metadata,omitempty" jsonschema:"Also return metadata with applicationIds and userGroupIds."`
+	Metadata bool   `json:"metadata,omitempty" jsonschema:"Return only the applicationIds and userGroupIds referenced by the matching runs (the API returns no rows in this mode)."`
 }
 
 type accessCertCampaignInput struct {

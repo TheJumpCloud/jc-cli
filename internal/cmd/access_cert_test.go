@@ -64,7 +64,7 @@ func startAccessCertServer(t *testing.T) *acServer {
 			}
 			env := map[string]any{"results": all[skip:end], "totalCount": len(all)}
 			if q.Get("metadata") == "true" {
-				env["metadata"] = map[string]any{"applicationIds": []string{"a1"}, "userGroupIds": []string{"g1"}}
+				env["metadata"] = map[string]any{"applicationIds": []string{}, "userGroupIds": []string{"a"}}
 			}
 			json.NewEncoder(w).Encode(env)
 		}
@@ -182,15 +182,45 @@ func TestAccessCertCampaignsList_Table(t *testing.T) {
 	}
 }
 
-func TestAccessCertCampaignsList_Metadata(t *testing.T) {
-	startAccessCertServer(t)
-	out, err := runAccessCert(t, "campaigns", "list", "--limit", "1", "--metadata")
-	if err != nil {
+// TestAccessCertList_MetadataKeepsEmptyArrays: the live API sends
+// applicationIds:[] next to a non-empty userGroupIds; both keys must survive.
+func TestAccessCertList_MetadataKeepsEmptyArrays(t *testing.T) {
+	for name, args := range map[string][]string{
+		"campaigns": {"campaigns", "list", "--limit", "1", "--metadata"},
+		"runs":      {"runs", "list", "--status", "all", "--metadata"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			startAccessCertServer(t)
+			out, err := runAccessCert(t, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var page struct {
+				Metadata map[string]json.RawMessage `json:"metadata"`
+			}
+			if err := json.Unmarshal([]byte(out), &page); err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			if got := compactJSON(t, page.Metadata["applicationIds"]); got != "[]" {
+				t.Errorf("applicationIds = %s, want []: %s", got, out)
+			}
+			if got := compactJSON(t, page.Metadata["userGroupIds"]); got != `["a"]` {
+				t.Errorf(`userGroupIds = %s, want ["a"]: %s`, got, out)
+			}
+		})
+	}
+}
+
+func compactJSON(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	if raw == nil {
+		return "<missing>"
+	}
+	var b bytes.Buffer
+	if err := json.Compact(&b, raw); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "applicationIds") || !strings.Contains(out, "userGroupIds") {
-		t.Fatalf("metadata missing: %s", out)
-	}
+	return b.String()
 }
 
 func TestAccessCertCampaignsGet_Unchanged(t *testing.T) {

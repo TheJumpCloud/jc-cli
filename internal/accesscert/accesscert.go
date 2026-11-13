@@ -192,6 +192,10 @@ func (p *Page) mergeMetadata(m map[string][]json.RawMessage) {
 		p.Metadata = map[string][]json.RawMessage{}
 	}
 	for k, vals := range m {
+		// Keep every key the server sends, so an empty facet marshals as [].
+		if p.Metadata[k] == nil {
+			p.Metadata[k] = []json.RawMessage{}
+		}
 		seen := map[string]bool{}
 		for _, e := range p.Metadata[k] {
 			seen[string(e)] = true

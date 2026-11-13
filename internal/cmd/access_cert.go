@@ -24,12 +24,14 @@ type accessCertListFlags struct {
 	metadata bool
 }
 
-func (f *accessCertListFlags) add(cmd *cobra.Command, withMetadata bool) {
+// add registers the list flags; a non-empty metadataNoun ("campaigns",
+// "runs") also adds --metadata.
+func (f *accessCertListFlags) add(cmd *cobra.Command, metadataNoun string) {
 	cmd.Flags().IntVar(&f.limit, "limit", 0, "Maximum number of results to return (0 = all; pages of 100 are fetched until done)")
 	cmd.Flags().StringVar(&f.sort, "sort", "", "Sort field (prefix with - for descending)")
 	cmd.Flags().StringArrayVar(&f.filters, "filter", nil, "Filter results as field:op:value (repeatable)")
-	if withMetadata {
-		cmd.Flags().BoolVar(&f.metadata, "metadata", false, "Include applicationIds and userGroupIds metadata")
+	if metadataNoun != "" {
+		cmd.Flags().BoolVar(&f.metadata, "metadata", false, "Return only the applicationIds and userGroupIds referenced by the matching "+metadataNoun+" (the API returns no rows in this mode)")
 	}
 }
 
@@ -158,7 +160,7 @@ unless --limit is given. The single-template shape from 'campaigns get' differs.
 			return writeAccessCertPage(cmd, p, accessCertCampaignFields, cf.metadata)
 		},
 	}
-	cf.add(campaignsList, true)
+	cf.add(campaignsList, "campaigns")
 	campaigns.AddCommand(campaignsList)
 	campaigns.AddCommand(&cobra.Command{
 		Use:   "get <campaignId>",
@@ -202,7 +204,7 @@ The API returns ACTIVE runs only unless asked otherwise. Closed runs need
 			return writeAccessCertPage(cmd, p, accessCertRunFields, rf.metadata)
 		},
 	}
-	rf.add(runsList, true)
+	rf.add(runsList, "runs")
 	runsList.Flags().StringVar(&status, "status", "active", "Run status: active|closed|canceled|all (closed runs need closed or all)")
 	runs.AddCommand(runsList)
 
@@ -239,7 +241,7 @@ The API returns ACTIVE runs only unless asked otherwise. Closed runs need
 			return writeAccessCertPage(cmd, p, accessCertItemFields, false)
 		},
 	}
-	itf.add(items, false)
+	itf.add(items, "")
 	runs.AddCommand(items)
 
 	var noURLs bool
@@ -295,7 +297,7 @@ removes them and keeps each artifact's expiresAt.`,
 			return writeAccessCertPage(cmd, p, accessCertQueueFields, false)
 		},
 	}
-	qf.add(queue, false)
+	qf.add(queue, "")
 	root.AddCommand(queue)
 
 	return root
