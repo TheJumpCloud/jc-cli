@@ -318,12 +318,18 @@ jc policies results "FileVault" -t                # View policy application stat
 jc apps list -t                                   # List SSO applications
 jc apps get Slack -t                              # Get by name or ID
 jc apps list --ai-ready true -t                   # Only apps marked AI Ready
-jc apps create --name "Internal App" --sso-type bookmark
+jc apps create --name bookmark --sso-type bookmark \
+    --config '{"displayLabel":"Internal App","ssoUrl":"https://app.example.com"}'
 jc apps update "Internal App" --name "Our App"
 jc apps update "Internal App" --config '{"displayLabel":"Team Wiki"}'
 jc apps update "Internal App" --ai-ready=true     # Needs an AI Gateway server on the app
 jc apps delete "Internal App"                     # Delete (with confirmation)
 ```
+
+For `apps create`, `--name` is the catalog connector key (`bookmark`, `slack`,
+...), not the title users see: JumpCloud answers an unknown key with "Could not
+find the service provider". The visible title is `displayLabel`. The app's SSO
+type follows from the connector; `--sso-type` does not set it.
 
 `apps update` reads the app and sends it back in full with your changes, then
 checks the result. JumpCloud answers a partial application update with success
@@ -585,9 +591,11 @@ jc agent-groups assign-app <group-id> --app <app-id>
 
 A client secret is returned once, by the call that creates it; no read returns
 it again. The organization id these endpoints require is sent from your active
-profile. The AI Gateway (MCP Gateway) itself has no API yet: servers are set up
-in the Admin Portal, agent access follows agent-group → application
-assignments, and `jc org features get mcp` shows whether the gateway is on.
+profile. AI Gateway servers are managed in the Admin Portal (Access > AI Gateway >
+Servers). The portal uses `/api/v2/ai-admin/servers`, which is not in the
+published API spec and is not wrapped by jc yet. Agent access follows
+agent-group → application assignments, and `jc org features get mcp` shows
+whether the gateway is on.
 
 ### Service Accounts, Roles & Access Requests
 
