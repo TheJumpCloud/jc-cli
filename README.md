@@ -318,18 +318,20 @@ jc policies results "FileVault" -t                # View policy application stat
 jc apps list -t                                   # List SSO applications
 jc apps get Slack -t                              # Get by name or ID
 jc apps list --ai-ready true -t                   # Only apps marked AI Ready
-jc apps create --name bookmark --sso-type bookmark \
-    --config '{"displayLabel":"Internal App","ssoUrl":"https://app.example.com"}'
-jc apps update "Internal App" --name "Our App"
-jc apps update "Internal App" --config '{"displayLabel":"Team Wiki"}'
-jc apps update "Internal App" --ai-ready=true     # Needs an AI Gateway server on the app
-jc apps delete "Internal App"                     # Delete (with confirmation)
+jc apps list --sso-type saml -t                   # By SSO type (filtered locally)
+jc apps create --name bookmark --display-label "Team Wiki" --sso-url https://wiki.example.com
+jc apps update "Team Wiki" --display-label "Engineering Wiki"
+jc apps update "Team Wiki" --ai-ready=true        # Needs an AI Gateway server on the app
+jc apps delete "Team Wiki"                        # Delete (with confirmation)
 ```
 
-For `apps create`, `--name` is the catalog connector key (`bookmark`, `slack`,
-...), not the title users see: JumpCloud answers an unknown key with "Could not
-find the service provider". The visible title is `displayLabel`. The app's SSO
-type follows from the connector; `--sso-type` does not set it.
+An app's `name` is its catalog connector key (`bookmark`, `slack`, `aws-sso`;
+see `jc app-templates list`), not the title users see, which is
+`--display-label`. JumpCloud rejects any other name on create, and the key cannot
+be changed afterwards. The SSO type follows from the connector and lives in
+`sso.type`; the API cannot filter on it, so `--sso-type` on `list` filters
+locally. To show it as a column:
+`jc apps list --query "[].{id:_id,label:displayLabel,type:sso.type}" -t`.
 
 `apps update` reads the app and sends it back in full with your changes, then
 checks the result. JumpCloud answers a partial application update with success

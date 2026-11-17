@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/klaassen-consulting/jc/internal/appupdate"
 )
 
 // MutationResultMsg is sent when a create/update/delete completes.
@@ -116,7 +118,17 @@ func (f *Fetcher) UpdateV1(resourceKey, endpoint, id string, body map[string]any
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		data, err := client.Update(ctx, fmt.Sprintf("%s/%s", endpoint, id), body)
+		var data json.RawMessage
+		if endpoint == "/applications" {
+			// JumpCloud answers a partial application PUT with 200 and changes
+			// nothing, so applications go through the read-merge-verify path.
+			if _, ok := body["name"]; ok {
+				return MutationResultMsg{ResourceKey: resourceKey, Generation: gen, Err: appupdate.ErrNameImmutable}
+			}
+			data, err = appupdate.Apply(ctx, client, id, body)
+		} else {
+			data, err = client.Update(ctx, fmt.Sprintf("%s/%s", endpoint, id), body)
+		}
 		if err != nil {
 			return MutationResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
 		}

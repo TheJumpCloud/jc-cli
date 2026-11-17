@@ -65,6 +65,11 @@ Use `--org <profile>` to override the active profile per command.
 
 Other resources: `access-requests`, `ad`, `agents`, `agent-groups`, `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
 
+An app's `name` is its catalog connector key (`bookmark`, `slack`, ...), not a
+title: create rejects anything else and it cannot change afterwards; the title is
+`--display-label`. The SSO type lives in `sso.type` and cannot be filtered
+server-side (`jc apps list --sso-type` filters locally).
+
 `jc apps update` reads the app and sends it back in full: JumpCloud's v1
 application PUT returns 200 and changes nothing unless the body carries both
 `name` and `ssoUrl`. Any new v1 write must verify the change landed, not trust

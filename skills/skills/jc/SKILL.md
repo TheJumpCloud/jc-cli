@@ -28,7 +28,7 @@ jc <resource> <verb> [identifier] [flags]
 | `groups` | `g` | user list/get/create/update/delete, device list/get/create/update/delete, add-member, remove-member |
 | `commands` | | list, get, create, update, delete, run, results, trigger |
 | `policies` | | list, get, create, update, delete, results |
-| `apps` | | list (`--ai-ready true\|false`), get, create, update (`--ai-ready`; needs an AI Gateway server on the app), delete |
+| `apps` | | list (`--ai-ready true\|false`, `--sso-type`), get, create (`--name` = catalog connector key e.g. `bookmark`, `--display-label` = title), update (`--display-label`, `--ai-ready`; needs an AI Gateway server on the app), delete |
 | `agents` | | list, get, register, update, suspend, activate, delete, credentials, applications, memberof (AI agent identities; a client secret is shown once) |
 | `agent-groups` | | list, get, create, update, delete, members, add-member, remove-member, associations, assign-app, unassign-app |
 | `service-accounts` | | list, get, create, delete, rotate, revoke (credential shown once) |

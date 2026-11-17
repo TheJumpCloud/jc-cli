@@ -335,7 +335,7 @@
     {
       "path": "jc apps",
       "description": "Manage SSO applications",
-      "long": "List, inspect, create, update and delete JumpCloud SSO applications. `update` reads the app and sends it back in full with your changes, then verifies them: JumpCloud's application PUT answers a partial body with success while changing nothing. `--ai-ready` marks an app AI Ready in the User Portal; JumpCloud accepts true only when an AI Gateway server is assigned to the app. `list --ai-ready true|false` filters locally, because the server-side filter misses apps that never stored the field.",
+      "long": "List, inspect, create, update and delete JumpCloud SSO applications. An app's `name` is its catalog connector key (`bookmark`, `slack`, ...; see `jc app-templates list`), not a title: create rejects any other value, the key cannot be changed afterwards, and the title users see is `--display-label`. The SSO type follows from the connector (it lives in `sso.type`, which the API cannot filter on, so `list --sso-type` filters locally). `update` reads the app and sends it back in full with your changes, then verifies them: JumpCloud's application PUT answers a partial body with success while changing nothing. `--ai-ready` marks an app AI Ready in the User Portal; JumpCloud accepts true only when an AI Gateway server is assigned to the app. `list --ai-ready true|false` filters locally, because the server-side filter misses apps that never stored the field.",
       "category": "Apps \u0026 SSO",
       "subcommands": [
         "list",
@@ -363,12 +363,27 @@
         {
           "name": "sso-type",
           "type": "string",
-          "description": "SSO type (create, required)"
+          "description": "Only apps of this SSO type: saml, oidc or bookmark (list; filtered locally)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Catalog connector key, e.g. bookmark (create, required; cannot be changed)"
+        },
+        {
+          "name": "display-label",
+          "type": "string",
+          "description": "Title shown in the User Portal (create/update)"
+        },
+        {
+          "name": "sso-url",
+          "type": "string",
+          "description": "URL the app opens, for bookmark apps (create)"
         },
         {
           "name": "config",
           "type": "string",
-          "description": "SSO-specific config as JSON (create/update)"
+          "description": "Extra fields as JSON; a config object is merged key by key (create/update)"
         },
         {
           "name": "ai-ready",

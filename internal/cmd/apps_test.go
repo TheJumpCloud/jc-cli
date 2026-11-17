@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,10 +32,20 @@ func startAppsServer(t *testing.T, apps []map[string]any, associations map[strin
 			return
 		}
 
-		// V1: POST /applications — create endpoint.
+		// V1: POST /applications — create endpoint. Mirrors the live contract:
+		// name must be a catalog connector key, the SSO type follows from it,
+		// and a top-level ssoType is ignored.
 		if r.URL.Path == "/applications" && r.Method == http.MethodPost {
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
+			ssoType, ok := mockConnectors[fmt.Sprint(body["name"])]
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"status":400,"error":"Could not find the service provider."}`))
+				return
+			}
+			delete(body, "ssoType")
+			body["sso"] = map[string]any{"type": ssoType}
 			body["_id"] = "aabbccddee112233aabb9001"
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(body)
@@ -112,30 +124,34 @@ func startAppsServer(t *testing.T, apps []map[string]any, associations map[strin
 	}))
 }
 
+// mockConnectors maps the catalog connector keys the mock accepts on create to
+// the SSO type JumpCloud derives from each.
+var mockConnectors = map[string]string{"bookmark": "bookmark", "aws-sso": "saml", "slack": "oidc"}
+
 func sampleApps() []map[string]any {
 	return []map[string]any{
 		{
 			"_id":          "aabbccddee112233aabb2001",
 			"name":         "AWS SSO",
 			"displayLabel": "Amazon Web Services",
-			"ssoType":      "saml",
-			"status":       "active",
+			"sso":          map[string]any{"type": "saml"},
+			"active":       true,
 			"organization": "org001org001org001org001",
 		},
 		{
 			"_id":          "aabbccddee112233aabb2002",
 			"name":         "Slack",
 			"displayLabel": "Slack Workspace",
-			"ssoType":      "oidc",
-			"status":       "active",
+			"sso":          map[string]any{"type": "oidc"},
+			"active":       true,
 			"organization": "org001org001org001org001",
 		},
 		{
 			"_id":          "aabbccddee112233aabb2003",
 			"name":         "GitHub Enterprise",
 			"displayLabel": "GitHub",
-			"ssoType":      "saml",
-			"status":       "inactive",
+			"sso":          map[string]any{"type": "saml"},
+			"active":       false,
 			"organization": "org001org001org001org001",
 		},
 	}
@@ -348,7 +364,7 @@ func TestAppsList_Filter(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "list", "--filter", "ssoType=saml"})
+	cmd.SetArgs([]string{"apps", "list", "--filter", "name=bookmark"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -357,6 +373,55 @@ func TestAppsList_Filter(t *testing.T) {
 	var result []map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+}
+
+// The API rejects every filter on the SSO type, so --sso-type filters the
+// fetched list on sso.type locally.
+func TestAppsList_SSOTypeFiltersLocally(t *testing.T) {
+	setupUsersTest(t)
+	var gotQuery string
+	apps := sampleApps()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		json.NewEncoder(w).Encode(map[string]any{"results": apps, "totalCount": len(apps)})
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "list", "--sso-type", "SAML"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if strings.Contains(gotQuery, "filter") {
+		t.Errorf("--sso-type must not be sent as a server filter, query = %q", gotQuery)
+	}
+	var result []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Fatalf("got %d apps, want the 2 saml apps", len(result))
+	}
+	for _, a := range result {
+		if a["sso"].(map[string]any)["type"] != "saml" {
+			t.Errorf("non-saml app in result: %v", a)
+		}
+	}
+}
+
+func TestAppsList_SSOTypeWithLimitRejected(t *testing.T) {
+	setupUsersTest(t)
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "list", "--sso-type", "saml", "--limit", "5"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--limit") {
+		t.Fatalf("expected a --limit error, got %v", err)
 	}
 }
 
@@ -667,14 +732,26 @@ func TestAppsHelp_RootIncludesApps(t *testing.T) {
 func TestAppsCreate(t *testing.T) {
 	setupUsersTest(t)
 	apps := sampleApps()
-	ts := setupAppsTest(t, apps, nil)
+	var posted map[string]any
+	inner := startAppsServer(t, apps, nil).Config.Handler
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &posted)
+			r.Body = io.NopCloser(bytes.NewReader(b))
+		}
+		inner.ServeHTTP(w, r)
+	}))
 	defer ts.Close()
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
 	var buf bytes.Buffer
+	errBuf := &bytes.Buffer{}
 	cmd.SetOut(&buf)
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "create", "--name", "New App", "--sso-type", "saml"})
+	cmd.SetErr(errBuf)
+	cmd.SetArgs([]string{"apps", "create", "--name", "bookmark", "--display-label", "Team Wiki",
+		"--sso-url", "https://wiki.example.com", "--sso-type", "saml"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -682,16 +759,39 @@ func TestAppsCreate(t *testing.T) {
 
 	var result map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
-		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+		t.Fatalf("stdout must be clean JSON: %v\nOutput: %s", err, buf.String())
 	}
-	if result["name"] != "New App" {
-		t.Errorf("name = %v, want 'New App'", result["name"])
+	if posted["name"] != "bookmark" || posted["displayLabel"] != "Team Wiki" || posted["ssoUrl"] != "https://wiki.example.com" {
+		t.Errorf("posted body = %v", posted)
 	}
-	if result["ssoType"] != "saml" {
-		t.Errorf("ssoType = %v, want 'saml'", result["ssoType"])
+	if _, sent := posted["ssoType"]; sent {
+		t.Errorf("ssoType must not be sent (JumpCloud ignores it): %v", posted)
+	}
+	if !strings.Contains(errBuf.String(), "--sso-type is ignored") {
+		t.Errorf("expected a warning about --sso-type on stderr, got %q", errBuf.String())
 	}
 	if result["_id"] != "aabbccddee112233aabb9001" {
 		t.Errorf("_id = %v, want 'aabbccddee112233aabb9001'", result["_id"])
+	}
+}
+
+func TestAppsCreate_UnknownConnectorExplained(t *testing.T) {
+	setupUsersTest(t)
+	ts := setupAppsTest(t, sampleApps(), nil)
+	defer ts.Close()
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "create", "--name", "Team Wiki"})
+
+	err := cmd.Execute()
+	var cliErr *CLIError
+	if !errors.As(err, &cliErr) {
+		t.Fatalf("expected a CLIError, got %v", err)
+	}
+	if !strings.Contains(cliErr.Suggestion, "catalog connector key") || !strings.Contains(cliErr.Suggestion, "--display-label") {
+		t.Errorf("suggestion should explain the connector key, got %q", cliErr.Suggestion)
 	}
 }
 
@@ -705,7 +805,7 @@ func TestAppsCreate_Plan(t *testing.T) {
 	errBuf := &bytes.Buffer{}
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(errBuf)
-	cmd.SetArgs([]string{"apps", "create", "--name", "New App", "--sso-type", "saml", "--plan"})
+	cmd.SetArgs([]string{"apps", "create", "--name", "bookmark", "--display-label", "Team Wiki", "--plan"})
 
 	err := cmd.Execute()
 	var exitErr *ExitError
@@ -715,8 +815,8 @@ func TestAppsCreate_Plan(t *testing.T) {
 	if exitErr.Code != plan.ExitCodePlan {
 		t.Errorf("exit code = %d, want %d", exitErr.Code, plan.ExitCodePlan)
 	}
-	if !strings.Contains(errBuf.String(), "create") {
-		t.Errorf("plan should mention 'create', got: %s", errBuf.String())
+	if !strings.Contains(errBuf.String(), "create") || !strings.Contains(errBuf.String(), "Team Wiki") {
+		t.Errorf("plan should mention 'create' and the label, got: %s", errBuf.String())
 	}
 }
 
@@ -725,24 +825,11 @@ func TestAppsCreate_MissingName(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "create", "--sso-type", "saml"})
+	cmd.SetArgs([]string{"apps", "create", "--display-label", "x"})
 
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error for missing --name")
-	}
-}
-
-func TestAppsCreate_MissingSSOType(t *testing.T) {
-	setupUsersTest(t)
-	cmd := NewRootCmd()
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "create", "--name", "New App"})
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for missing --sso-type")
 	}
 }
 
@@ -758,7 +845,7 @@ func TestAppsUpdate(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--name", "Updated App"})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--display-label", "Updated App"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -768,8 +855,33 @@ func TestAppsUpdate(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
 	}
-	if result["name"] != "Updated App" {
-		t.Errorf("name = %v, want 'Updated App'", result["name"])
+	if result["displayLabel"] != "Updated App" {
+		t.Errorf("displayLabel = %v, want 'Updated App'", result["displayLabel"])
+	}
+}
+
+// name is the catalog connector key: JumpCloud refuses or silently ignores a
+// change, so jc refuses before sending anything.
+func TestAppsUpdate_NameRefusedWithoutRequest(t *testing.T) {
+	setupUsersTest(t)
+	requests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--name", "slack"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--display-label") {
+		t.Fatalf("expected a refusal pointing at --display-label, got %v", err)
+	}
+	if requests != 0 {
+		t.Errorf("made %d requests, want 0", requests)
 	}
 }
 
@@ -799,7 +911,7 @@ func TestAppsUpdate_Plan(t *testing.T) {
 	errBuf := &bytes.Buffer{}
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(errBuf)
-	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--name", "Updated App", "--plan"})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--display-label", "Updated App", "--plan"})
 
 	err := cmd.Execute()
 	var exitErr *ExitError

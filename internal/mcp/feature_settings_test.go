@@ -86,3 +86,88 @@ func TestAppsUpdate_AIReadyIgnoredIsAnError(t *testing.T) {
 		t.Errorf("false applied should succeed: %s", getResultText(t, res))
 	}
 }
+
+// apps_create: name is the catalog connector key, the title goes in
+// displayLabel, and sso_type is not sent (JumpCloud ignores it).
+func TestAppsCreate_ConnectorKeyAndLabel(t *testing.T) {
+	setupToolTest(t)
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost || r.URL.Path != "/api/applications" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["name"] != "bookmark" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"status":400,"error":"Could not find the service provider."}`))
+			return
+		}
+		w.Write([]byte(`{"_id":"aabbccddee112233aabb9001","name":"bookmark","sso":{"type":"bookmark"}}`))
+	}))
+	defer ts.Close()
+	overrideV1ClientForTest(t, ts.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	res := callTool(t, cs, "apps_create", map[string]any{"name": "bookmark", "display_label": "Team Wiki",
+		"sso_url": "https://wiki.example.com", "sso_type": "saml", "execute": true})
+	if res.IsError {
+		t.Fatalf("create failed: %s", getResultText(t, res))
+	}
+	if body["displayLabel"] != "Team Wiki" || body["ssoUrl"] != "https://wiki.example.com" {
+		t.Errorf("POST body %v", body)
+	}
+	if _, sent := body["ssoType"]; sent {
+		t.Errorf("ssoType must not be sent: %v", body)
+	}
+
+	res = callTool(t, cs, "apps_create", map[string]any{"name": "Team Wiki", "execute": true})
+	if !res.IsError || !strings.Contains(getResultText(t, res), "catalog connector key") {
+		t.Errorf("want the unknown-connector hint, got %s", getResultText(t, res))
+	}
+}
+
+func TestAppsUpdate_NameRefusedAndConfigMerged(t *testing.T) {
+	setupToolTest(t)
+	const id = "aabbccddee112233aabb2001"
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		const app = `{"_id":"` + id + `","name":"aws-sso","displayLabel":"AWS","ssoUrl":"https://u","config":{"acsUrl":{"value":"https://a"},"idpEntityId":{"value":"jc"}}}`
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/applications/"+id:
+			w.Write([]byte(app))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/applications/"+id:
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			out, _ := json.Marshal(body)
+			w.Write(out)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+	overrideV1ClientForTest(t, ts.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	res := callTool(t, cs, "apps_update", map[string]any{"identifier": id, "name": "slack", "execute": true})
+	if !res.IsError || !strings.Contains(getResultText(t, res), "cannot be changed") {
+		t.Errorf("want a refusal for name, got %s", getResultText(t, res))
+	}
+	if body != nil {
+		t.Errorf("no PUT expected for a refused rename, got %v", body)
+	}
+
+	res = callTool(t, cs, "apps_update", map[string]any{"identifier": id, "display_label": "Amazon",
+		"config": `{"acsUrl":{"value":"https://b"}}`, "execute": true})
+	if res.IsError {
+		t.Fatalf("update failed: %s", getResultText(t, res))
+	}
+	cfg := body["config"].(map[string]any)
+	if cfg["acsUrl"].(map[string]any)["value"] != "https://b" || cfg["idpEntityId"] == nil {
+		t.Errorf("config must be merged key by key, got %v", cfg)
+	}
+	if body["displayLabel"] != "Amazon" || body["name"] != "aws-sso" {
+		t.Errorf("PUT body %v", body)
+	}
+}
