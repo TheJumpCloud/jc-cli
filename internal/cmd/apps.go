@@ -27,7 +27,8 @@ import (
 // --query "[].{id:_id,label:displayLabel,type:sso.type}" to show it.
 var appDefaultFields = []string{"_id", "name", "displayLabel", "active", "aiReady"}
 
-// resolveApp resolves an app name or ID to a JumpCloud application ID.
+// resolveApp resolves an app title (display label), connector key or ID to a
+// JumpCloud application ID. See resolve.ApplicationConfig.
 func resolveApp(ctx context.Context, client *api.V1Client, identifier string) (string, error) {
 	r := resolve.NewResolver(client)
 	return r.Resolve(ctx, identifier, resolve.ApplicationConfig)
@@ -160,11 +161,12 @@ func runAppsList(cmd *cobra.Command, limit int, sort string, filters []string, a
 
 func newAppsGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get <app-name-or-id>",
+		Use:   "get <title-or-id>",
 		Short: "Get an application by name or ID",
 		Long: `Get a single JumpCloud SSO application by name or ID.
 
-Accepts an app name (e.g., "AWS SSO") or a 24-character hex application ID.
+Accepts an app title (the display label, e.g. "Team Wiki"), its connector key when no
+title matches, or a 24-character hex application ID.
 App names are resolved to IDs automatically with caching (use --no-cache to bypass).
 
 The output includes associated user groups and device groups fetched via
@@ -351,11 +353,12 @@ func newAppsUpdateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "update <app-name-or-id>",
+		Use:   "update <title-or-id>",
 		Short: "Update an SSO application",
 		Long: `Update an existing JumpCloud SSO application.
 
-Accepts an app name or 24-character hex application ID.
+Accepts an app title (the display label, e.g. "Team Wiki"), its connector key when no
+title matches, or a 24-character hex application ID.
 Specify only the fields you want to change. The updated app object is returned.
 
 --ai-ready marks the app as AI Ready in the User Portal (informational only; it
@@ -459,12 +462,13 @@ func runAppsUpdate(cmd *cobra.Command, identifier, name, displayLabel, config st
 
 func newAppsDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "delete <app-name-or-id>",
+		Use:     "delete <title-or-id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete an SSO application",
 		Long: `Delete a JumpCloud SSO application.
 
-Accepts an app name or 24-character hex application ID.
+Accepts an app title (the display label, e.g. "Team Wiki"), its connector key when no
+title matches, or a 24-character hex application ID.
 Shows the app name before prompting for confirmation.
 Use --force to skip the confirmation prompt.`,
 		Args:              cobra.MaximumNArgs(1),

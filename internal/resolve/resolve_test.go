@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -629,5 +630,52 @@ func TestExtractAssetName_MissingNameField(t *testing.T) {
 	_, err := ExtractAssetName(raw)
 	if err == nil {
 		t.Fatal("expected error for missing Name field")
+	}
+}
+
+// An application's name is its catalog connector key, shared by many apps;
+// apps resolve by displayLabel first and fall back to the key only when no
+// title matches.
+func TestResolve_ApplicationByTitleThenConnectorKey(t *testing.T) {
+	resetViper(t)
+	viper.Set("cache.enabled", false)
+
+	apps := []map[string]any{
+		{"_id": "aaa111aaa111aaa111aaa111", "name": "bookmark", "displayLabel": "Team Wiki"},
+		{"_id": "bbb222bbb222bbb222bbb222", "name": "bookmark", "displayLabel": "HR Portal"},
+		{"_id": "ccc333ccc333ccc333ccc333", "name": "aws-sso", "displayLabel": "AWS"},
+		{"_id": "ddd444ddd444ddd444ddd444", "name": "slack", "displayLabel": "Chat"},
+		{"_id": "eee555eee555eee555eee555", "name": "slack", "displayLabel": "Chat"},
+		{"_id": "fff666fff666fff666fff666", "name": "chat", "displayLabel": "Other"},
+	}
+	ts := startTestServer(t, "/applications", apps)
+	defer ts.Close()
+	resolver := NewResolver(testV1Client(ts.URL))
+
+	for ident, want := range map[string]string{
+		"team wiki": "aaa111aaa111aaa111aaa111", // title, case-insensitive
+		"AWS":       "ccc333ccc333ccc333ccc333", // title
+		"aws-sso":   "ccc333ccc333ccc333ccc333", // no title matches: connector key
+	} {
+		id, err := resolver.Resolve(context.Background(), ident, ApplicationConfig)
+		if err != nil || id != want {
+			t.Errorf("Resolve(%q) = %q, %v; want %q", ident, id, err, want)
+		}
+	}
+
+	// A shared connector key is ambiguous.
+	if _, err := resolver.Resolve(context.Background(), "bookmark", ApplicationConfig); err == nil ||
+		!strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("bookmark: want ambiguous, got %v", err)
+	}
+	// An ambiguous title is reported, not resolved through the fallback
+	// (which would find the unrelated app whose connector key is "chat").
+	if _, err := resolver.Resolve(context.Background(), "chat", ApplicationConfig); err == nil ||
+		!strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("chat: want ambiguous on the title, got %v", err)
+	}
+	if _, err := resolver.Resolve(context.Background(), "nope", ApplicationConfig); err == nil ||
+		!strings.Contains(err.Error(), "not found") {
+		t.Errorf("nope: want not found, got %v", err)
 	}
 }

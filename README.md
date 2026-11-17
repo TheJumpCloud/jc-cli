@@ -316,7 +316,7 @@ jc policies results "FileVault" -t                # View policy application stat
 
 ```bash
 jc apps list -t                                   # List SSO applications
-jc apps get Slack -t                              # Get by name or ID
+jc apps get "Team Wiki" -t                        # By title (display label) or ID
 jc apps list --ai-ready true -t                   # Only apps marked AI Ready
 jc apps list --sso-type saml -t                   # By SSO type (filtered locally)
 jc apps create --name bookmark --display-label "Team Wiki" --sso-url https://wiki.example.com
@@ -328,7 +328,8 @@ jc apps delete "Team Wiki"                        # Delete (with confirmation)
 An app's `name` is its catalog connector key (`bookmark`, `slack`, `aws-sso`;
 see `jc app-templates list`), not the title users see, which is
 `--display-label`. JumpCloud rejects any other name on create, and the key cannot
-be changed afterwards. The SSO type follows from the connector and lives in
+be changed afterwards. Commands that take an app look it up by title first and
+by connector key only when no title matches. The SSO type follows from the connector and lives in
 `sso.type`; the API cannot filter on it, so `--sso-type` on `list` filters
 locally. To show it as a column:
 `jc apps list --query "[].{id:_id,label:displayLabel,type:sso.type}" -t`.

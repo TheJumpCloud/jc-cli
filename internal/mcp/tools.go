@@ -378,7 +378,7 @@ type appCreateInput struct {
 }
 
 type appUpdateInput struct {
-	Identifier   string `json:"identifier" jsonschema:"Application name or ID to update"`
+	Identifier   string `json:"identifier" jsonschema:"Application title (display label), connector key, or ID"`
 	Name         string `json:"name,omitempty" jsonschema:"Not supported: the name is the catalog connector key and cannot be changed. Use display_label to change the title."`
 	DisplayLabel string `json:"display_label,omitempty" jsonschema:"New title shown to users in the User Portal"`
 	Config       string `json:"config,omitempty" jsonschema:"SSO configuration keys as a JSON object; merged key by key into the app's existing config, other keys are kept"`
@@ -3743,7 +3743,7 @@ func (s *Server) registerAppsTools() {
 		},
 	)
 
-	addTypedTool(s, "apps_get", "Get a single JumpCloud SSO application by name or ID.",
+	addTypedTool(s, "apps_get", "Get a single JumpCloud SSO application by title (display label), connector key, or ID.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
