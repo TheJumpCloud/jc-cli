@@ -8,9 +8,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/klaassen-consulting/jc/internal/aiready"
 	"github.com/klaassen-consulting/jc/internal/alert"
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/klaassen-consulting/jc/internal/appupdate"
 	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/healthrule"
@@ -377,6 +379,7 @@ type appUpdateInput struct {
 	Identifier string `json:"identifier" jsonschema:"Application name or ID to update"`
 	Name       string `json:"name,omitempty" jsonschema:"New application name"`
 	Config     string `json:"config,omitempty" jsonschema:"New configuration as raw JSON"`
+	AIReady    *bool  `json:"aiReady,omitempty" jsonschema:"Show the app as AI Ready in the User Portal (informational, grants no access). true is accepted only for an app with an MCP connection (an AI Gateway server assigned to it); otherwise JumpCloud rejects the update with an error."`
 	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
@@ -626,6 +629,7 @@ func (s *Server) registerTools() {
 	s.registerPasswordManagerTools()
 	s.registerGoogleEMMTools()
 	s.registerWorkdayTools()
+	s.registerFeatureSettingsTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
 	s.registerAppleMDMADEWriteTools()
@@ -3811,12 +3815,35 @@ func (s *Server) registerAppsTools() {
 				}
 				body["config"] = cfg
 			}
+			if args.AIReady != nil {
+				body[aiready.Field] = *args.AIReady
+			}
 			if !args.Execute {
 				return planResult("update", "application", args.Identifier, id, body)
 			}
-			data, err := client.Update(ctx, "/applications/"+id, body)
+			// JumpCloud ignores a PUT without name and ssoUrl (200, nothing
+			// applied), so send the whole app with the changes overlaid.
+			current, err := client.Get(ctx, "/applications/"+id)
+			if err != nil {
+				return errorResult(fmt.Sprintf("reading application: %v", err)), nil, nil
+			}
+			full, err := appupdate.Merge(current, body)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			data, err := client.Update(ctx, "/applications/"+id, full)
 			if err != nil {
 				return errorResult(fmt.Sprintf("updating application: %v", err)), nil, nil
+			}
+			if args.AIReady != nil {
+				if err := aiready.CheckApplied(data, *args.AIReady); err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+			}
+			if missing, err := appupdate.Unapplied(data, body, aiready.Field); err != nil {
+				return errorResult(err.Error()), nil, nil
+			} else if len(missing) > 0 {
+				return errorResult(appupdate.ErrUnapplied(missing).Error()), nil, nil
 			}
 			return textResult(string(data)), nil, nil
 		},

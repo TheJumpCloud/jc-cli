@@ -26,6 +26,7 @@ func newOrgCmd() *cobra.Command {
 	cmd.AddCommand(newOrgGetCmd())
 	cmd.AddCommand(newOrgSettingsCmd())
 	cmd.AddCommand(newOrgUpdateCmd())
+	cmd.AddCommand(newOrgFeaturesCmd())
 
 	return cmd
 }

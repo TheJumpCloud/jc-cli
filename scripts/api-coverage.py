@@ -53,6 +53,8 @@ AREA_TO_COMMAND = {
     "Bulk Job Requests": "bulk",
     "Duo": "duo",
     "Organizations": "org",
+    # Read-only (GET); the PUT that flips org-wide features is not exposed.
+    "Organization Feature Settings": "org/features",
     "Authentication Policies": "auth-policies",
     "LDAP Servers": "ldap",
     "Samba Domains": "ldap/samba-domains",
@@ -129,7 +131,7 @@ OUT_OF_SCOPE = {
     "Sample Data", "Logos", "FeatureTrials", "Subscriptions", "App Catalog",
     "Push Verification", "Aggregated Policy Stats", "Webhook Notifications",
     "Webhook Notifications Channels", "Scope Groups", "Slack Notifications",
-    "Organization Feature Settings", "Image",
+    "Image",
 }
 
 OUT = "docs/API_COVERAGE.md"

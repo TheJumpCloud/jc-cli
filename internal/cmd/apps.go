@@ -9,7 +9,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/klaassen-consulting/jc/internal/aiready"
 	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/klaassen-consulting/jc/internal/appupdate"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
@@ -43,9 +45,10 @@ func newAppsCmd() *cobra.Command {
 
 func newAppsListCmd() *cobra.Command {
 	var (
-		limitFlag  int
-		sortFlag   string
-		filterFlag []string
+		limitFlag   int
+		sortFlag    string
+		filterFlag  []string
+		aiReadyFlag string
 	)
 
 	cmd := &cobra.Command{
@@ -59,23 +62,40 @@ Use --output table for a readable ASCII table.
 
 Filter examples:
   --filter 'name=AWS SSO'            Exact match
-  --filter 'ssoType=saml'            Filter by SSO type`,
+  --filter 'ssoType=saml'            Filter by SSO type
+  --ai-ready true                    Apps shown as AI Ready in the User Portal
+
+--ai-ready filters locally on each app's aiReady value, because the API's own
+aiReady:eq:false filter only matches apps where the flag was explicitly stored
+and misses most of them.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppsList(cmd, limitFlag, sortFlag, filterFlag)
+			return runAppsList(cmd, limitFlag, sortFlag, filterFlag, aiReadyFlag)
 		},
 	}
 
 	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
 	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending, e.g. -name)")
 	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'name=AWS SSO')")
+	cmd.Flags().StringVar(&aiReadyFlag, "ai-ready", "", "Only apps whose aiReady is true or false (filtered locally)")
 
 	return cmd
 }
 
-func runAppsList(cmd *cobra.Command, limit int, sort string, filters []string) error {
+func runAppsList(cmd *cobra.Command, limit int, sort string, filters []string, aiReady string) error {
 	exprs, err := filter.ParseAll(filters)
 	if err != nil {
 		return err
+	}
+	var wantAIReady *bool
+	if aiReady != "" {
+		v, perr := parseBoolWord(aiReady)
+		if perr != nil {
+			return fmt.Errorf("--ai-ready: %w", perr)
+		}
+		wantAIReady = &v
+		if limit > 0 {
+			return fmt.Errorf("--ai-ready cannot be combined with --limit: it filters locally, so every app has to be fetched first")
+		}
 	}
 
 	client, err := newV1Client()
@@ -92,15 +112,24 @@ func runAppsList(cmd *cobra.Command, limit int, sort string, filters []string) e
 		return err
 	}
 
+	data, total := result.Data, result.TotalCount
+	if wantAIReady != nil {
+		data, err = aiready.Filter(data, *wantAIReady)
+		if err != nil {
+			return err
+		}
+		total = len(data)
+	}
+
 	opts := output.CurrentOptions()
 	opts.DefaultFields = appDefaultFields
 
-	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
+	if err := output.WriteList(cmd.OutOrStdout(), data, opts); err != nil {
 		return err
 	}
 
 	if !opts.Quiet && !opts.IDsOnly {
-		writeListFooter(cmd, len(result.Data), result.TotalCount)
+		writeListFooter(cmd, len(data), total)
 	}
 
 	return nil
@@ -252,8 +281,9 @@ func runAppsCreate(cmd *cobra.Command, name, ssoType, config string) error {
 
 func newAppsUpdateCmd() *cobra.Command {
 	var (
-		name   string
-		config string
+		name    string
+		config  string
+		aiReady bool
 	)
 
 	cmd := &cobra.Command{
@@ -262,21 +292,33 @@ func newAppsUpdateCmd() *cobra.Command {
 		Long: `Update an existing JumpCloud SSO application.
 
 Accepts an app name or 24-character hex application ID.
-Specify only the fields you want to change. The updated app object is returned.`,
+Specify only the fields you want to change. The updated app object is returned.
+
+--ai-ready marks the app as AI Ready in the User Portal (informational only; it
+grants no access). JumpCloud accepts true only for an app that has an MCP
+connection, i.e. an AI Gateway server assigned to it (Access > AI Gateway >
+Servers), and rejects the whole update otherwise.
+
+jc reads the app and sends it back in full with your changes: JumpCloud
+answers a partial update with success while changing nothing. The returned
+app is then checked, and jc fails if a requested value did not take effect.`,
+		Example: `  jc apps update "Bookmark" --ai-ready=true
+  jc apps update 6504ef0130b63a30acf199d8 --ai-ready=false`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.ApplicationConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppsUpdate(cmd, args[0], name, config)
+			return runAppsUpdate(cmd, args[0], name, config, aiReady)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Application name")
 	cmd.Flags().StringVar(&config, "config", "", "SSO-specific configuration as raw JSON")
+	cmd.Flags().BoolVar(&aiReady, "ai-ready", false, "Show the app as AI Ready in the User Portal (true needs an AI Gateway MCP connection; use --ai-ready=false to clear)")
 
 	return cmd
 }
 
-func runAppsUpdate(cmd *cobra.Command, identifier, name, config string) error {
+func runAppsUpdate(cmd *cobra.Command, identifier, name, config string, aiReady bool) error {
 	body := map[string]any{}
 
 	if cmd.Flags().Changed("name") {
@@ -294,8 +336,14 @@ func runAppsUpdate(cmd *cobra.Command, identifier, name, config string) error {
 		}
 	}
 
+	// Set after --config so the explicit flag wins over a config key.
+	setAIReady := cmd.Flags().Changed("ai-ready")
+	if setAIReady {
+		body["aiReady"] = aiReady
+	}
+
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --config)")
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --name, --config, --ai-ready)")
 	}
 
 	if viper.GetBool("plan") {
@@ -323,9 +371,31 @@ func runAppsUpdate(cmd *cobra.Command, identifier, name, config string) error {
 		return err
 	}
 
-	result, err := client.Update(cmd.Context(), "/applications/"+id, body)
+	// JumpCloud ignores a PUT without name and ssoUrl (200, nothing applied),
+	// so send the whole app with the changes overlaid. See internal/appupdate.
+	current, err := client.Get(cmd.Context(), "/applications/"+id)
 	if err != nil {
 		return err
+	}
+	full, err := appupdate.Merge(current, body)
+	if err != nil {
+		return err
+	}
+	result, err := client.Update(cmd.Context(), "/applications/"+id, full)
+	if err != nil {
+		return err
+	}
+	if setAIReady {
+		if err := aiready.CheckApplied(result, aiReady); err != nil {
+			return err
+		}
+	}
+	missing, err := appupdate.Unapplied(result, body, aiready.Field)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return appupdate.ErrUnapplied(missing)
 	}
 
 	opts := output.CurrentOptions()
@@ -441,4 +511,15 @@ func enrichAppWithAssociations(appData json.RawMessage, userGroups, deviceGroups
 	obj["associatedDeviceGroups"] = dgJSON
 
 	return json.Marshal(obj)
+}
+
+// parseBoolWord accepts exactly "true" or "false".
+func parseBoolWord(s string) (bool, error) {
+	switch s {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("%q is not true or false", s)
 }
