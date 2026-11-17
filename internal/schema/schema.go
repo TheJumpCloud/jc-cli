@@ -1171,12 +1171,24 @@ func BuildCommandManifest() CommandManifest {
 					"or --ids, in CI, and in `mcp serve`, so it can never reach a pipeline or a " +
 					"protocol stream. The download is checked against the SHA-256 in the " +
 					"release's checksums.txt, which proves the bytes arrived intact but not that " +
-					"the release is authentic — that needs signed artifacts, which jc does not " +
-					"have yet. Disable the notice with `jc config set update.check false` or " +
+					"the release is authentic. For that, releases sign checksums.txt with Sigstore " +
+					"(keyless, logged in Rekor); verify with scripts/verify-release.sh. Disable the notice with `jc config set update.check false` or " +
 					"JC_NO_UPDATE_CHECK.",
 				Flags: []FlagEntry{
 					{Name: "force", Type: "bool", Description: "Replace without confirming"},
 					{Name: "plan", Type: "bool", Description: "Show what would happen and download nothing"},
+				},
+			},
+			{
+				Path:        "jc api",
+				Description: "Send one raw request to the JumpCloud API",
+				Long:        "Send exactly one unshaped HTTP request — the empirical gate before implementing any new API surface. The API version comes from the path, so a path pasted from the API reference works unchanged (`/api/v2/...` or `/v1/...`); a bare path uses `--api` (default v2). One invocation is one request, with no pagination. Writes confirm, honour `--force`/`--non-interactive`, and preview with `--plan`. Auth resolves exactly as for every other command. There is deliberately no MCP tool for this: it would hand an agent the whole API without per-tool classification or the step-up auth gate.",
+				Subcommands: []string{"get", "post", "put", "patch", "delete"},
+				Flags: []FlagEntry{
+					{Name: "param", Type: "string[]", Description: "Query parameter as key=value (repeatable)"},
+					{Name: "data", Type: "string", Description: "Request body: inline JSON, @file, or - for stdin (post/put/patch)"},
+					{Name: "header", Type: "string[]", Description: "Extra request header as 'Name: value' (repeatable)"},
+					{Name: "api", Type: "string", Default: "v2", Description: "API version for a path with no version prefix: v1 or v2"},
 				},
 			},
 			{
@@ -1198,7 +1210,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc users",
 				Description: "Manage JumpCloud system users",
-				Subcommands: []string{"list", "get", "create", "update", "delete", "search", "lock", "unlock", "reset-mfa", "reset-password", "ssh-keys", "ssh-key-add", "ssh-key-delete"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "search", "groups", "lock", "unlock", "reset-mfa", "reset-password", "ssh-keys", "ssh-key-add", "ssh-key-delete"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list/search)"},
 					{Name: "sort", Type: "string", Description: "Sort field, prefix - for descending (list/search)"},
@@ -1209,7 +1221,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc devices",
 				Description: "Manage JumpCloud devices (systems)",
-				Subcommands: []string{"list", "get", "update", "delete", "search", "lock", "restart", "erase", "fde-key"},
+				Subcommands: []string{"list", "get", "update", "delete", "search", "settings", "lock", "restart", "erase", "fde-key"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
 					{Name: "sort", Type: "string", Description: "Sort field, prefix - for descending (list)"},
@@ -1252,6 +1264,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc apps",
 				Description: "Manage SSO applications",
+				Long:        "List, inspect, create, update and delete JumpCloud SSO applications. `update` reads the app and sends it back in full with your changes, then verifies them: JumpCloud's application PUT answers a partial body with success while changing nothing. `--ai-ready` marks an app AI Ready in the User Portal; JumpCloud accepts true only when an AI Gateway server is assigned to the app. `list --ai-ready true|false` filters locally, because the server-side filter misses apps that never stored the field.",
 				Subcommands: []string{"list", "get", "create", "update", "delete"},
 				Flags: []FlagEntry{
 					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
@@ -1259,6 +1272,7 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
 					{Name: "sso-type", Type: "string", Description: "SSO type (create, required)"},
 					{Name: "config", Type: "string", Description: "SSO-specific config as JSON (create/update)"},
+					{Name: "ai-ready", Type: "bool", Description: "Mark the app AI Ready (update; needs an AI Gateway server on the app) or filter by it (list: true|false)"},
 				},
 			},
 			{
@@ -1291,7 +1305,7 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc agents",
-				Description: "Inspect JumpCloud AI agent identities",
+				Description: "Manage JumpCloud AI agent identities",
 				Long: "AI Agent Identities give an autonomous workload its own JumpCloud " +
 					"identity: a name, an owning admin, its own OAuth client credentials, and " +
 					"membership in agent groups that are assigned to applications. This group " +
@@ -1342,7 +1356,7 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc agent-groups",
-				Description: "Inspect JumpCloud AI agent groups",
+				Description: "Manage JumpCloud AI agent groups",
 				Long: "Agent groups are the collections through which AI agents are granted " +
 					"access to applications — and to nothing else: no policies, no commands, " +
 					"no devices, so `associations` has exactly one kind of target and jc " +
@@ -1399,7 +1413,7 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc password-vault",
-				Description: "Inspect JumpCloud Password Vault",
+				Description: "Manage JumpCloud Password Vault",
 				Long: "Password Vault is JumpCloud's replacement for Password Manager, and on an " +
 					"organization that has migrated every /passwordmanager endpoint returns 404 — " +
 					"both command groups are kept while customers move across. This group covers " +
@@ -1705,10 +1719,12 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc org",
 				Description: "View and update JumpCloud organization information",
-				Subcommands: []string{"list", "get", "settings", "update"},
+				Long:        "List and view organizations, view and update organization settings, and read organization feature settings with `features list|get` — for example `features get mcp`, the AI Gateway switch. Feature settings are read-only in jc: they turn org-wide features on and off. Only exact `--name`/`--category` filters are offered, because the API's other filter fields fail with HTTP 500 and its other operators return wrong results.",
+				Subcommands: []string{"list", "get", "settings", "update", "features"},
 				Flags: []FlagEntry{
 					{Name: "name", Type: "string", Description: "Organization display name (update)"},
 					{Name: "settings-json", Type: "string", Description: "Raw JSON for complex settings fields (update)"},
+					{Name: "category", Type: "string", Description: "Exact feature category, e.g. ai, itdr (features list)"},
 				},
 			},
 			{
@@ -1749,7 +1765,7 @@ func BuildCommandManifest() CommandManifest {
 				Path:        "jc apple-mdm",
 				Description: "Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies",
 				Long:        "Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template` (single-payload) or `payloads compose` (multi-payload bundles à la CIS Level 1), and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy` or `payloads compose --create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` (\"disable AirDrop on supervised iPads\" → finds the right schema → fills defaults → optionally creates the policy).",
-				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices", "payloads"},
+				Subcommands: []string{"list", "get", "create", "update", "delete", "enrollment-profiles", "devices", "payloads", "abm-devices", "ade-settings", "ade-tokens", "adue", "background-tasks", "csr", "device", "device-lock", "lost-mode", "os-update", "recovery-lock", "restart", "shutdown", "erase", "unenroll", "clear-activation-lock", "refresh-activation-lock", "clear-passcode", "clear-restrictions-password", "refresh-dep-devices"},
 				Flags: []FlagEntry{
 					{Name: "name", Type: "string", Description: "MDM configuration name (create/update); also policy + profile display name (payloads create-policy / template)"},
 					{Name: "org-name", Type: "string", Description: "Organization name (create/update)"},
@@ -1903,8 +1919,8 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc mcp",
 				Description: "MCP server for AI agent integration",
-				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 210 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
-				Subcommands: []string{"serve"},
+				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 420+ tools (`jc mcp tools` lists them) cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
+				Subcommands: []string{"serve", "tools"},
 				Flags: []FlagEntry{
 					{Name: "rate-limit", Type: "int", Default: "60", Description: "Maximum tool calls per minute"},
 					{Name: "read-only", Type: "bool", Description: "Disable all mutation tools"},

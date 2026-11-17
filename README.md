@@ -74,8 +74,8 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 42 resource types across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, auth policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations, G Suite, Office 365, Workday, Duo MFA, Password Manager, workflows, alerts, health rules, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
-- **AI-native** — built-in [MCP server](#mcp-server) with 340 tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 50 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, access requests, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
+- **AI-native** — built-in [MCP server](#mcp-server) with 420+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -178,21 +178,34 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `groups` | user (list/get/create/update/delete), device (list/get/create/update/delete), add-member, remove-member | Manage user and device groups |
 | `commands` | list, get, create, update, delete, run, results, trigger | Manage and execute commands |
 | `policies` | list, get, create, update, delete, results | Manage policies and view status |
-| `apps` | list, get, create, update, delete | Manage SSO applications |
+| `apps` | list, get, create, update, delete | Manage SSO applications (`--ai-ready` on list and update) |
+| `agents` | list, get, register, update, suspend, activate, delete, credentials, applications, memberof | AI agent identities and their OAuth credentials |
+| `agent-groups` | list, get, create, update, delete, members, add-member, remove-member, associations, assign-app, unassign-app | Groups that grant agents access to applications |
+| `service-accounts` | list, get, create, delete, rotate, revoke | API credentials for automation, scoped by a role |
+| `roles` | list, get, create, update, delete | RBAC roles for admins and service accounts |
+| `access-requests` | list, get, create, update, revoke | Temporary elevated device privileges |
 | `admins` | list, get, create, update, delete | Manage administrator accounts |
 | `auth-policies` | list, get, create, update, delete, enable, disable, simulate, blast-radius | Conditional access policies |
 | `iplists` | list, get, create, update, delete | Manage IP lists for auth policies |
+| `password-policies` | list, get, create, update, delete, set-precedence, for-user, for-group | Password policies and which one governs a user or group |
 | `identity-providers` | list, get, create, update, delete | Manage identity providers for SSO/OIDC |
 | `saas-management` | list, get, create, update, delete, accounts, account-get, account-delete, usage, licenses, catalog-get | Manage SaaS applications and licenses |
 | `insights` | query, count, distinct, save, saved, run | Query Directory Insights events |
+| `alerts` | list, get, status, add-note, notes, occurrences, stats, delete, bulk-update, bulk-delete, rules | Triage alerts and manage health-monitoring rules |
+| `notification-channels` | list, get, create, update, delete | Where alerts are delivered (webhook, email, Slack) |
+| `identity-risk` | events, identities, stats, timeline, geolocations, login-types | Identity risk detections; `events resolve` |
+| `reports` | templates, saved, custom, builder, scheduled, export | Browse, author, schedule and export reports |
+| `saved-views` | list, get, create, update, delete | Named list presets (columns, sort, filters) |
+| `search` | users, systems, commands, command-results | v1 search API |
 | `graph` | traverse, bind, unbind | Traverse and manage resource associations |
-| `org` | list, get, settings, update | View and update organization settings |
+| `org` | list, get, settings, update, features | View and update organization settings; read feature settings (AI Gateway switch) |
 | `software` | list, get, create, update, delete, statuses, associations, reclaim-license | Manage software apps (V2) |
 | `ldap` | list, get, create, update, delete, samba-domains, samba-domain-get/create/update/delete | Manage LDAP server integrations |
 | `ad` | list, get, create, update, delete | Manage Active Directory integrations |
 | `directories` | list | Unified read-only view of every directory integration with OAuth health |
 | `radius` | list, get, create, update, delete | Manage RADIUS server integrations |
-| `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices | Manage Apple MDM configurations |
+| `apple-mdm` | list, get, create, update, delete, enrollment-profiles, devices, payloads | Manage Apple MDM configurations |
+| `windows-mdm` | csp, oma-uri, registry | Windows custom MDM policies from Microsoft's CSP catalog |
 | `policy-templates` | list, get | Browse policy templates |
 | `policy-groups` | list, get, create, update, delete | Manage policy groups |
 | `bundle` | list, show, validate, export, apply, status, import mscp | Security baseline bundles: versioned YAML sets of Apple + Windows policies. Builtin hardening baselines: macOS derived from NIST mSCP (cis_lvl1/cis_lvl2) + Windows 11 from the DISA STIG CAT I subset; `import mscp` generates more from any mSCP baseline. apply creates the policies + a policy group and binds a device group; status reports per-unit drift |
@@ -204,10 +217,20 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `custom-emails` | templates, get, create, update, delete | Manage custom email templates |
 | `assets` | list, get, create, update, delete | Manage hardware assets |
 | `app-templates` | list, get | Browse application templates |
-| `bulk` | users | Bulk operations from CSV files |
+| `password-manager` | overview, users, folders, groups, items, policies, backup-keys | Password Manager (read-only) |
+| `password-vault` | status, overview, settings, users, groups, tags, credentials, folders, websites | Password Vault, the Password Manager replacement |
+| `google-emm` | enterprises, devices, enrollment-tokens | Google EMM / Android Enterprise (read-only) |
+| `workday` | list, get | Workday HR-import integrations (read-only) |
+| `workflows` | list, get, create, update, delete, validate, explain, simulate, lint, health, trigger, runs, templates, event-types | Server-side JumpCloud Workflows |
+| `bulk` | users, user-groups, device-groups, devices, admins | Bulk operations from CSV files |
 | `recipe` | list, show, run, create, import, export, validate | Multi-step workflow engine |
 | `auth` | login, logout, status, switch | Manage credentials and profiles |
 | `config` | view, set | View and modify configuration |
+| `api` | get, post, put, patch, delete | One raw, unshaped API request |
+| `multi` | *(direct)* | Run a command across several org profiles |
+| `audit` | *(direct)*, verify | Org security audit |
+| `doctor` | *(direct)* | Diagnose configuration, auth and region |
+| `upgrade` | *(direct)* | Replace this binary with the newest release |
 | `ask` | *(direct)* | Natural language to CLI translation |
 | `explain` | *(direct)* | Describe what a command does |
 | `mcp` | serve, tools | MCP server for AI assistants |
@@ -271,8 +294,8 @@ jc commands get "Install Agent" -t                # Get by name or ID
 jc commands create --name "Patch" --command "apt update" --type linux
 jc commands update "Patch" --command "apt upgrade"
 jc commands delete "Patch"                        # Delete (with confirmation)
-jc commands run "Install Agent" --device JDOE-MBP # Run on a device
-jc commands run "Patch All" --device-group "macOS Fleet"  # Run on device group
+jc commands run "Install Agent" --on JDOE-MBP     # Run on a device
+jc commands run "Patch All" --on "macOS Fleet"    # Run on a device group
 jc commands results "Install Agent" -t            # View execution results
 jc commands trigger my-webhook-trigger            # Fire a command trigger by name
 jc commands trigger my-trigger --data '{"key":"value"}'  # With JSON payload
@@ -284,7 +307,7 @@ jc commands trigger my-trigger --data '{"key":"value"}'  # With JSON payload
 jc policies list -t                               # List all policies
 jc policies get "FileVault" -t                    # Get by name or ID
 jc policies create --name "Screen Lock" --template-id abc123...
-jc policies update "Screen Lock" --values-json '{"timeout": 300}'
+jc policies update "Screen Lock" --values '{"timeout": 300}'
 jc policies delete "Screen Lock"                  # Delete (with confirmation)
 jc policies results "FileVault" -t                # View policy application status
 ```
@@ -294,10 +317,20 @@ jc policies results "FileVault" -t                # View policy application stat
 ```bash
 jc apps list -t                                   # List SSO applications
 jc apps get Slack -t                              # Get by name or ID
-jc apps create --name "Internal App" --sso-url https://app.example.com
-jc apps update "Internal App" --display-label "Our App"
+jc apps list --ai-ready true -t                   # Only apps marked AI Ready
+jc apps create --name "Internal App" --sso-type bookmark
+jc apps update "Internal App" --name "Our App"
+jc apps update "Internal App" --config '{"displayLabel":"Team Wiki"}'
+jc apps update "Internal App" --ai-ready=true     # Needs an AI Gateway server on the app
 jc apps delete "Internal App"                     # Delete (with confirmation)
 ```
+
+`apps update` reads the app and sends it back in full with your changes, then
+checks the result. JumpCloud answers a partial application update with success
+while changing nothing, so jc fails if a requested value did not take effect.
+`--ai-ready=true` is accepted only for an app with an MCP connection (an AI
+Gateway server assigned under Access > AI Gateway > Servers in the Admin
+Portal); JumpCloud rejects it otherwise.
 
 ### Admins
 
@@ -305,7 +338,7 @@ jc apps delete "Internal App"                     # Delete (with confirmation)
 jc admins list -t                                 # List administrators
 jc admins get admin@acme.com                      # Get by email or ID
 jc admins create --email newadmin@acme.com
-jc admins update admin@acme.com --enable-multi-factor true
+jc admins update admin@acme.com --enable-mfa
 jc admins delete admin@acme.com                   # Delete (with confirmation)
 ```
 
@@ -314,10 +347,10 @@ jc admins delete admin@acme.com                   # Delete (with confirmation)
 ```bash
 jc auth-policies list -t                          # List conditional access policies
 jc auth-policies get "Require MFA" -t             # Get by name or ID
-jc auth-policies create --name "Block Risky IPs" --effect deny --conditions '...'
+jc auth-policies create --name "Block Risky IPs" --type user_portal --conditions '...'
 jc auth-policies enable "Block Risky IPs"         # Enable a policy
 jc auth-policies disable "Block Risky IPs"        # Disable a policy
-jc auth-policies simulate --user jdoe --ip 1.2.3.4 --device-enrolled true -t
+jc auth-policies simulate "Require MFA" --user jdoe --ip 203.0.113.5 --location US
 jc auth-policies blast-radius "Require MFA" -t    # Show affected users
 
 jc iplists list -t                                # List IP lists
@@ -353,7 +386,7 @@ jc insights query --service all --last 24h -t             # All events, last 24h
 jc insights query --service sso --last 7d --event-type sso_auth_failed  # SSO failures
 jc insights count --service directory --last 30d           # Count events
 jc insights distinct --service all --last 7d --field event_type -t  # Unique event types
-jc insights save --name "sso-failures" --service sso --last 24h --event-type sso_auth_failed
+jc insights save "sso-failures" --service sso --last 24h --event-type sso_auth_failed
 jc insights run sso-failures -t                            # Re-run saved query
 ```
 
@@ -376,7 +409,13 @@ jc org get <org-id>                               # Get organization details
 jc org settings <org-id>                          # View all organization settings
 jc org update <org-id> --name "New Org Name"      # Update organization name
 jc org update <org-id> --settings-json '{"passwordPolicy":{"minLength":12}}'
+jc org features list -t                           # Feature settings, one row per setting
+jc org features list --category ai                # Exact name/category matches only
+jc org features get mcp                           # The AI Gateway switch and session lifetime
 ```
+
+`org features` is read-only. The API can also change feature settings, but they
+switch org-wide features such as the AI Gateway on and off, so jc does not.
 
 ### Infrastructure Integrations
 
@@ -405,11 +444,11 @@ jc ad create --domain "new.example.com"
 jc ad delete "corp.example.com"
 
 # Asset Management
-jc assets list -t                                 # List hardware assets
-jc assets get "MacBook Pro #42"                   # Get by name or ID
-jc assets create --name "MacBook Pro #43" --serial-number "C02X..." --status "In Stock"
-jc assets update "MacBook Pro #43" --status "Assigned" --system-id abc123...
-jc assets delete "MacBook Pro #43"                # Delete (with confirmation)
+jc assets devices list -t                         # Device assets (also: accessories, locations)
+jc assets devices get "MacBook Pro #42"           # Get by name or ID
+jc assets devices create --field "Name=MacBook Pro #43" --field "Serial Number=C02X..."
+jc assets devices update "MacBook Pro #43" --field "Status=Assigned"
+jc assets devices delete "MacBook Pro #43"        # Delete (with confirmation)
 
 # RADIUS Servers
 jc radius list -t                                 # List RADIUS servers
@@ -484,6 +523,22 @@ Password Manager ids are **UUIDs**, not the 24-character hex the rest of JumpClo
 uses, and records link back to the directory only through `externalId`. `jc` accepts
 either and bridges them, so a JumpCloud user id works where you would expect it to.
 
+### Password Vault
+
+```bash
+jc password-vault status                         # Is Password Vault active on this org?
+jc password-vault overview                       # Dashboard summary
+jc password-vault users list -t
+jc password-vault credentials list -t
+jc password-vault folders list -t
+jc password-vault settings
+```
+
+Password Vault replaces Password Manager. On an org that has migrated, every
+Password Manager endpoint returns 404; both command groups stay until customers
+have moved across. The area ignores `sort` and its paging duplicates and omits
+records, so jc fetches lists unpaginated and reports the server's own count.
+
 ### Google EMM (Android Enterprise)
 
 ```bash
@@ -513,6 +568,92 @@ endpoint, and neither is implemented: no tenant available for testing has a Work
 integration, so their response shapes have never been observed. Shipping a parser for a
 response nobody has seen is a guess, not a contract.
 
+### AI Agent Identities
+
+```bash
+jc agents list -t                                # Every AI agent identity
+jc agents list --filter state:eq:suspended -t
+jc agents applications <agent-id> -t             # What it can reach, directly or via a group
+jc agents register --name build-bot --email build-bot@example.com --owner <user-id> --plan
+jc agents suspend <agent-id>                     # Stops it authenticating
+jc agents credentials create <agent-id> --stdout | vault kv put secret/agents/build-bot secret=-
+
+jc agent-groups list -t
+jc agent-groups add-member <group-id> --agent <agent-id>
+jc agent-groups assign-app <group-id> --app <app-id>
+```
+
+A client secret is returned once, by the call that creates it; no read returns
+it again. The organization id these endpoints require is sent from your active
+profile. The AI Gateway (MCP Gateway) itself has no API yet: servers are set up
+in the Admin Portal, agent access follows agent-group → application
+assignments, and `jc org features get mcp` shows whether the gateway is on.
+
+### Service Accounts, Roles & Access Requests
+
+```bash
+jc roles list -t
+jc roles get Administrator --all                 # Reference: the full scope set
+jc roles create --name "Helpdesk bot" --scopes "users.update.unlock,users.update.passwordreset"
+jc service-accounts create --name ci-bot --role "Helpdesk bot" --auth-type client_secret
+jc service-accounts rotate ci-bot                # Adds a new credential (shown once)
+jc service-accounts revoke ci-bot <auth-config-id>
+
+jc access-requests list -t                       # Temporary elevated device privileges
+jc access-requests create --user jdoe --device JDOE-MBP --sudo --expiry 2026-12-01T00:00:00Z
+jc access-requests revoke <access-id>
+```
+
+### Password Policies
+
+```bash
+jc password-policies list -t
+jc password-policies for-user jdoe               # Which policy governs this user
+jc password-policies create --name "Engineering" --min-length 14 --needs-symbolic --group Engineering
+jc password-policies set-precedence Engineering=1 Default=2
+```
+
+### Alerts, Health Rules & Notification Channels
+
+```bash
+jc alerts list --filter 'status=ALERT_STATUS_OPEN' -t
+jc alerts status <id-or-title> acknowledged
+jc alerts add-note <id-or-title> "Investigating with the network team"
+jc alerts bulk-update --severity low --set-status resolved --plan
+jc alerts rules list -t                          # Health-monitoring rules that raise alerts
+jc alerts rules templates list -t
+
+jc notification-channels list -t
+jc notification-channels create --name "SecOps webhook" --type webhook --url https://hooks.example.com/jc
+```
+
+### Identity Risk
+
+```bash
+jc identity-risk stats --last 7d                 # Aggregates need --last or --start
+jc identity-risk identities list --last 30d -t
+jc identity-risk events list --level high -t
+jc identity-risk events resolve <object-id> --state safe --notes "known travel"
+```
+
+Resolving cannot be undone: the API refuses every attempt to reopen a detection,
+so `events resolve` confirms like a delete.
+
+### Reports, Saved Views & Search
+
+```bash
+jc reports templates list -t                     # Built-in report templates
+jc reports scheduled list -t
+jc reports scheduled trigger <id-or-name>        # Run a scheduled report now
+jc reports export --name "Users Q4" --from-template <template-id>   # Returns a download URL
+
+jc saved-views list -t
+jc saved-views create --name "Macs by OS" --source devices --columns hostname,os,version --shared
+
+jc search users "smith" -t                       # v1 search API
+jc search systems --filter 'os=Mac OS X' -t
+```
+
 ### Policy Management
 
 ```bash
@@ -533,10 +674,10 @@ Query osquery data from managed devices. Supports 62 tables including `os_versio
 
 ```bash
 jc system-insights tables                         # List all available tables
-jc system-insights os_version -t                  # Query a table across all devices
-jc system-insights disk_encryption --system-id JDOE-MBP -t   # Query for specific device
-jc system-insights chrome_extensions --filter "name:eq:uBlock Origin" -t
-jc system-insights apps --limit 50 -t             # Limit results
+jc system-insights list os_version -t             # Query a table across all devices
+jc system-insights list disk_encryption --system-id JDOE-MBP -t   # One device
+jc system-insights list chrome_extensions --filter "name=uBlock Origin" -t
+jc system-insights list apps --limit 50 -t        # Limit results
 ```
 
 ### User States (Scheduled Suspend/Reactivate)
@@ -567,6 +708,42 @@ jc bulk devices --file devices.csv --force        # update/delete only; columns:
                                                   #   displayname, allow*authentication bools
 jc bulk admins --file admins.csv --force          # columns: email, role, enable-mfa,
                                                   #   firstname, lastname, operation
+```
+
+### Workflows
+
+Server-side JumpCloud Workflows, distinct from local `jc recipe` runs:
+
+```bash
+jc workflows templates list                      # Template catalog, served live
+jc workflows templates init <id> > wf.json       # Fillable copy
+jc workflows validate wf.json                    # Checked locally before anything ships
+jc workflows explain wf.json                     # What it will actually do
+jc workflows create --file wf.json --role "<role>" --plan
+jc workflows trigger <name-or-id> --data '{"user":"jdoe"}'
+jc workflows runs list --workflow <name-or-id> -t
+jc workflows health                              # Event-triggered workflows that should have fired
+```
+
+A non-2xx response halts the whole run, even inside a loop. See
+[docs/reference/workflows-dsl.md](docs/reference/workflows-dsl.md).
+
+### Raw API Requests
+
+```bash
+jc api get /api/v2/feature-settings              # Version comes from the path
+jc api get /v1/applications --param limit=1      # v1 needs the /v1 prefix
+jc api post /api/v2/usergroups -d '{"name":"x"}' --plan
+```
+
+One invocation is one HTTP request, with no pagination. Writes confirm and
+honour `--plan`. There is deliberately no MCP tool for this.
+
+### Staying Current
+
+```bash
+jc upgrade --plan          # What would happen; downloads nothing
+jc upgrade                 # Download, verify against checksums.txt, replace this binary
 ```
 
 ### Setup Wizard
@@ -724,7 +901,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**340 tools available** covering all 42 resource types — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
+**420+ tools available** (`jc mcp tools` lists them) covering every command group — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -1148,7 +1325,7 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 42 resource types + utilities
+  cmd/                  CLI commands (Cobra) — 50 command groups + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
@@ -1156,7 +1333,7 @@ internal/
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
   tui/                  Interactive terminal UI (Bubbletea) — 42 resource views
-  mcp/                  MCP server (official Go SDK) — 340 tools
+  mcp/                  MCP server (official Go SDK) — 420+ tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
   schema/               Machine-readable CLI schema (42 resource schemas)

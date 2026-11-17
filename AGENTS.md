@@ -20,7 +20,7 @@ for the frontmatter convention and authoring guidance.
 
 ## What this tool does
 
-`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 40+ resource types. Single Go binary, no dependencies.
+`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 50 command groups. Single Go binary, no dependencies.
 
 ## Regions
 
@@ -63,7 +63,12 @@ Use `--org <profile>` to override the active profile per command.
 | admins | `jc admins list` | `jc admins get` | `jc admins create` | — | `jc admins delete` |
 | commands | `jc commands list` | `jc commands get` | `jc commands create` | `jc commands update` | `jc commands delete` |
 
-Other resources: `ad`, `apple-mdm`, `windows-mdm`, `auth-policies`, `bundle`, `directories` (unified integration list + OAuth health), `custom-emails`, `duo`, `gsuite`, `identity-providers`, `insights`, `iplists`, `ldap`, `office365`, `org`, `policy-groups`, `radius`, `saas-management`, `software`, `user-states`, `assets`, `graph`, `system-insights`.
+Other resources: `access-requests`, `ad`, `agents`, `agent-groups`, `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
+
+`jc apps update` reads the app and sends it back in full: JumpCloud's v1
+application PUT returns 200 and changes nothing unless the body carries both
+`name` and `ssoUrl`. Any new v1 write must verify the change landed, not trust
+the status code.
 
 ## Output control
 
@@ -138,17 +143,17 @@ Batch rules: exactly one identifier source (inline arg, `--from-file`, or `--std
 ## Graph associations
 
 ```bash
-jc graph list-associations --type user --id <user-id>
-jc graph add --type user --id <user-id> --target-type user_group --target-id <group-id>
-jc graph remove --type user --id <user-id> --target-type user_group --target-id <group-id>
+jc graph traverse --from user:jdoe --to user_group
+jc graph bind --from user:jdoe --to user_group:Engineering
+jc graph unbind --from user:jdoe --to user_group:Engineering
 ```
 
 ## Directory Insights (audit logs)
 
 ```bash
 jc insights query --service sso --last 24h
-jc insights query --service all --last 7d --filter 'event_type:eq:user_login_attempt'
-jc insights saved-searches list
+jc insights query --service all --last 7d --event-type user_login_attempt
+jc insights saved
 ```
 
 ## Raw API requests (the empirical gate)
@@ -209,8 +214,7 @@ dependency tree is a poor trade.
 ## Machine-readable schema
 
 ```bash
-jc schema commands          # Full command manifest (JSON)
-jc schema flags             # All global flags
+jc schema commands          # Full command manifest (JSON), incl. global flags
 jc schema resources         # Resource types and their operations
 ```
 

@@ -18,8 +18,8 @@ var orgDefaultFields = []string{"_id", "displayName", "created"}
 func newOrgCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "org",
-		Short: "View JumpCloud organization settings",
-		Long:  "List and view JumpCloud organization details.",
+		Short: "View and update JumpCloud organization settings",
+		Long:  "List and view JumpCloud organization details, update organization settings,\nand view organization feature settings (read-only).",
 	}
 
 	cmd.AddCommand(newOrgListCmd())

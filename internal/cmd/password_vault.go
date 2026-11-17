@@ -26,9 +26,11 @@ func newPasswordVaultCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "password-vault",
 		Aliases: []string{"pwv", "vault"},
-		Short:   "Inspect JumpCloud Password Vault",
-		Long: `Read the org's Password Vault: whether it is active, its tenant settings and
-default permissions, the enrolled users and groups, and the dashboard summary.
+		Short:   "Manage JumpCloud Password Vault",
+		Long: `Work with the org's Password Vault: whether it is active, its tenant settings
+and default permissions, the enrolled users and groups, the dashboard summary,
+and the stored credentials, folders and websites (which can also be created,
+cloned, archived and deleted).
 
 PASSWORD VAULT REPLACES PASSWORD MANAGER, and on an org that has migrated every
 /passwordmanager endpoint returns 404. Both command groups are kept while
