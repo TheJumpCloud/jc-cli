@@ -59,6 +59,11 @@ var notAResource = map[string]string{
 		"and the V2 group-bound policies; the two have different shapes",
 
 	"service-accounts-keys": "sub-resource of service-accounts",
+
+	// Deliberately kept out of the TUI.
+	"ai-gateway": "undocumented preview API whose server records can carry " +
+		"upstream credentials; every read goes through internal/aigateway, which " +
+		"redacts them, and a generic TUI list or detail screen would bypass that",
 }
 
 func TestEveryCommandGroupHasASchemaEntry(t *testing.T) {

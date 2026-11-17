@@ -92,6 +92,7 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc insights query/count/distinct` | Directory Insights events |
 | `jc graph traverse --from TYPE:NAME --to TYPE` | Association graph |
 | `jc agents` / `jc agent-groups` | AI agent identities, their credentials, and the groups that grant them apps |
+| `jc ai-gateway servers/redirect-uris/catalog` | AI Gateway configuration, read-only (preview) |
 | `jc service-accounts` / `jc roles` | API credentials for automation and the roles that scope them |
 | `jc password-policies` | Password policies; `for-user` shows which one applies |
 | `jc alerts` / `jc notification-channels` | Alert triage, health rules, and where alerts are delivered |

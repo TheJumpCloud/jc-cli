@@ -577,6 +577,26 @@
       ]
     },
     {
+      "path": "jc ai-gateway",
+      "description": "View the AI Gateway: MCP servers, redirect URIs, catalog (preview)",
+      "long": "Read the JumpCloud AI Gateway (MCP Gateway) configuration: the MCP servers it fronts (each linked to an SSO application), the OAuth redirect URIs MCP clients may use, and the catalog of preconfigured connectors. PREVIEW: these endpoints are not in JumpCloud's published API reference; they are the ones the Admin Portal uses and accept an ordinary admin API key, but may change without notice, so jc fails with an explicit error on any response shape it does not recognise. Read-only; credentials in a server's auth_config are never shown (only known-safe values are kept, the rest is redacted).",
+      "category": "Other",
+      "subcommands": [
+        "servers list",
+        "servers get",
+        "redirect-uris list",
+        "catalog resolve",
+        "catalog connector"
+      ],
+      "flags": [
+        {
+          "name": "app",
+          "type": "string",
+          "description": "Only servers linked to this application (servers list)"
+        }
+      ]
+    },
+    {
       "path": "jc agent-groups",
       "description": "Manage JumpCloud AI agent groups",
       "long": "Agent groups are the collections through which AI agents are granted access to applications — and to nothing else: no policies, no commands, no devices, so `associations` has exactly one kind of target and jc supplies it, since the API requires it and the spec does not say so. This half of the area behaves differently from `jc agents` in four ways, all of them the server's: no organization id header is needed, listings page by offset rather than by cursor, --sort works here and is ignored there, and the two accept different filter fields. `members` and `associations` return ids and types with no names, so jc joins the names in from the agent and application catalogs. `update` REPLACES the group: the API requires the name on every update and clears any field it is not given, so jc reads the group first and merges — the opposite of `jc agents update`, and the difference is the server's. Membership and application assignment each go through one endpoint that takes a direction, which is why there are four commands for two operations; each returns an empty body, so jc reads the membership back rather than echoing the request.",

@@ -818,6 +818,18 @@ AI Agent Identities give an autonomous workload its own JumpCloud identity: a na
 - `--clipboard` `<bool>` — On credentials create: copy the secret to the clipboard and print nothing
 - `--auth-method` `<string>` — On credentials update: client_secret_basic or client_secret_post — the only field an update can change
 
+#### `jc ai-gateway`
+
+View the AI Gateway: MCP servers, redirect URIs, catalog (preview)
+
+Read the JumpCloud AI Gateway (MCP Gateway) configuration: the MCP servers it fronts (each linked to an SSO application), the OAuth redirect URIs MCP clients may use, and the catalog of preconfigured connectors. PREVIEW: these endpoints are not in JumpCloud's published API reference; they are the ones the Admin Portal uses and accept an ordinary admin API key, but may change without notice, so jc fails with an explicit error on any response shape it does not recognise. Read-only; credentials in a server's auth_config are never shown (only known-safe values are kept, the rest is redacted).
+
+**Subcommands:** `servers list`, `servers get`, `redirect-uris list`, `catalog resolve`, `catalog connector`
+
+**Flags:**
+
+- `--app` `<string>` — Only servers linked to this application (servers list)
+
 #### `jc agent-groups`
 
 Manage JumpCloud AI agent groups
