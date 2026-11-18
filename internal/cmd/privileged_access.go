@@ -140,6 +140,9 @@ func newPAMDashboardCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if raw, err = privaccess.Redact(raw); err != nil {
+				return err
+			}
 			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
 		},
 	}

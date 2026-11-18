@@ -216,3 +216,29 @@ func TestGroupsEndpoint(t *testing.T) {
 		t.Error("bad product accepted")
 	}
 }
+
+func TestRedact_NormalisedKeysAndListRows(t *testing.T) {
+	raw, err := Redact(json.RawMessage(`{"db_password":"a","Connection-String":"b","card.number":"c","pass":"d","enrollmentKey":"e","videoUrl":"f","uri":"https://ok.example","url":"https://release.example","credentialIds":["x"],"canViewSecret":true,"passwordStrength":3}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	for _, v := range []string{`"a"`, `"b"`, `"c"`, `"d"`, `"e"`, `"f"`} {
+		if strings.Contains(s, v) {
+			t.Errorf("%s not redacted: %s", v, s)
+		}
+	}
+	for _, v := range []string{"https://ok.example", "https://release.example", `"credentialIds":["x"]`, `"canViewSecret":true`, `"passwordStrength":3`} {
+		if !strings.Contains(s, v) {
+			t.Errorf("%s dropped: %s", v, s)
+		}
+	}
+
+	f := &fakeGetter{responses: map[string]string{
+		ConnectorsEndpoint + page(0): `{"items":[{"id":"` + srvA + `","enrollmentToken":"ENROLL-ME"}],"totalCount":1}`,
+	}}
+	rows, _, err := ListPaged(context.Background(), f, ConnectorsEndpoint, "connectors")
+	if err != nil || strings.Contains(string(rows[0]), "ENROLL-ME") {
+		t.Errorf("list row not redacted: %s %v", rows, err)
+	}
+}

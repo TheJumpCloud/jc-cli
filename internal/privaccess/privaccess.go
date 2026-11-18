@@ -168,6 +168,16 @@ func strictEnvelope(raw json.RawMessage, key, what string) ([]json.RawMessage, m
 	if err := json.Unmarshal(list, &rows); err != nil || rows == nil {
 		return nil, nil, fmt.Errorf("the %s response's %q field is not a list; the API's envelope has changed", what, key)
 	}
+	// Every row of every listing is redacted here, in one place: several of
+	// these listings (connectors, connections) were empty on the probed
+	// tenant, so their full shape has never been seen.
+	for i, r := range rows {
+		red, err := Redact(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		rows[i] = red
+	}
 	return rows, env, nil
 }
 
@@ -533,6 +543,9 @@ func ResourceConnectionStatus(ctx context.Context, c Getter, ident string) (json
 		if err != nil {
 			return nil, "", err
 		}
+		if raw, err = Redact(raw); err != nil {
+			return nil, "", err
+		}
 		return raw, k.Name, nil
 	}
 	return nil, "", fmt.Errorf("no Privileged Access server, database or website with id or name %q", ident)
@@ -542,12 +555,22 @@ func ResourceConnectionStatus(ctx context.Context, c Getter, ident string) (json
 
 // secretKeyParts mark a key whose string or structured value may carry a
 // secret. A database's connectionString can embed a password; the rest are
-// defence in depth against fields the edit views may start returning.
-var secretKeyParts = []string{"password", "secret", "passphrase", "privatekey",
-	"connectionstring", "token", "mfakey", "apikey"}
+// defence in depth against fields the views may start returning, including
+// pre-signed recording and download links and connector enrollment values.
+// Keys are compared lower-cased with "_", "-" and "." removed.
+var secretKeyParts = []string{"password", "passwd", "secret", "passphrase", "privatekey",
+	"connectionstring", "dsn", "token", "mfakey", "otp", "totp", "apikey", "cardnumber",
+	"securitycode", "cvv", "pincode", "enrollment", "presigned", "signedurl",
+	"downloadurl", "videourl", "recordingurl"}
+
+// secretKeyExact are short keys that would match too much as substrings.
+var secretKeyExact = map[string]bool{"pass": true, "pin": true, "key": true, "pwd": true}
 
 func secretKey(k string) bool {
-	l := strings.ToLower(k)
+	l := strings.NewReplacer("_", "", "-", "", ".", "").Replace(strings.ToLower(k))
+	if secretKeyExact[l] {
+		return true
+	}
 	for _, p := range secretKeyParts {
 		if strings.Contains(l, p) {
 			return true

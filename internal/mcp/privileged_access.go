@@ -112,7 +112,11 @@ func (s *Server) registerPrivilegedAccessTools() {
 	addTypedTool(s, "privileged_access_dashboard", "Privileged Access at a glance: how many privileged servers, databases, websites, blocking rules, jump servers and users there are (with month-over-month change), connector health, and the most and least connected resources.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			return pamSingle(ctx, "the dashboard", func(ctx context.Context, c privaccess.Getter) (json.RawMessage, error) {
-				return c.Get(ctx, privaccess.DashboardEndpoint)
+				raw, err := c.Get(ctx, privaccess.DashboardEndpoint)
+				if err != nil {
+					return nil, err
+				}
+				return privaccess.Redact(raw)
 			})
 		},
 	)
