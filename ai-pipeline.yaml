@@ -38,6 +38,11 @@ build:
     - go vet ./...
     - go test -race -count=1 ./...
     - make verify-site
+    # The pipeline's own scanners don't cover Go (its Semgrep rulesets are TypeScript/JavaScript only),
+    # so check Go here: known vulnerabilities in the standard library and dependencies that jc's code
+    # actually reaches. Exit 3 = a reachable vulnerability; the fix is usually a go.mod bump (Go or a
+    # module), which a person makes. Pinned so a new govulncheck release can't change the gate.
+    - go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
   # docs/site/ is generated from the command tree; Develop regenerates it instead of hand-merging a
   # conflict in it. docs/API_COVERAGE.md, internal/workflow/operations.json and docs/spec-provenance.md
   # are NOT listed: they come from `make refresh-generated`, which a person runs.
