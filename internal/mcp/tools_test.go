@@ -344,6 +344,14 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"google_emm_device_policy_results",
 		"google_emm_enrollment_tokens_list",
 		"google_emm_enrollment_token_get",
+		"access_cert_settings_get",
+		"access_cert_campaigns_list",
+		"access_cert_campaign_get",
+		"access_cert_runs_list",
+		"access_cert_run_get",
+		"access_cert_review_items_list",
+		"access_cert_audit_report_get",
+		"access_cert_admin_queue_list",
 		// Workday import — two verified reads; the rest is unprobed.
 		"workday_integrations_list",
 		"workday_integration_get",
@@ -591,8 +599,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 423 {
-		t.Errorf("expected 423 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 431 {
+		t.Errorf("expected 431 tools, got %d", len(result.Tools))
 	}
 }
 
