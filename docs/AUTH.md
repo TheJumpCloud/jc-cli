@@ -141,7 +141,7 @@ Notable extra friction:
 
 ### MCP destructive ops
 
-The MCP server exposes 149 tools using the `destructiveInput` pattern (`internal/mcp/tools.go:55`):
+Every MCP tool that changes something takes an `execute` flag. The single-identifier operations share the `destructiveInput` type in `internal/mcp/tools.go`; tools with richer input carry the same `execute` field:
 
 ```go
 type destructiveInput struct {
