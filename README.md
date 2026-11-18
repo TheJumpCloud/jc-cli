@@ -74,7 +74,7 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 51 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
+- **Full JumpCloud API surface** — 52 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
 - **AI-native** — built-in [MCP server](#mcp-server) with 420+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
@@ -185,6 +185,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `service-accounts` | list, get, create, delete, rotate, revoke | API credentials for automation, scoped by a role |
 | `roles` | list, get, create, update, delete | RBAC roles for admins and service accounts |
 | `access-requests` | list, get, create, update, revoke | Temporary elevated device privileges |
+| `access-cert` | settings, campaigns, runs (list/get/items/audit-report), admin-queue | Access Certification reviews (read-only) |
 | `admins` | list, get, create, update, delete | Manage administrator accounts |
 | `auth-policies` | list, get, create, update, delete, enable, disable, simulate, blast-radius | Conditional access policies |
 | `iplists` | list, get, create, update, delete | Manage IP lists for auth policies |
@@ -632,6 +633,20 @@ jc access-requests list -t                       # Temporary elevated device pri
 jc access-requests create --user jdoe --device JDOE-MBP --sudo --expiry 2026-12-01T00:00:00Z
 jc access-requests revoke <access-id>
 ```
+
+### Access Certification (read-only)
+
+```bash
+jc access-cert campaigns list -t                 # Campaign templates
+jc access-cert runs list -t                      # Campaign runs
+jc access-cert runs items <run-id> -t            # Review items and their decisions
+jc access-cert runs audit-report <run-id> --no-urls   # Closed runs only; omit the pre-signed URLs
+jc access-cert admin-queue -t
+```
+
+Ids are 24-character hex object ids; there is no lookup by name. The audit
+report's download URLs are pre-signed and valid for about 5 minutes — treat
+them like credentials.
 
 ### Password Policies
 
@@ -1354,7 +1369,7 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 51 command groups + utilities
+  cmd/                  CLI commands (Cobra) — 52 command groups + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings

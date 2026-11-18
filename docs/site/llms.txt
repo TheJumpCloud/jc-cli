@@ -54,6 +54,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 - `jc directories` — One view over every directory integration
 - `jc google-emm` — Inspect the org's Android Enterprise (EMM) setup
+- `jc access-cert` — Read Access Certification campaigns, runs, review items and audit reports
 - `jc workday` — Inspect the org's Workday HR-import integrations
 - `jc software` — Manage JumpCloud software apps
 - `jc assets` — Manage JumpCloud assets (devices, accessories, locations)
