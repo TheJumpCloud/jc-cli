@@ -101,6 +101,7 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc reports` | Report templates, custom/builder/scheduled reports, export |
 | `jc workflows` | Server-side JumpCloud Workflows: validate, explain, create, trigger |
 | `jc password-vault` | Password Vault (replaces Password Manager) |
+| `jc privileged-access` | Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions (read-only) |
 | `jc org features list/get` | Org feature settings, e.g. whether the AI Gateway is on (read-only) |
 | `jc api get/post/put/patch/delete <path>` | One raw API request |
 | `jc apple-mdm payloads list/show/template/create-policy` | Apple MDM: browse Apple's schema catalog, emit .mobileconfig, create JC custom policies |
@@ -179,7 +180,7 @@ Add to Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-420+ tools available (`jc mcp tools` lists them), including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
+450+ tools available (`jc mcp tools` lists them), including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
 
 ### Plan Mode (Dry Run)
 

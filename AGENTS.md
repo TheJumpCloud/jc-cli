@@ -20,7 +20,7 @@ for the frontmatter convention and authoring guidance.
 
 ## What this tool does
 
-`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 52 command groups. Single Go binary, no dependencies.
+`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 53 command groups. Single Go binary, no dependencies.
 
 ## Regions
 
@@ -63,7 +63,7 @@ Use `--org <profile>` to override the active profile per command.
 | admins | `jc admins list` | `jc admins get` | `jc admins create` | — | `jc admins delete` |
 | commands | `jc commands list` | `jc commands get` | `jc commands create` | `jc commands update` | `jc commands delete` |
 
-Other resources: `access-cert` (read-only Access Certification), `access-requests`, `ad`, `agents`, `agent-groups`, `ai-gateway` (preview, read-only), `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
+Other resources: `access-cert` (read-only Access Certification), `access-requests`, `ad`, `agents`, `agent-groups`, `ai-gateway` (preview, read-only), `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `privileged-access` (alias `pam`; read-only, never secrets), `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
 
 An app's `name` is its catalog connector key (`bookmark`, `slack`, ...), not a
 title: create rejects anything else and it cannot change afterwards; the title is

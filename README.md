@@ -74,8 +74,8 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 52 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
-- **AI-native** — built-in [MCP server](#mcp-server) with 420+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
+- **Full JumpCloud API surface** — 53 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, Privileged Access, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
+- **AI-native** — built-in [MCP server](#mcp-server) with 450+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
 
@@ -221,6 +221,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `app-templates` | list, get | Browse application templates |
 | `password-manager` | overview, users, folders, groups, items, policies, backup-keys | Password Manager (read-only) |
 | `password-vault` | status, overview, settings, users, groups, tags, credentials, folders, websites | Password Vault, the Password Manager replacement |
+| `privileged-access` | status, dashboard, users, servers, databases, websites, credentials, blocking-rules, connectors, connections, resource-managers, tags, groups | Privileged Access (PAM), read-only; never reads secrets |
 | `google-emm` | enterprises, devices, enrollment-tokens | Google EMM / Android Enterprise (read-only) |
 | `workday` | list, get | Workday HR-import integrations (read-only) |
 | `workflows` | list, get, create, update, delete, validate, explain, simulate, lint, health, trigger, runs, templates, event-types | Server-side JumpCloud Workflows |
@@ -549,6 +550,26 @@ Password Vault replaces Password Manager. On an org that has migrated, every
 Password Manager endpoint returns 404; both command groups stay until customers
 have moved across. The area ignores `sort` and its paging duplicates and omits
 records, so jc fetches lists unpaginated and reports the server's own count.
+
+### Privileged Access (PAM, read-only)
+
+```bash
+jc pam status                                    # Is Privileged Access active on this org?
+jc pam dashboard                                 # Counts and most-used resources
+jc pam servers list -t                           # Also: databases, websites
+jc pam databases get "Prod DB"                   # By id or exact name; connection string redacted
+jc pam credentials list -t                       # Privileged credentials only, never secrets
+jc pam credentials history <id>
+jc pam blocking-rules list -t
+jc pam connections list -t                       # The privileged session log
+jc pam connections status "Prod DB"              # Who is connected right now
+```
+
+Read-only, and no command reads a secret: credential secrets, MFA codes,
+rotation scripts, the backup key, connector install files and session recordings
+are not available. Card and identity-document fields are removed from credential
+listings unless `--show-personal` is given. `get` reads the API's edit view, because
+its plain detail endpoint refuses callers who hold the permission it asks for.
 
 ### Google EMM (Android Enterprise)
 
@@ -945,7 +966,7 @@ jc includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/
 }
 ```
 
-**420+ tools available** (`jc mcp tools` lists them) covering every command group — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
+**450+ tools available** (`jc mcp tools` lists them) covering every command group — user management, device operations, group membership, policy management, insights queries, graph associations, infrastructure integrations (LDAP, AD, RADIUS, Apple MDM, G Suite, Office 365, Duo), SaaS management, asset management, custom emails, app templates, recipe execution, command explanation, and plan-mode previews. Includes a dedicated **Apple MDM payloads catalog** (`apple_mdm_payloads_*`) that lets agents map a natural-language MDM intent to one of Apple's vendored schemas (`com.apple.security.firewall`, `com.apple.applicationaccess`, etc.) and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, plus a **Windows MDM app** (`windows_mdm_*`): a CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, incl. standalone CSPs like the BitLocker CSP) feeding OMA-URI and HKLM-registry policy creation, and **security baseline bundles** (`bundle_list` / `bundle_show` / `bundle_status` / `bundle_apply`): versioned multi-policy baselines applied as one policy group with drift detection. All destructive operations require explicit `execute: true` confirmation.
 
 ```bash
 jc mcp tools    # List all available MCP tool names
@@ -1369,7 +1390,7 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 52 command groups + utilities
+  cmd/                  CLI commands (Cobra) — 53 command groups + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings
@@ -1377,7 +1398,7 @@ internal/
   filter/               Filter expression parser (field:op:value)
   recipe/               YAML recipe engine with Go templates
   tui/                  Interactive terminal UI (Bubbletea) — 42 resource views
-  mcp/                  MCP server (official Go SDK) — 420+ tools
+  mcp/                  MCP server (official Go SDK) — 450+ tools
   ask/                  LLM integration (Anthropic, OpenAI, Ollama)
   keychain/             OS keychain wrapper (macOS Keychain, Linux secret-tool)
   schema/               Machine-readable CLI schema (42 resource schemas)

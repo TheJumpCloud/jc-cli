@@ -357,6 +357,19 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"workday_integration_get",
 		// Organization feature settings (AI Gateway switch etc.), read-only.
 		"org_feature_settings_list",
+		// Privileged Access (PAM), read-only; no tool reads a secret.
+		"privileged_access_status", "privileged_access_dashboard", "privileged_access_users_list",
+		"privileged_access_groups_list", "privileged_access_tags_list",
+		"privileged_access_servers_list", "privileged_access_server_get",
+		"privileged_access_databases_list", "privileged_access_database_get",
+		"privileged_access_websites_list", "privileged_access_website_get",
+		"privileged_access_credentials_list", "privileged_access_credential_get",
+		"privileged_access_credential_managers", "privileged_access_credential_history",
+		"privileged_access_credential_linked_servers",
+		"privileged_access_blocking_rules_list", "privileged_access_blocking_rule_get",
+		"privileged_access_connectors_list", "privileged_access_connector_versions",
+		"privileged_access_connections_list", "privileged_access_connection_status",
+		"privileged_access_resource_managers_list",
 		"ai_gateway_servers_list", "ai_gateway_server_get", "ai_gateway_redirect_uris_list", "ai_gateway_catalog_resolve", "ai_gateway_catalog_connector_get",
 		// Password Manager — the credential vault, read-only by design.
 		"password_manager_overview",
@@ -600,8 +613,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 436 {
-		t.Errorf("expected 436 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 459 {
+		t.Errorf("expected 459 tools, got %d", len(result.Tools))
 	}
 }
 
