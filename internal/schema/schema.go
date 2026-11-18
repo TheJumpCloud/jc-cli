@@ -1380,6 +1380,15 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc ai-gateway",
+				Description: "View the AI Gateway: MCP servers, redirect URIs, catalog (preview)",
+				Long:        "Read the JumpCloud AI Gateway (MCP Gateway) configuration: the MCP servers it fronts (each linked to an SSO application), the OAuth redirect URIs MCP clients may use, and the catalog of preconfigured connectors. PREVIEW: these endpoints are not in JumpCloud's published API reference; they are the ones the Admin Portal uses and accept an ordinary admin API key, but may change without notice, so jc fails with an explicit error on any response shape it does not recognise. Read-only; credentials in a server's auth_config are never shown (only known-safe values are kept, the rest is redacted).",
+				Subcommands: []string{"servers list", "servers get", "redirect-uris list", "catalog resolve", "catalog connector"},
+				Flags: []FlagEntry{
+					{Name: "app", Type: "string", Description: "Only servers linked to this application (servers list)"},
+				},
+			},
+			{
 				Path:        "jc agent-groups",
 				Description: "Manage JumpCloud AI agent groups",
 				Long: "Agent groups are the collections through which AI agents are granted " +

@@ -633,6 +633,7 @@ func (s *Server) registerTools() {
 	s.registerGoogleEMMTools()
 	s.registerWorkdayTools()
 	s.registerFeatureSettingsTools()
+	s.registerAIGatewayTools()
 	s.registerAccessCertTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()

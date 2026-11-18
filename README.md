@@ -74,7 +74,7 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 51 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
+- **Full JumpCloud API surface** — 52 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. Every in-scope area of the API now has a command group — see [API coverage](docs/API_COVERAGE.md).
 - **AI-native** — built-in [MCP server](#mcp-server) with 420+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
@@ -181,6 +181,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `apps` | list, get, create, update, delete | Manage SSO applications (`--ai-ready` on list and update) |
 | `agents` | list, get, register, update, suspend, activate, delete, credentials, applications, memberof | AI agent identities and their OAuth credentials |
 | `agent-groups` | list, get, create, update, delete, members, add-member, remove-member, associations, assign-app, unassign-app | Groups that grant agents access to applications |
+| `ai-gateway` | servers (list/get), redirect-uris list, catalog (resolve/connector) | AI Gateway configuration, read-only (preview: undocumented API) |
 | `service-accounts` | list, get, create, delete, rotate, revoke | API credentials for automation, scoped by a role |
 | `roles` | list, get, create, update, delete | RBAC roles for admins and service accounts |
 | `access-requests` | list, get, create, update, revoke | Temporary elevated device privileges |
@@ -595,11 +596,28 @@ jc agent-groups assign-app <group-id> --app <app-id>
 
 A client secret is returned once, by the call that creates it; no read returns
 it again. The organization id these endpoints require is sent from your active
-profile. AI Gateway servers are managed in the Admin Portal (Access > AI Gateway >
-Servers). The portal uses `/api/v2/ai-admin/servers`, which is not in the
-published API spec and is not wrapped by jc yet. Agent access follows
-agent-group → application assignments, and `jc org features get mcp` shows
-whether the gateway is on.
+profile. Agent access follows agent-group → application assignments. The AI Gateway
+itself is under [`jc ai-gateway`](#ai-gateway-preview), and
+`jc org features get mcp` shows whether it is switched on.
+
+### AI Gateway (preview)
+
+```bash
+jc ai-gateway servers list -t                    # MCP servers the gateway fronts
+jc ai-gateway servers list --app AWS             # Servers of one application
+jc ai-gateway servers get Salesforce
+jc ai-gateway redirect-uris list -t              # OAuth callbacks MCP clients may use
+jc ai-gateway catalog resolve Salesforce         # Linked catalog connector, if any
+jc ai-gateway catalog connector salesforce       # The connector's definition
+```
+
+**Preview:** these endpoints are not in JumpCloud's published API reference.
+They are the ones the Admin Portal's AI Gateway pages use, and they accept an
+ordinary admin API key, but their shape may change without notice. jc checks
+every response and fails with an explicit error rather than showing an empty
+or partial result. The commands are read-only (changes happen in the Admin
+Portal under Access > AI Gateway), and credentials are never shown: a server's
+`auth_config` keeps only known-safe values and redacts everything else.
 
 ### Service Accounts, Roles & Access Requests
 
@@ -1351,7 +1369,7 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 51 command groups + utilities
+  cmd/                  CLI commands (Cobra) — 52 command groups + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings

@@ -357,6 +357,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"workday_integration_get",
 		// Organization feature settings (AI Gateway switch etc.), read-only.
 		"org_feature_settings_list",
+		"ai_gateway_servers_list", "ai_gateway_server_get", "ai_gateway_redirect_uris_list", "ai_gateway_catalog_resolve", "ai_gateway_catalog_connector_get",
 		// Password Manager — the credential vault, read-only by design.
 		"password_manager_overview",
 		"password_manager_users_list",
@@ -599,8 +600,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 431 {
-		t.Errorf("expected 431 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 436 {
+		t.Errorf("expected 436 tools, got %d", len(result.Tools))
 	}
 }
 

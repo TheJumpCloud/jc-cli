@@ -31,6 +31,7 @@ jc <resource> <verb> [identifier] [flags]
 | `apps` | | list (`--ai-ready true\|false`, `--sso-type`), get, create (`--name` = catalog connector key e.g. `bookmark`, `--display-label` = title), update (`--display-label`, `--ai-ready`; needs an AI Gateway server on the app), delete |
 | `agents` | | list, get, register, update, suspend, activate, delete, credentials, applications, memberof (AI agent identities; a client secret is shown once) |
 | `agent-groups` | | list, get, create, update, delete, members, add-member, remove-member, associations, assign-app, unassign-app |
+| `ai-gateway` | `aigw` | servers list (`--app`)/get, redirect-uris list, catalog resolve/connector — AI Gateway config, read-only, PREVIEW (undocumented API); credentials redacted |
 | `service-accounts` | | list, get, create, delete, rotate, revoke (credential shown once) |
 | `roles` | | list, get, create, update, delete |
 | `access-requests` | | list, get, create, update, revoke |

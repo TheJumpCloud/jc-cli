@@ -54,11 +54,16 @@ var commandClass = map[string]string{
 	// and expiry, and never a secret — verified against every agent on a
 	// live tenant. Creating a credential is the call that returns one, and
 	// it is not in this PR.
-	"jc agents list":             ClassReadOnly,
-	"jc agents get":              ClassReadOnly,
-	"jc agents memberof":         ClassReadOnly,
-	"jc agents applications":     ClassReadOnly,
-	"jc agents credentials list": ClassReadOnly,
+	"jc ai-gateway servers list":       ClassReadOnly,
+	"jc ai-gateway servers get":        ClassReadOnly,
+	"jc ai-gateway redirect-uris list": ClassReadOnly,
+	"jc ai-gateway catalog resolve":    ClassReadOnly,
+	"jc ai-gateway catalog connector":  ClassReadOnly,
+	"jc agents list":                   ClassReadOnly,
+	"jc agents get":                    ClassReadOnly,
+	"jc agents memberof":               ClassReadOnly,
+	"jc agents applications":           ClassReadOnly,
+	"jc agents credentials list":       ClassReadOnly,
 	// The three credential writes. CLI-only: no MCP tool exists for any of
 	// them, and internal/mcp/no_secret_tools_test.go enforces that.
 	//
