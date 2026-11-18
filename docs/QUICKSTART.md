@@ -93,6 +93,7 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc graph traverse --from TYPE:NAME --to TYPE` | Association graph |
 | `jc agents` / `jc agent-groups` | AI agent identities, their credentials, and the groups that grant them apps |
 | `jc service-accounts` / `jc roles` | API credentials for automation and the roles that scope them |
+| `jc access-cert` | Access Certification campaigns, runs, review items and audit reports (read-only) |
 | `jc password-policies` | Password policies; `for-user` shows which one applies |
 | `jc alerts` / `jc notification-channels` | Alert triage, health rules, and where alerts are delivered |
 | `jc identity-risk` | Identity risk detections and aggregates |

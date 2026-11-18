@@ -34,6 +34,7 @@ jc <resource> <verb> [identifier] [flags]
 | `service-accounts` | | list, get, create, delete, rotate, revoke (credential shown once) |
 | `roles` | | list, get, create, update, delete |
 | `access-requests` | | list, get, create, update, revoke |
+| `access-cert` | `access-certification` | settings get, campaigns list/get, runs list/get/items/audit-report (`--no-urls`; closed runs only), admin-queue — read-only; hex ids only |
 | `password-policies` | | list, get, create, update, delete, set-precedence, for-user, for-group |
 | `admins` | | list, get, create, update, delete |
 | `auth-policies` | | list, get, create, update, delete, enable, disable, simulate, blast-radius |
