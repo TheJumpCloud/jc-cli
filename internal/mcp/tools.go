@@ -635,6 +635,7 @@ func (s *Server) registerTools() {
 	s.registerFeatureSettingsTools()
 	s.registerAIGatewayTools()
 	s.registerAccessCertTools()
+	s.registerPrivilegedAccessTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
 	s.registerAppleMDMADEWriteTools()

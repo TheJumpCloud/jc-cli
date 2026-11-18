@@ -64,6 +64,10 @@ var notAResource = map[string]string{
 	"ai-gateway": "undocumented preview API whose server records can carry " +
 		"upstream credentials; every read goes through internal/aigateway, which " +
 		"redacts them, and a generic TUI list or detail screen would bypass that",
+	"privileged-access": "every read goes through internal/privaccess, which works " +
+		"around a broken detail endpoint, checks existence before reads whose " +
+		"absence signal is a retried 500, and redacts connection strings; a generic " +
+		"TUI screen would do none of that",
 }
 
 func TestEveryCommandGroupHasASchemaEntry(t *testing.T) {

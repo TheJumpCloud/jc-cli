@@ -1607,6 +1607,30 @@ func BuildCommandManifest() CommandManifest {
 				Subcommands: []string{"enterprises", "devices", "enrollment-tokens"},
 			},
 			{
+				Path:        "jc privileged-access",
+				Description: "Read Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions",
+				Long: "Read-only view of JumpCloud Privileged Access: the privileged servers, " +
+					"databases and websites people connect to through a connector, the privileged " +
+					"credentials linked to them, the blocking rules that stop risky commands and " +
+					"queries, connectors, the session log and live connection status. No command " +
+					"reads a secret: credential secrets, MFA codes, rotation scripts, the backup key, " +
+					"connector install files and session recordings are not available, and a " +
+					"database connection string is shown as [redacted]. Servers, databases, websites " +
+					"and rules are addressed by id or exact name. get reads the API's edit view, " +
+					"because its plain detail read refuses a caller who holds the permission it asks for.",
+				Subcommands: []string{"status", "dashboard", "users list", "tags list", "groups list",
+					"servers list", "servers get", "databases list", "databases get", "websites list",
+					"websites get", "credentials list", "credentials get", "credentials managers",
+					"credentials history", "credentials linked-servers", "blocking-rules list",
+					"blocking-rules get", "connectors list", "connectors versions", "connections list",
+					"connections status", "resource-managers list"},
+				Flags: []FlagEntry{
+					{Name: "product", Type: "string", Description: "PAM or PWM (groups list)"},
+					{Name: "token", Type: "string", Description: "Continuation token for the next page (credentials history, linked-servers)"},
+					{Name: "show-personal", Type: "bool", Description: "Include card and identity-document fields (credentials list)"},
+				},
+			},
+			{
 				Path:        "jc access-cert",
 				Description: "Read Access Certification campaigns, runs, review items and audit reports",
 				Long: "Read-only view of Access Certification: settings, campaign templates, " +
@@ -1963,7 +1987,7 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc mcp",
 				Description: "MCP server for AI agent integration",
-				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 420+ tools (`jc mcp tools` lists them) cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
+				Long:        "Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 450+ tools (`jc mcp tools` lists them) cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *\"disable AirDrop on iPads\"*, *\"enforce FileVault on Macs\"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.",
 				Subcommands: []string{"serve", "tools"},
 				Flags: []FlagEntry{
 					{Name: "rate-limit", Type: "int", Default: "60", Description: "Maximum tool calls per minute"},

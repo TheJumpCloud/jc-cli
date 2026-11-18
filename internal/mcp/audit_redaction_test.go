@@ -78,6 +78,8 @@ var notASecret = map[string]string{
 	"public_key":        "a public key — already redacted, listed here for completeness",
 	"sort_key":          "a sort field name",
 	"partition_key":     "a partition field name",
+	"continuation_token": "an opaque page cursor returned by the previous page; " +
+		"it grants nothing on its own",
 	// Matched by the pattern, genuinely not credentials. Each one was read
 	// before being listed here.
 	"user_password_expiration_action": "an LDAP policy action name, not a password",

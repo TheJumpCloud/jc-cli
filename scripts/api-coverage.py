@@ -120,6 +120,7 @@ AREA_TO_COMMAND = {
     # run: a key that does not match a tag silently maps nothing.
     "Identity Risk": "identity-risk",
     "Password Vault": "password-vault",
+    "Privileged Access": "privileged-access",
     "Agents": "agents",
     "Agent Groups": "agent-groups",
 }
@@ -253,7 +254,7 @@ def main():
         lines.append("\n**Every in-scope area has a command group.**\n")
 
     # Area coverage is NOT per-operation coverage, and the difference is
-    # deliberate in four areas.
+    # deliberate in five areas.
     #
     # This table used to be emitted only in the zero-gap branch, on the
     # reasoning that 100% was the number most likely to be misread. That got
@@ -262,11 +263,12 @@ def main():
     # the document — exactly when the picture had become harder to read, not
     # easier. The caveat belongs with the number in every case.
     lines.append(
-        "Area-level, not per-operation. Four areas are deliberately partial, "
+        "Area-level, not per-operation. Five areas are deliberately partial, "
         "and the reason is recorded in each:\n\n"
         "| Area | Shipped | Held back, and why |\n"
         "|---|---|---|\n"
         "| Password Vault | reads and most writes | 22 ops held back, the folder writes among them |\n"
+        "| Privileged Access | reads | writes not yet shipped; the secret, MFA-code, rotation-script, backup-key, connector-install-file and session-recording endpoints are never read |\n"
         "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
         "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
         "| Workday Import | 2 of 9 | no tenant available has a Workday integration, so the other endpoints' response shapes have never been observed |\n")
