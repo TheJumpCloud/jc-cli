@@ -68,6 +68,7 @@ AREA_TO_COMMAND = {
     "PasswordManagerItem": "password-manager",
     "Google EMM": "google-emm",
     "Workday Import": "workday",
+    "Access Certification": "access-cert",
     "Workflows": "workflows",
     "System Group Associations": "graph",
     "IP Lists": "iplists",

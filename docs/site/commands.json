@@ -893,6 +893,18 @@
       ]
     },
     {
+      "path": "jc access-cert",
+      "description": "Read Access Certification campaigns, runs, review items and audit reports",
+      "long": "Read-only view of Access Certification: settings, campaign templates, campaign runs, review items, the admin queue and audit-report metadata. Runs list shows active runs only unless --status closed or --status all is given. Audit-report downloads are pre-signed URLs; --no-urls strips them. No write operation is exposed.",
+      "category": "Integrations",
+      "subcommands": [
+        "settings",
+        "campaigns",
+        "runs",
+        "admin-queue"
+      ]
+    },
+    {
       "path": "jc workday",
       "description": "Inspect the org's Workday HR-import integrations",
       "long": "The Workday integrations that feed employee records from HR into the directory. Deliberately incomplete: the workers listing and the import-results endpoint are not implemented because no tenant available has an integration configured and their response shapes have never been observed. The import write is held back too — it creates and updates real directory users from HR data with no dry run.",
@@ -2070,6 +2082,7 @@
     }
   ],
   "resources": [
+    "access-cert",
     "access-requests",
     "ad",
     "admins",
