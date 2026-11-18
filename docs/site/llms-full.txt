@@ -31,7 +31,7 @@ These flags work on every `jc` subcommand:
 
 Manage JumpCloud system users
 
-**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `search`, `lock`, `unlock`, `reset-mfa`, `reset-password`, `ssh-keys`, `ssh-key-add`, `ssh-key-delete`
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `search`, `groups`, `lock`, `unlock`, `reset-mfa`, `reset-password`, `ssh-keys`, `ssh-key-add`, `ssh-key-delete`
 
 **Flags:**
 
@@ -135,7 +135,7 @@ Manage JumpCloud identity providers for SSO/OIDC federation
 
 Manage JumpCloud devices (systems)
 
-**Subcommands:** `list`, `get`, `update`, `delete`, `search`, `lock`, `restart`, `erase`, `fde-key`
+**Subcommands:** `list`, `get`, `update`, `delete`, `search`, `settings`, `lock`, `restart`, `erase`, `fde-key`
 
 **Flags:**
 
@@ -150,7 +150,7 @@ Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create J
 
 Manage the JumpCloud Apple MDM tenant (APN cert, enrollment profiles, managed devices), browse Apple's official MDM Configuration Profile schema catalog via `payloads list/show`, emit valid `.mobileconfig` files via `payloads template` (single-payload) or `payloads compose` (multi-payload bundles à la CIS Level 1), and create JumpCloud Custom MDM Configuration Profile policies end-to-end via `payloads create-policy` or `payloads compose --create-policy`. The catalog is vendored from github.com/apple/device-management (MIT-licensed, Release-v26.4) and embedded at build time. `create-policy` resolves the JumpCloud Custom MDM template dynamically per OS family (no hardcoded IDs) and base64-encodes the emitted plist into the wire shape JumpCloud accepts — confirmed against a real tenant. Supports `--plan` for safe preview. The same primitive will back `jc ask` ("disable AirDrop on supervised iPads" → finds the right schema → fills defaults → optionally creates the policy).
 
-**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `enrollment-profiles`, `devices`, `payloads`
+**Subcommands:** `list`, `get`, `create`, `update`, `delete`, `enrollment-profiles`, `devices`, `payloads`, `abm-devices`, `ade-settings`, `ade-tokens`, `adue`, `background-tasks`, `csr`, `device`, `device-lock`, `lost-mode`, `os-update`, `recovery-lock`, `restart`, `shutdown`, `erase`, `unenroll`, `clear-activation-lock`, `refresh-activation-lock`, `clear-passcode`, `clear-restrictions-password`, `refresh-dep-devices`
 
 **Flags:**
 
@@ -196,6 +196,8 @@ The Windows MDM workbench: discover, author, and create custom Windows policies.
 
 Manage SSO applications
 
+List, inspect, create, update and delete JumpCloud SSO applications. An app's `name` is its catalog connector key (`bookmark`, `slack`, ...; see `jc app-templates list`), not a title: create rejects any other value, the key cannot be changed afterwards, and the title users see is `--display-label`. The SSO type follows from the connector (it lives in `sso.type`, which the API cannot filter on, so `list --sso-type` filters locally). `update` reads the app and sends it back in full with your changes, then verifies them: JumpCloud's application PUT answers a partial body with success while changing nothing. `--ai-ready` marks an app AI Ready in the User Portal; JumpCloud accepts true only when an AI Gateway server is assigned to the app. `list --ai-ready true|false` filters locally, because the server-side filter misses apps that never stored the field.
+
 **Subcommands:** `list`, `get`, `create`, `update`, `delete`
 
 **Flags:**
@@ -203,8 +205,12 @@ Manage SSO applications
 - `--limit` `<int>` — Maximum number of results (list)
 - `--sort` `<string>` — Sort field (list)
 - `--filter` `<string[]>` — Filter expressions (list)
-- `--sso-type` `<string>` — SSO type (create, required)
-- `--config` `<string>` — SSO-specific config as JSON (create/update)
+- `--sso-type` `<string>` — Only apps of this SSO type: saml, oidc or bookmark (list; filtered locally)
+- `--name` `<string>` — Catalog connector key, e.g. bookmark (create, required; cannot be changed)
+- `--display-label` `<string>` — Title shown in the User Portal (create/update)
+- `--sso-url` `<string>` — URL the app opens, for bookmark apps (create)
+- `--config` `<string>` — Extra fields as JSON; a config object is merged key by key (create/update)
+- `--ai-ready` `<bool>` — Mark the app AI Ready (update; needs an AI Gateway server on the app) or filter by it (list: true|false)
 
 #### `jc saas-management`
 
@@ -579,12 +585,15 @@ Manage JumpCloud temporary elevated device privilege requests
 
 View and update JumpCloud organization information
 
-**Subcommands:** `list`, `get`, `settings`, `update`
+List and view organizations, view and update organization settings, and read organization feature settings with `features list|get` — for example `features get mcp`, the AI Gateway switch. Feature settings are read-only in jc: they turn org-wide features on and off. Only exact `--name`/`--category` filters are offered, because the API's other filter fields fail with HTTP 500 and its other operators return wrong results.
+
+**Subcommands:** `list`, `get`, `settings`, `update`, `features`
 
 **Flags:**
 
 - `--name` `<string>` — Organization display name (update)
 - `--settings-json` `<string>` — Raw JSON for complex settings fields (update)
+- `--category` `<string>` — Exact feature category, e.g. ai, itdr (features list)
 
 #### `jc user-states`
 
@@ -641,7 +650,7 @@ CSV-driven batch operations. `jc bulk <resource> --file <csv>` processes one ope
 
 #### `jc password-vault`
 
-Inspect JumpCloud Password Vault
+Manage JumpCloud Password Vault
 
 Password Vault is JumpCloud's replacement for Password Manager, and on an organization that has migrated every /passwordmanager endpoint returns 404 — both command groups are kept while customers move across. This group covers the tenant scope: the activation gate, org-wide settings and default permissions, the dashboard summary, enrolled users, groups and tags. Two things to know before using it. Group and user ids are INTEGERS here, not the 24-character object ids the rest of JumpCloud uses and not the UUIDs Password Manager uses. And the area ignores sort while its limit/skip paging both duplicates and omits records, so jc fetches these lists unpaginated and reports the server's own count; where a listing shows more rows than the count, that is the API including the calling user without counting them.
 
@@ -690,9 +699,9 @@ Fan one jc command out across multiple configured profiles in parallel and merge
 
 MCP server for AI agent integration
 
-Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 210 tools cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *"disable AirDrop on iPads"*, *"enforce FileVault on Macs"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~3,700-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.
+Run the jc CLI as a Model Context Protocol (MCP) server, exposing JumpCloud resources as typed tools to MCP-aware clients (Claude Code, Claude Desktop, Cursor, and any other host that speaks MCP). 420+ tools (`jc mcp tools` lists them) cover the full JumpCloud surface plus a dedicated Apple MDM payloads catalog (`apple_mdm_payloads_search` / `_show` / `_template` / `_create_policy`) that lets an agent map a natural-language MDM intent — *"disable AirDrop on iPads"*, *"enforce FileVault on Macs"* — to one of Apple's vendored schemas and create a JumpCloud Custom MDM Configuration Profile from it in one tool call, and a Windows MDM app (`windows_mdm_*`) with a Policy CSP discovery catalog (`csp_search` / `csp_show` / `csp_template` over Microsoft's ~5,100-setting DDF snapshot, fetched on demand) feeding OMA-URI and HKLM-registry policy creation (`oma_uri_create_policy` / `registry_create_policy`). Includes per-minute rate limiting, an optional `--read-only` mode that disables every mutation tool, and a step-up authentication flow (TTY prompt, Touch ID, or webhook) for high-impact operations including every MDM `create_policy` path. Transport is stdio by default — point your MCP client at `jc mcp serve` and the CLI's full surface area becomes available to the agent.
 
-**Subcommands:** `serve`
+**Subcommands:** `serve`, `tools`
 
 **Flags:**
 
@@ -771,16 +780,31 @@ A pre-flight check for any environment where `jc` is about to run. Reports the a
 
 Install the newest jc release
 
-Download the newest published release and replace this binary with it. jc never updates itself in the background — a tool that administers an identity platform silently rewriting its own code would be a supply-chain surface, and it would break anyone pinning a version in CI or an MDM fleet. Instead a cached daily check prints a one-line notice on stderr when a newer release exists, suppressed whenever stderr is not a terminal, under --quiet or --ids, in CI, and in `mcp serve`, so it can never reach a pipeline or a protocol stream. The download is checked against the SHA-256 in the release's checksums.txt, which proves the bytes arrived intact but not that the release is authentic — that needs signed artifacts, which jc does not have yet. Disable the notice with `jc config set update.check false` or JC_NO_UPDATE_CHECK.
+Download the newest published release and replace this binary with it. jc never updates itself in the background — a tool that administers an identity platform silently rewriting its own code would be a supply-chain surface, and it would break anyone pinning a version in CI or an MDM fleet. Instead a cached daily check prints a one-line notice on stderr when a newer release exists, suppressed whenever stderr is not a terminal, under --quiet or --ids, in CI, and in `mcp serve`, so it can never reach a pipeline or a protocol stream. The download is checked against the SHA-256 in the release's checksums.txt, which proves the bytes arrived intact but not that the release is authentic. For that, releases sign checksums.txt with Sigstore (keyless, logged in Rekor); verify with scripts/verify-release.sh. Disable the notice with `jc config set update.check false` or JC_NO_UPDATE_CHECK.
 
 **Flags:**
 
 - `--force` `<bool>` — Replace without confirming
 - `--plan` `<bool>` — Show what would happen and download nothing
 
+#### `jc api`
+
+Send one raw request to the JumpCloud API
+
+Send exactly one unshaped HTTP request — the empirical gate before implementing any new API surface. The API version comes from the path, so a path pasted from the API reference works unchanged (`/api/v2/...` or `/v1/...`); a bare path uses `--api` (default v2). One invocation is one request, with no pagination. Writes confirm, honour `--force`/`--non-interactive`, and preview with `--plan`. Auth resolves exactly as for every other command. There is deliberately no MCP tool for this: it would hand an agent the whole API without per-tool classification or the step-up auth gate.
+
+**Subcommands:** `get`, `post`, `put`, `patch`, `delete`
+
+**Flags:**
+
+- `--param` `<string[]>` — Query parameter as key=value (repeatable)
+- `--data` `<string>` — Request body: inline JSON, @file, or - for stdin (post/put/patch)
+- `--header` `<string[]>` — Extra request header as 'Name: value' (repeatable)
+- `--api` `<string>` (default `v2`) — API version for a path with no version prefix: v1 or v2
+
 #### `jc agents`
 
-Inspect JumpCloud AI agent identities
+Manage JumpCloud AI agent identities
 
 AI Agent Identities give an autonomous workload its own JumpCloud identity: a name, an owning admin, its own OAuth client credentials, and membership in agent groups that are assigned to applications. This group reads them. `list` pages by cursor rather than by limit and skip, and filters on name, email or state with eq and ne only — there is no substring match and no sort, because the endpoint accepts a sort parameter and ignores it. `applications` reports not just which applications an agent can reach but which group granted each one, which is the one question the raw response cannot answer. `credentials list` shows how an agent authenticates and never returns a secret: a client secret is returned once, by the call that creates it, and by nothing afterwards. Most of these endpoints require an organization id header that the API spec marks optional, so jc sends the active profile's own and there is no flag for it. `register` needs a name, an email no other agent uses, and the user id of an activated admin to own it — the spec marks none of the three required and all three are. `update` is genuinely partial: only the fields you pass change. An agent's state is never set by an update; `suspend` stops its credentials working immediately and `activate` puts it back, and both are idempotent. `delete` removes the agent, its credentials and its memberships and cannot be undone, so `suspend` is almost always the right choice for stopping an agent. `credentials create` is the only call in this API that returns a client secret, and it returns it ONCE — so it requires an explicit destination (--out, --stdout or --clipboard), checks that destination is usable before creating anything, and never prints the secret or its length. An agent can hold only one credential, so rotation is delete-then-create and the agent cannot authenticate in between. A credential update can change only its token endpoint auth method: the API accepts a status or lifetime change and discards it, so jc refuses those rather than reporting a success that did not happen. These three writes are CLI-only and have no MCP tools.
 
@@ -804,7 +828,7 @@ AI Agent Identities give an autonomous workload its own JumpCloud identity: a na
 
 #### `jc agent-groups`
 
-Inspect JumpCloud AI agent groups
+Manage JumpCloud AI agent groups
 
 Agent groups are the collections through which AI agents are granted access to applications — and to nothing else: no policies, no commands, no devices, so `associations` has exactly one kind of target and jc supplies it, since the API requires it and the spec does not say so. This half of the area behaves differently from `jc agents` in four ways, all of them the server's: no organization id header is needed, listings page by offset rather than by cursor, --sort works here and is ignored there, and the two accept different filter fields. `members` and `associations` return ids and types with no names, so jc joins the names in from the agent and application catalogs. `update` REPLACES the group: the API requires the name on every update and clears any field it is not given, so jc reads the group first and merges — the opposite of `jc agents update`, and the difference is the server's. Membership and application assignment each go through one endpoint that takes a direction, which is why there are four commands for two operations; each returns an empty body, so jc reads the membership back rather than echoing the request.
 

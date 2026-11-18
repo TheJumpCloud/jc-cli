@@ -13,13 +13,13 @@ import (
 
 // newReportsCmd builds the `jc reports …` group over the JumpCloud Reports API
 // (GET /api/v2/reports/*). v1 of this group covers the read operations across
-// every family; write operations (create/update/delete/trigger/export) are a
-// tracked follow-up.
+// every family, plus create/update/delete on custom, builder and scheduled,
+// trigger on scheduled, and export.
 func newReportsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reports",
-		Short: "Browse JumpCloud reports (built-in templates, custom, scheduled)",
-		Long: `Browse JumpCloud reports.
+		Short: "Manage JumpCloud reports (built-in templates, custom, scheduled, export)",
+		Long: `Browse, author and export JumpCloud reports.
 
   templates   Built-in JumpCloud report templates (read-only)
   saved       Saved report instances
@@ -27,8 +27,9 @@ func newReportsCmd() *cobra.Command {
   builder     Report Builder reports
   scheduled   Scheduled reports and their run history
 
-Each family supports 'list' and 'get <id-or-name>'. This group is read-only;
-creating and exporting reports is a planned follow-up.`,
+Each family supports 'list' and 'get <id-or-name>'. custom, builder and
+scheduled also support create, update and delete; scheduled adds trigger.
+'export' renders a report to a downloadable file.`,
 	}
 	for _, name := range report.FamilyNames() {
 		cmd.AddCommand(newReportFamilyCmd(report.Families[name]))

@@ -1,6 +1,6 @@
 ---
 name: jc
-description: Use the jc CLI to manage JumpCloud organizations — users, devices, groups, policies, commands, insights, and 20+ more resource types
+description: Use the jc CLI to manage JumpCloud organizations — users, devices, groups, policies, commands, insights, AI agents, alerts, reports, workflows, and 40+ more command groups
 ---
 
 # jc — JumpCloud CLI
@@ -28,16 +28,30 @@ jc <resource> <verb> [identifier] [flags]
 | `groups` | `g` | user list/get/create/update/delete, device list/get/create/update/delete, add-member, remove-member |
 | `commands` | | list, get, create, update, delete, run, results, trigger |
 | `policies` | | list, get, create, update, delete, results |
-| `apps` | | list, get, create, update, delete |
+| `apps` | | list (`--ai-ready true\|false`, `--sso-type`), get, create (`--name` = catalog connector key e.g. `bookmark`, `--display-label` = title), update (`--display-label`, `--ai-ready`; needs an AI Gateway server on the app), delete |
+| `agents` | | list, get, register, update, suspend, activate, delete, credentials, applications, memberof (AI agent identities; a client secret is shown once) |
+| `agent-groups` | | list, get, create, update, delete, members, add-member, remove-member, associations, assign-app, unassign-app |
+| `service-accounts` | | list, get, create, delete, rotate, revoke (credential shown once) |
+| `roles` | | list, get, create, update, delete |
+| `access-requests` | | list, get, create, update, revoke |
+| `access-cert` | `access-certification` | settings get, campaigns list/get, runs list/get/items/audit-report (`--no-urls`; closed runs only), admin-queue — read-only; hex ids only |
+| `password-policies` | | list, get, create, update, delete, set-precedence, for-user, for-group |
 | `admins` | | list, get, create, update, delete |
 | `auth-policies` | | list, get, create, update, delete, enable, disable, simulate, blast-radius |
 | `iplists` | | list, get, create, update, delete |
 | `insights` | `i` | query, count, distinct, save, saved, run |
+| `alerts` | | list, get, status, add-note, notes, occurrences, stats, delete, bulk-update, bulk-delete, rules (health-monitoring rules) |
+| `notification-channels` | | list, get, create, update, delete |
+| `identity-risk` | | events (list/get/resolve), identities, stats, timeline, geolocations, login-types (aggregates need `--last`/`--start`) |
+| `reports` | | templates, saved, custom, builder, scheduled (list/get; create/update/delete on custom/builder/scheduled; scheduled trigger), export |
+| `saved-views` | | list, get, create, update, delete |
+| `search` | | users, systems, commands, command-results |
+| `workflows` | | list, get, create, update, delete, validate, explain, simulate, lint, health, trigger, runs, templates, event-types |
 | `graph` | | traverse, bind, unbind |
 | `identity-providers` | `idp` | list, get, create, update, delete |
 | `saas-management` | `saas` | list, get, accounts, usage, licenses |
 | `software` | | list, get, create, update, delete, statuses, associations |
-| `org` | | list, get, settings, update |
+| `org` | | list, get, settings, update, features list/get (read-only; `features get mcp` = AI Gateway switch) |
 | `system-insights` | | \<table-name\>, tables |
 | `ldap` | | list, get, create, update, delete, samba-domains |
 | `ad` | | list, get, create, update, delete |
@@ -55,6 +69,11 @@ jc <resource> <verb> [identifier] [flags]
 | `duo` | | list, get, create, delete, apps |
 | `custom-emails` | | templates, get, create, update, delete |
 | `app-templates` | | list, get |
+| `password-manager` | | overview, users, folders, groups, items, policies, backup-keys (read-only) |
+| `password-vault` | `pwv` | status, overview, settings, users, groups, tags, credentials, folders, websites (replaces Password Manager) |
+| `google-emm` | | enterprises, devices, enrollment-tokens (read-only) |
+| `workday` | | list, get (read-only) |
+| `api` | | get, post, put, patch, delete — one raw request; v1 paths need the `/v1` prefix |
 | `multi` | | `jc multi --filter 'prod-*' -- <command>` — fan any command across org profiles; destructive inner commands need `--allow-destructive` |
 | `bulk` | | users, user-groups, device-groups, devices, admins — CSV batch via `--file` (per-row `operation` column; `--plan` previews; execution needs `--force`) |
 
@@ -140,7 +159,7 @@ jc explain users delete jdoe
 ```bash
 jc mcp serve                    # stdio (Claude Desktop, Claude Code)
 jc mcp serve --transport http   # Streamable HTTP (remote clients)
-jc mcp tools                    # List available MCP tools (195)
+jc mcp tools                    # List available MCP tools (420+)
 ```
 
 Claude Desktop config:

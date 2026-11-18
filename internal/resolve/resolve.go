@@ -66,6 +66,10 @@ type ResourceConfig struct {
 	// When set, the V2 list response is expected to be a JSON object with this
 	// key containing the array of items, rather than a bare JSON array.
 	ResponseKey string
+	// FallbackNameField is tried only when nothing matches NameField. An
+	// ambiguous NameField match is reported as such, never resolved through
+	// the fallback.
+	FallbackNameField string
 }
 
 // UserConfig is the resolution config for JumpCloud users.
@@ -109,11 +113,17 @@ var CommandConfig = ResourceConfig{
 }
 
 // ApplicationConfig is the resolution config for JumpCloud SSO applications (V1 API).
+//
+// An application's "name" is its catalog connector key (bookmark, aws-sso,
+// slack, ...), which several apps share; the title users see is
+// "displayLabel". So an app is resolved by its title first, and by connector
+// key only when no title matches.
 var ApplicationConfig = ResourceConfig{
-	CacheKey:     "applications",
-	ListEndpoint: "/applications",
-	NameField:    "name",
-	IDField:      "_id",
+	CacheKey:          "applications",
+	ListEndpoint:      "/applications",
+	NameField:         "displayLabel",
+	FallbackNameField: "name",
+	IDField:           "_id",
 }
 
 // IPListConfig is the resolution config for JumpCloud IP lists (V2 API).
@@ -463,19 +473,7 @@ func (r *Resolver) resolveViaAPI(ctx context.Context, name string, cfg ResourceC
 		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
 	}
 
-	res, err := matchByName(result.Data, name, cfg)
-	if err != nil {
-		return "", err
-	}
-
-	switch len(res.matches) {
-	case 0:
-		return "", res.notFound(name, cfg)
-	case 1:
-		return res.matches[0].ID, nil
-	default:
-		return "", res.ambiguous(name, cfg)
-	}
+	return pickMatch(result.Data, name, cfg)
 }
 
 // ResolveError is a structured error for resource resolution failures.
@@ -553,19 +551,7 @@ func (r *V2Resolver) resolveViaV2API(ctx context.Context, name string, cfg Resou
 		return "", fmt.Errorf("resolving %s %q: %w", cfg.NameField, name, err)
 	}
 
-	res, err := matchByName(result.Data, name, cfg)
-	if err != nil {
-		return "", err
-	}
-
-	switch len(res.matches) {
-	case 0:
-		return "", res.notFound(name, cfg)
-	case 1:
-		return res.matches[0].ID, nil
-	default:
-		return "", res.ambiguous(name, cfg)
-	}
+	return pickMatch(result.Data, name, cfg)
 }
 
 // lookupCache checks the on-disk cache (reuses the same cache infrastructure as V1).
@@ -732,4 +718,36 @@ var WorkflowPlaceholderConfigs = map[string]WorkflowPlaceholderConfig{
 	"device-group": {Config: DeviceGroupConfig},
 	"policy":       {Config: PolicyConfig},
 	"apple-mdm":    {Config: AppleMDMConfig},
+}
+
+// pickMatch matches records on cfg.NameField and, when that finds nothing,
+// on cfg.FallbackNameField.
+func pickMatch(records []json.RawMessage, name string, cfg ResourceConfig) (string, error) {
+	res, err := matchByName(records, name, cfg)
+	if err != nil {
+		return "", err
+	}
+	if len(res.matches) == 0 && cfg.FallbackNameField != "" {
+		fb := cfg
+		fb.NameField = cfg.FallbackNameField
+		fbRes, err := matchByName(records, name, fb)
+		if err != nil {
+			return "", err
+		}
+		switch len(fbRes.matches) {
+		case 0:
+		case 1:
+			return fbRes.matches[0].ID, nil
+		default:
+			return "", fbRes.ambiguous(name, fb)
+		}
+	}
+	switch len(res.matches) {
+	case 0:
+		return "", res.notFound(name, cfg)
+	case 1:
+		return res.matches[0].ID, nil
+	default:
+		return "", res.ambiguous(name, cfg)
+	}
 }

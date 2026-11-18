@@ -8,9 +8,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/klaassen-consulting/jc/internal/aiready"
 	"github.com/klaassen-consulting/jc/internal/alert"
 	"github.com/klaassen-consulting/jc/internal/api"
 	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/klaassen-consulting/jc/internal/appupdate"
 	"github.com/klaassen-consulting/jc/internal/command"
 	"github.com/klaassen-consulting/jc/internal/filter"
 	"github.com/klaassen-consulting/jc/internal/healthrule"
@@ -367,17 +369,21 @@ type groupUpdateInput struct {
 }
 
 type appCreateInput struct {
-	Name    string `json:"name" jsonschema:"Application name"`
-	SsoType string `json:"sso_type,omitempty" jsonschema:"SSO type (e.g. saml, oidc, bookmark)"`
-	Config  string `json:"config,omitempty" jsonschema:"Application configuration as raw JSON"`
-	Execute bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
+	Name         string `json:"name" jsonschema:"Catalog connector key, NOT a title: bookmark for a plain link, or a connector key from app_templates (e.g. slack). Any other value is rejected."`
+	DisplayLabel string `json:"display_label,omitempty" jsonschema:"Title shown to users in the User Portal"`
+	SsoURL       string `json:"sso_url,omitempty" jsonschema:"URL the app opens (bookmark apps)"`
+	SsoType      string `json:"sso_type,omitempty" jsonschema:"Ignored. The SSO type follows from the connector named in name."`
+	Config       string `json:"config,omitempty" jsonschema:"SSO configuration object (the app's config field) as raw JSON"`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
 }
 
 type appUpdateInput struct {
-	Identifier string `json:"identifier" jsonschema:"Application name or ID to update"`
-	Name       string `json:"name,omitempty" jsonschema:"New application name"`
-	Config     string `json:"config,omitempty" jsonschema:"New configuration as raw JSON"`
-	Execute    bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
+	Identifier   string `json:"identifier" jsonschema:"Application title (display label), connector key, or ID"`
+	Name         string `json:"name,omitempty" jsonschema:"Not supported: the name is the catalog connector key and cannot be changed. Use display_label to change the title."`
+	DisplayLabel string `json:"display_label,omitempty" jsonschema:"New title shown to users in the User Portal"`
+	Config       string `json:"config,omitempty" jsonschema:"SSO configuration keys as a JSON object; merged key by key into the app's existing config, other keys are kept"`
+	AIReady      *bool  `json:"aiReady,omitempty" jsonschema:"Show the app as AI Ready in the User Portal (informational, grants no access). true is accepted only for an app with an MCP connection (an AI Gateway server assigned to it); otherwise JumpCloud rejects the update with an error."`
+	Execute      bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
 
 type systemInsightsListInput struct {
@@ -626,6 +632,7 @@ func (s *Server) registerTools() {
 	s.registerPasswordManagerTools()
 	s.registerGoogleEMMTools()
 	s.registerWorkdayTools()
+	s.registerFeatureSettingsTools()
 	s.registerAccessCertTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
@@ -3719,7 +3726,7 @@ func (s *Server) registerAdminTools() {
 }
 
 func (s *Server) registerAppsTools() {
-	addTypedTool(s, "apps_list", "List all JumpCloud SSO applications. Returns objects with _id, name, displayLabel, ssoType, status.",
+	addTypedTool(s, "apps_list", "List all JumpCloud SSO applications. Each has _id, name (the catalog connector key), displayLabel (the title users see), sso.type (saml, oidc or bookmark), active and aiReady. The API cannot filter on the SSO type; filter the returned list instead.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -3737,7 +3744,7 @@ func (s *Server) registerAppsTools() {
 		},
 	)
 
-	addTypedTool(s, "apps_get", "Get a single JumpCloud SSO application by name or ID.",
+	addTypedTool(s, "apps_get", "Get a single JumpCloud SSO application by title (display label), connector key, or ID.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args getInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -3760,11 +3767,16 @@ func (s *Server) registerAppsTools() {
 			if s.readOnly {
 				return errorResult("server is in read-only mode"), nil, nil
 			}
+			// name is the catalog connector key; sso_type is ignored because
+			// JumpCloud ignores it (see internal/appupdate).
 			body := map[string]any{
 				"name": args.Name,
 			}
-			if args.SsoType != "" {
-				body["ssoType"] = args.SsoType
+			if args.DisplayLabel != "" {
+				body["displayLabel"] = args.DisplayLabel
+			}
+			if args.SsoURL != "" {
+				body["ssoUrl"] = args.SsoURL
 			}
 			if args.Config != "" {
 				var cfg any
@@ -3782,6 +3794,9 @@ func (s *Server) registerAppsTools() {
 			}
 			data, err := client.Create(ctx, "/applications", body)
 			if err != nil {
+				if appupdate.IsUnknownConnector(err) {
+					return errorResult(fmt.Sprintf("creating application: %v: %s", err, appupdate.UnknownConnectorHint(args.Name, "display_label"))), nil, nil
+				}
 				return errorResult(fmt.Sprintf("creating application: %v", err)), nil, nil
 			}
 			return textResult(string(data)), nil, nil
@@ -3803,21 +3818,34 @@ func (s *Server) registerAppsTools() {
 			}
 			body := map[string]any{}
 			if args.Name != "" {
-				body["name"] = args.Name
+				return errorResult(appupdate.ErrNameImmutable.Error() + " (display_label)"), nil, nil
+			}
+			if args.DisplayLabel != "" {
+				body["displayLabel"] = args.DisplayLabel
 			}
 			if args.Config != "" {
 				var cfg any
 				if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
 					return errorResult(fmt.Sprintf("invalid config JSON: %v", err)), nil, nil
 				}
-				body["config"] = cfg
+				body[appupdate.ConfigField] = cfg
+			}
+			if args.AIReady != nil {
+				body[aiready.Field] = *args.AIReady
 			}
 			if !args.Execute {
 				return planResult("update", "application", args.Identifier, id, body)
 			}
-			data, err := client.Update(ctx, "/applications/"+id, body)
+			// JumpCloud ignores a PUT without name and ssoUrl (200, nothing
+			// applied), so send the whole app with the changes overlaid.
+			data, err := appupdate.Apply(ctx, client, id, body, aiready.Field)
 			if err != nil {
 				return errorResult(fmt.Sprintf("updating application: %v", err)), nil, nil
+			}
+			if args.AIReady != nil {
+				if err := aiready.CheckApplied(data, *args.AIReady); err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
 			}
 			return textResult(string(data)), nil, nil
 		},

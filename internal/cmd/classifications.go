@@ -638,10 +638,12 @@ var commandClass = map[string]string{
 	"jc office365 translation-rules": ClassReadOnly,
 
 	// org — organization metadata + settings.
-	"jc org get":      ClassReadOnly,
-	"jc org list":     ClassReadOnly,
-	"jc org settings": ClassMutating, // writes org settings
-	"jc org update":   ClassMutating,
+	"jc org features get":  ClassReadOnly,
+	"jc org features list": ClassReadOnly,
+	"jc org get":           ClassReadOnly,
+	"jc org list":          ClassReadOnly,
+	"jc org settings":      ClassMutating, // writes org settings
+	"jc org update":        ClassMutating,
 
 	// policies — JC policy lifecycle.
 	"jc policies create":  ClassMutating,

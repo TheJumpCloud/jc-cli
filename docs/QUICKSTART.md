@@ -85,12 +85,23 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc groups device list/get/create/update/delete` | Device groups |
 | `jc commands list/get/create/run` | Scheduled commands |
 | `jc policies list/get/create/update/delete` | Configuration policies |
-| `jc apps list/get/create/update/delete` | SSO applications |
+| `jc apps list/get/create/update/delete` | SSO applications (`--ai-ready` on list/update) |
 | `jc admins list/get/create/update/delete` | Admin accounts |
 | `jc auth-policies list/get/create/update/delete` | Conditional access |
 | `jc iplists list/get/create/update/delete` | IP allow/block lists |
 | `jc insights query/count/distinct` | Directory Insights events |
 | `jc graph traverse --from TYPE:NAME --to TYPE` | Association graph |
+| `jc agents` / `jc agent-groups` | AI agent identities, their credentials, and the groups that grant them apps |
+| `jc service-accounts` / `jc roles` | API credentials for automation and the roles that scope them |
+| `jc access-cert` | Access Certification campaigns, runs, review items and audit reports (read-only) |
+| `jc password-policies` | Password policies; `for-user` shows which one applies |
+| `jc alerts` / `jc notification-channels` | Alert triage, health rules, and where alerts are delivered |
+| `jc identity-risk` | Identity risk detections and aggregates |
+| `jc reports` | Report templates, custom/builder/scheduled reports, export |
+| `jc workflows` | Server-side JumpCloud Workflows: validate, explain, create, trigger |
+| `jc password-vault` | Password Vault (replaces Password Manager) |
+| `jc org features list/get` | Org feature settings, e.g. whether the AI Gateway is on (read-only) |
+| `jc api get/post/put/patch/delete <path>` | One raw API request |
 | `jc apple-mdm payloads list/show/template/create-policy` | Apple MDM: browse Apple's schema catalog, emit .mobileconfig, create JC custom policies |
 | `jc windows-mdm csp list/show/template` | Windows MDM: browse Microsoft's CSP catalog (~5,100 settings) |
 | `jc windows-mdm oma-uri/registry create-policy` | Windows MDM: create custom OMA-URI / registry policies |
@@ -167,7 +178,7 @@ Add to Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-340 tools available, including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
+420+ tools available (`jc mcp tools` lists them), including the Apple MDM payloads catalog and the Windows MDM app (CSP catalog + policy creation). All destructive operations require explicit `execute: true` confirmation plus a step-up auth gate (Touch ID / TTY / webhook).
 
 ### Plan Mode (Dry Run)
 

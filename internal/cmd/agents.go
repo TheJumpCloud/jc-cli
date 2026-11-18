@@ -25,10 +25,11 @@ func newAgentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "agents",
 		Aliases: []string{"agent"},
-		Short:   "Inspect JumpCloud AI agent identities",
-		Long: `Read JumpCloud's AI agent identities: autonomous workloads that hold their own
-identity, their own OAuth client credentials, and membership in agent groups
-that are assigned to applications.
+		Short:   "Manage JumpCloud AI agent identities",
+		Long: `Manage JumpCloud's AI agent identities: autonomous workloads that hold their
+own identity, their own OAuth client credentials, and membership in agent
+groups that are assigned to applications. Agents can be listed and inspected,
+registered, updated, suspended, reactivated and deleted.
 
 THE ORG ID IS SENT FOR YOU. Most of these endpoints require an x-org-id
 header that the API spec marks optional. jc sends your active profile's
@@ -76,9 +77,10 @@ func newAgentGroupsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "agent-groups",
 		Aliases: []string{"agent-group", "agentgroups"},
-		Short:   "Inspect JumpCloud AI agent groups",
-		Long: `Read JumpCloud's agent groups: the collections through which agents are
-granted access to applications.
+		Short:   "Manage JumpCloud AI agent groups",
+		Long: `Manage JumpCloud's agent groups: the collections through which agents are
+granted access to applications. Groups can be created, renamed and deleted,
+agents added and removed, and applications assigned and unassigned.
 
 Agent groups are assigned to applications and to nothing else — no policies,
 no commands, no devices — so ` + "`associations`" + ` has exactly one kind of target.

@@ -214,6 +214,53 @@ func TestUpdateV1(t *testing.T) {
 	}
 }
 
+// Applications ignore a partial PUT (200, nothing changes), so the TUI must
+// send the whole app and fail when the change did not land.
+func TestUpdateV1_ApplicationsSendFullBodyAndVerify(t *testing.T) {
+	const app = `{"_id":"aabbccddee112233aabb2001","name":"bookmark","ssoUrl":"https://u","displayLabel":"Old"}`
+	var put map[string]any
+	ignore := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			fmt.Fprint(w, app)
+		case http.MethodPut:
+			body, _ := io.ReadAll(r.Body)
+			put = nil
+			json.Unmarshal(body, &put)
+			if ignore {
+				fmt.Fprint(w, app)
+				return
+			}
+			w.Write(body)
+		}
+	}))
+	defer srv.Close()
+
+	f := &Fetcher{
+		Cache:       NewCache(),
+		NewV1Client: func() (*api.V1Client, error) { return newTestV1Client(srv.URL) },
+	}
+	msg := f.UpdateV1("apps", "/applications", "aabbccddee112233aabb2001", map[string]any{"displayLabel": "New"}, NextGeneration())()
+	if res := msg.(MutationResultMsg); res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	if put["name"] != "bookmark" || put["ssoUrl"] != "https://u" || put["displayLabel"] != "New" {
+		t.Errorf("PUT body %v: want the full app with the change overlaid", put)
+	}
+
+	ignore = true
+	msg = f.UpdateV1("apps", "/applications", "aabbccddee112233aabb2001", map[string]any{"displayLabel": "New"}, NextGeneration())()
+	if res := msg.(MutationResultMsg); res.Err == nil {
+		t.Error("a change the server ignored must be reported as an error")
+	}
+
+	msg = f.UpdateV1("apps", "/applications", "aabbccddee112233aabb2001", map[string]any{"name": "slack"}, NextGeneration())()
+	if res := msg.(MutationResultMsg); res.Err == nil {
+		t.Error("changing the connector key must be refused")
+	}
+}
+
 func TestUpdateV2(t *testing.T) {
 	var method, path string
 
