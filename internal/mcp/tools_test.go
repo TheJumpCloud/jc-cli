@@ -387,7 +387,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"password_manager_backup_keys",
 		"jc_ping",
 		// Access Requests
-		"access_requests_list", "access_requests_get", "access_requests_create", "access_requests_update", "access_requests_revoke",
+		"access_requests_find", "access_requests_get", "access_requests_create", "access_requests_update", "access_requests_revoke",
 		// Users
 		"users_list", "users_get", "users_create", "users_update", "users_delete",
 		"users_lock", "users_unlock", "users_reset_mfa", "users_reset_password",

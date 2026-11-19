@@ -348,14 +348,14 @@ var Resources = map[string]ResourceSchema{
 	"access-requests": {
 		Resource:      "access-requests",
 		APIVersion:    "v2",
-		Verbs:         []string{"list", "get", "create", "update", "revoke"},
+		Verbs:         []string{"find", "get", "create", "update", "revoke"},
 		DefaultFields: []string{"accessId", "requestorId", "resourceId", "accessState", "expiry"},
 		Fields: []FieldDef{
 			{Name: "accessId", Type: "string", Description: "Unique access request identifier", ReadOnly: true},
 			{Name: "requestorId", Type: "string", Description: "User ID who requested access"},
 			{Name: "resourceId", Type: "string", Description: "Device ID for elevated access"},
 			{Name: "resourceType", Type: "string", Description: "Resource type (device)"},
-			{Name: "accessState", Type: "string", Description: "Request state (granted, revoked, expired)", ReadOnly: true},
+			{Name: "accessState", Type: "string", Description: "Request state; values unverified (candidates: pending, granted, revoked, expired, denied)", ReadOnly: true},
 			{Name: "expiry", Type: "datetime", Description: "When the elevated access expires"},
 			{Name: "remarks", Type: "string", Description: "Optional remarks"},
 			{Name: "additionalAttributes", Type: "object", Description: "Additional attributes (sudo settings)"},
@@ -1759,12 +1759,11 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc access-requests",
 				Description: "Manage JumpCloud temporary elevated device privilege requests",
-				Subcommands: []string{"list", "get", "create", "update", "revoke"},
+				Subcommands: []string{"find", "get", "create", "update", "revoke"},
 				Flags: []FlagEntry{
-					{Name: "limit", Type: "int", Description: "Maximum number of results (list)"},
-					{Name: "filter", Type: "string[]", Description: "Filter expressions (list)"},
-					{Name: "user", Type: "string", Description: "User name or ID (create)"},
-					{Name: "device", Type: "string", Description: "Device name or ID (create)"},
+					{Name: "user", Type: "string", Description: "User name or ID (find, create)"},
+					{Name: "device", Type: "string", Description: "Device name or ID (find, create)"},
+					{Name: "state", Type: "string", Description: "Request state, values unverified (find)"},
 					{Name: "expiry", Type: "string", Description: "Expiry time RFC 3339 (create/update)"},
 					{Name: "sudo", Type: "bool", Description: "Enable sudo access (create)"},
 					{Name: "sudo-nopasswd", Type: "bool", Description: "Enable passwordless sudo (create)"},

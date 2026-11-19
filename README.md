@@ -184,7 +184,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `ai-gateway` | servers (list/get), redirect-uris list, catalog (resolve/connector) | AI Gateway configuration, read-only (preview: undocumented API) |
 | `service-accounts` | list, get, create, delete, rotate, revoke | API credentials for automation, scoped by a role |
 | `roles` | list, get, create, update, delete | RBAC roles for admins and service accounts |
-| `access-requests` | list, get, create, update, revoke | Temporary elevated device privileges |
+| `access-requests` | find, get, create, update, revoke | Temporary elevated device privileges (the API cannot list them; `find` looks up one user, device and state) |
 | `access-cert` | settings, campaigns, runs (list/get/items/audit-report), admin-queue | Access Certification reviews (read-only) |
 | `admins` | list, get, create, update, delete | Manage administrator accounts |
 | `auth-policies` | list, get, create, update, delete, enable, disable, simulate, blast-radius | Conditional access policies |
@@ -650,7 +650,7 @@ jc service-accounts create --name ci-bot --role "Helpdesk bot" --auth-type clien
 jc service-accounts rotate ci-bot                # Adds a new credential (shown once)
 jc service-accounts revoke ci-bot <auth-config-id>
 
-jc access-requests list -t                       # Temporary elevated device privileges
+jc access-requests find --user jdoe --device JDOE-MBP --state granted -t   # No list exists; state values unverified
 jc access-requests create --user jdoe --device JDOE-MBP --sudo --expiry 2026-12-01T00:00:00Z
 jc access-requests revoke <access-id>
 ```

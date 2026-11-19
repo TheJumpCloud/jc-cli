@@ -13,7 +13,7 @@ import (
 )
 
 // startAccessRequestsServer creates a mock JumpCloud V2 server that handles access request endpoints:
-//   - GET /accessrequests — list (bare JSON array)
+//   - GET /accessrequests — lookup by requesterId, applicationId and state
 //   - POST /accessrequests — create
 //   - GET /accessrequests/{id} — get single
 //   - PUT /accessrequests/{id} — update
@@ -49,9 +49,23 @@ func startAccessRequestsServer(t *testing.T, reqs []map[string]any, users []map[
 			return
 		}
 
-		// GET /accessrequests — list (bare JSON array).
+		// GET /accessrequests — as live: a lookup, 400 unless requesterId,
+		// applicationId and state are all present, then {"results": [...]}.
 		if r.URL.Path == "/accessrequests" && r.Method == http.MethodGet {
-			json.NewEncoder(w).Encode(reqs)
+			q := r.URL.Query()
+			if q.Get("requesterId") == "" || q.Get("applicationId") == "" || q.Get("state") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"message":"error validating request: error validating GetAccessRequestByRequesterIdApplicationIdState"}`))
+				return
+			}
+			var out []map[string]any
+			for _, rq := range reqs {
+				if rq["requestorId"] == q.Get("requesterId") && rq["resourceId"] == q.Get("applicationId") &&
+					rq["accessState"] == q.Get("state") {
+					out = append(out, rq)
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"results": out})
 			return
 		}
 
@@ -143,59 +157,69 @@ func sampleAccessRequests() []map[string]any {
 	}
 }
 
-// --- List Tests ---
+// --- List and find tests ---
 
-func TestAccessRequestsList_JSON(t *testing.T) {
+// The old list never worked: the API has no list. It now explains that and
+// names find, rather than surfacing the server's 400.
+func TestAccessRequestsList_ExplainsThereIsNoList(t *testing.T) {
 	setupUsersTest(t)
-	reqs := sampleAccessRequests()
-	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	ts := startAccessRequestsServer(t, sampleAccessRequests(), nil, nil)
 	defer ts.Close()
 	overrideV2Client(t, ts.URL)
 
-	cmd := NewRootCmd()
-	var buf bytes.Buffer
-	cmd.SetOut(&buf)
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"access-requests", "list"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute error: %v", err)
-	}
-
-	var result []map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
-		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
-	}
-
-	if len(result) != 2 {
-		t.Errorf("got %d access requests, want 2", len(result))
+	for _, args := range [][]string{{"access-requests", "list"}, {"ar", "ls"}} {
+		cmd := NewRootCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "access-requests find") {
+			t.Errorf("%v: want the no-list explanation, got %v", args, err)
+		}
 	}
 }
 
-func TestAccessRequestsList_Alias(t *testing.T) {
+func TestAccessRequestsFind_ResolvesAndFilters(t *testing.T) {
 	setupUsersTest(t)
-	reqs := sampleAccessRequests()
-	ts := startAccessRequestsServer(t, reqs, nil, nil)
+	users := []map[string]any{{"_id": "aabbccddee112233aabb1001", "username": "alice"}}
+	devices := []map[string]any{{"_id": "aabbccddee112233aabb2001", "hostname": "JDOE-MBP"}}
+	reqs := []map[string]any{
+		{"accessId": "a1", "requestorId": "aabbccddee112233aabb1001", "resourceId": "aabbccddee112233aabb2001", "accessState": "granted"},
+		{"accessId": "a2", "requestorId": "aabbccddee112233aabb1001", "resourceId": "aabbccddee112233aabb2001", "accessState": "revoked"},
+	}
+	ts := startAccessRequestsServer(t, reqs, users, devices)
 	defer ts.Close()
 	overrideV2Client(t, ts.URL)
+	overrideV1Client(t, ts.URL)
 
 	cmd := NewRootCmd()
-	var buf bytes.Buffer
-	cmd.SetOut(&buf)
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"ar", "list"})
-
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"access-requests", "find", "--user", "alice", "--device", "JDOE-MBP", "--state", "granted"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute error: %v", err)
+		t.Fatalf("find: %v", err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("JSON: %v\n%s", err, out.String())
+	}
+	if len(got) != 1 || got[0]["accessId"] != "a1" {
+		t.Errorf("want only a1, got %v", got)
 	}
 
-	var result []map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
-		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
+	// An empty result carries the unverified-state caveat.
+	cmd = NewRootCmd()
+	out.Reset()
+	errOut.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"access-requests", "find", "--user", "alice", "--device", "JDOE-MBP", "--state", "nonsense"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("find: %v", err)
 	}
-
-	if len(result) != 2 {
-		t.Errorf("got %d access requests, want 2", len(result))
+	if !strings.Contains(errOut.String(), "have not been verified") {
+		t.Errorf("an empty result must carry the caveat, got %q", errOut.String())
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/klaassen-consulting/jc/internal/accessreq"
 	"os"
 	"strings"
 
@@ -375,6 +376,12 @@ type appCreateInput struct {
 	SsoType      string `json:"sso_type,omitempty" jsonschema:"Ignored. The SSO type follows from the connector named in name."`
 	Config       string `json:"config,omitempty" jsonschema:"SSO configuration object (the app's config field) as raw JSON"`
 	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
+}
+
+type accessRequestFindInput struct {
+	User   string `json:"user" jsonschema:"User name, email or 24-character id"`
+	Device string `json:"device" jsonschema:"Device hostname, display name or 24-character id"`
+	State  string `json:"state" jsonschema:"Request state. Values unverified; candidates: pending, granted, revoked, expired, denied"`
 }
 
 type appUpdateInput struct {
@@ -6001,25 +6008,45 @@ func (s *Server) registerSaaSManagementTools() {
 }
 
 func (s *Server) registerAccessRequestsTools() {
-	addTypedTool(s, "access_requests_list", "List all JumpCloud access requests for temporary elevated device privileges. Returns objects with accessId, requestorId, resourceId, accessState, expiry.",
-		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
+	addTypedTool(s, "access_requests_find", "Find the access requests (temporary elevated device privileges, e.g. sudo or local admin on a device) that one user has for one device in one state. JumpCloud cannot LIST access requests; this lookup and get-by-access-id are the only reads. All three inputs are required. The API checks none of them, so an empty result may mean a state value it does not use: the state values are unverified (candidates: pending, granted, revoked, expired, denied).",
+		func(ctx context.Context, req *mcp.CallToolRequest, args accessRequestFindInput) (*mcp.CallToolResult, any, error) {
+			v1client, err := newV1ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating V1 API client: %v", err)), nil, nil
+			}
+			userID, err := resolve.NewResolver(v1client).Resolve(ctx, args.User, resolve.UserConfig)
+			if err != nil {
+				return errorResult(fmt.Sprintf("resolving user: %v", err)), nil, nil
+			}
+			deviceID, err := resolve.NewResolver(v1client).Resolve(ctx, args.Device, resolve.DeviceConfig)
+			if err != nil {
+				return errorResult(fmt.Sprintf("resolving device: %v", err)), nil, nil
+			}
+			path, err := accessreq.FindPath(userID, deviceID, args.State)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
 			client, err := newV2ClientFunc()
 			if err != nil {
 				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
 			}
-			exprs, err := filter.ParseAll(args.Filter)
+			raw, err := client.Get(ctx, path)
 			if err != nil {
-				return errorResult(fmt.Sprintf("parsing filters: %v", err)), nil, nil
+				return errorResult(fmt.Sprintf("finding access requests: %v", err)), nil, nil
 			}
-			result, err := client.ListAll(ctx, "/accessrequests", api.V2ListOptions{
-				Limit:  args.Limit,
-				Sort:   args.Sort,
-				Filter: filter.ToV2Queries(exprs),
-			})
+			rows, err := accessreq.ParseFind(raw)
 			if err != nil {
-				return errorResult(fmt.Sprintf("listing access requests: %v", err)), nil, nil
+				return errorResult(err.Error()), nil, nil
 			}
-			return rawListPage(result.Data)
+			out := map[string]any{"results": rows, "count": len(rows)}
+			if len(rows) == 0 {
+				out["note"] = accessreq.Unverified
+			}
+			res, jerr := jsonResult(out)
+			if jerr != nil {
+				return errorResult(jerr.Error()), nil, nil
+			}
+			return res, nil, nil
 		},
 	)
 

@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "jc-cli skills for Claude Code — conversational JumpCloud administration via the jc CLI, no direct API calls.",
-    "version": "0.1.2",
+    "version": "0.1.4",
     "pluginRoot": "."
   },
   "plugins": [
@@ -14,7 +14,7 @@
       "name": "jc-cli-skills",
       "source": "./skills",
       "description": "Conversational skills for JumpCloud administration via the jc CLI — onboarding, offboarding, auth troubleshooting, security audit, compliance check, and recipe authoring. Built on top of the jc binary; install jc separately from https://github.com/TheJumpCloud/jc-cli.",
-      "version": "0.1.2"
+      "version": "0.1.4"
     }
   ]
 }

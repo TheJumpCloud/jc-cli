@@ -1382,7 +1382,7 @@
       "description": "Manage JumpCloud temporary elevated device privilege requests",
       "category": "Org \u0026 Lifecycle",
       "subcommands": [
-        "list",
+        "find",
         "get",
         "create",
         "update",
@@ -1390,24 +1390,19 @@
       ],
       "flags": [
         {
-          "name": "limit",
-          "type": "int",
-          "description": "Maximum number of results (list)"
-        },
-        {
-          "name": "filter",
-          "type": "string[]",
-          "description": "Filter expressions (list)"
-        },
-        {
           "name": "user",
           "type": "string",
-          "description": "User name or ID (create)"
+          "description": "User name or ID (find, create)"
         },
         {
           "name": "device",
           "type": "string",
-          "description": "Device name or ID (create)"
+          "description": "Device name or ID (find, create)"
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "Request state, values unverified (find)"
         },
         {
           "name": "expiry",

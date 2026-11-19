@@ -34,7 +34,7 @@ jc <resource> <verb> [identifier] [flags]
 | `ai-gateway` | `aigw` | servers list (`--app`)/get, redirect-uris list, catalog resolve/connector — AI Gateway config, read-only, PREVIEW (undocumented API); credentials redacted |
 | `service-accounts` | | list, get, create, delete, rotate, revoke (credential shown once) |
 | `roles` | | list, get, create, update, delete |
-| `access-requests` | | list, get, create, update, revoke |
+| `access-requests` | | find (user + device + state; no list exists), get, create, update, revoke |
 | `access-cert` | `access-certification` | settings get, campaigns list/get, runs list/get/items/audit-report (`--no-urls`; closed runs only), admin-queue — read-only; hex ids only |
 | `password-policies` | | list, get, create, update, delete, set-precedence, for-user, for-group |
 | `admins` | | list, get, create, update, delete |

@@ -568,14 +568,13 @@ Manage JumpCloud Duo accounts and applications
 
 Manage JumpCloud temporary elevated device privilege requests
 
-**Subcommands:** `list`, `get`, `create`, `update`, `revoke`
+**Subcommands:** `find`, `get`, `create`, `update`, `revoke`
 
 **Flags:**
 
-- `--limit` `<int>` — Maximum number of results (list)
-- `--filter` `<string[]>` — Filter expressions (list)
-- `--user` `<string>` — User name or ID (create)
-- `--device` `<string>` — Device name or ID (create)
+- `--user` `<string>` — User name or ID (find, create)
+- `--device` `<string>` — Device name or ID (find, create)
+- `--state` `<string>` — Request state, values unverified (find)
 - `--expiry` `<string>` — Expiry time RFC 3339 (create/update)
 - `--sudo` `<bool>` — Enable sudo access (create)
 - `--sudo-nopasswd` `<bool>` — Enable passwordless sudo (create)

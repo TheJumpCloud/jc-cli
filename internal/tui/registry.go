@@ -416,7 +416,12 @@ var clientTypeOverrides = map[string]ClientType{
 
 // skipInTUI lists resources that cannot be browsed generically.
 // These resources need custom screens instead of the generic list view.
-var skipInTUI = map[string]bool{}
+var skipInTUI = map[string]bool{
+	// The API cannot list access requests; the only reads are get-by-id and
+	// a lookup that needs a user, a device and a state (`jc access-requests
+	// find`). The generic list could only ever show the 400.
+	"access-requests": true,
+}
 
 // SystemInsightsTables lists all supported System Insights osquery table names.
 // Duplicated from cmd/system_insights.go to avoid importing cmd (circular dependency).
