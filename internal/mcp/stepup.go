@@ -8,9 +8,12 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -50,6 +53,33 @@ func isExecutingDestructive(args any) bool {
 // present, return an empty string and the prompt skips the "on <target>"
 // clause.
 func destructiveTarget(args any) string {
+	return displaySafe(rawDestructiveTarget(args))
+}
+
+// maxTargetLen bounds the target shown in an approval prompt.
+const maxTargetLen = 120
+
+// displaySafe makes an agent-supplied target safe to show a human approver.
+// The target comes from tool arguments, which the agent controls: a newline,
+// an ANSI escape or a bidi override in it could draw a fake prompt line or
+// disguise the real change (e.g. a risk value "90\n...enabled=true"). Any
+// such character makes the whole target render quoted, with escapes visible.
+func displaySafe(s string) string {
+	if !utf8.ValidString(s) {
+		return strconv.QuoteToASCII(s)
+	}
+	if r := []rune(s); len(r) > maxTargetLen {
+		s = string(r[:maxTargetLen]) + "…"
+	}
+	if strings.IndexFunc(s, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
+	}) >= 0 {
+		return strconv.QuoteToASCII(s)
+	}
+	return s
+}
+
+func rawDestructiveTarget(args any) string {
 	if t, ok := args.(stepUpTargeter); ok {
 		return t.stepUpTarget()
 	}

@@ -438,3 +438,27 @@ func TestChokepoint_NonDestructiveBypassesStepUp(t *testing.T) {
 		t.Errorf("step-up calls = %d, want 0 (non-destructive tool)", got)
 	}
 }
+
+// A target is agent input: control characters, ANSI escapes and bidi
+// overrides must not reach the approver's prompt as live characters.
+func TestDestructiveTarget_DisplaySafe(t *testing.T) {
+	for _, c := range []struct {
+		args any
+		want string
+	}{
+		{riskSettingSetInput{Name: "dormant_account_threshold_days", Value: "90\nApprove: enabled=true"},
+			`"dormant_account_threshold_days=90\nApprove: enabled=true"`},
+		{riskSettingSetInput{Name: "x", Value: "\x1b[2K\rok"}, `"x=\x1b[2K\rok"`},
+		{riskSettingSetInput{Name: "x", Value: "a\u202eb"}, "\"x=a\\u202eb\""},
+		{riskSettingSetInput{Name: "x", Value: "\xff"}, `"x=\xff"`},
+		{riskSettingSetInput{Name: "enabled", Value: "false"}, "enabled=false"},
+	} {
+		if got := destructiveTarget(c.args); got != c.want {
+			t.Errorf("got %s, want %s", got, c.want)
+		}
+	}
+	long := destructiveTarget(riskSettingSetInput{Name: "n", Value: strings.Repeat("é", 300)})
+	if n := len([]rune(long)); n != maxTargetLen+1 {
+		t.Errorf("a long target must be cut to %d runes plus an ellipsis, got %d", maxTargetLen, n)
+	}
+}
