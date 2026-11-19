@@ -696,7 +696,7 @@ var commandClass = map[string]string{
 	"jc org features list": ClassReadOnly,
 	"jc org get":           ClassReadOnly,
 	"jc org list":          ClassReadOnly,
-	"jc org settings":      ClassMutating, // writes org settings
+	"jc org settings":      ClassReadOnly, // GET /organizations/{id}; writes are `org update`
 	"jc org update":        ClassMutating,
 
 	// policies — JC policy lifecycle.
