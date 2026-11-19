@@ -457,8 +457,16 @@ func TestDestructiveTarget_DisplaySafe(t *testing.T) {
 			t.Errorf("got %s, want %s", got, c.want)
 		}
 	}
-	long := destructiveTarget(riskSettingSetInput{Name: "n", Value: strings.Repeat("é", 300)})
-	if n := len([]rune(long)); n != maxTargetLen+1 {
-		t.Errorf("a long target must be cut to %d runes plus an ellipsis, got %d", maxTargetLen, n)
+	// Separators a display may break a line on.
+	for _, sep := range []string{"\u2028", "\u2029", "\u0085", "\u00a0", "\u3000", "\t"} {
+		got := destructiveTarget(riskSettingSetInput{Name: "x", Value: "a" + sep + "b"})
+		if got == "x=a"+sep+"b" || !strings.HasPrefix(got, `"`) {
+			t.Errorf("%U must make the target render quoted, got %s", []rune(sep)[0], got)
+		}
+	}
+	// Never shortened: the end of a long target is still shown.
+	long := destructiveTarget(riskSettingSetInput{Name: "n", Value: strings.Repeat("é", 300) + "enabled=false"})
+	if !strings.HasSuffix(long, "enabled=false") {
+		t.Errorf("a long target must be shown whole, got %d runes", len([]rune(long)))
 	}
 }

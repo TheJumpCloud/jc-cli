@@ -56,24 +56,20 @@ func destructiveTarget(args any) string {
 	return displaySafe(rawDestructiveTarget(args))
 }
 
-// maxTargetLen bounds the target shown in an approval prompt.
-const maxTargetLen = 120
-
 // displaySafe makes an agent-supplied target safe to show a human approver.
 // The target comes from tool arguments, which the agent controls: a newline,
-// an ANSI escape or a bidi override in it could draw a fake prompt line or
-// disguise the real change (e.g. a risk value "90\n...enabled=true"). Any
-// such character makes the whole target render quoted, with escapes visible.
+// a Unicode line or paragraph separator, an ANSI escape or a bidi override in
+// it could draw a fake prompt line or disguise the real change (e.g. a risk
+// value "90\n...enabled=true"). It is an allowlist: unless every rune is
+// printable (unicode.IsPrint: letters, marks, numbers, punctuation, symbols
+// and the ASCII space only), the whole target renders quoted, escapes
+// visible. It is never shortened — a cut could hide exactly the part the
+// approver needs to see.
 func displaySafe(s string) string {
 	if !utf8.ValidString(s) {
 		return strconv.QuoteToASCII(s)
 	}
-	if r := []rune(s); len(r) > maxTargetLen {
-		s = string(r[:maxTargetLen]) + "…"
-	}
-	if strings.IndexFunc(s, func(r rune) bool {
-		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
-	}) >= 0 {
+	if strings.IndexFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
 		return strconv.QuoteToASCII(s)
 	}
 	return s
