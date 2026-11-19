@@ -98,6 +98,12 @@ func (d *DetailScreen) fetchDetail() tea.Cmd {
 	d.generation = fetch.NextGeneration()
 	gen := d.generation
 
+	if d.entry.ListFunc != nil {
+		idField := d.entry.Schema.IDField
+		return d.fetcher.FetchCustomDetail(d.entry.Key, fetch.CustomListFunc(d.entry.ListFunc),
+			func(r json.RawMessage) string { return tui.RowID(r, idField) }, d.id, gen)
+	}
+
 	switch d.entry.ClientType {
 	case tui.ClientV1:
 		return d.fetcher.FetchV1Detail(d.entry.Key, d.entry.ListEndpoint, d.id, gen)

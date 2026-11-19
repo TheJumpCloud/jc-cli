@@ -636,3 +636,63 @@ func extractNameField(data json.RawMessage, field string) string {
 	}
 	return s
 }
+
+// CustomListFunc lists one resource through its area's own package code.
+type CustomListFunc func(ctx context.Context, c *api.V2Client) ([]json.RawMessage, int, error)
+
+// FetchCustomList runs an area's own list function. A search term, when
+// given, is applied to the rows locally: these areas have no server search.
+// Results are cached like any other list.
+func (f *Fetcher) FetchCustomList(resourceKey string, fn CustomListFunc,
+	match func([]json.RawMessage) []json.RawMessage, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		cacheKey := "custom:" + resourceKey + ":"
+		data, ok := f.Cache.Get(cacheKey)
+		total := len(data)
+		if !ok {
+			client, err := f.NewV2Client()
+			if err != nil {
+				return ListResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			rows, n, err := fn(ctx, client)
+			if err != nil {
+				return ListResultMsg{ResourceKey: resourceKey, Generation: gen, Err: err}
+			}
+			f.Cache.Set(cacheKey, rows, ListTTL)
+			data, total = rows, n
+		}
+		if match != nil {
+			data = match(data)
+			total = len(data)
+		}
+		return ListResultMsg{ResourceKey: resourceKey, Data: data, TotalCount: total, Generation: gen}
+	}
+}
+
+// FetchCustomDetail finds one row in an area's own listing.
+func (f *Fetcher) FetchCustomDetail(resourceKey string, fn CustomListFunc, idOf func(json.RawMessage) string,
+	id string, gen int64) tea.Cmd {
+	return func() tea.Msg {
+		rows, ok := f.Cache.Get("custom:" + resourceKey + ":")
+		if !ok {
+			client, err := f.NewV2Client()
+			if err != nil {
+				return DetailResultMsg{ResourceKey: resourceKey, ID: id, Generation: gen, Err: err}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if rows, _, err = fn(ctx, client); err != nil {
+				return DetailResultMsg{ResourceKey: resourceKey, ID: id, Generation: gen, Err: err}
+			}
+		}
+		for _, r := range rows {
+			if idOf(r) == id {
+				return DetailResultMsg{ResourceKey: resourceKey, ID: id, Data: r, Generation: gen}
+			}
+		}
+		return DetailResultMsg{ResourceKey: resourceKey, ID: id, Generation: gen,
+			Err: fmt.Errorf("no %s with id %s in the listing", resourceKey, id)}
+	}
+}
