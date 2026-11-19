@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klaassen-consulting/jc/internal/plan"
 )
 
 const pamDB = "dddddddddddddddddddddddd"
@@ -113,5 +116,40 @@ func TestPAM_CredentialsShowPersonalOptIn(t *testing.T) {
 	out, err := runJC(t, "pam", "credentials", "list", "--show-personal")
 	if err != nil || !strings.Contains(out, "4242") {
 		t.Errorf("--show-personal: %v\n%s", err, out)
+	}
+}
+
+// A write with --plan describes itself and sends nothing; without
+// confirmation in a non-interactive run it refuses rather than writing.
+func TestPAM_WritesPlanAndRefuseWithoutForce(t *testing.T) {
+	setupUsersTest(t)
+	var writes []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes = append(writes, r.Method+" "+r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	overrideV2Client(t, ts.URL)
+
+	for _, args := range [][]string{
+		{"pam", "servers", "delete", "web-01", "--plan"},
+		{"pam", "databases", "update", "Prod DB", "--notes", "x", "--plan"},
+		{"pam", "credentials", "archive", pamDB, "--plan"},
+		{"pam", "blocking-rules", "delete", "r", "--plan"},
+	} {
+		_, err := runJC(t, args...)
+		var ee *ExitError
+		if !errors.As(err, &ee) || ee.Code != plan.ExitCodePlan {
+			t.Errorf("%v: want the plan exit code, got %v", args, err)
+		}
+	}
+	if len(writes) != 0 {
+		t.Errorf("--plan sent writes: %v", writes)
+	}
+	if _, err := runJC(t, "pam", "servers", "update", "web-01", "--plan"); err == nil ||
+		!strings.Contains(err.Error(), "nothing to change") {
+		t.Errorf("an update with no field flags must be refused, got %v", err)
 	}
 }
