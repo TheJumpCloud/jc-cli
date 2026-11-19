@@ -338,6 +338,9 @@ Query Directory Insights audit events
 - `--event-type` `<string>` — Filter by event type
 - `--limit` `<int>` — Maximum events to return
 - `--sort` `<string>` — Sort field
+- `--interval` `<string>` — Bucket size: a number and m, h, d or w, e.g. 1d (interval)
+- `--timezone` `<string>` — Bucket boundaries in this UTC offset, e.g. -0500 (interval)
+- `--out` `<string>` — Write the report to this new file, mode 0600 (reports download)
 
 #### `jc siem`
 
@@ -351,9 +354,10 @@ The SIEM export API on the regional api host: `events` pulls one page of Directo
 
 - `--since` `<string>` — Window start, RFC 3339 (events)
 - `--until` `<string>` — Window end, at most an hour after --since (events)
-- `--hours-ago` `<duration>` — Without --since, the hour ending this long ago (events)
+- `--hours-ago` `<int>` — Without --since, the hour ending this many hours ago; default 3 (events)
 - `--types` `<string>` — all, or up to 25 comma-separated event types (events)
-- `--cursor` `<string>` — Cursor from the previous page (events)
+- `--limit` `<int>` — Events per page, at most 1000 (events)
+- `--cursor` `<string>` — Cursor from the previous page; needs that page's --since and --until (events)
 
 #### `jc identity-risk`
 

@@ -45,7 +45,7 @@ type siemEventsInput struct {
 	HoursAgo int    `json:"hours_ago,omitempty" jsonschema:"Without since: pull the hour ending this many hours ago (default 3; data lags about two hours)"`
 	Types    string `json:"types,omitempty" jsonschema:"all (default) or up to 25 comma-separated event types, e.g. user_login_attempt"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Events per page, at most 1000 (default 100 here)"`
-	Cursor   string `json:"cursor,omitempty" jsonschema:"next_cursor from the previous page; use the same window"`
+	Cursor   string `json:"cursor,omitempty" jsonschema:"next_cursor from the previous result. Pass that result's since and until with it: a cursor belongs to one window"`
 }
 
 type emailSubscriptionSetInput struct {
@@ -60,6 +60,13 @@ type riskSettingSetInput struct {
 	Execute bool   `json:"execute,omitempty" jsonschema:"Set to true to apply. Without this the tool returns a plan."`
 }
 
+// The step-up prompt names what each write changes.
+func (a insightsReportRequestInput) stepUpTarget() string { return "report " + a.Type }
+func (a emailSubscriptionSetInput) stepUpTarget() string {
+	return fmt.Sprintf("%s subscribed=%v", a.EmailKey, a.Subscribed)
+}
+func (a riskSettingSetInput) stepUpTarget() string { return a.Name + "=" + a.Value }
+
 type gcepDeviceInput struct {
 	Device string `json:"device" jsonschema:"Device hostname, display name or 24-character id"`
 }
@@ -69,8 +76,7 @@ func insightsRawMCP(ctx context.Context, method, path string, body any) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	out, _, err := c.Raw(ctx, method, c.BaseURL, path, body)
-	return out, err
+	return c.Raw(ctx, method, c.BaseURL, path, body)
 }
 
 func dataExportRawMCP(ctx context.Context, method, path string, body any) ([]byte, error) {
@@ -78,9 +84,11 @@ func dataExportRawMCP(ctx context.Context, method, path string, body any) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	base := strings.TrimSuffix(c.BaseURL, "/insights/directory/v1") + "/data-export/v2"
-	out, _, err := c.Raw(ctx, method, base, path, body)
-	return out, err
+	base, err := api.DataExportBaseURL(c.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return c.Raw(ctx, method, base, path, body)
 }
 
 func readRiskSettingsMCP(ctx context.Context) ([]risksettings.Setting, error) {
@@ -124,13 +132,13 @@ func (s *Server) registerAPIGapAreaTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			raw, err := insightsRawMCP(ctx, http.MethodPost, "/events/interval", body)
-			if err != nil {
-				return errorResult(fmt.Sprintf("querying event counts: %v", err)), nil, nil
-			}
-			rows, err := api.ParseIntervalBuckets(raw)
+			c, err := newInsightsClientFunc()
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
+			}
+			rows, err := c.IntervalEvents(ctx, body)
+			if err != nil {
+				return errorResult(fmt.Sprintf("querying event counts: %v", err)), nil, nil
 			}
 			return listEnvelope(rows, nil)
 		},
@@ -171,7 +179,7 @@ func (s *Server) registerAPIGapAreaTools() {
 		},
 	)
 
-	addTypedTool(s, "siem_events", "Pull one page of events from the SIEM export API — the feed a SIEM polls. One window of at most an hour per call; data lags real time by about two hours, so by default the hour ending three hours ago. Returns events and, when more remain, next_cursor.",
+	addTypedTool(s, "siem_events", "Pull one page of events from the SIEM export API — the feed a SIEM polls. One window of at most an hour per call; data lags real time by about two hours, so by default the hour ending three hours ago. Returns events, the since/until window it covered and, when more remain, next_cursor — pass all three back for the next page.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args siemEventsInput) (*mcp.CallToolResult, any, error) {
 			hours := args.HoursAgo
 			if hours == 0 {
@@ -183,6 +191,9 @@ func (s *Server) registerAPIGapAreaTools() {
 			}
 			if limit == 0 {
 				limit = 100
+			}
+			if args.Cursor != "" && args.Since == "" {
+				return errorResult("a cursor continues one window: pass the since and until returned with it"), nil, nil
 			}
 			q, err := siem.NewQuery(args.Since, args.Until, time.Duration(hours)*time.Hour, types, limit, args.Cursor)
 			if err != nil {
@@ -204,7 +215,11 @@ func (s *Server) registerAPIGapAreaTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			return jsonOrError(map[string]any{"events": page.Events, "count": len(page.Events), "next_cursor": page.NextCursor})
+			if page.Events == nil {
+				page.Events = []json.RawMessage{}
+			}
+			return jsonOrError(map[string]any{"events": page.Events, "count": len(page.Events), "next_cursor": page.NextCursor,
+				"since": q.Since.UTC().Format(time.RFC3339), "until": q.Until.UTC().Format(time.RFC3339)})
 		},
 	)
 

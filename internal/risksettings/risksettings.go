@@ -62,10 +62,12 @@ func Find(settings []Setting, name string) (Setting, error) {
 }
 
 // Coerce turns the text a person typed into a value of the same JSON type as
-// the setting's current value.
+// the setting's current value. A list's elements take the type of its current
+// first element; a setting with no value (null) has no type to follow, so it
+// takes a JSON literal only.
 func Coerce(current any, input string) (any, error) {
 	input = strings.TrimSpace(input)
-	switch current.(type) {
+	switch cur := current.(type) {
 	case bool:
 		b, err := strconv.ParseBool(input)
 		if err != nil {
@@ -80,21 +82,54 @@ func Coerce(current any, input string) (any, error) {
 		return n, nil
 	case string:
 		return input, nil
-	case []any, nil:
-		var list []any
+	case nil:
+		var v any
+		if err := json.Unmarshal([]byte(input), &v); err != nil {
+			return nil, fmt.Errorf("this setting has no value yet, so jc cannot tell its type: give a JSON "+
+				"literal (true, 90, \"text\" or [\"a\",\"b\"]), not %q", input)
+		}
+		return v, nil
+	case []any:
+		var items []any
 		if strings.HasPrefix(input, "[") {
-			if err := json.Unmarshal([]byte(input), &list); err != nil {
+			if err := json.Unmarshal([]byte(input), &items); err != nil {
 				return nil, fmt.Errorf("this setting is a list; give a JSON array or comma-separated values: %w", err)
 			}
-			return list, nil
-		}
-		list = []any{}
-		for _, p := range strings.Split(input, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				list = append(list, p)
+		} else {
+			items = []any{}
+			for _, p := range strings.Split(input, ",") {
+				if p = strings.TrimSpace(p); p != "" {
+					items = append(items, p)
+				}
 			}
 		}
-		return list, nil
+		if len(cur) == 0 {
+			// No element to follow. Text is the common case (IP ranges); a
+			// list that reads as numbers is ambiguous, so ask for JSON.
+			if !strings.HasPrefix(input, "[") {
+				for _, it := range items {
+					if _, err := strconv.ParseFloat(it.(string), 64); err == nil {
+						return nil, fmt.Errorf("this list is empty, so jc cannot tell whether %q is a number "+
+							"or text: give a JSON array, e.g. [13335] or [\"13335\"]", it)
+					}
+				}
+			}
+			return items, nil
+		}
+		out := make([]any, len(items))
+		for i, it := range items {
+			s, isText := it.(string)
+			if !isText {
+				b, _ := json.Marshal(it)
+				s = string(b)
+			}
+			v, err := Coerce(cur[0], s)
+			if err != nil {
+				return nil, fmt.Errorf("list element %d: %w", i+1, err)
+			}
+			out[i] = v
+		}
+		return out, nil
 	}
 	return nil, fmt.Errorf("this setting has a value type jc does not know how to set")
 }

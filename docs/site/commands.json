@@ -497,6 +497,21 @@
           "name": "sort",
           "type": "string",
           "description": "Sort field"
+        },
+        {
+          "name": "interval",
+          "type": "string",
+          "description": "Bucket size: a number and m, h, d or w, e.g. 1d (interval)"
+        },
+        {
+          "name": "timezone",
+          "type": "string",
+          "description": "Bucket boundaries in this UTC offset, e.g. -0500 (interval)"
+        },
+        {
+          "name": "out",
+          "type": "string",
+          "description": "Write the report to this new file, mode 0600 (reports download)"
         }
       ]
     },
@@ -688,8 +703,8 @@
         },
         {
           "name": "hours-ago",
-          "type": "duration",
-          "description": "Without --since, the hour ending this long ago (events)"
+          "type": "int",
+          "description": "Without --since, the hour ending this many hours ago; default 3 (events)"
         },
         {
           "name": "types",
@@ -697,9 +712,14 @@
           "description": "all, or up to 25 comma-separated event types (events)"
         },
         {
+          "name": "limit",
+          "type": "int",
+          "description": "Events per page, at most 1000 (events)"
+        },
+        {
           "name": "cursor",
           "type": "string",
-          "description": "Cursor from the previous page (events)"
+          "description": "Cursor from the previous page; needs that page's --since and --until (events)"
         }
       ]
     },

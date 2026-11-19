@@ -75,6 +75,7 @@ type apiSection struct {
 	V1BaseURL       string    `json:"v1_base_url"`
 	V2BaseURL       string    `json:"v2_base_url"`
 	InsightsBaseURL string    `json:"insights_base_url"`
+	DataExportURL   string    `json:"data_export_base_url"`
 	OAuthTokenURL   string    `json:"oauth_token_url"`
 	Overridden      []string  `json:"overridden,omitempty"`
 	Probe           *apiProbe `json:"probe,omitempty"`
@@ -294,6 +295,7 @@ func collectAPI() apiSection {
 		V1BaseURL:       h.V1,
 		V2BaseURL:       h.V2,
 		InsightsBaseURL: h.Insights,
+		DataExportURL:   dataExportOrReason(h.Insights),
 		OAuthTokenURL:   h.OAuthToken,
 		Overridden:      h.Overridden,
 	}
@@ -559,6 +561,7 @@ func printDoctorText(out io.Writer, rep doctorReport) error {
 		{"V1", rep.API.V1BaseURL},
 		{"V2", rep.API.V2BaseURL},
 		{"Insights", rep.API.InsightsBaseURL},
+		{"Data export", rep.API.DataExportURL + "  (follows Insights)"},
 		{"OAuth token", rep.API.OAuthTokenURL},
 	}
 	if rep.API.Probe != nil {
@@ -615,4 +618,14 @@ func boolStr(b bool) string {
 		return "enabled"
 	}
 	return "disabled"
+}
+
+// dataExportOrReason is the SIEM data-export host doctor shows, or why there
+// is none: it has no override of its own and is derived from insights.
+func dataExportOrReason(insights string) string {
+	u, err := api.DataExportBaseURL(insights)
+	if err != nil {
+		return "(none: " + err.Error() + ")"
+	}
+	return u
 }

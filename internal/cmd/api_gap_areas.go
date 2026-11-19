@@ -27,10 +27,10 @@ import (
 // its package.
 
 // insightsRaw sends one request to the insights host.
-func insightsRaw(cmd *cobra.Command, method, path string, body any) ([]byte, string, error) {
+func insightsRaw(cmd *cobra.Command, method, path string, body any) ([]byte, error) {
 	c, err := newInsightsClient()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	return c.Raw(cmd.Context(), method, c.BaseURL, path, body)
 }
@@ -42,9 +42,11 @@ func dataExportRaw(cmd *cobra.Command, method, path string, body any) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	base := strings.TrimSuffix(c.BaseURL, "/insights/directory/v1") + "/data-export/v2"
-	out, _, err := c.Raw(cmd.Context(), method, base, path, body)
-	return out, err
+	base, err := api.DataExportBaseURL(c.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return c.Raw(cmd.Context(), method, base, path, body)
 }
 
 // --- Directory Insights: interval counts ------------------------------------
@@ -63,15 +65,19 @@ its event count (doc_count).`,
   jc insights interval --service sso --last 24h --interval 1h`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := intervalBody(service, last, start, end, interval, timezone)
+			startTime, endTime, err := resolveInsightsTimeRange(last, start, end)
 			if err != nil {
 				return err
 			}
-			raw, _, err := insightsRaw(cmd, http.MethodPost, "/events/interval", body)
+			body, err := api.IntervalBody(service, startTime, endTime, interval, timezone)
 			if err != nil {
 				return err
 			}
-			rows, err := parseIntervalBuckets(raw)
+			c, err := newInsightsClient()
+			if err != nil {
+				return err
+			}
+			rows, err := c.IntervalEvents(cmd.Context(), body)
 			if err != nil {
 				return err
 			}
@@ -87,22 +93,6 @@ its event count (doc_count).`,
 	cmd.Flags().StringVar(&interval, "interval", "1d", "Bucket size: a number and m, h, d or w")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "Bucket boundaries in this UTC offset, e.g. -0500")
 	return cmd
-}
-
-// intervalBody builds the /events/interval request from CLI flags.
-func intervalBody(service, last, start, end, interval, timezone string) (map[string]any, error) {
-	if err := api.ValidateService(service); err != nil {
-		return nil, err
-	}
-	startTime, endTime, err := resolveInsightsTimeRange(last, start, end)
-	if err != nil {
-		return nil, err
-	}
-	return api.IntervalBody(service, startTime, endTime, interval, timezone)
-}
-
-func parseIntervalBuckets(raw []byte) ([]json.RawMessage, error) {
-	return api.ParseIntervalBuckets(raw)
 }
 
 // --- Directory Insights: reports --------------------------------------------
@@ -121,7 +111,7 @@ console's report templates and schedules.`,
 		Short:   "List requested reports and their status",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			raw, _, err := insightsRaw(cmd, http.MethodGet, direports.ListPath, nil)
+			raw, err := insightsRaw(cmd, http.MethodGet, direports.ListPath, nil)
 			if err != nil {
 				return err
 			}
@@ -148,12 +138,12 @@ Types: ` + strings.Join(direports.Types, ", ") + `.`,
 			if err != nil {
 				return err
 			}
-			ok, err := vaultConfirm(cmd, "request", "Directory Insights report", args[0],
-				[]string{"generated in the background; kept for 7 days"})
+			ok, err := confirmChange(cmd, "request", "Directory Insights report", args[0],
+				[]string{"generated in the background; kept for 7 days"}, true)
 			if err != nil || !ok {
 				return err
 			}
-			raw, _, err := insightsRaw(cmd, http.MethodPost, path, map[string]any{})
+			raw, err := insightsRaw(cmd, http.MethodPost, path, map[string]any{})
 			if err != nil {
 				return err
 			}
@@ -167,7 +157,8 @@ Types: ` + strings.Join(direports.Types, ", ") + `.`,
 		Long: `Download one artifact of a completed report, chosen by format (csv, json) or id.
 
 Reports carry personal data (usernames, emails, account state), so the file is
-written to --out, or to stdout only when stdout is not a terminal.`,
+written to --out (a new file, mode 0600; an existing one is not overwritten), or
+to stdout only when stdout is not a terminal.`,
 		Example: `  jc insights reports download 6aff3f6a255b33a99d4cabd0 csv --out groups.csv`,
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -176,7 +167,7 @@ written to --out, or to stdout only when stdout is not a terminal.`,
 					return fmt.Errorf("a report holds personal data and is not printed to a terminal: pass --out <file> or redirect stdout")
 				}
 			}
-			raw, _, err := insightsRaw(cmd, http.MethodGet, direports.ListPath, nil)
+			raw, err := insightsRaw(cmd, http.MethodGet, direports.ListPath, nil)
 			if err != nil {
 				return err
 			}
@@ -192,7 +183,7 @@ written to --out, or to stdout only when stdout is not a terminal.`,
 			if err != nil {
 				return err
 			}
-			content, _, err := insightsRaw(cmd, http.MethodGet, direports.ContentPath(rep.ID, art.ID), nil)
+			content, err := insightsRaw(cmd, http.MethodGet, direports.ContentPath(rep.ID, art.ID), nil)
 			if err != nil {
 				return err
 			}
@@ -200,14 +191,14 @@ written to --out, or to stdout only when stdout is not a terminal.`,
 				_, err = cmd.OutOrStdout().Write(content)
 				return err
 			}
-			if err := os.WriteFile(outFile, content, 0o600); err != nil {
+			if err := writeNewPrivateFile(outFile, content); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "wrote %s (%s, %d bytes)\n", outFile, art.Format, len(content))
 			return nil
 		},
 	}
-	download.Flags().StringVar(&outFile, "out", "", "Write to this file (mode 0600)")
+	download.Flags().StringVar(&outFile, "out", "", "Write to this new file (mode 0600; never overwrites)")
 	group.AddCommand(download)
 	return group
 }
@@ -223,8 +214,7 @@ polls. Each request covers at most one hour, and data lags real time by about
 two hours. Use ` + "`jc insights`" + ` for interactive queries; this is the export path.`,
 	}
 	var since, until, types, cursor string
-	var limit int
-	var last time.Duration
+	var limit, hoursAgo int
 	events := &cobra.Command{
 		Use:   "events",
 		Short: "Pull one page of events for a window of at most an hour",
@@ -232,12 +222,15 @@ two hours. Use ` + "`jc insights`" + ` for interactive queries; this is the expo
 or --hours-ago N to pull the hour that ended N hours ago (default 3, safely past
 the export lag). --types is "all" (default) or up to 25 comma-separated event
 types. When more events remain, the cursor for the next page is printed to
-stderr; pass it back with --cursor and the same window.`,
+stderr together with the window it belongs to; pass all three back.`,
 		Example: `  jc siem events
   jc siem events --since 2026-11-19T10:00:00Z --until 2026-11-19T11:00:00Z --types user_login_attempt`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			q, err := siemQuery(since, until, last, types, limit, cursor)
+			if cursor != "" && since == "" {
+				return fmt.Errorf("--cursor continues one window: pass the --since and --until printed with it")
+			}
+			q, err := siem.NewQuery(since, until, time.Duration(hoursAgo)*time.Hour, types, limit, cursor)
 			if err != nil {
 				return err
 			}
@@ -259,14 +252,15 @@ stderr; pass it back with --cursor and the same window.`,
 				return err
 			}
 			if page.NextCursor != "" && !opts.Quiet {
-				fmt.Fprintf(cmd.ErrOrStderr(), "More: --cursor %s\n", page.NextCursor)
+				fmt.Fprintf(cmd.ErrOrStderr(), "More: --since %s --until %s --cursor %s\n",
+					q.Since.UTC().Format(time.RFC3339), q.Until.UTC().Format(time.RFC3339), page.NextCursor)
 			}
 			return nil
 		},
 	}
 	events.Flags().StringVar(&since, "since", "", "Window start (RFC 3339)")
 	events.Flags().StringVar(&until, "until", "", "Window end (RFC 3339), at most an hour after --since")
-	events.Flags().DurationVar(&last, "hours-ago", 3*time.Hour, "Without --since: pull the hour ending this long ago")
+	events.Flags().IntVar(&hoursAgo, "hours-ago", 3, "Without --since: pull the hour ending this many hours ago")
 	events.Flags().StringVar(&types, "types", "all", "\"all\" or up to 25 comma-separated event types")
 	events.Flags().IntVar(&limit, "limit", 0, "Events per page (max 1000; default 1000)")
 	events.Flags().StringVar(&cursor, "cursor", "", "Cursor from the previous page")
@@ -284,10 +278,6 @@ stderr; pass it back with --cursor and the same window.`,
 		},
 	})
 	return group
-}
-
-func siemQuery(since, until string, hoursAgo time.Duration, types string, limit int, cursor string) (siem.Query, error) {
-	return siem.NewQuery(since, until, hoursAgo, types, limit, cursor)
 }
 
 func siemErr(err error) error {
@@ -344,7 +334,7 @@ Account Locked — Admin Notice". Changing one affects only your own inbox.`,
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				verb := map[bool]string{true: "subscribe to", false: "unsubscribe from"}[on]
-				ok, err := vaultConfirm(cmd, verb, "email", args[0], []string{"your own inbox only"})
+				ok, err := confirmChange(cmd, verb, "email", args[0], []string{"your own inbox only"}, true)
 				if err != nil || !ok {
 					return err
 				}
@@ -432,8 +422,8 @@ setting back afterwards.
 			if err != nil {
 				return err
 			}
-			ok, err := vaultConfirm(cmd, "set", "access risk setting", args[0],
-				[]string{fmt.Sprintf("%v → %v", cur.Value, val)})
+			ok, err := confirmChange(cmd, "set", "access risk setting", args[0],
+				[]string{fmt.Sprintf("%v → %v", cur.Value, val)}, true)
 			if err != nil || !ok {
 				return err
 			}
@@ -525,4 +515,24 @@ func gcepRead(cmd *cobra.Command, path string, notFound error) error {
 		return err
 	}
 	return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
+}
+
+// writeNewPrivateFile creates path with mode 0600 and writes data. It refuses
+// an existing path: os.WriteFile would keep that file's mode (a 0644 file
+// stays world-readable) and follow a symlink.
+func writeNewPrivateFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("%s already exists, and jc will not overwrite a file of personal data — "+
+				"choose another path or remove it first", path)
+		}
+		return fmt.Errorf("creating %s: %w", path, err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(path)
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return f.Close()
 }

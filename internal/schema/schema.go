@@ -1328,6 +1328,9 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "event-type", Type: "string", Description: "Filter by event type"},
 					{Name: "limit", Type: "int", Description: "Maximum events to return"},
 					{Name: "sort", Type: "string", Description: "Sort field"},
+					{Name: "interval", Type: "string", Description: "Bucket size: a number and m, h, d or w, e.g. 1d (interval)"},
+					{Name: "timezone", Type: "string", Description: "Bucket boundaries in this UTC offset, e.g. -0500 (interval)"},
+					{Name: "out", Type: "string", Description: "Write the report to this new file, mode 0600 (reports download)"},
 				},
 			},
 			{
@@ -1434,9 +1437,10 @@ func BuildCommandManifest() CommandManifest {
 				Flags: []FlagEntry{
 					{Name: "since", Type: "string", Description: "Window start, RFC 3339 (events)"},
 					{Name: "until", Type: "string", Description: "Window end, at most an hour after --since (events)"},
-					{Name: "hours-ago", Type: "duration", Description: "Without --since, the hour ending this long ago (events)"},
+					{Name: "hours-ago", Type: "int", Description: "Without --since, the hour ending this many hours ago; default 3 (events)"},
 					{Name: "types", Type: "string", Description: "all, or up to 25 comma-separated event types (events)"},
-					{Name: "cursor", Type: "string", Description: "Cursor from the previous page (events)"},
+					{Name: "limit", Type: "int", Description: "Events per page, at most 1000 (events)"},
+					{Name: "cursor", Type: "string", Description: "Cursor from the previous page; needs that page's --since and --until (events)"},
 				},
 			},
 			{

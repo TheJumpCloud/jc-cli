@@ -41,6 +41,12 @@ console, so a partial fix silently queries the wrong region's audit log.
 Individual hosts override the region: `JC_API_BASE_URL`, `JC_API_V2_BASE_URL`,
 `JC_INSIGHTS_BASE_URL`, `JC_OAUTH_TOKEN_URL`.
 
+The SIEM data-export API (`jc siem`) has no override of its own: it is
+derived from the insights host (`…/insights/directory/v1` becomes
+`…/data-export/v2`), so `JC_INSIGHTS_BASE_URL` moves it too, and an override
+that does not end in `/insights/directory/v1` makes `jc siem` refuse to run.
+`jc doctor` shows it as "Data export".
+
 ## Authentication
 
 ```bash

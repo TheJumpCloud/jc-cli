@@ -43,10 +43,16 @@ func isExecutingDestructive(args any) bool {
 // the device hostname for devices_*). Used purely for the human-facing
 // step-up prompt — never persisted, never sent to the JumpCloud API.
 //
-// We try a small set of well-known field names in priority order. If
-// none are present, return an empty string and the prompt skips the
-// "on <target>" clause.
+// An input that implements stepUpTargeter names its own target (e.g.
+// "enabled=false" for a risk setting, where the field name alone would not
+// tell a threshold tweak from switching a feature off). Otherwise we try a
+// small set of well-known field names in priority order. If none are
+// present, return an empty string and the prompt skips the "on <target>"
+// clause.
 func destructiveTarget(args any) string {
+	if t, ok := args.(stepUpTargeter); ok {
+		return t.stepUpTarget()
+	}
 	v := reflect.ValueOf(args)
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -337,4 +343,10 @@ func newStepUp(cfg stepUpConfig) (stepUpAuthenticator, error) {
 		}
 		return newTTYStepUp(cfg.APIKey), nil
 	}
+}
+
+// stepUpTargeter lets a tool input describe its target for the step-up
+// prompt when its fields are not one of the well-known names.
+type stepUpTargeter interface {
+	stepUpTarget() string
 }
