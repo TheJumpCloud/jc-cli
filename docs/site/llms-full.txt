@@ -209,7 +209,8 @@ List, inspect, create, update and delete JumpCloud SSO applications. An app's `n
 - `--name` `<string>` — Catalog connector key, e.g. bookmark (create, required; cannot be changed)
 - `--display-label` `<string>` — Title shown in the User Portal (create/update)
 - `--sso-url` `<string>` — URL the app opens, for bookmark apps (create)
-- `--config` `<string>` — Extra fields as JSON; a config object is merged key by key (create/update)
+- `--config` `<string>` — SSO configuration as a JSON object; merged key by key into the existing config on update (create/update)
+- `--fields` `<string>` — Other top-level app fields as a JSON object (create/update)
 - `--ai-ready` `<bool>` — Mark the app AI Ready (update; needs an AI Gateway server on the app) or filter by it (list: true|false)
 
 #### `jc saas-management`

@@ -383,7 +383,12 @@
         {
           "name": "config",
           "type": "string",
-          "description": "Extra fields as JSON; a config object is merged key by key (create/update)"
+          "description": "SSO configuration as a JSON object; merged key by key into the existing config on update (create/update)"
+        },
+        {
+          "name": "fields",
+          "type": "string",
+          "description": "Other top-level app fields as a JSON object (create/update)"
         },
         {
           "name": "ai-ready",
