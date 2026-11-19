@@ -25,6 +25,22 @@ func startAccessRequestsServer(t *testing.T, reqs []map[string]any, users []map[
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		// GET /systemusers/{id} and /systems/{id} — find confirms both ids.
+		for prefix, list := range map[string][]map[string]any{"/systemusers/": users, "/systems/": devices} {
+			if strings.HasPrefix(r.URL.Path, prefix) && r.Method == http.MethodGet {
+				id := strings.TrimPrefix(r.URL.Path, prefix)
+				for _, o := range list {
+					if o["_id"] == id {
+						json.NewEncoder(w).Encode(o)
+						return
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"Not Found"}`))
+				return
+			}
+		}
+
 		// GET /systemusers — V1 user resolution (wrapped response).
 		if r.URL.Path == "/systemusers" && r.Method == http.MethodGet {
 			if users == nil {
@@ -167,7 +183,11 @@ func TestAccessRequestsList_ExplainsThereIsNoList(t *testing.T) {
 	defer ts.Close()
 	overrideV2Client(t, ts.URL)
 
-	for _, args := range [][]string{{"access-requests", "list"}, {"ar", "ls"}} {
+	for _, args := range [][]string{
+		{"access-requests", "list"}, {"ar", "ls"},
+		// The old list's flags must not stop the explanation reaching a script.
+		{"access-requests", "list", "--filter", "accessState:eq:granted", "--limit", "5", "--sort", "-expiry"},
+	} {
 		cmd := NewRootCmd()
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
@@ -206,6 +226,34 @@ func TestAccessRequestsFind_ResolvesAndFilters(t *testing.T) {
 	}
 	if len(got) != 1 || got[0]["accessId"] != "a1" {
 		t.Errorf("want only a1, got %v", got)
+	}
+	if strings.Contains(errOut.String(), "have not been verified") {
+		t.Errorf("a non-empty result must not carry the caveat, got %q", errOut.String())
+	}
+
+	// --ids prints the accessId only, and no caveat or footer.
+	cmd = NewRootCmd()
+	out.Reset()
+	errOut.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"access-requests", "find", "--user", "alice", "--device", "JDOE-MBP", "--state", "granted", "--ids"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("find --ids: %v", err)
+	}
+	if out.String() != "a1\n" || errOut.String() != "" {
+		t.Errorf("--ids: stdout %q stderr %q", out.String(), errOut.String())
+	}
+
+	// A swapped pair of raw ids fails instead of answering "0 results".
+	cmd = NewRootCmd()
+	out.Reset()
+	errOut.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"access-requests", "find", "--user", "aabbccddee112233aabb2001", "--device", "aabbccddee112233aabb1001", "--state", "granted"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "swapped") {
+		t.Errorf("swapped ids must fail, got %v (stdout %q)", err, out.String())
 	}
 
 	// An empty result carries the unverified-state caveat.

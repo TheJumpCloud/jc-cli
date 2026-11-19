@@ -738,8 +738,9 @@ func writeIDs(w io.Writer, data []json.RawMessage) error {
 			continue
 		}
 		// Look for "id", "_id", "ID", or "objectId" (V2 service accounts,
-		// password policies, and other resources key on objectId).
-		for _, key := range []string{"_id", "id", "ID", "objectId"} {
+		// password policies, and other resources key on objectId), then
+		// "accessId" (access requests, which have no other id).
+		for _, key := range []string{"_id", "id", "ID", "objectId", "accessId"} {
 			if v, ok := m[key]; ok {
 				fmt.Fprintln(w, formatValue(v))
 				break

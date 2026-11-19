@@ -42,6 +42,10 @@ func newAccessRequestsListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "Removed: the API has no list; use find",
 		Hidden:  true,
+		// The old list took --limit, --sort and --filter. Without this cobra
+		// rejects them as unknown flags before RunE, and a script calling
+		// `list --filter ...` would never see the explanation.
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("%s", accessreq.NoList)
 		},
@@ -60,8 +64,8 @@ the only read: it needs all three of --user, --device and --state.
 
 UNVERIFIED STATE VALUES. The API checks none of the three inputs: a state it
 does not use, like an id that matches nothing, answers with an empty result
-rather than an error. jc resolves the user and the device first, so those are
-real, but which state values the API uses has not yet been confirmed against a
+rather than an error. jc resolves the user and the device and fetches each by
+id first, so a wrong or swapped id fails instead of finding nothing, but which state values the API uses has not yet been confirmed against a
 live request. Candidates: ` + strings.Join(accessreq.CandidateStates, ", ") + `.
 
 Default fields: accessId, requestorId, resourceId, accessState, expiry.`,
@@ -78,6 +82,9 @@ Default fields: accessId, requestorId, resourceId, accessState, expiry.`,
 			}
 			deviceID, err := resolveDevice(cmd.Context(), v1client, device)
 			if err != nil {
+				return err
+			}
+			if err := accessreq.Confirm(cmd.Context(), v1client, userID, deviceID); err != nil {
 				return err
 			}
 			path, err := accessreq.FindPath(userID, deviceID, state)

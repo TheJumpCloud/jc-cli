@@ -14,15 +14,21 @@
 // The probe tenant had no access requests, so it is not yet known which state
 // values the API uses, nor that applicationId takes the device id (the create
 // body calls it resourceId). Every lookup therefore resolves the user and the
-// device first, so at least those are real, and an empty result is reported
-// with that caveat. Verifying it needs a request created against a test VM.
+// device and then fetches each by id (Confirm), so a mistyped, stale or
+// swapped id fails instead of returning a confident empty result; an empty
+// result is still reported with the state caveat. Verifying it needs a request created against a test VM.
 package accessreq
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/klaassen-consulting/jc/internal/api"
 )
 
 // Endpoint is the access-requests collection.
@@ -33,10 +39,38 @@ const Endpoint = "/accessrequests"
 var CandidateStates = []string{"pending", "granted", "revoked", "expired", "denied"}
 
 // Unverified is the caveat shown with a lookup that found nothing.
-const Unverified = "the access-requests API accepts any state and any ids without checking them, " +
+var Unverified = "the access-requests API accepts any state without checking it, " +
 	"and the state values have not been verified against a live request — an empty result " +
 	"may mean a state value the API does not use (candidates: " +
-	"pending, granted, revoked, expired, denied)"
+	strings.Join(CandidateStates, ", ") + ")"
+
+// Getter is the read half of the V1 client.
+type Getter interface {
+	Get(ctx context.Context, endpoint string) (json.RawMessage, error)
+}
+
+// Confirm fetches the user and the device by id. The resolver passes a
+// 24-hex id through unchanged and serves names from a cache, and the lookup
+// itself accepts anything, so without this a typo, a stale cache entry or a
+// swapped --user/--device pair answers "0 results" with full confidence.
+func Confirm(ctx context.Context, v1 Getter, userID, deviceID string) error {
+	if err := confirmOne(ctx, v1, "/systemusers/", "user", userID); err != nil {
+		return err
+	}
+	return confirmOne(ctx, v1, "/systems/", "device", deviceID)
+}
+
+func confirmOne(ctx context.Context, v1 Getter, endpoint, kind, id string) error {
+	_, err := v1.Get(ctx, endpoint+url.PathEscape(id))
+	if err == nil {
+		return nil
+	}
+	var ae *api.APIError
+	if errors.As(err, &ae) && ae.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("no %s has the id %s (are --user and --device swapped?)", kind, id)
+	}
+	return fmt.Errorf("checking the %s %s: %w", kind, id, err)
+}
 
 // NoList explains why there is no list.
 const NoList = "JumpCloud has no way to list access requests: GET /accessrequests answers 400 " +
@@ -67,7 +101,7 @@ func ParseFind(raw json.RawMessage) ([]json.RawMessage, error) {
 	if !ok {
 		return nil, fmt.Errorf("the access-requests lookup response has no results field")
 	}
-	var rows []json.RawMessage
+	rows := []json.RawMessage{}
 	if string(r) == "null" {
 		return rows, nil
 	}

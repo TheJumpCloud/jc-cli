@@ -5,7 +5,9 @@ package schema
 
 import (
 	"sort"
+	"strings"
 
+	"github.com/klaassen-consulting/jc/internal/accessreq"
 	"github.com/klaassen-consulting/jc/internal/version"
 )
 
@@ -355,7 +357,7 @@ var Resources = map[string]ResourceSchema{
 			{Name: "requestorId", Type: "string", Description: "User ID who requested access"},
 			{Name: "resourceId", Type: "string", Description: "Device ID for elevated access"},
 			{Name: "resourceType", Type: "string", Description: "Resource type (device)"},
-			{Name: "accessState", Type: "string", Description: "Request state; values unverified (candidates: pending, granted, revoked, expired, denied)", ReadOnly: true},
+			{Name: "accessState", Type: "string", Description: "Request state; values unverified (candidates: " + strings.Join(accessreq.CandidateStates, ", ") + ")", ReadOnly: true},
 			{Name: "expiry", Type: "datetime", Description: "When the elevated access expires"},
 			{Name: "remarks", Type: "string", Description: "Optional remarks"},
 			{Name: "additionalAttributes", Type: "object", Description: "Additional attributes (sudo settings)"},

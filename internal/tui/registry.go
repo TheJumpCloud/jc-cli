@@ -393,7 +393,6 @@ var listEndpoints = map[string]string{
 	"insights":           "/events",
 	"identity-providers": "/identity-providers",
 	"saas-management":    "/saas-management/applications",
-	"access-requests":    "/accessrequests",
 
 	// KLA-485 coverage areas.
 	"workflows":             "/workflows",

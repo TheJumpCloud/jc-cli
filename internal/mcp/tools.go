@@ -6031,7 +6031,7 @@ func (s *Server) registerSaaSManagementTools() {
 }
 
 func (s *Server) registerAccessRequestsTools() {
-	addTypedTool(s, "access_requests_find", "Find the access requests (temporary elevated device privileges, e.g. sudo or local admin on a device) that one user has for one device in one state. JumpCloud cannot LIST access requests; this lookup and get-by-access-id are the only reads. All three inputs are required. The API checks none of them, so an empty result may mean a state value it does not use: the state values are unverified (candidates: pending, granted, revoked, expired, denied).",
+	addTypedTool(s, "access_requests_find", "Find the access requests (temporary elevated device privileges, e.g. sudo or local admin on a device) that one user has for one device in one state. JumpCloud cannot LIST access requests; this lookup and get-by-access-id are the only reads. All three inputs are required. The user and device are fetched by id first, so a wrong or swapped id errors; the API does not check the state, so an empty result may mean a state value it does not use: the state values are unverified (candidates: "+strings.Join(accessreq.CandidateStates, ", ")+"). Returns {data, returned}, with a note when empty.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args accessRequestFindInput) (*mcp.CallToolResult, any, error) {
 			v1client, err := newV1ClientFunc()
 			if err != nil {
@@ -6044,6 +6044,9 @@ func (s *Server) registerAccessRequestsTools() {
 			deviceID, err := resolve.NewResolver(v1client).Resolve(ctx, args.Device, resolve.DeviceConfig)
 			if err != nil {
 				return errorResult(fmt.Sprintf("resolving device: %v", err)), nil, nil
+			}
+			if err := accessreq.Confirm(ctx, v1client, userID, deviceID); err != nil {
+				return errorResult(err.Error()), nil, nil
 			}
 			path, err := accessreq.FindPath(userID, deviceID, args.State)
 			if err != nil {
@@ -6061,11 +6064,10 @@ func (s *Server) registerAccessRequestsTools() {
 			if err != nil {
 				return errorResult(err.Error()), nil, nil
 			}
-			out := map[string]any{"results": rows, "count": len(rows)}
-			if len(rows) == 0 {
-				out["note"] = accessreq.Unverified
+			if len(rows) > 0 {
+				return rawListPage(rows)
 			}
-			res, jerr := jsonResult(out)
+			res, jerr := jsonResult(map[string]any{"data": rows, "returned": 0, "note": accessreq.Unverified})
 			if jerr != nil {
 				return errorResult(jerr.Error()), nil, nil
 			}
