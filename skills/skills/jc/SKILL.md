@@ -72,7 +72,7 @@ jc <resource> <verb> [identifier] [flags]
 | `app-templates` | | list, get |
 | `password-manager` | | overview, users, folders, groups, items, policies, backup-keys (read-only) |
 | `password-vault` | `pwv` | status, overview, settings, users, groups, tags, credentials, folders, websites (replaces Password Manager) |
-| `privileged-access` | `pam` | status, dashboard, users/tags/groups list, servers/databases/websites list/get (id or name), credentials list/get/managers/history/linked-servers, blocking-rules list/get, connectors list/versions, connections list/status, resource-managers list — read-only, never secrets |
+| `privileged-access` | `pam` | status, dashboard, users/tags/groups list, servers/databases/websites list/get (id or name), credentials list/get/managers/history/linked-servers, blocking-rules list/get, connectors list/versions, connections list/status, resource-managers list; servers/databases/websites create/update/delete/archive/unarchive/clone, credentials delete/archive/unarchive/clone, blocking-rules update/delete (all `--plan`/`--force`) — never secrets |
 | `google-emm` | | enterprises, devices, enrollment-tokens (read-only) |
 | `workday` | | list, get (read-only) |
 | `api` | | get, post, put, patch, delete — one raw request; v1 paths need the `/v1` prefix |
