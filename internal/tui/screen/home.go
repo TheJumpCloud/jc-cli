@@ -2,6 +2,7 @@ package screen
 
 import (
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -659,7 +660,44 @@ func (h *HomeScreen) viewGridMode() string {
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return h.fitHeight(sb.String())
+}
+
+// fitHeight keeps the home screen inside the terminal. The grid is taller
+// than a short terminal (about 40 lines), and the terminal then showed only
+// its bottom: the title and the first rows of every column were cut off, the
+// cursor among them. Here the title stays, and the rest scrolls to keep the
+// selected row in view.
+func (h *HomeScreen) fitHeight(view string) string {
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	avail := h.height - 2 // the status bar below
+	if h.height <= 0 || len(lines) <= avail || avail < 3 {
+		return view
+	}
+	sel := 0
+	for i, l := range lines {
+		if strings.Contains(ansi.Strip(l), "> ") {
+			sel = i
+			break
+		}
+	}
+	body := lines[1:]
+	window := avail - 1
+	start := sel - 1 - window/2
+	if start < 0 {
+		start = 0
+	}
+	if start+window > len(body) {
+		start = len(body) - window
+	}
+	out := append([]string{lines[0]}, body[start:start+window]...)
+	if start > 0 {
+		out[1] = style.DimRow.Render(fmt.Sprintf("  ↑ %d more", start))
+	}
+	if start+window < len(body) {
+		out[len(out)-1] = style.DimRow.Render(fmt.Sprintf("  ↓ %d more", len(body)-start-window))
+	}
+	return strings.Join(out, "\n")
 }
 
 // renderColumn renders a single column of items.
@@ -710,10 +748,26 @@ func (h *HomeScreen) renderEntryLine(e tui.ResourceEntry, isSelected bool) strin
 	} else if e.Key == "recipes" {
 		// Virtual entry (no schema) — show a workflow marker instead of verb count.
 		suffix = style.ResourceVerbs.Render(" (workflow)")
+	} else if v := e.Schema.Verbs; len(v) == 0 {
+		// A bespoke screen (MFA Overview, Device Settings, the policy
+		// authoring screens) has no schema verbs. "(0 ops)" read as
+		// "does nothing" on screens that work.
+		suffix = ""
+	} else if isReadOnly(v) {
+		suffix = style.ResourceVerbs.Render(" (read-only)")
 	} else {
-		verbCount := len(e.Schema.Verbs)
-		suffix = style.ResourceVerbs.Render(fmt.Sprintf(" (%d ops)", verbCount))
+		suffix = style.ResourceVerbs.Render(fmt.Sprintf(" (%d ops)", len(v)))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Left, name, suffix)
+}
+
+// isReadOnly reports whether verbs offer nothing beyond reading.
+func isReadOnly(verbs []string) bool {
+	for _, v := range verbs {
+		if v != "list" && v != "get" {
+			return false
+		}
+	}
+	return true
 }

@@ -439,10 +439,13 @@ var SystemInsightsTables = []string{
 }
 
 // placeholderEntries defines "Coming soon" items shown grayed out in the menu.
-var placeholderEntries = []ResourceEntry{
-	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
-	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
-}
+//
+// Empty, deliberately. "Vault" graduated to Password Vault (and Password
+// Manager) under Access. "Device Trust" was removed: it opened nothing, and
+// the API has no public Device Trust surface (KLA-482 recon). An entry that
+// opens nothing reads as a broken TUI, so a future placeholder should be a
+// real screen saying what is missing instead.
+var placeholderEntries = []ResourceEntry{}
 
 // cloudDirResources lists schema resource names that are folded into the
 // "Cloud Directories" sub-menu instead of appearing as top-level entries.

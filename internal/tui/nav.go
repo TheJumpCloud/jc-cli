@@ -21,6 +21,14 @@ type HelpProvider interface {
 	HelpKeys() string
 }
 
+// StandardKeysProvider declares which of the standard keys (filter, sort,
+// copy, export, all fields, refresh) a screen handles. A screen without it
+// is offered only esc and ?: the footer used to advertise all six on every
+// screen, including forms and menus that handle none of them.
+type StandardKeysProvider interface {
+	StandardKeys() string
+}
+
 // NavStack manages a stack of screens with browser-like navigation.
 type NavStack struct {
 	screens []Screen

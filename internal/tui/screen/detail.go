@@ -797,3 +797,12 @@ func adTranslationRulesEntry(adID, domain string) tui.ResourceEntry {
 		},
 	}
 }
+
+// StandardKeys lists the standard keys this screen handles (see
+// tui.StandardKeysProvider).
+func (d *DetailScreen) StandardKeys() string {
+	if len(d.assocTargets) > 0 {
+		return "esc:back  tab:associations  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+	}
+	return "esc:back  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+}

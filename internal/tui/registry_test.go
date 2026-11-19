@@ -420,19 +420,10 @@ func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
 		}
 	}
 
-	// hr-directories graduated to the real "directories" entry
-	// (KLA-479); the rest await public API surface (or their own
-	// tickets: KLA-480/481/482).
-	// Only Vault and Device Trust remain — no public API for either
-	// (KLA-482 recon); everything else graduated to real screens.
-	want := []string{
-		"vault",
-		"device-trust",
-	}
-	for _, k := range want {
-		if !placeholders[k] {
-			t.Errorf("missing placeholder %q", k)
-		}
+	// None. Vault graduated to Password Vault; Device Trust, which has no
+	// public API, was removed: an entry that opens nothing reads as broken.
+	for k := range placeholders {
+		t.Errorf("placeholder %q opens nothing; give it a screen or remove it", k)
 	}
 }
 

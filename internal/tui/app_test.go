@@ -106,10 +106,22 @@ func TestApp_HelpTextChangesWithDepth(t *testing.T) {
 	if !strings.Contains(deepHelp, "back") {
 		t.Errorf("deep help should contain 'back', got %q", deepHelp)
 	}
-	if !strings.Contains(deepHelp, "copy id") {
-		t.Errorf("deep help should contain 'copy id', got %q", deepHelp)
+	// A screen that declares no standard keys is offered none: the footer
+	// used to promise filter, sort and export on forms and menus.
+	if strings.Contains(deepHelp, "copy id") || strings.Contains(deepHelp, "sort") {
+		t.Errorf("a screen without StandardKeys must not advertise them, got %q", deepHelp)
+	}
+
+	app.Update(PushScreenMsg{Screen: &keyedScreen{mockScreen{title: "List"}}})
+	if got := app.helpText(); !strings.Contains(got, "copy id") {
+		t.Errorf("a screen's declared keys must be shown, got %q", got)
 	}
 }
+
+type keyedScreen struct{ mockScreen }
+
+func (*keyedScreen) StandardKeys() string                  { return "esc:back  c:copy id  ?:help" }
+func (k *keyedScreen) Update(tea.Msg) (tea.Model, tea.Cmd) { return k, nil }
 
 func TestApp_FlashMessage(t *testing.T) {
 	app := NewApp(&mockScreen{title: "Home"})
