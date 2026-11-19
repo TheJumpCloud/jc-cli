@@ -83,6 +83,7 @@ type ResourceEntry struct {
 	ResponseKey     string                                    // V2 wrapped response key (e.g. "identityProviders")
 	MutateBodyFunc  func(body map[string]any) map[string]any  // Optional body transform before create/update (e.g. wrap in {"fields": ...})
 	DetailViaList   bool                                      // True when the API has no GET {endpoint}/{id} — detail = list + match (e.g. /applemdms)
+	ListFunc        ListFunc                                  // Lists through the area's own package (see custom_areas.go); read-only, detail from the list
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -521,7 +522,7 @@ func BuildRegistry() []ResourceEntry {
 
 	for name, s := range schema.Resources {
 		// Skip resources that can't be browsed generically.
-		if skipInTUI[name] {
+		if skipInTUI[name] || customAreas[name] {
 			continue
 		}
 
@@ -595,6 +596,13 @@ func BuildRegistry() []ResourceEntry {
 			SearchFields:    searchFields[name],
 			ResponseKey:     responseKeys[name],
 			Schema:          s,
+		}
+
+		// Admin records carry _id while the admins schema (and the CLI's
+		// columns) name it id; without the alias the id column was blank and
+		// the detail screen had no id to open.
+		if name == "admins" {
+			entry.FlattenFunc = aliasUnderscoreID
 		}
 
 		// Identity Providers additionally need OIDC field flattening.
@@ -776,6 +784,9 @@ func BuildRegistry() []ResourceEntry {
 		Category:    CategoryDeviceMgmt,
 	})
 
+	// Areas with their own read path (see custom_areas.go).
+	entries = append(entries, customAreaEntries()...)
+
 	// Add placeholder entries.
 	entries = append(entries, placeholderEntries...)
 
@@ -916,6 +927,28 @@ func flattenIdentityProvidersTUI(data []json.RawMessage) []json.RawMessage {
 		}
 		result, _ := json.Marshal(obj)
 		out[i] = result
+	}
+	return out
+}
+
+// aliasUnderscoreID copies _id to id on rows that lack id.
+func aliasUnderscoreID(rows []json.RawMessage) []json.RawMessage {
+	out := make([]json.RawMessage, len(rows))
+	for i, r := range rows {
+		out[i] = r
+		var m map[string]json.RawMessage
+		if json.Unmarshal(r, &m) != nil {
+			continue
+		}
+		if _, has := m["id"]; has {
+			continue
+		}
+		if v, ok := m["_id"]; ok {
+			m["id"] = v
+			if b, err := json.Marshal(m); err == nil {
+				out[i] = b
+			}
+		}
 	}
 	return out
 }

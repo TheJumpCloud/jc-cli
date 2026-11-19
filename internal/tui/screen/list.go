@@ -103,6 +103,14 @@ func (l *ListScreen) fetchData() tea.Cmd {
 		)
 	}
 
+	if l.entry.ListFunc != nil {
+		var match func([]json.RawMessage) []json.RawMessage
+		if search != "" {
+			match = func(rows []json.RawMessage) []json.RawMessage { return tui.MatchRows(rows, search) }
+		}
+		return l.fetcher.FetchCustomList(l.entry.Key, fetch.CustomListFunc(l.entry.ListFunc), match, gen)
+	}
+
 	switch l.entry.ClientType {
 	case tui.ClientV1:
 		opts := api.ListOptions{

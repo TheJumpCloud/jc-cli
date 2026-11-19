@@ -166,6 +166,9 @@ jc tui
 ```
 
 Full-screen terminal UI with keyboard navigation, live filtering, sorting, detail views with associations, inline create/edit/delete, clipboard copy, export to JSON/CSV, and bookmarked resources on the home screen.
+AI agents and agent groups, Access Certification, Google EMM, Identity Risk, Password
+Manager, Password Vault (never secrets) and Workday are browsable read-only; change them
+with the CLI. Privileged Access and the AI Gateway are CLI-only.
 
 ---
 
