@@ -40,10 +40,13 @@ jc <resource> <verb> [identifier] [flags]
 | `admins` | | list, get, create, update, delete |
 | `auth-policies` | | list, get, create, update, delete, enable, disable, simulate, blast-radius |
 | `iplists` | | list, get, create, update, delete |
-| `insights` | `i` | query, count, distinct, save, saved, run |
+| `insights` | `i` | query, count, distinct, save, saved, run, interval, reports list/request/download (download writes a file: personal data) |
 | `alerts` | | list, get, status, add-note, notes, occurrences, stats, delete, bulk-update, bulk-delete, rules (health-monitoring rules) |
 | `notification-channels` | | list, get, create, update, delete |
-| `identity-risk` | | events (list/get/resolve), identities, stats, timeline, geolocations, login-types (aggregates need `--last`/`--start`) |
+| `identity-risk` | | events (list/get/resolve), identities, stats, timeline, geolocations, login-types (aggregates need `--last`/`--start`), settings list/set (typed, read back; `enabled` is the master switch) |
+| `siem` | | events (≤1 h window, ~2 h lag, `--types`, `--cursor`), test |
+| `email-subscriptions` | `email-subs` | list, subscribe, unsubscribe (caller's own inbox) |
+| `gcep` | | config, device-state (read-only; 404 = not configured) |
 | `reports` | | templates, saved, custom, builder, scheduled (list/get; create/update/delete on custom/builder/scheduled; scheduled trigger), export |
 | `saved-views` | | list, get, create, update, delete |
 | `search` | | users, systems, commands, command-results |

@@ -1317,7 +1317,8 @@ func BuildCommandManifest() CommandManifest {
 			{
 				Path:        "jc insights",
 				Description: "Query Directory Insights audit events",
-				Subcommands: []string{"query", "count", "distinct", "save", "run", "saved"},
+				Subcommands: []string{"query", "count", "distinct", "save", "run", "saved", "interval",
+					"reports list", "reports request", "reports download"},
 				Flags: []FlagEntry{
 					{Name: "service", Type: "string", Description: "Event service: sso, radius, ldap, user_portal, admin, mdm, directory, software, systems, password_manager, all"},
 					{Name: "last", Type: "string", Description: "Time range: 24h, 7d, 30d, 1m"},
@@ -1421,6 +1422,38 @@ func BuildCommandManifest() CommandManifest {
 				},
 			},
 			{
+				Path:        "jc siem",
+				Description: "Pull events from the SIEM export API (the feed a SIEM polls)",
+				Long: "The SIEM export API on the regional api host: `events` pulls one page of " +
+					"Directory Insights events for a window of at most one hour (data lags real time " +
+					"by about two hours, so the default window is the hour ending three hours ago), " +
+					"filtered to `all` or up to 25 event types, paged by an opaque cursor. `test` " +
+					"checks the export is reachable for the org and returns no events.",
+				Subcommands: []string{"events", "test"},
+				Flags: []FlagEntry{
+					{Name: "since", Type: "string", Description: "Window start, RFC 3339 (events)"},
+					{Name: "until", Type: "string", Description: "Window end, at most an hour after --since (events)"},
+					{Name: "hours-ago", Type: "duration", Description: "Without --since, the hour ending this long ago (events)"},
+					{Name: "types", Type: "string", Description: "all, or up to 25 comma-separated event types (events)"},
+					{Name: "cursor", Type: "string", Description: "Cursor from the previous page (events)"},
+				},
+			},
+			{
+				Path:        "jc email-subscriptions",
+				Description: "Your own admin notification email preferences",
+				Long: "The notification emails JumpCloud sends to the calling admin. `subscribe` and " +
+					"`unsubscribe` change one key and leave the rest (the API merges), and read it back.",
+				Subcommands: []string{"list", "subscribe", "unsubscribe"},
+			},
+			{
+				Path:        "jc gcep",
+				Description: "Google Chrome Enterprise Premium device trust integration, read-only",
+				Long: "The GCEP device trust integration's configuration and a device's trust state. " +
+					"A 404 means the integration is not configured. Writes are not exposed: deleting " +
+					"the configuration disconnects the org from Google.",
+				Subcommands: []string{"config", "device-state"},
+			},
+			{
 				Path:        "jc identity-risk",
 				Description: "Inspect and resolve identity risk detections",
 				Long: "Read JumpCloud's identity risk detections — the anomalous logins and " +
@@ -1434,7 +1467,8 @@ func BuildCommandManifest() CommandManifest {
 					"`events list` and `identities get` do not. RESOLVING CANNOT BE UNDONE — the " +
 					"API refuses every later change to a detection, including reopening it — so " +
 					"`events resolve` confirms like a delete and supports --plan.",
-				Subcommands: []string{"events", "identities", "stats", "login-types", "geolocations", "timeline"},
+				Subcommands: []string{"events", "identities", "stats", "login-types", "geolocations", "timeline",
+					"settings list", "settings set"},
 				Flags: []FlagEntry{
 					{Name: "last", Type: "string", Description: "Relative window, e.g. 24h, 7d, 30d"},
 					{Name: "start", Type: "string", Description: "Window start (RFC3339, or relative like 30d)"},

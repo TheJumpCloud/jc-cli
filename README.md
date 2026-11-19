@@ -74,7 +74,7 @@ See the **[Quick Start Cheat Sheet](docs/QUICKSTART.md)** for a single-page refe
 ## Why jc?
 
 - **Single binary, zero dependencies** — built in Go, runs anywhere. No Python, no PowerShell, no runtime.
-- **Full JumpCloud API surface** — 53 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, Privileged Access, workflows, alerts, health rules, notification channels, identity risk, reports, saved views, search, custom emails, and app templates. 98% of the in-scope API, by area, has a command group; the six small areas still uncovered are listed in [API coverage](docs/API_COVERAGE.md).
+- **Full JumpCloud API surface** — 56 command groups across V1, V2, Directory Insights, and Graph APIs. Users, devices, groups, commands, policies, apps, admins, roles, service accounts, AI agent identities and agent groups, the AI Gateway (preview), access requests, access certification, auth policies, password policies, IP lists, identity providers, SaaS management, RADIUS, LDAP, Active Directory, Apple MDM, Windows MDM, Google EMM, software apps, assets, policy groups, policy templates, system insights, user states, organizations and their feature settings, G Suite, Office 365, Workday, Duo MFA, Password Manager, Password Vault, Privileged Access, workflows, alerts, health rules, notification channels, identity risk and its detection settings, reports and Directory Insights reports, the SIEM export feed, admin email subscriptions, GCEP device trust, saved views, search, custom emails, and app templates. Every in-scope area of the API has a command group; what is deliberately partial inside an area is listed in [API coverage](docs/API_COVERAGE.md).
 - **AI-native** — built-in [MCP server](#mcp-server) with 450+ tools for Claude Desktop and Claude Code. `jc ask` translates natural language to CLI commands. Machine-readable schema for LLM tool use.
 - **Safety-first mutations** — `--plan` previews every create, update, and delete before execution. `jc explain` describes what a command does without making API calls. Destructive operations require explicit confirmation.
 - **Unix pipeline citizen** — JSON by default, `--table` for humans, CSV/YAML/NDJSON for tooling. `--ids` outputs one ID per line for piping. `--query` applies JMESPath transformations. Stdin batch mode for bulk operations.
@@ -192,10 +192,13 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `password-policies` | list, get, create, update, delete, set-precedence, for-user, for-group | Password policies and which one governs a user or group |
 | `identity-providers` | list, get, create, update, delete | Manage identity providers for SSO/OIDC |
 | `saas-management` | list, get, create, update, delete, accounts, account-get, account-delete, usage, licenses, catalog-get | Manage SaaS applications and licenses |
-| `insights` | query, count, distinct, save, saved, run | Query Directory Insights events |
+| `insights` | query, count, distinct, save, saved, run, interval, reports (list/request/download) | Query Directory Insights events, per-bucket counts, and DI reports |
 | `alerts` | list, get, status, add-note, notes, occurrences, stats, delete, bulk-update, bulk-delete, rules | Triage alerts and manage health-monitoring rules |
 | `notification-channels` | list, get, create, update, delete | Where alerts are delivered (webhook, email, Slack) |
-| `identity-risk` | events, identities, stats, timeline, geolocations, login-types | Identity risk detections; `events resolve` |
+| `identity-risk` | events, identities, stats, timeline, geolocations, login-types, settings (list/set) | Identity risk detections; `events resolve`; detection settings |
+| `siem` | events, test | SIEM export feed: one hour per pull, about two hours behind |
+| `email-subscriptions` | list, subscribe, unsubscribe | Your own admin notification emails |
+| `gcep` | config, device-state | Google Chrome Enterprise Premium device trust (read-only) |
 | `reports` | templates, saved, custom, builder, scheduled, export | Browse, author, schedule and export reports |
 | `saved-views` | list, get, create, update, delete | Named list presets (columns, sort, filters) |
 | `search` | users, systems, commands, command-results | v1 search API |
@@ -1390,7 +1393,7 @@ jc completion fish > ~/.config/fish/completions/jc.fish
 ```
 cmd/jc/main.go          Entry point
 internal/
-  cmd/                  CLI commands (Cobra) — 53 command groups + utilities
+  cmd/                  CLI commands (Cobra) — 56 command groups + utilities
   api/                  HTTP clients — Client (base), V1Client, V2Client, InsightsClient
   output/               Format-agnostic output engine (JSON, table, CSV, YAML, NDJSON)
   config/               Viper-based configuration, profiles, env var bindings

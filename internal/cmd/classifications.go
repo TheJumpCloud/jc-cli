@@ -124,7 +124,9 @@ var commandClass = map[string]string{
 	"jc identity-risk login-types":      ClassReadOnly,
 	"jc identity-risk geolocations":     ClassReadOnly,
 	// A POST that reads: the body carries the filter, nothing changes.
-	"jc identity-risk timeline": ClassReadOnly,
+	"jc identity-risk timeline":      ClassReadOnly,
+	"jc identity-risk settings list": ClassReadOnly,
+	"jc identity-risk settings set":  ClassMutating,
 
 	// password-vault — the replacement for Password Manager. Tenant scope
 	// only in this PR: credentials, folders and websites follow.
@@ -596,12 +598,23 @@ var commandClass = map[string]string{
 	"jc identity-providers update": ClassMutating,
 
 	// insights — Directory Insights queries. Read-only.
-	"jc insights count":    ClassReadOnly,
-	"jc insights distinct": ClassReadOnly,
-	"jc insights query":    ClassReadOnly,
-	"jc insights run":      ClassReadOnly, // runs a saved query
-	"jc insights save":     ClassMutating, // persists a query def to JC
-	"jc insights saved":    ClassReadOnly,
+	"jc insights count":                  ClassReadOnly,
+	"jc insights distinct":               ClassReadOnly,
+	"jc insights query":                  ClassReadOnly,
+	"jc insights run":                    ClassReadOnly, // runs a saved query
+	"jc insights save":                   ClassMutating, // persists a query def to JC
+	"jc insights saved":                  ClassReadOnly,
+	"jc insights interval":               ClassReadOnly,
+	"jc insights reports list":           ClassReadOnly,
+	"jc insights reports request":        ClassMutating, // starts a background report job
+	"jc insights reports download":       ClassReadOnly,
+	"jc siem events":                     ClassReadOnly,
+	"jc siem test":                       ClassReadOnly, // POST, but only checks reachability
+	"jc email-subscriptions list":        ClassReadOnly,
+	"jc email-subscriptions subscribe":   ClassMutating,
+	"jc email-subscriptions unsubscribe": ClassMutating,
+	"jc gcep config":                     ClassReadOnly,
+	"jc gcep device-state":               ClassReadOnly,
 
 	// roles — RBAC scope sets (V2).
 	"jc roles list":   ClassReadOnly,
