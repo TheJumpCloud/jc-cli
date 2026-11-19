@@ -203,3 +203,6 @@ func (t *TablePickerScreen) View() string {
 
 	return sb.String()
 }
+
+// StandardKeys puts the filter key in the footer before filtering starts.
+func (*TablePickerScreen) StandardKeys() string { return "/:filter" }

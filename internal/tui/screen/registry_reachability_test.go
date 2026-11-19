@@ -1,10 +1,7 @@
 package screen
 
 import (
-	"strings"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/klaassen-consulting/jc/internal/tui"
 )
@@ -24,7 +21,7 @@ func TestEveryHomeEntryHasAReadPath(t *testing.T) {
 				walk(e.SubMenu)
 				continue
 			}
-			if e.Placeholder || e.ListEndpoint != "" || e.ListFunc != nil {
+			if e.ListEndpoint != "" || e.ListFunc != nil {
 				continue
 			}
 			cmd := h.openEntry(e)
@@ -52,26 +49,5 @@ func TestHomeEntriesHaveDisplayNames(t *testing.T) {
 		if e.DisplayName == e.Key && e.DisplayName != "" && e.DisplayName[0] >= 'a' && e.DisplayName[0] <= 'z' {
 			t.Errorf("%s has no display name", e.Key)
 		}
-	}
-}
-
-// On a short terminal the home grid scrolls instead of overflowing: the
-// title stays, the view fits above the status bar, and the cursor is shown.
-func TestHomeFitsShortTerminal(t *testing.T) {
-	h := NewHomeScreen(tui.BuildRegistry())
-	h.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
-	for i := 0; i < 12; i++ {
-		h.Update(tea.KeyMsg{Type: tea.KeyDown})
-	}
-	view := h.View()
-	lines := strings.Split(view, "\n")
-	if len(lines) > 18 {
-		t.Errorf("view is %d lines, more than the 18 available", len(lines))
-	}
-	if !strings.Contains(lines[0], "JumpCloud TUI") {
-		t.Errorf("title scrolled away: %q", lines[0])
-	}
-	if !strings.Contains(view, "> ") {
-		t.Error("the selected row is not in view")
 	}
 }

@@ -22,8 +22,10 @@ type HelpProvider interface {
 }
 
 // StandardKeysProvider declares which of the standard keys (filter, sort,
-// copy, export, all fields, refresh) a screen handles. A screen without it
-// is offered only esc and ?: the footer used to advertise all six on every
+// copy, export, all fields, refresh) a screen handles, as "key:action" pairs
+// already joined — only those: App adds esc:back before them and ?:help
+// after, and a screen's own keys belong in HelpKeys. A screen without it is
+// offered only esc and ?: the footer used to advertise all six on every
 // screen, including forms and menus that handle none of them.
 type StandardKeysProvider interface {
 	StandardKeys() string

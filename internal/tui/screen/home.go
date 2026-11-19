@@ -2,7 +2,6 @@ package screen
 
 import (
 	"fmt"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -361,12 +360,6 @@ func (h *HomeScreen) updateBookmarksNavigation(msg tea.KeyMsg, bmEntries []tui.R
 }
 
 func (h *HomeScreen) openEntry(entry tui.ResourceEntry) tea.Cmd {
-	// Placeholder entries are not openable.
-	if entry.Placeholder {
-		return func() tea.Msg {
-			return tui.FlashMsg{Text: "Coming soon"}
-		}
-	}
 
 	// Sub-menu entries push a sub-menu screen.
 	if len(entry.SubMenu) > 0 {
@@ -645,10 +638,22 @@ func (h *HomeScreen) viewGridMode() string {
 		colSelectables[c] = selectableItems(cols[c])
 	}
 
+	// The selected row's line in the finished view, recorded while
+	// rendering so the scroll window can keep it visible.
+	gridStart := strings.Count(sb.String(), "\n")
+	selLine := 0
+	if h.inBookmarks {
+		selLine = 2 + h.cursor // title, "Bookmarks", then the entries
+	}
+
 	// Render each column as a string.
 	colStrings := make([]string, h.columns)
 	for c := 0; c < h.columns; c++ {
-		colStrings[c] = h.renderColumn(cols[c], colSelectables[c], c, colWidth)
+		var at int
+		colStrings[c], at = h.renderColumn(cols[c], colSelectables[c], c, colWidth)
+		if at >= 0 {
+			selLine = gridStart + at
+		}
 	}
 
 	// Join columns horizontally.
@@ -660,50 +665,33 @@ func (h *HomeScreen) viewGridMode() string {
 		sb.WriteString("\n")
 	}
 
-	return h.fitHeight(sb.String())
+	return h.fitHeight(sb.String(), selLine)
 }
 
 // fitHeight keeps the home screen inside the terminal. The grid is taller
 // than a short terminal (about 40 lines), and the terminal then showed only
 // its bottom: the title and the first rows of every column were cut off, the
-// cursor among them. Here the title stays, and the rest scrolls to keep the
-// selected row in view.
-func (h *HomeScreen) fitHeight(view string) string {
+// cursor among them. Here the title stays and the rest scrolls through
+// windowLines, which keeps selLine visible and gives the "more" markers lines
+// of their own. An unknown height windows to its default rather than
+// dumping everything.
+func (h *HomeScreen) fitHeight(view string, selLine int) string {
 	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
-	avail := h.height - 2 // the status bar below
-	if h.height <= 0 || len(lines) <= avail || avail < 3 {
-		return view
+	budget := 0 // unknown: windowLines uses its default
+	if h.height > 0 {
+		budget = h.height - 1 - appChromeReserve // the title, and the app's status bar
 	}
-	sel := 0
-	for i, l := range lines {
-		if strings.Contains(ansi.Strip(l), "> ") {
-			sel = i
-			break
-		}
-	}
-	body := lines[1:]
-	window := avail - 1
-	start := sel - 1 - window/2
-	if start < 0 {
-		start = 0
-	}
-	if start+window > len(body) {
-		start = len(body) - window
-	}
-	out := append([]string{lines[0]}, body[start:start+window]...)
-	if start > 0 {
-		out[1] = style.DimRow.Render(fmt.Sprintf("  ↑ %d more", start))
-	}
-	if start+window < len(body) {
-		out[len(out)-1] = style.DimRow.Render(fmt.Sprintf("  ↓ %d more", len(body)-start-window))
-	}
-	return strings.Join(out, "\n")
+	win := windowLines(lines[1:], selLine-1, budget)
+	return strings.Join(append([]string{lines[0]}, win...), "\n")
 }
 
-// renderColumn renders a single column of items.
-func (h *HomeScreen) renderColumn(items []columnItem, selectables []*tui.ResourceEntry, colIdx, colWidth int) string {
+// renderColumn renders a single column of items, and returns the line the
+// selected entry starts on, or -1 when it is not in this column.
+func (h *HomeScreen) renderColumn(items []columnItem, selectables []*tui.ResourceEntry, colIdx, colWidth int) (string, int) {
 	var sb strings.Builder
 	selectableIdx := 0
+	selAt := -1
+	colStyle := lipgloss.NewStyle().Width(colWidth)
 
 	for _, item := range items {
 		if item.isHeader {
@@ -714,24 +702,27 @@ func (h *HomeScreen) renderColumn(items []columnItem, selectables []*tui.Resourc
 		}
 
 		isSelected := !h.inBookmarks && h.gridCur.col == colIdx && h.gridCur.row == selectableIdx
+		if isSelected {
+			// Counted after wrapping: a long name takes more than one line.
+			if sb.Len() > 0 {
+				selAt = lipgloss.Height(colStyle.Render(strings.TrimSuffix(sb.String(), "\n")))
+			} else {
+				selAt = 0
+			}
+		}
 		sb.WriteString(h.renderEntryLine(*item.entry, isSelected))
 		sb.WriteString("\n")
 		selectableIdx++
 	}
 
 	// Constrain column width.
-	colStyle := lipgloss.NewStyle().Width(colWidth)
-	return colStyle.Render(sb.String())
+	return colStyle.Render(sb.String()), selAt
 }
 
 // renderEntryLine renders a single resource entry line.
 func (h *HomeScreen) renderEntryLine(e tui.ResourceEntry, isSelected bool) string {
 	prefix := "  "
 	rowStyle := style.ResourceName
-
-	if e.Placeholder {
-		rowStyle = style.DimRow
-	}
 
 	if isSelected {
 		prefix = "> "
@@ -743,8 +734,6 @@ func (h *HomeScreen) renderEntryLine(e tui.ResourceEntry, isSelected bool) strin
 	var suffix string
 	if len(e.SubMenu) > 0 {
 		suffix = style.ResourceVerbs.Render(" (\u25b8)")
-	} else if e.Placeholder {
-		suffix = ""
 	} else if e.Key == "recipes" {
 		// Virtual entry (no schema) — show a workflow marker instead of verb count.
 		suffix = style.ResourceVerbs.Render(" (workflow)")
@@ -753,21 +742,11 @@ func (h *HomeScreen) renderEntryLine(e tui.ResourceEntry, isSelected bool) strin
 		// authoring screens) has no schema verbs. "(0 ops)" read as
 		// "does nothing" on screens that work.
 		suffix = ""
-	} else if isReadOnly(v) {
+	} else if e.ReadOnlyInTUI() {
 		suffix = style.ResourceVerbs.Render(" (read-only)")
 	} else {
 		suffix = style.ResourceVerbs.Render(fmt.Sprintf(" (%d ops)", len(v)))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Left, name, suffix)
-}
-
-// isReadOnly reports whether verbs offer nothing beyond reading.
-func isReadOnly(verbs []string) bool {
-	for _, v := range verbs {
-		if v != "list" && v != "get" {
-			return false
-		}
-	}
-	return true
 }

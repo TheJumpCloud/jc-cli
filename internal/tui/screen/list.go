@@ -545,5 +545,5 @@ func (l *ListScreen) View() string {
 // StandardKeys lists the standard keys this screen handles (see
 // tui.StandardKeysProvider).
 func (*ListScreen) StandardKeys() string {
-	return "esc:back  /:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+	return "/:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh"
 }

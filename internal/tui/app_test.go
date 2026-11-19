@@ -113,14 +113,14 @@ func TestApp_HelpTextChangesWithDepth(t *testing.T) {
 	}
 
 	app.Update(PushScreenMsg{Screen: &keyedScreen{mockScreen{title: "List"}}})
-	if got := app.helpText(); !strings.Contains(got, "copy id") {
-		t.Errorf("a screen's declared keys must be shown, got %q", got)
+	if got := app.helpText(); got != "esc:back  c:copy id  ?:help" {
+		t.Errorf("a screen's declared keys go between esc and ?, got %q", got)
 	}
 }
 
 type keyedScreen struct{ mockScreen }
 
-func (*keyedScreen) StandardKeys() string                  { return "esc:back  c:copy id  ?:help" }
+func (*keyedScreen) StandardKeys() string                  { return "c:copy id" }
 func (k *keyedScreen) Update(tea.Msg) (tea.Model, tea.Cmd) { return k, nil }
 
 func TestApp_FlashMessage(t *testing.T) {
