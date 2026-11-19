@@ -373,7 +373,8 @@ type appCreateInput struct {
 	DisplayLabel string `json:"display_label,omitempty" jsonschema:"Title shown to users in the User Portal"`
 	SsoURL       string `json:"sso_url,omitempty" jsonschema:"URL the app opens (bookmark apps)"`
 	SsoType      string `json:"sso_type,omitempty" jsonschema:"Ignored. The SSO type follows from the connector named in name."`
-	Config       string `json:"config,omitempty" jsonschema:"SSO configuration object (the app's config field) as raw JSON"`
+	Config       string `json:"config,omitempty" jsonschema:"SSO configuration as a JSON object: becomes the app's config field. Do not wrap it in another {\"config\": ...}."`
+	Fields       string `json:"fields,omitempty" jsonschema:"Other top-level app fields as a JSON object (not name, not config)"`
 	Execute      bool   `json:"execute,omitempty" jsonschema:"Set true to actually create the SSO application. Without it a plan is returned."`
 }
 
@@ -381,7 +382,8 @@ type appUpdateInput struct {
 	Identifier   string `json:"identifier" jsonschema:"Application title (display label), connector key, or ID"`
 	Name         string `json:"name,omitempty" jsonschema:"Not supported: the name is the catalog connector key and cannot be changed. Use display_label to change the title."`
 	DisplayLabel string `json:"display_label,omitempty" jsonschema:"New title shown to users in the User Portal"`
-	Config       string `json:"config,omitempty" jsonschema:"SSO configuration keys as a JSON object; merged key by key into the app's existing config, other keys are kept"`
+	Config       string `json:"config,omitempty" jsonschema:"SSO configuration keys as a JSON object; merged key by key into the app's existing config, other keys are kept. Do not wrap it in another {\"config\": ...}."`
+	Fields       string `json:"fields,omitempty" jsonschema:"Other top-level app fields as a JSON object (not name, not config)"`
 	AIReady      *bool  `json:"aiReady,omitempty" jsonschema:"Show the app as AI Ready in the User Portal (informational, grants no access). true is accepted only for an app with an MCP connection (an AI Gateway server assigned to it); otherwise JumpCloud rejects the update with an error."`
 	Execute      bool   `json:"execute,omitempty" jsonschema:"Set to true to execute. Without this the tool returns a plan."`
 }
@@ -636,6 +638,7 @@ func (s *Server) registerTools() {
 	s.registerAIGatewayTools()
 	s.registerAccessCertTools()
 	s.registerPrivilegedAccessTools()
+	s.registerPrivilegedAccessWriteTools()
 	s.registerIdentityRiskTools()
 	s.registerAppleMDMADETools()
 	s.registerAppleMDMADEWriteTools()
@@ -3771,9 +3774,17 @@ func (s *Server) registerAppsTools() {
 			}
 			// name is the catalog connector key; sso_type is ignored because
 			// JumpCloud ignores it (see internal/appupdate).
-			body := map[string]any{
-				"name": args.Name,
+			body := map[string]any{}
+			if args.Fields != "" {
+				extra, err := appupdate.ParseFields(args.Fields, "fields", "config")
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				for k, v := range extra {
+					body[k] = v
+				}
 			}
+			body["name"] = args.Name
 			if args.DisplayLabel != "" {
 				body["displayLabel"] = args.DisplayLabel
 			}
@@ -3781,11 +3792,11 @@ func (s *Server) registerAppsTools() {
 				body["ssoUrl"] = args.SsoURL
 			}
 			if args.Config != "" {
-				var cfg any
-				if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
-					return errorResult(fmt.Sprintf("invalid config JSON: %v", err)), nil, nil
+				cfg, err := appupdate.ParseConfig(args.Config, "config", "fields")
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
 				}
-				body["config"] = cfg
+				body[appupdate.ConfigField] = cfg
 			}
 			client, err := newV1ClientFunc()
 			if err != nil {
@@ -3822,18 +3833,30 @@ func (s *Server) registerAppsTools() {
 			if args.Name != "" {
 				return errorResult(appupdate.ErrNameImmutable.Error() + " (display_label)"), nil, nil
 			}
+			if args.Fields != "" {
+				extra, err := appupdate.ParseFields(args.Fields, "fields", "config")
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
+				}
+				for k, v := range extra {
+					body[k] = v
+				}
+			}
 			if args.DisplayLabel != "" {
 				body["displayLabel"] = args.DisplayLabel
 			}
 			if args.Config != "" {
-				var cfg any
-				if err := json.Unmarshal([]byte(args.Config), &cfg); err != nil {
-					return errorResult(fmt.Sprintf("invalid config JSON: %v", err)), nil, nil
+				cfg, err := appupdate.ParseConfig(args.Config, "config", "fields")
+				if err != nil {
+					return errorResult(err.Error()), nil, nil
 				}
 				body[appupdate.ConfigField] = cfg
 			}
 			if args.AIReady != nil {
 				body[aiready.Field] = *args.AIReady
+			}
+			if len(body) == 0 {
+				return errorResult("nothing to update: give display_label, config, fields or aiReady"), nil, nil
 			}
 			if !args.Execute {
 				return planResult("update", "application", args.Identifier, id, body)

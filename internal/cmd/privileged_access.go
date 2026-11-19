@@ -10,22 +10,34 @@ import (
 	"github.com/klaassen-consulting/jc/internal/privaccess"
 )
 
-// newPrivilegedAccessCmd builds `jc privileged-access`, read-only. The API's
-// quirks, and the secret-bearing endpoints deliberately left out, are
-// documented in internal/privaccess.
+// newPrivilegedAccessCmd builds `jc privileged-access`. The API's quirks, the
+// lockout every write guards against, and the secret-bearing endpoints
+// deliberately left out are documented in internal/privaccess.
 func newPrivilegedAccessCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "privileged-access",
 		Aliases: []string{"pam"},
-		Short:   "Read JumpCloud Privileged Access (PAM)",
+		Short:   "Manage JumpCloud Privileged Access (PAM)",
 		Long: `Read the org's Privileged Access setup: the privileged servers, databases and
 websites people connect to through a connector, the privileged credentials
 linked to them, the blocking rules that stop risky commands and queries, the
 connectors, and the connection log.
 
-READ-ONLY. Nothing here creates, changes or deletes anything, and no command
-reads a secret: credential secrets, MFA codes, rotation scripts, the backup
-key, connector install files and session recordings are not available.
+Servers, databases and websites can be created, updated, archived, cloned and
+deleted; privileged credentials archived, cloned and deleted; blocking rules
+updated and deleted. Every write asks for confirmation (or --force), previews
+with --plan, and reads its effect back before reporting success.
+
+AN UPDATE REPLACES THE WHOLE RECORD. A record sent without its access policy
+loses every permission and can no longer be read, changed or deleted through
+the API. jc's updates change only the fields you name, send the access policy
+back exactly as read, and refuse if it grants Manage to nobody. Creates grant
+you Manage, View Detail and Connect.
+
+No command reads a secret: credential secrets, MFA codes, rotation scripts,
+the backup key, connector install files and session recordings are not
+available. Credentials cannot be created or edited here; use
+` + "`jc password-vault credentials create`" + ` (same backend).
 
 Servers, databases, websites and blocking rules are addressed by id or exact
 name; credentials by their 24-character hex id. A database's connection string
@@ -38,7 +50,10 @@ the number of rows.`,
   jc pam servers list -t
   jc pam databases get "Prod DB"
   jc pam credentials history <id>
-  jc pam connections status "Prod DB"`,
+  jc pam connections status "Prod DB"
+  jc pam servers create web-01 --uri 10.0.0.5 --protocol ssh --port 22
+  jc pam databases update "Prod DB" --notes "owned by data team"
+  jc pam websites archive "Old admin portal"`,
 	}
 	cmd.AddCommand(
 		newPAMStatusCmd(),
@@ -268,6 +283,7 @@ shown as [redacted].`,
 			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
 		},
 	})
+	addPAMResourceWriteCmds(group, k)
 	return group
 }
 
@@ -349,6 +365,7 @@ but they are personal data and are not needed to manage access.`,
 		[]string{"version", "creationDate"}, privaccess.CredentialHistory))
 	group.AddCommand(pamTokenCmd("linked-servers <id>", "The servers a credential is linked to",
 		nil, privaccess.CredentialLinkedServers))
+	addPAMCredentialWriteCmds(group)
 	return group
 }
 
@@ -414,6 +431,7 @@ func newPAMBlockingRulesCmd() *cobra.Command {
 			return output.WriteSingle(cmd.OutOrStdout(), raw, output.CurrentOptions())
 		},
 	})
+	addPAMBlockingRuleWriteCmds(group)
 	return group
 }
 

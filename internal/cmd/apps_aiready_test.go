@@ -58,7 +58,7 @@ func TestAppsUpdate_SendsFullBodySoTheChangeApplies(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--config", `{"displayLabel":"renamed"}`})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--fields", `{"displayLabel":"renamed"}`})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestAppsUpdate_AIReadyFlagWinsOverConfig(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--config", `{"aiReady":true}`, "--ai-ready=false"})
+	cmd.SetArgs([]string{"apps", "update", "aabbccddee112233aabb2001", "--fields", `{"aiReady":true}`, "--ai-ready=false"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -149,5 +149,36 @@ func TestAppsList_AIReadyFiltersLocally(t *testing.T) {
 	cmd.SetArgs([]string{"apps", "list", "--ai-ready", "yes"})
 	if err := cmd.Execute(); err == nil {
 		t.Error("--ai-ready yes accepted")
+	}
+}
+
+// --config is the SSO configuration and becomes the app's "config" field;
+// the old form, with an outer "config" key, is refused with the fix.
+func TestAppsCreate_ConfigIsTheSSOConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		want    string
+		wantErr string
+	}{
+		{[]string{"--config", `{"idpCertificate":"x"}`}, `config: map[idpCertificate:x]`, ""},
+		{[]string{"--fields", `{"description":"d"}`}, `description: d`, ""},
+		{[]string{"--config", `{"config":{"idpCertificate":"x"}}`}, "", "outer \"config\" wrapper"},
+		{[]string{"--fields", `{"config":{}}`}, "", "may not set \"config\""},
+	} {
+		cmd := NewRootCmd()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(append([]string{"apps", "create", "--name", "bookmark", "--plan"}, tc.args...))
+		err := cmd.Execute()
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("%v: want error %q, got %v", tc.args, tc.wantErr, err)
+			}
+			continue
+		}
+		if !strings.Contains(out.String(), tc.want) {
+			t.Errorf("%v: plan lacks %q:\n%s", tc.args, tc.want, out.String())
+		}
 	}
 }

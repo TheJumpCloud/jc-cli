@@ -209,7 +209,8 @@ List, inspect, create, update and delete JumpCloud SSO applications. An app's `n
 - `--name` `<string>` — Catalog connector key, e.g. bookmark (create, required; cannot be changed)
 - `--display-label` `<string>` — Title shown in the User Portal (create/update)
 - `--sso-url` `<string>` — URL the app opens, for bookmark apps (create)
-- `--config` `<string>` — Extra fields as JSON; a config object is merged key by key (create/update)
+- `--config` `<string>` — SSO configuration as a JSON object; merged key by key into the existing config on update (create/update)
+- `--fields` `<string>` — Other top-level app fields as a JSON object (create/update)
 - `--ai-ready` `<bool>` — Mark the app AI Ready (update; needs an AI Gateway server on the app) or filter by it (list: true|false)
 
 #### `jc saas-management`
@@ -671,17 +672,27 @@ The Serverless Workflow DSL as JumpCloud implements it, with the jc_operation ex
 
 #### `jc privileged-access`
 
-Read Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions
+Manage Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions
 
-Read-only view of JumpCloud Privileged Access: the privileged servers, databases and websites people connect to through a connector, the privileged credentials linked to them, the blocking rules that stop risky commands and queries, connectors, the session log and live connection status. No command reads a secret: credential secrets, MFA codes, rotation scripts, the backup key, connector install files and session recordings are not available, and a database connection string is shown as [redacted]. Servers, databases, websites and rules are addressed by id or exact name. get reads the API's edit view, because its plain detail read refuses a caller who holds the permission it asks for.
+JumpCloud Privileged Access: the privileged servers, databases and websites people connect to through a connector, the privileged credentials linked to them, the blocking rules that stop risky commands and queries, connectors, the session log and live connection status. Servers, databases and websites can be created, updated, archived, cloned and deleted; credentials archived, cloned and deleted; blocking rules updated and deleted. The API replaces the whole record on every update and a record sent without an access policy granting Manage is locked out for good, so updates change only the named fields, send the policy back as read, refuse if it grants Manage to nobody, and read the record back. An archived server cannot be deleted; unarchive it first. No command reads a secret or creates or edits a credential, and a database connection string is shown as [redacted]. Servers, databases, websites and rules are addressed by id or exact name.
 
-**Subcommands:** `status`, `dashboard`, `users list`, `tags list`, `groups list`, `servers list`, `servers get`, `databases list`, `databases get`, `websites list`, `websites get`, `credentials list`, `credentials get`, `credentials managers`, `credentials history`, `credentials linked-servers`, `blocking-rules list`, `blocking-rules get`, `connectors list`, `connectors versions`, `connections list`, `connections status`, `resource-managers list`
+**Subcommands:** `status`, `dashboard`, `users list`, `tags list`, `groups list`, `servers list`, `servers get`, `servers create`, `servers update`, `servers delete`, `servers archive`, `servers unarchive`, `servers clone`, `databases list`, `databases get`, `databases create`, `databases update`, `databases delete`, `databases archive`, `databases unarchive`, `databases clone`, `websites list`, `websites get`, `websites create`, `websites update`, `websites delete`, `websites archive`, `websites unarchive`, `websites clone`, `credentials list`, `credentials get`, `credentials managers`, `credentials history`, `credentials linked-servers`, `credentials delete`, `credentials archive`, `credentials unarchive`, `credentials clone`, `blocking-rules list`, `blocking-rules get`, `blocking-rules update`, `blocking-rules delete`, `connectors list`, `connectors versions`, `connections list`, `connections status`, `resource-managers list`
 
 **Flags:**
 
 - `--product` `<string>` — PAM or PWM (groups list)
 - `--token` `<string>` — Continuation token for the next page (credentials history, linked-servers)
 - `--show-personal` `<bool>` — Include card and identity-document fields (credentials list)
+- `--uri` `<string>` — Host, address or URL (create, update)
+- `--name` `<string>` — New name (update)
+- `--notes` `<string>` — Notes (create, update)
+- `--tags` `<string>` — Tags (create, update)
+- `--os` `<string>` — linux or windows (servers create, update)
+- `--protocol` `<string>` — ssh, rdp, ... (servers create)
+- `--port` `<int>` — Port (servers create; databases create, update)
+- `--provider` `<string>` — Database engine (databases create)
+- `--database-name` `<string>` — Database name (databases create, update)
+- `--priority` `<int>` — Rule priority (blocking-rules update)
 
 #### `jc recipe`
 
