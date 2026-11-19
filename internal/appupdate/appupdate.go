@@ -177,3 +177,50 @@ func isScalar(v any) bool {
 func ErrUnapplied(fields []string) error {
 	return fmt.Errorf("JumpCloud accepted the update but did not change: %v", fields)
 }
+
+// The two JSON inputs an app create or update takes, shared by the CLI and
+// the MCP tools so that one word means one thing in both.
+//
+// "config" is the app's SSO configuration object itself — the value of the
+// app's "config" field — and is merged key by key on update. "fields" is
+// other top-level app fields. They used to differ: the CLI's --config took
+// top-level fields while the MCP tools' config took the SSO object, so an
+// example copied from one into the other applied to the wrong place without
+// an error.
+
+// ParseConfig parses the SSO configuration input. A top-level "config" key is
+// refused rather than guessed at: it is the old CLI form, and nesting it
+// would put a second config object inside the first.
+func ParseConfig(raw, configName, fieldsName string) (map[string]any, error) {
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || cfg == nil {
+		return nil, fmt.Errorf("%s must be a JSON object holding the app's SSO configuration keys", configName)
+	}
+	if _, nested := cfg[ConfigField]; nested {
+		return nil, fmt.Errorf("%s is the SSO configuration itself, so drop the outer \"config\" wrapper: "+
+			"pass the inner object. Other top-level app fields go in %s", configName, fieldsName)
+	}
+	return cfg, nil
+}
+
+// ParseFields parses the top-level fields input. "config" is refused (it has
+// its own input) and so is "name", which is the catalog connector key: set on
+// create by its own input and immutable afterwards.
+func ParseFields(raw, fieldsName, configName string) (map[string]any, error) {
+	var f map[string]any
+	if err := json.Unmarshal([]byte(raw), &f); err != nil || f == nil {
+		return nil, fmt.Errorf("%s must be a JSON object of top-level app fields", fieldsName)
+	}
+	if _, ok := f[ConfigField]; ok {
+		return nil, fmt.Errorf("%s may not set \"config\"; pass the SSO configuration in %s", fieldsName, configName)
+	}
+	if _, ok := f["name"]; ok {
+		return nil, fmt.Errorf("%s may not set \"name\": it is the catalog connector key", fieldsName)
+	}
+	for _, k := range []string{"_id", "id"} {
+		if _, ok := f[k]; ok {
+			return nil, fmt.Errorf("%s may not set %q", fieldsName, k)
+		}
+	}
+	return f, nil
+}

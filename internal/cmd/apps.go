@@ -237,6 +237,7 @@ func newAppsCreateCmd() *cobra.Command {
 		ssoURL       string
 		ssoType      string
 		config       string
+		fields       string
 	)
 
 	cmd := &cobra.Command{
@@ -253,21 +254,24 @@ URL a bookmark opens.
 The SSO type (saml, oidc, bookmark) follows from the connector and cannot be
 chosen; --sso-type is accepted for compatibility and ignored.
 
---config is raw JSON merged into the request body, for any other field.`,
+--config is the SSO configuration: a JSON object that becomes the app's
+"config" field. --fields is a JSON object of any other top-level app fields.
+The explicit flags win over a --fields key.`,
 		Example: `  jc apps create --name bookmark --display-label "Team Wiki" --sso-url https://wiki.example.com
   jc apps create --name bookmark --display-label "Team Wiki" --sso-url https://wiki.example.com --plan`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("sso-type") {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: --sso-type is ignored; the SSO type follows from the connector named by --name")
 			}
-			return runAppsCreate(cmd, name, displayLabel, ssoURL, config)
+			return runAppsCreate(cmd, name, displayLabel, ssoURL, config, fields)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Catalog connector key, e.g. bookmark (required)")
 	cmd.Flags().StringVar(&displayLabel, "display-label", "", "Title shown in the User Portal")
 	cmd.Flags().StringVar(&ssoURL, "sso-url", "", "URL the app opens (bookmark apps)")
-	cmd.Flags().StringVar(&config, "config", "", "Extra fields as raw JSON, merged into the request body")
+	cmd.Flags().StringVar(&config, "config", "", "SSO configuration as a JSON object (the app's \"config\" field)")
+	cmd.Flags().StringVar(&fields, "fields", "", "Other top-level app fields as a JSON object")
 	cmd.Flags().StringVar(&ssoType, "sso-type", "", "Ignored: the SSO type follows from the connector")
 	// Hidden rather than MarkDeprecated: cobra prints the deprecation notice
 	// on stdout, which would corrupt JSON output.
@@ -277,18 +281,26 @@ chosen; --sso-type is accepted for compatibility and ignored.
 	return cmd
 }
 
-func runAppsCreate(cmd *cobra.Command, name, displayLabel, ssoURL, config string) error {
-	body := map[string]any{"name": name}
+func runAppsCreate(cmd *cobra.Command, name, displayLabel, ssoURL, config, fields string) error {
+	body := map[string]any{}
 
-	// Merge optional config JSON first so the explicit flags win.
-	if config != "" {
-		var extra map[string]any
-		if err := json.Unmarshal([]byte(config), &extra); err != nil {
-			return fmt.Errorf("parsing --config JSON: %w", err)
+	// --fields first so the explicit flags win.
+	if fields != "" {
+		extra, err := appupdate.ParseFields(fields, "--fields", "--config")
+		if err != nil {
+			return err
 		}
 		for k, v := range extra {
 			body[k] = v
 		}
+	}
+	body["name"] = name
+	if config != "" {
+		cfg, err := appupdate.ParseConfig(config, "--config", "--fields")
+		if err != nil {
+			return err
+		}
+		body[appupdate.ConfigField] = cfg
 	}
 	if displayLabel != "" {
 		body["displayLabel"] = displayLabel
@@ -349,6 +361,7 @@ func newAppsUpdateCmd() *cobra.Command {
 		name         string
 		displayLabel string
 		config       string
+		fields       string
 		aiReady      bool
 	)
 
@@ -368,45 +381,56 @@ Servers), and rejects the whole update otherwise.
 
 jc reads the app and sends it back in full with your changes: JumpCloud
 answers a partial update with success while changing nothing. The returned
-app is then checked, and jc fails if a requested value did not take effect.`,
+app is then checked, and jc fails if a requested value did not take effect.
+
+--config is the SSO configuration: a JSON object whose keys are merged into
+the app's existing "config", keeping the keys you do not name. --fields is a
+JSON object of other top-level app fields.`,
 		Example: `  jc apps update "Team Wiki" --display-label "Engineering Wiki"
   jc apps update "Bookmark" --ai-ready=true
   jc apps update 6504ef0130b63a30acf199d8 --ai-ready=false`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeResourceNames(resolve.ApplicationConfig),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAppsUpdate(cmd, args[0], name, displayLabel, config, aiReady)
+			return runAppsUpdate(cmd, args[0], name, displayLabel, config, fields, aiReady)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Not supported: the name is the catalog connector key and cannot change; use --display-label")
 	_ = cmd.Flags().MarkHidden("name")
 	cmd.Flags().StringVar(&displayLabel, "display-label", "", "Title shown in the User Portal")
-	cmd.Flags().StringVar(&config, "config", "", "Fields as raw JSON, merged into the app; a \"config\" object is merged key by key")
+	cmd.Flags().StringVar(&config, "config", "", "SSO configuration keys as a JSON object, merged into the app's existing config")
+	cmd.Flags().StringVar(&fields, "fields", "", "Other top-level app fields as a JSON object")
 	cmd.Flags().BoolVar(&aiReady, "ai-ready", false, "Show the app as AI Ready in the User Portal (true needs an AI Gateway MCP connection; use --ai-ready=false to clear)")
 
 	return cmd
 }
 
-func runAppsUpdate(cmd *cobra.Command, identifier, name, displayLabel, config string, aiReady bool) error {
+func runAppsUpdate(cmd *cobra.Command, identifier, name, displayLabel, config, fields string, aiReady bool) error {
 	body := map[string]any{}
 
 	if cmd.Flags().Changed("name") {
 		return fmt.Errorf("--name: %w (--display-label)", appupdate.ErrNameImmutable)
 	}
 
-	// Merge optional config JSON into the body.
-	if cmd.Flags().Changed("config") {
-		var extra map[string]any
-		if err := json.Unmarshal([]byte(config), &extra); err != nil {
-			return fmt.Errorf("parsing --config JSON: %w", err)
+	if cmd.Flags().Changed("fields") {
+		extra, err := appupdate.ParseFields(fields, "--fields", "--config")
+		if err != nil {
+			return err
 		}
 		for k, v := range extra {
 			body[k] = v
 		}
 	}
+	if cmd.Flags().Changed("config") {
+		cfg, err := appupdate.ParseConfig(config, "--config", "--fields")
+		if err != nil {
+			return err
+		}
+		body[appupdate.ConfigField] = cfg
+	}
 
-	// Set after --config so the explicit flags win over a config key.
+	// Set after --fields so the explicit flags win over a fields key.
 	if cmd.Flags().Changed("display-label") {
 		body["displayLabel"] = displayLabel
 	}
@@ -416,7 +440,7 @@ func runAppsUpdate(cmd *cobra.Command, identifier, name, displayLabel, config st
 	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --display-label, --config, --ai-ready)")
+		return fmt.Errorf("no fields to update. Specify at least one field flag (e.g., --display-label, --config, --fields, --ai-ready)")
 	}
 
 	if viper.GetBool("plan") {
