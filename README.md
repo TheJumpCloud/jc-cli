@@ -166,6 +166,9 @@ jc tui
 ```
 
 Full-screen terminal UI with keyboard navigation, live filtering, sorting, detail views with associations, inline create/edit/delete, clipboard copy, export to JSON/CSV, and bookmarked resources on the home screen.
+AI agents and agent groups, Access Certification, Google EMM, Identity Risk, Password
+Manager, Password Vault (never secrets) and Workday are browsable read-only; change them
+with the CLI. Privileged Access and the AI Gateway are CLI-only.
 
 ---
 
@@ -221,7 +224,7 @@ Full-screen terminal UI with keyboard navigation, live filtering, sorting, detai
 | `app-templates` | list, get | Browse application templates |
 | `password-manager` | overview, users, folders, groups, items, policies, backup-keys | Password Manager (read-only) |
 | `password-vault` | status, overview, settings, users, groups, tags, credentials, folders, websites | Password Vault, the Password Manager replacement |
-| `privileged-access` | status, dashboard, users, servers, databases, websites, credentials, blocking-rules, connectors, connections, resource-managers, tags, groups | Privileged Access (PAM), read-only; never reads secrets |
+| `privileged-access` | status, dashboard, users, servers, databases, websites, credentials, blocking-rules, connectors, connections, resource-managers, tags, groups | Privileged Access (PAM): reads; create, update, archive, clone and delete servers, databases and websites; archive, clone and delete credentials; update and delete blocking rules; never reads secrets |
 | `google-emm` | enterprises, devices, enrollment-tokens | Google EMM / Android Enterprise (read-only) |
 | `workday` | list, get | Workday HR-import integrations (read-only) |
 | `workflows` | list, get, create, update, delete, validate, explain, simulate, lint, health, trigger, runs, templates, event-types | Server-side JumpCloud Workflows |
@@ -551,7 +554,7 @@ Password Manager endpoint returns 404; both command groups stay until customers
 have moved across. The area ignores `sort` and its paging duplicates and omits
 records, so jc fetches lists unpaginated and reports the server's own count.
 
-### Privileged Access (PAM, read-only)
+### Privileged Access (PAM)
 
 ```bash
 jc pam status                                    # Is Privileged Access active on this org?
@@ -563,9 +566,27 @@ jc pam credentials history <id>
 jc pam blocking-rules list -t
 jc pam connections list -t                       # The privileged session log
 jc pam connections status "Prod DB"              # Who is connected right now
+
+jc pam servers create web-01 --uri 10.0.0.5 --protocol ssh --port 22
+jc pam databases create "Prod DB" --uri db.internal --provider postgresql --port 5432
+jc pam websites update "Admin portal" --notes "owned by IT" --plan
+jc pam servers archive web-01 web-02             # Bulk; unarchive restores
+jc pam servers clone web-01                      # Creates "web-01 - Copy"
+jc pam credentials archive <id> [id...]          # Also: unarchive, clone, delete
+jc pam blocking-rules update "No DROP" --priority 2
 ```
 
-Read-only, and no command reads a secret: credential secrets, MFA codes,
+Every write asks for confirmation (or `--force`), previews with `--plan`, and reads
+its effect back before reporting success. **The API replaces the whole record on
+every update, and a record sent without an access policy granting Manage loses
+every permission for good** — it can no longer be read, changed or deleted through
+the API. So `update` changes only the fields you name, sends the access policy back
+exactly as read, and refuses if it grants Manage to nobody; `create` always grants
+you Manage, View Detail and Connect. An archived server cannot be deleted (the API
+fails); unarchive it first. Credentials cannot be created or edited here (use
+`jc password-vault credentials create`), and blocking rules cannot be created.
+
+No command reads a secret: credential secrets, MFA codes,
 rotation scripts, the backup key, connector install files and session recordings
 are not available. Card and identity-document fields are removed from credential
 listings unless `--show-personal` is given. `get` reads the API's edit view, because

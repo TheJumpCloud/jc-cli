@@ -383,7 +383,12 @@
         {
           "name": "config",
           "type": "string",
-          "description": "Extra fields as JSON; a config object is merged key by key (create/update)"
+          "description": "SSO configuration as a JSON object; merged key by key into the existing config on update (create/update)"
+        },
+        {
+          "name": "fields",
+          "type": "string",
+          "description": "Other top-level app fields as a JSON object (create/update)"
         },
         {
           "name": "ai-ready",
@@ -973,8 +978,8 @@
     },
     {
       "path": "jc privileged-access",
-      "description": "Read Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions",
-      "long": "Read-only view of JumpCloud Privileged Access: the privileged servers, databases and websites people connect to through a connector, the privileged credentials linked to them, the blocking rules that stop risky commands and queries, connectors, the session log and live connection status. No command reads a secret: credential secrets, MFA codes, rotation scripts, the backup key, connector install files and session recordings are not available, and a database connection string is shown as [redacted]. Servers, databases, websites and rules are addressed by id or exact name. get reads the API's edit view, because its plain detail read refuses a caller who holds the permission it asks for.",
+      "description": "Manage Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions",
+      "long": "JumpCloud Privileged Access: the privileged servers, databases and websites people connect to through a connector, the privileged credentials linked to them, the blocking rules that stop risky commands and queries, connectors, the session log and live connection status. Servers, databases and websites can be created, updated, archived, cloned and deleted; credentials archived, cloned and deleted; blocking rules updated and deleted. The API replaces the whole record on every update and a record sent without an access policy granting Manage is locked out for good, so updates change only the named fields, send the policy back as read, refuse if it grants Manage to nobody, and read the record back. An archived server cannot be deleted; unarchive it first. No command reads a secret or creates or edits a credential, and a database connection string is shown as [redacted]. Servers, databases, websites and rules are addressed by id or exact name.",
       "category": "AI \u0026 Automation",
       "subcommands": [
         "status",
@@ -984,17 +989,41 @@
         "groups list",
         "servers list",
         "servers get",
+        "servers create",
+        "servers update",
+        "servers delete",
+        "servers archive",
+        "servers unarchive",
+        "servers clone",
         "databases list",
         "databases get",
+        "databases create",
+        "databases update",
+        "databases delete",
+        "databases archive",
+        "databases unarchive",
+        "databases clone",
         "websites list",
         "websites get",
+        "websites create",
+        "websites update",
+        "websites delete",
+        "websites archive",
+        "websites unarchive",
+        "websites clone",
         "credentials list",
         "credentials get",
         "credentials managers",
         "credentials history",
         "credentials linked-servers",
+        "credentials delete",
+        "credentials archive",
+        "credentials unarchive",
+        "credentials clone",
         "blocking-rules list",
         "blocking-rules get",
+        "blocking-rules update",
+        "blocking-rules delete",
         "connectors list",
         "connectors versions",
         "connections list",
@@ -1016,6 +1045,56 @@
           "name": "show-personal",
           "type": "bool",
           "description": "Include card and identity-document fields (credentials list)"
+        },
+        {
+          "name": "uri",
+          "type": "string",
+          "description": "Host, address or URL (create, update)"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "New name (update)"
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "description": "Notes (create, update)"
+        },
+        {
+          "name": "tags",
+          "type": "string",
+          "description": "Tags (create, update)"
+        },
+        {
+          "name": "os",
+          "type": "string",
+          "description": "linux or windows (servers create, update)"
+        },
+        {
+          "name": "protocol",
+          "type": "string",
+          "description": "ssh, rdp, ... (servers create)"
+        },
+        {
+          "name": "port",
+          "type": "int",
+          "description": "Port (servers create; databases create, update)"
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "description": "Database engine (databases create)"
+        },
+        {
+          "name": "database-name",
+          "type": "string",
+          "description": "Database name (databases create, update)"
+        },
+        {
+          "name": "priority",
+          "type": "int",
+          "description": "Rule priority (blocking-rules update)"
         }
       ]
     },
