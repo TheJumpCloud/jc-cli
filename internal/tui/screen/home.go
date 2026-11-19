@@ -233,10 +233,13 @@ func (h *HomeScreen) updateFilterMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return h, h.openEntry(display[h.cursor])
 		}
 		return h, nil
-	case "up", "k":
+	// Only the arrow keys (and ctrl+p/ctrl+n) move here. j and k are letters
+	// someone is typing: treating them as navigation made "workday",
+	// "workflows" or "kubernetes" impossible to type.
+	case "up", "ctrl+p":
 		h.moveCursor(-1)
 		return h, nil
-	case "down", "j":
+	case "down", "ctrl+n":
 		h.moveCursor(1)
 		return h, nil
 	default:
@@ -458,15 +461,42 @@ func (h *HomeScreen) applyFilter() {
 	}
 
 	h.filtered = nil
+	best, bestScore := 0, -1
 	for _, e := range h.entries {
-		name := strings.ToLower(e.DisplayName)
-		k := strings.ToLower(e.Key)
-		cat := strings.ToLower(string(e.Category))
-		if strings.Contains(name, query) || strings.Contains(k, query) || strings.Contains(cat, query) {
-			h.filtered = append(h.filtered, e)
+		score := filterScore(e, query)
+		if score < 0 {
+			continue
 		}
+		if score > bestScore {
+			best, bestScore = len(h.filtered), score
+		}
+		h.filtered = append(h.filtered, e)
 	}
-	h.cursor = 0
+	// Results stay grouped by category, so the list order is fixed; the
+	// cursor starts on the best match instead. Before, it started on the
+	// first match, and "wor" opened Password Policies (passWORd) rather than
+	// Workflows.
+	h.cursor = best
+}
+
+// filterScore ranks how well an entry matches a lower-cased query: -1 for no
+// match, then substring of key or category < substring of name < start of a
+// word in the name < start of the name < the whole name.
+func filterScore(e tui.ResourceEntry, query string) int {
+	name := strings.ToLower(e.DisplayName)
+	switch {
+	case name == query:
+		return 4
+	case strings.HasPrefix(name, query):
+		return 3
+	case strings.Contains(" "+name, " "+query) || strings.Contains(name, "("+query):
+		return 2
+	case strings.Contains(name, query):
+		return 1
+	case strings.Contains(strings.ToLower(e.Key), query) || strings.Contains(strings.ToLower(string(e.Category)), query):
+		return 0
+	}
+	return -1
 }
 
 // toggleBookmarkGrid toggles a bookmark on the current grid entry.

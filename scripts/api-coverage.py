@@ -272,7 +272,7 @@ def main():
         "| Area | Shipped | Held back, and why |\n"
         "|---|---|---|\n"
         "| Password Vault | reads and most writes | 22 ops held back, the folder writes among them |\n"
-        "| Privileged Access | reads | writes not yet shipped; the secret, MFA-code, rotation-script, backup-key, connector-install-file and session-recording endpoints are never read |\n"
+        "| Privileged Access | reads; server, database and website create/update/archive/clone/delete; credential archive/clone/delete; blocking-rule update/delete | credential create and edit (secret-bearing, and a full-replace edit could clear the secret), blocking-rule create (not atomic, undocumented criteria), connectors, resource managers, rotation and Excel import/export are not shipped; the secret, MFA-code, rotation-script, backup-key, connector-install-file and session-recording endpoints are never read |\n"
         "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
         "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
         "| GCEP | reads (configuration, device state) | `PUT` and `DELETE` of the configuration: no tenant has the integration, the body is undocumented, and `DELETE` disconnects the org from Google |\n"

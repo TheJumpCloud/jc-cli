@@ -370,6 +370,13 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"privileged_access_connectors_list", "privileged_access_connector_versions",
 		"privileged_access_connections_list", "privileged_access_connection_status",
 		"privileged_access_resource_managers_list",
+		// Privileged Access writes: plan-by-default; none creates or edits a credential.
+		"privileged_access_resource_create", "privileged_access_resource_update",
+		"privileged_access_resource_delete", "privileged_access_resource_archive",
+		"privileged_access_resource_unarchive", "privileged_access_resource_clone",
+		"privileged_access_credential_delete", "privileged_access_credential_archive",
+		"privileged_access_credential_unarchive", "privileged_access_credential_clone",
+		"privileged_access_blocking_rule_update", "privileged_access_blocking_rule_delete",
 		// The last six API areas (KLA-485).
 		"insights_event_histogram", "insights_reports_list", "insights_report_request",
 		"siem_events", "siem_connection_test", "email_subscriptions_list", "email_subscription_set",
@@ -617,8 +624,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 470 {
-		t.Errorf("expected 470 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 482 {
+		t.Errorf("expected 482 tools, got %d", len(result.Tools))
 	}
 }
 

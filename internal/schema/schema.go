@@ -1296,7 +1296,8 @@ func BuildCommandManifest() CommandManifest {
 					{Name: "name", Type: "string", Description: "Catalog connector key, e.g. bookmark (create, required; cannot be changed)"},
 					{Name: "display-label", Type: "string", Description: "Title shown in the User Portal (create/update)"},
 					{Name: "sso-url", Type: "string", Description: "URL the app opens, for bookmark apps (create)"},
-					{Name: "config", Type: "string", Description: "Extra fields as JSON; a config object is merged key by key (create/update)"},
+					{Name: "config", Type: "string", Description: "SSO configuration as a JSON object; merged key by key into the existing config on update (create/update)"},
+					{Name: "fields", Type: "string", Description: "Other top-level app fields as a JSON object (create/update)"},
 					{Name: "ai-ready", Type: "bool", Description: "Mark the app AI Ready (update; needs an AI Gateway server on the app) or filter by it (list: true|false)"},
 				},
 			},
@@ -1642,26 +1643,46 @@ func BuildCommandManifest() CommandManifest {
 			},
 			{
 				Path:        "jc privileged-access",
-				Description: "Read Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions",
-				Long: "Read-only view of JumpCloud Privileged Access: the privileged servers, " +
-					"databases and websites people connect to through a connector, the privileged " +
-					"credentials linked to them, the blocking rules that stop risky commands and " +
-					"queries, connectors, the session log and live connection status. No command " +
-					"reads a secret: credential secrets, MFA codes, rotation scripts, the backup key, " +
-					"connector install files and session recordings are not available, and a " +
-					"database connection string is shown as [redacted]. Servers, databases, websites " +
-					"and rules are addressed by id or exact name. get reads the API's edit view, " +
-					"because its plain detail read refuses a caller who holds the permission it asks for.",
+				Description: "Manage Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions",
+				Long: "JumpCloud Privileged Access: the privileged servers, databases and websites " +
+					"people connect to through a connector, the privileged credentials linked to them, " +
+					"the blocking rules that stop risky commands and queries, connectors, the session " +
+					"log and live connection status. Servers, databases and websites can be created, " +
+					"updated, archived, cloned and deleted; credentials archived, cloned and deleted; " +
+					"blocking rules updated and deleted. The API replaces the whole record on every " +
+					"update and a record sent without an access policy granting Manage is locked out " +
+					"for good, so updates change only the named fields, send the policy back as read, " +
+					"refuse if it grants Manage to nobody, and read the record back. An archived server " +
+					"cannot be deleted; unarchive it first. No command reads a secret or creates or " +
+					"edits a credential, and a database connection string is shown as [redacted]. " +
+					"Servers, databases, websites and rules are addressed by id or exact name.",
 				Subcommands: []string{"status", "dashboard", "users list", "tags list", "groups list",
-					"servers list", "servers get", "databases list", "databases get", "websites list",
-					"websites get", "credentials list", "credentials get", "credentials managers",
-					"credentials history", "credentials linked-servers", "blocking-rules list",
-					"blocking-rules get", "connectors list", "connectors versions", "connections list",
+					"servers list", "servers get", "servers create", "servers update", "servers delete",
+					"servers archive", "servers unarchive", "servers clone",
+					"databases list", "databases get", "databases create", "databases update",
+					"databases delete", "databases archive", "databases unarchive", "databases clone",
+					"websites list", "websites get", "websites create", "websites update",
+					"websites delete", "websites archive", "websites unarchive", "websites clone",
+					"credentials list", "credentials get", "credentials managers",
+					"credentials history", "credentials linked-servers", "credentials delete",
+					"credentials archive", "credentials unarchive", "credentials clone",
+					"blocking-rules list", "blocking-rules get", "blocking-rules update",
+					"blocking-rules delete", "connectors list", "connectors versions", "connections list",
 					"connections status", "resource-managers list"},
 				Flags: []FlagEntry{
 					{Name: "product", Type: "string", Description: "PAM or PWM (groups list)"},
 					{Name: "token", Type: "string", Description: "Continuation token for the next page (credentials history, linked-servers)"},
 					{Name: "show-personal", Type: "bool", Description: "Include card and identity-document fields (credentials list)"},
+					{Name: "uri", Type: "string", Description: "Host, address or URL (create, update)"},
+					{Name: "name", Type: "string", Description: "New name (update)"},
+					{Name: "notes", Type: "string", Description: "Notes (create, update)"},
+					{Name: "tags", Type: "string", Description: "Tags (create, update)"},
+					{Name: "os", Type: "string", Description: "linux or windows (servers create, update)"},
+					{Name: "protocol", Type: "string", Description: "ssh, rdp, ... (servers create)"},
+					{Name: "port", Type: "int", Description: "Port (servers create; databases create, update)"},
+					{Name: "provider", Type: "string", Description: "Database engine (databases create)"},
+					{Name: "database-name", Type: "string", Description: "Database name (databases create, update)"},
+					{Name: "priority", Type: "int", Description: "Rule priority (blocking-rules update)"},
 				},
 			},
 			{

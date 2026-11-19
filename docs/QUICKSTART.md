@@ -105,7 +105,7 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc reports` | Report templates, custom/builder/scheduled reports, export |
 | `jc workflows` | Server-side JumpCloud Workflows: validate, explain, create, trigger |
 | `jc password-vault` | Password Vault (replaces Password Manager) |
-| `jc privileged-access` | Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions (read-only) |
+| `jc privileged-access` | Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions; resource lifecycle writes, never secrets |
 | `jc org features list/get` | Org feature settings, e.g. whether the AI Gateway is on (read-only) |
 | `jc api get/post/put/patch/delete <path>` | One raw API request |
 | `jc apple-mdm payloads list/show/template/create-policy` | Apple MDM: browse Apple's schema catalog, emit .mobileconfig, create JC custom policies |

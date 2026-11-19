@@ -4,7 +4,8 @@
 // commands or queries, and the connectors and connections themselves. The CLI
 // and the MCP tools share it so the two cannot drift.
 //
-// READ-ONLY. Writes exist in the API and were probed, but are not exposed.
+// Reads are in this file; the writes, and the lockout that shapes every one
+// of them, are in writes.go.
 //
 // Same backend as Password Vault (internal/passwordvault): the users are the
 // same, and so are the defects. Everything below was established by probing
@@ -212,7 +213,11 @@ func ListPaged(ctx context.Context, c Getter, endpoint, what string) ([]json.Raw
 		v := url.Values{}
 		v.Set("maxResultCount", strconv.Itoa(PageSize))
 		v.Set("skipCount", strconv.Itoa(page*PageSize))
-		raw, err := c.Get(ctx, endpoint+"?"+v.Encode())
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		raw, err := c.Get(ctx, endpoint+sep+v.Encode())
 		if err != nil {
 			return nil, 0, err
 		}
