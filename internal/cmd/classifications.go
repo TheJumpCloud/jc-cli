@@ -15,7 +15,8 @@ var commandClass = map[string]string{
 	// access-requests — admin-approval workflow for sensitive grants.
 	"jc access-requests create": ClassMutating,
 	"jc access-requests get":    ClassReadOnly,
-	"jc access-requests list":   ClassReadOnly,
+	"jc access-requests list":   ClassReadOnly, // hidden; explains that the API has no list
+	"jc access-requests find":   ClassReadOnly,
 	"jc access-requests revoke": ClassDestructive,
 	"jc access-requests update": ClassMutating,
 
