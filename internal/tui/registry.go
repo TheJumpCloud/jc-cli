@@ -77,13 +77,13 @@ type ResourceEntry struct {
 	SearchEndpoint  string                                    // POST search endpoint (e.g. "/search/systemusers"), empty if not supported
 	SearchFields    []string                                  // Fields to search across (e.g. ["username","email","firstname","lastname"])
 	Schema          schema.ResourceSchema                     // Full schema metadata
-	Placeholder     bool                                      // True for "Coming soon" items
 	SubMenu         []ResourceEntry                           // Non-nil for sub-menu groupings (e.g. Cloud Directories)
 	FlattenFunc     func([]json.RawMessage) []json.RawMessage // Optional post-fetch flattening (e.g. assets)
 	ResponseKey     string                                    // V2 wrapped response key (e.g. "identityProviders")
 	MutateBodyFunc  func(body map[string]any) map[string]any  // Optional body transform before create/update (e.g. wrap in {"fields": ...})
 	DetailViaList   bool                                      // True when the API has no GET {endpoint}/{id} — detail = list + match (e.g. /applemdms)
 	ListFunc        ListFunc                                  // Lists through the area's own package (see custom_areas.go); read-only, detail from the list
+	Authoring       bool                                      // Its screens write beyond the schema verbs (e.g. new workflow from a template), so never "(read-only)"
 }
 
 // graphSourceTypes maps TUI resource keys to V2 graph source type identifiers.
@@ -438,10 +438,18 @@ var SystemInsightsTables = []string{
 	"windows_security_center", "windows_security_products",
 }
 
-// placeholderEntries defines "Coming soon" items shown grayed out in the menu.
-var placeholderEntries = []ResourceEntry{
-	{Key: "vault", DisplayName: "Vault", Category: CategoryAccess, Placeholder: true},
-	{Key: "device-trust", DisplayName: "Device Trust", Category: CategorySecurity, Placeholder: true},
+// There are no "Coming soon" placeholders. "Vault" graduated to Password
+// Vault (and Password Manager) under Access; "Device Trust" was removed: it
+// opened nothing, and the API has no public Device Trust surface (KLA-482
+// recon). An entry that opens nothing reads as a broken TUI, so anything
+// unfinished should be a real screen saying what is missing instead.
+
+// authoringEntries open screens that write beyond their schema verbs, so the
+// home screen never calls them read-only.
+var authoringEntries = map[string]bool{
+	// Schema verbs are list/get, but the list binds n to a new blank
+	// workflow and the detail offers a new workflow from the template.
+	"workflow-templates": true,
 }
 
 // cloudDirResources lists schema resource names that are folded into the
@@ -596,6 +604,7 @@ func BuildRegistry() []ResourceEntry {
 			SearchFields:    searchFields[name],
 			ResponseKey:     responseKeys[name],
 			Schema:          s,
+			Authoring:       authoringEntries[name],
 		}
 
 		// Admin records carry _id while the admins schema (and the CLI's
@@ -788,7 +797,6 @@ func BuildRegistry() []ResourceEntry {
 	entries = append(entries, customAreaEntries()...)
 
 	// Add placeholder entries.
-	entries = append(entries, placeholderEntries...)
 
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Category != entries[j].Category {
@@ -951,4 +959,28 @@ func aliasUnderscoreID(rows []json.RawMessage) []json.RawMessage {
 		}
 	}
 	return out
+}
+
+// ReadOnlyInTUI reports whether the TUI's screens for this entry only read:
+// it labels the home screen's "(read-only)". It describes the TUI, not the
+// CLI (jc:class covers the CLI): Identity Risk, say, has CLI writes but a
+// read-only screen. The generic screens write only through the create,
+// update and delete verbs (n, E, d) and the associations tab; authoring
+// entries write through screens of their own.
+func (e ResourceEntry) ReadOnlyInTUI() bool {
+	if e.Authoring {
+		return false
+	}
+	if e.ListFunc != nil {
+		return true // custom areas list and show, nothing else
+	}
+	if e.GraphSourceType != "" {
+		return false
+	}
+	for _, v := range e.Schema.Verbs {
+		if v == "create" || v == "update" || v == "delete" {
+			return false
+		}
+	}
+	return true
 }

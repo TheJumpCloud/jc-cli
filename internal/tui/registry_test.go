@@ -81,8 +81,7 @@ func TestBuildRegistry_Count(t *testing.T) {
 	// "mfa-overview" a security entry (+1, KLA-482), and
 	// "reports" an insights sub-menu entry (+1, KLA-485), and
 	// "device-settings" a device-mgmt entry (+1, KLA-485),
-	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 	if len(entries) != want {
 		t.Errorf("registry has %d entries, want %d", len(entries), want)
 	}
@@ -139,8 +138,7 @@ func TestRegistryByKey(t *testing.T) {
 	// "mfa-overview" a security entry (+1, KLA-482), and
 	// "reports" an insights sub-menu entry (+1, KLA-485), and
 	// "device-settings" a device-mgmt entry (+1, KLA-485),
-	// plus len(placeholderEntries) placeholders.
-	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + len(placeholderEntries)
+	want := len(schema.Resources) - len(skipInTUI) - len(cloudDirResources) + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 	if len(m) != want {
 		t.Errorf("RegistryByKey has %d entries, want %d", len(m), want)
 	}
@@ -372,17 +370,6 @@ func TestMemberOfTarget(t *testing.T) {
 	}
 }
 
-func TestResourceEntry_PlaceholderField(t *testing.T) {
-	e := ResourceEntry{
-		Key:         "test",
-		DisplayName: "Test",
-		Placeholder: true,
-	}
-	if !e.Placeholder {
-		t.Error("Placeholder field should be true")
-	}
-}
-
 func TestResourceEntry_SubMenuField(t *testing.T) {
 	e := ResourceEntry{
 		Key:         "cloud-dirs",
@@ -408,31 +395,6 @@ func TestAdminsEndpointOverride(t *testing.T) {
 	}
 	if e.ClientType != ClientV1 {
 		t.Errorf("admins client type = %d, want ClientV1", e.ClientType)
-	}
-}
-
-func TestBuildRegistry_PlaceholderEntries(t *testing.T) {
-	entries := BuildRegistry()
-	placeholders := make(map[string]bool)
-	for _, e := range entries {
-		if e.Placeholder {
-			placeholders[e.Key] = true
-		}
-	}
-
-	// hr-directories graduated to the real "directories" entry
-	// (KLA-479); the rest await public API surface (or their own
-	// tickets: KLA-480/481/482).
-	// Only Vault and Device Trust remain — no public API for either
-	// (KLA-482 recon); everything else graduated to real screens.
-	want := []string{
-		"vault",
-		"device-trust",
-	}
-	for _, k := range want {
-		if !placeholders[k] {
-			t.Errorf("missing placeholder %q", k)
-		}
 	}
 }
 

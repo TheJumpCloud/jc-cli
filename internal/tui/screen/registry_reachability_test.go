@@ -21,7 +21,7 @@ func TestEveryHomeEntryHasAReadPath(t *testing.T) {
 				walk(e.SubMenu)
 				continue
 			}
-			if e.Placeholder || e.ListEndpoint != "" || e.ListFunc != nil {
+			if e.ListEndpoint != "" || e.ListFunc != nil {
 				continue
 			}
 			cmd := h.openEntry(e)
