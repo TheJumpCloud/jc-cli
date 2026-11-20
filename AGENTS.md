@@ -20,7 +20,7 @@ for the frontmatter convention and authoring guidance.
 
 ## What this tool does
 
-`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 53 command groups. Single Go binary, no dependencies.
+`jc` is a CLI for managing JumpCloud organizations. It covers the full JumpCloud API surface (V1, V2, Directory Insights, Graph) with 56 command groups. Single Go binary, no dependencies.
 
 ## Regions
 
@@ -40,6 +40,12 @@ console, so a partial fix silently queries the wrong region's audit log.
 
 Individual hosts override the region: `JC_API_BASE_URL`, `JC_API_V2_BASE_URL`,
 `JC_INSIGHTS_BASE_URL`, `JC_OAUTH_TOKEN_URL`.
+
+The SIEM data-export API (`jc siem`) has no override of its own: it is
+derived from the insights host (`…/insights/directory/v1` becomes
+`…/data-export/v2`), so `JC_INSIGHTS_BASE_URL` moves it too, and an override
+that does not end in `/insights/directory/v1` makes `jc siem` refuse to run.
+`jc doctor` shows it as "Data export".
 
 ## Authentication
 
@@ -63,7 +69,7 @@ Use `--org <profile>` to override the active profile per command.
 | admins | `jc admins list` | `jc admins get` | `jc admins create` | — | `jc admins delete` |
 | commands | `jc commands list` | `jc commands get` | `jc commands create` | `jc commands update` | `jc commands delete` |
 
-Other resources: `access-cert` (read-only Access Certification), `access-requests`, `ad`, `agents`, `agent-groups`, `ai-gateway` (preview, read-only), `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `privileged-access` (alias `pam`; resource create/update/archive/clone/delete, credential archive/clone/delete, rule update/delete; never secrets; updates are full-replace, so jc resends the read access policy and refuses one without Manage), `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
+Other resources: `access-cert` (read-only Access Certification), `access-requests`, `ad`, `agents`, `agent-groups`, `ai-gateway` (preview, read-only), `alerts` (incl. health `rules`), `app-templates`, `apple-mdm`, `windows-mdm`, `assets`, `auth-policies`, `bundle`, `custom-emails`, `directories` (unified integration list + OAuth health), `duo`, `email-subscriptions`, `gcep` (read-only), `google-emm`, `graph`, `gsuite`, `identity-providers`, `identity-risk`, `insights`, `iplists`, `ldap`, `notification-channels`, `office365`, `org` (incl. read-only `features`), `password-manager`, `password-policies`, `password-vault`, `privileged-access` (alias `pam`; resource create/update/archive/clone/delete, credential archive/clone/delete, rule update/delete; never secrets; updates are full-replace, so jc resends the read access policy and refuses one without Manage), `policy-groups`, `policy-templates`, `radius`, `reports`, `roles`, `saas-management`, `saved-views`, `search`, `service-accounts`, `siem`, `software`, `system-insights`, `user-states`, `workday`, `workflows`.
 
 An app's `name` is its catalog connector key (`bookmark`, `slack`, ...), not a
 title: create rejects anything else and it cannot change afterwards; the title is

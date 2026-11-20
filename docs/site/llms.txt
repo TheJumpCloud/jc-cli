@@ -42,6 +42,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 ### Insights
 
 - `jc insights` — Query Directory Insights audit events
+- `jc siem` — Pull events from the SIEM export API (the feed a SIEM polls)
 - `jc identity-risk` — Inspect and resolve identity risk detections
 - `jc alerts` — List, inspect, annotate and resolve JumpCloud alerts
 - `jc reports` — Browse and export JumpCloud reports
@@ -67,6 +68,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 ### Org & Lifecycle
 
+- `jc email-subscriptions` — Your own admin notification email preferences
 - `jc access-requests` — Manage JumpCloud temporary elevated device privilege requests
 - `jc org` — View and update JumpCloud organization information
 - `jc user-states` — Manage scheduled user state transitions
@@ -76,6 +78,7 @@ The jc CLI is a Go-based command-line tool for JumpCloud — managing users, dev
 
 ### AI & Automation
 
+- `jc gcep` — Google Chrome Enterprise Premium device trust integration, read-only
 - `jc password-vault` — Manage JumpCloud Password Vault
 - `jc workflows` — Author, validate, run and diagnose JumpCloud Workflows
 - `jc privileged-access` — Manage Privileged Access (PAM): servers, databases, websites, credentials, rules, sessions

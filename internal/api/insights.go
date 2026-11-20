@@ -442,3 +442,58 @@ func ParseTimeRange(input string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("invalid time format %q; expected: 24h, 7d, 30d, 2006-01-02, or RFC 3339", input)
 }
+
+// IntervalBody builds a Directory Insights /events/interval request. service
+// is comma-separated; interval is a number and m, h, d or w; an empty end
+// means now. Shared by the CLI and the MCP tools.
+func IntervalBody(service, startTime, endTime, interval, timezone string) (map[string]any, error) {
+	if err := ValidateService(service); err != nil {
+		return nil, err
+	}
+	if startTime == "" {
+		return nil, fmt.Errorf("a start time is required")
+	}
+	if endTime == "" {
+		endTime = time.Now().UTC().Format(time.RFC3339)
+	}
+	interval = strings.TrimSpace(interval)
+	if len(interval) < 2 || !strings.ContainsAny(interval[len(interval)-1:], "mhdw") {
+		return nil, fmt.Errorf("the interval must be a number and a unit (m, h, d or w), e.g. 1d")
+	}
+	n, err := strconv.Atoi(interval[:len(interval)-1])
+	if err != nil || n < 1 {
+		return nil, fmt.Errorf("the interval must start with a positive whole number, e.g. 1d")
+	}
+	body := map[string]any{
+		"service": serviceToArray(service), "start_time": startTime, "end_time": endTime,
+		"interval_unit": interval[len(interval)-1:], "interval_value": strconv.Itoa(n),
+	}
+	if timezone != "" {
+		body["timezone"] = timezone
+	}
+	return body, nil
+}
+
+// IntervalEvents counts events per time bucket (POST /events/interval) and
+// returns the buckets, each {key, key_as_string, doc_count}.
+func (c *InsightsClient) IntervalEvents(ctx context.Context, body map[string]any) ([]json.RawMessage, error) {
+	raw, err := c.Raw(ctx, http.MethodPost, c.BaseURL, "/events/interval", body)
+	if err != nil {
+		return nil, err
+	}
+	return ParseIntervalBuckets(raw)
+}
+
+// ParseIntervalBuckets reads the {buckets: [...]} interval response strictly.
+func ParseIntervalBuckets(raw []byte) ([]json.RawMessage, error) {
+	var env struct {
+		Buckets *[]json.RawMessage `json:"buckets"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("the interval response is not an object: %w", err)
+	}
+	if env.Buckets == nil {
+		return nil, fmt.Errorf("the interval response has no buckets")
+	}
+	return *env.Buckets, nil
+}
