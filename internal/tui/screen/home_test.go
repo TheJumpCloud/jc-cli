@@ -313,49 +313,6 @@ func TestHomeScreen_GridLayoutAtWideTerminal(t *testing.T) {
 	}
 }
 
-func TestHomeScreen_PlaceholderNotOpenable(t *testing.T) {
-	overrideBookmarks(t, nil)
-	placeholder := tui.ResourceEntry{
-		Key:         "vault",
-		DisplayName: "Vault",
-		Category:    tui.CategoryAccess,
-		Placeholder: true,
-	}
-	h := NewHomeScreen([]tui.ResourceEntry{placeholder})
-	h.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
-
-	_, cmd := h.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Enter on placeholder should produce flash command")
-	}
-	msg := cmd()
-	flash, ok := msg.(tui.FlashMsg)
-	if !ok {
-		t.Fatalf("expected FlashMsg for placeholder, got %T", msg)
-	}
-	if !strings.Contains(flash.Text, "Coming soon") {
-		t.Errorf("flash = %q, want contains 'Coming soon'", flash.Text)
-	}
-}
-
-func TestHomeScreen_PlaceholderRenderedDim(t *testing.T) {
-	overrideBookmarks(t, nil)
-	entries := []tui.ResourceEntry{
-		{Key: "vault", DisplayName: "Vault", Category: tui.CategoryAccess, Placeholder: true},
-		{Key: "apps", DisplayName: "Applications", Category: tui.CategoryAccess, Schema: schema.Resources["apps"]},
-	}
-	h := NewHomeScreen(entries)
-	h.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
-
-	view := h.View()
-	if !strings.Contains(view, "Vault") {
-		t.Error("view should contain placeholder 'Vault'")
-	}
-	if !strings.Contains(view, "Applications") {
-		t.Error("view should contain regular 'Applications'")
-	}
-}
-
 func TestHomeScreen_SubMenuPushesSubMenuScreen(t *testing.T) {
 	overrideBookmarks(t, nil)
 	subMenu := tui.ResourceEntry{

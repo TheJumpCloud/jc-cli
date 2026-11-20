@@ -175,7 +175,12 @@ func (a *App) View() string {
 }
 
 func (a *App) helpText() string {
-	base := "esc:back  /:filter  s:sort  c:copy id  e:export  a:all fields  r:refresh  ?:help"
+	base := "esc:back  ?:help"
+	if sk, ok := a.nav.Current().(StandardKeysProvider); ok {
+		if keys := sk.StandardKeys(); keys != "" {
+			base = "esc:back  " + keys + "  ?:help"
+		}
+	}
 	if a.nav.Depth() <= 1 {
 		base = "q:quit  d:dashboard  b:bookmark  /:filter  enter:open  ?:help"
 	}

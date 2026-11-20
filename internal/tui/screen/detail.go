@@ -623,6 +623,9 @@ func (d *DetailScreen) fetchAssoc() tea.Cmd {
 // HelpKeys advertises this detail screen's own keys in the status bar.
 func (d *DetailScreen) HelpKeys() string {
 	var keys []string
+	if len(d.assocTargets) > 0 {
+		keys = append(keys, "tab:associations")
+	}
 	if d.data != nil {
 		switch d.entry.Key {
 		case "workflow-templates":
@@ -796,4 +799,10 @@ func adTranslationRulesEntry(adID, domain string) tui.ResourceEntry {
 			NameField:     "source",
 		},
 	}
+}
+
+// StandardKeys lists the standard keys this screen handles (see
+// tui.StandardKeysProvider).
+func (d *DetailScreen) StandardKeys() string {
+	return "c:copy id  e:export  a:all fields  r:refresh"
 }

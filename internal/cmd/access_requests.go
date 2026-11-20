@@ -7,8 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/filter"
+	"github.com/klaassen-consulting/jc/internal/accessreq"
 	"github.com/klaassen-consulting/jc/internal/output"
 	"github.com/klaassen-consulting/jc/internal/plan"
 )
@@ -20,10 +19,12 @@ func newAccessRequestsCmd() *cobra.Command {
 		Use:     "access-requests",
 		Aliases: []string{"ar"},
 		Short:   "Manage JumpCloud access requests",
-		Long:    "List, get, create, update, and revoke JumpCloud temporary elevated device privilege requests.",
+		Long: "Find, get, create, update, and revoke JumpCloud temporary elevated device privilege requests.\n\n" +
+			"There is no list: the API offers only get-by-id and a lookup by user, device and state (find).",
 	}
 
 	cmd.AddCommand(newAccessRequestsListCmd())
+	cmd.AddCommand(newAccessRequestsFindCmd())
 	cmd.AddCommand(newAccessRequestsGetCmd())
 	cmd.AddCommand(newAccessRequestsCreateCmd())
 	cmd.AddCommand(newAccessRequestsUpdateCmd())
@@ -32,68 +33,97 @@ func newAccessRequestsCmd() *cobra.Command {
 	return cmd
 }
 
+// newAccessRequestsListCmd is kept, hidden, so that scripts calling the old
+// `list` get the reason and the replacement rather than "unknown command".
+// It never worked: the API has no list (see internal/accessreq).
 func newAccessRequestsListCmd() *cobra.Command {
-	var (
-		limitFlag  int
-		sortFlag   string
-		filterFlag []string
-	)
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List all access requests",
-		Long: `List all JumpCloud access requests.
-
-Default fields: accessId, requestorId, resourceId, accessState, expiry.
-Use --output table for a readable ASCII table.
-
-Filter examples:
-  --filter 'accessState:eq:granted'     Granted requests only`,
+		Short:   "Removed: the API has no list; use find",
+		Hidden:  true,
+		// The old list took --limit, --sort and --filter. Without this cobra
+		// rejects them as unknown flags before RunE, and a script calling
+		// `list --filter ...` would never see the explanation.
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAccessRequestsList(cmd, limitFlag, sortFlag, filterFlag)
+			return fmt.Errorf("%s", accessreq.NoList)
 		},
 	}
-
-	cmd.Flags().IntVar(&limitFlag, "limit", 0, "Maximum number of results to return (0 = all)")
-	cmd.Flags().StringVar(&sortFlag, "sort", "", "Sort field (prefix with - for descending)")
-	cmd.Flags().StringArrayVar(&filterFlag, "filter", nil, "Filter results (e.g. 'accessState:eq:granted')")
-
-	return cmd
 }
 
-func runAccessRequestsList(cmd *cobra.Command, limit int, sort string, filters []string) error {
-	exprs, err := filter.ParseAll(filters)
-	if err != nil {
-		return err
+func newAccessRequestsFindCmd() *cobra.Command {
+	var user, device, state string
+	cmd := &cobra.Command{
+		Use:   "find",
+		Short: "Find a user's access requests for one device in one state",
+		Long: `Find the access requests one user has for one device in one state.
+
+JumpCloud has no way to list access requests. Besides get-by-id, this lookup is
+the only read: it needs all three of --user, --device and --state.
+
+UNVERIFIED STATE VALUES. The API checks none of the three inputs: a state it
+does not use, like an id that matches nothing, answers with an empty result
+rather than an error. jc resolves the user and the device and fetches each by
+id first, so a wrong or swapped id fails instead of finding nothing, but which state values the API uses has not yet been confirmed against a
+live request. Candidates: ` + strings.Join(accessreq.CandidateStates, ", ") + `.
+
+Default fields: accessId, requestorId, resourceId, accessState, expiry.`,
+		Example: `  jc access-requests find --user jdoe --device JDOE-MBP --state granted -t`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			v1client, err := newV1Client()
+			if err != nil {
+				return err
+			}
+			userID, err := resolveUser(cmd.Context(), v1client, user)
+			if err != nil {
+				return err
+			}
+			deviceID, err := resolveDevice(cmd.Context(), v1client, device)
+			if err != nil {
+				return err
+			}
+			if err := accessreq.Confirm(cmd.Context(), v1client, userID, deviceID); err != nil {
+				return err
+			}
+			path, err := accessreq.FindPath(userID, deviceID, state)
+			if err != nil {
+				return err
+			}
+			client, err := newV2Client()
+			if err != nil {
+				return err
+			}
+			raw, err := client.Get(cmd.Context(), path)
+			if err != nil {
+				return err
+			}
+			rows, err := accessreq.ParseFind(raw)
+			if err != nil {
+				return err
+			}
+			opts := output.CurrentOptions()
+			opts.DefaultFields = accessRequestDefaultFields
+			if err := output.WriteList(cmd.OutOrStdout(), rows, opts); err != nil {
+				return err
+			}
+			if !opts.Quiet && !opts.IDsOnly {
+				writeCountFooter(cmd, len(rows))
+				if len(rows) == 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "note: %s\n", accessreq.Unverified)
+				}
+			}
+			return nil
+		},
 	}
-
-	client, err := newV2Client()
-	if err != nil {
-		return err
-	}
-
-	result, err := client.ListAll(cmd.Context(), "/accessrequests", api.V2ListOptions{
-		Limit:  limit,
-		Sort:   sort,
-		Filter: filter.ToV2Queries(exprs),
-	})
-	if err != nil {
-		return err
-	}
-
-	opts := output.CurrentOptions()
-	opts.DefaultFields = accessRequestDefaultFields
-
-	if err := output.WriteList(cmd.OutOrStdout(), result.Data, opts); err != nil {
-		return err
-	}
-
-	if !opts.Quiet && !opts.IDsOnly {
-		writeCountFooter(cmd, len(result.Data))
-	}
-
-	return nil
+	cmd.Flags().StringVar(&user, "user", "", "User name or ID (required)")
+	cmd.Flags().StringVar(&device, "device", "", "Device hostname or ID (required)")
+	cmd.Flags().StringVar(&state, "state", "", "Request state (required; values unverified: "+strings.Join(accessreq.CandidateStates, ", ")+")")
+	_ = cmd.MarkFlagRequired("user")
+	_ = cmd.MarkFlagRequired("device")
+	_ = cmd.MarkFlagRequired("state")
+	return cmd
 }
 
 func newAccessRequestsGetCmd() *cobra.Command {

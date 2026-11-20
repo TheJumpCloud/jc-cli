@@ -425,3 +425,7 @@ func (s *RecipeListScreen) renderRow(r *recipe.Recipe, selected bool) string {
 	}
 	return head + desc
 }
+
+// StandardKeys and HelpKeys put the recipe list's keys in the footer.
+func (*RecipeListScreen) StandardKeys() string { return "/:filter  r:reload" }
+func (*RecipeListScreen) HelpKeys() string     { return "n:new  e:edit" }
