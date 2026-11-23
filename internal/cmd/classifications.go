@@ -183,11 +183,13 @@ var commandClass = map[string]string{
 	"jc upgrade": ClassInternal,
 
 	// admins — JumpCloud admin user mgmt.
-	"jc admins create": ClassMutating,
-	"jc admins delete": ClassDestructive,
-	"jc admins get":    ClassReadOnly,
-	"jc admins list":   ClassReadOnly,
-	"jc admins update": ClassMutating,
+	"jc admins create":                   ClassMutating,
+	"jc admins delete":                   ClassDestructive,
+	"jc admins email-subscriptions list": ClassReadOnly,
+	"jc admins email-subscriptions set":  ClassMutating,
+	"jc admins get":                      ClassReadOnly,
+	"jc admins list":                     ClassReadOnly,
+	"jc admins update":                   ClassMutating,
 
 	// alerts — Monitoring & Alerting triage (V2).
 	"jc alerts list":        ClassReadOnly,

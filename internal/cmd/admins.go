@@ -38,6 +38,7 @@ func newAdminsCmd() *cobra.Command {
 	cmd.AddCommand(newAdminsCreateCmd())
 	cmd.AddCommand(newAdminsUpdateCmd())
 	cmd.AddCommand(newAdminsDeleteCmd())
+	cmd.AddCommand(newAdminsEmailSubscriptionsCmd())
 
 	return cmd
 }
