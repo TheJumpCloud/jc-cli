@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 )
 
 func TestBuildMDMFormField_MapsApplleTypesToKinds(t *testing.T) {

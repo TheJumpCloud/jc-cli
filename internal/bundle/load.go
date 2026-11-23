@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 )
 
 // Origin values the loader stamps onto Source.Origin when the author

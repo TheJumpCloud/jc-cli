@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 )
 
 // defaultWindowBudget is used when the terminal height is unknown

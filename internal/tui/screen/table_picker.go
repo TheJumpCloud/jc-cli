@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // TablePickerScreen lets the user select a System Insights osquery table.

@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/agents"
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/agents"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
 )
 
 // newAgentsCmd builds the `jc agents` group — JumpCloud's AI Agent

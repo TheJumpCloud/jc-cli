@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/passwordvault"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/passwordvault"
 )
 
 // newPasswordVaultCmd builds the `jc password-vault` group.

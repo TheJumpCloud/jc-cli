@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/command"
-	"github.com/klaassen-consulting/jc/internal/filter"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/command"
+	"github.com/TheJumpCloud/jc-cli/internal/filter"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 // commandDefaultFields is the default field subset shown for command list/table output.

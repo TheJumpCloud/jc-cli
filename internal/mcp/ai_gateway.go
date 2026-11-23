@@ -7,8 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/aigateway"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/aigateway"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 type aiGatewayServersListInput struct {

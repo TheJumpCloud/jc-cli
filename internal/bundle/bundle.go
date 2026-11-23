@@ -24,8 +24,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // Policy unit types. Each maps onto one JumpCloud custom-policy

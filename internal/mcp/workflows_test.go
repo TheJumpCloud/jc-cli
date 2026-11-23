@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/workflow"
+	"github.com/TheJumpCloud/jc-cli/internal/workflow"
 )
 
 const wfProbeDSLJSON = `{

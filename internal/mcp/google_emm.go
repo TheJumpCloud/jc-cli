@@ -7,8 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/googleemm"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/googleemm"
 )
 
 // Google EMM (Android Enterprise) tools. READS ONLY: six of this area's

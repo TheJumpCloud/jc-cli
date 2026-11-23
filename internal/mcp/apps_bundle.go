@@ -7,9 +7,9 @@ import (
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
-	"github.com/klaassen-consulting/jc/internal/bundle"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/bundle"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 // Security baseline bundle tools (KLA-472): the MCP face of `jc

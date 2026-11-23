@@ -7,8 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
-	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 )
 
 // Automated Device Enrollment, Apple Business Manager and Account-Driven User

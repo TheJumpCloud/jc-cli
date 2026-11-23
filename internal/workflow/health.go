@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
 )
 
 // Health reporting for jc_events workflows.

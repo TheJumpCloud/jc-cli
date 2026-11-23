@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 )
 
 // TestApp_PasswordPolicy_SpaceTogglesThroughFullStack drives a REAL

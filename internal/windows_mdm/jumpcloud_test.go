@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 func TestBuildOMAURIPolicyBody_ShapeMatchesJumpCloud(t *testing.T) {

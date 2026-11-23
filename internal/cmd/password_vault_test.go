@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/pwm"
+	"github.com/TheJumpCloud/jc-cli/internal/pwm"
 )
 
 // TestMigrationHintNamesTheVaultCommand keeps the Password Manager migration

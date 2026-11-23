@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/keychain"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/keychain"
 )
 
 // ExitCodeAuthFailed is the exit code when authentication check fails.

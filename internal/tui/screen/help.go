@@ -3,10 +3,10 @@ package screen
 import (
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // helpBinding pairs a key label with a description.

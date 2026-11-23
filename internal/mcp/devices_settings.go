@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/devsettings"
+	"github.com/TheJumpCloud/jc-cli/internal/devsettings"
 )
 
 type devSettingsSignInSetInput struct {

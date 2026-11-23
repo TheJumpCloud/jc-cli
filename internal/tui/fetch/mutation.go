@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/appupdate"
+	"github.com/TheJumpCloud/jc-cli/internal/appupdate"
 )
 
 // MutationResultMsg is sent when a create/update/delete completes.

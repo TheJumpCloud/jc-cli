@@ -7,9 +7,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/transrule"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/transrule"
 )
 
 type adTransRuleListInput struct {

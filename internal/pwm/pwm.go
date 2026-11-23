@@ -218,7 +218,7 @@ func ParseGroups(raw json.RawMessage) ([]Group, error) {
 // FindUserByExternalID matches a Password Manager user to a JumpCloud user id.
 //
 // This is the bridge, and it is the only one: PWM records carry no username the
-// directory recognises as a key, so resolving "the user called juergen" means
+// directory recognises as a key, so resolving "the user called jdoe" means
 // resolving that name to a JumpCloud id first and matching it here.
 func FindUserByExternalID(users []User, jcUserID string) (User, bool) {
 	for _, u := range users {

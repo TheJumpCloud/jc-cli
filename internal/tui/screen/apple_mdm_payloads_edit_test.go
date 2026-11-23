@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 )
 
 func TestNewAppleMDMPayloadsFormScreenForEdit_PrePopulatesValues(t *testing.T) {

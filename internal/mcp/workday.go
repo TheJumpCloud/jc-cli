@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/workday"
+	"github.com/TheJumpCloud/jc-cli/internal/workday"
 )
 
 // Workday import tools. Two, not four — the workers listing and the import

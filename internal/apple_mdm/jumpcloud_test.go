@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 func TestBuildCustomMDMPolicyBody_ShapeMatchesJumpCloud(t *testing.T) {

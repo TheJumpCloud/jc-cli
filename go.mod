@@ -1,4 +1,4 @@
-module github.com/klaassen-consulting/jc
+module github.com/TheJumpCloud/jc-cli
 
 go 1.27.4
 

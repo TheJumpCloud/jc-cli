@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/agents"
+	"github.com/TheJumpCloud/jc-cli/internal/agents"
 )
 
 // The lifecycle and membership write tools for AI Agent Identities. Twelve,

@@ -11,13 +11,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/aiready"
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/appupdate"
-	"github.com/klaassen-consulting/jc/internal/filter"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/plan"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/aiready"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/appupdate"
+	"github.com/TheJumpCloud/jc-cli/internal/filter"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 // appDefaultFields is the default field subset shown for apps list/table output.

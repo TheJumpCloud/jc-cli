@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // bookmarkLoader loads bookmark keys from config. Replaceable for testing.

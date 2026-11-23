@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // MemberOfPath builds the association endpoint for a user or a device.

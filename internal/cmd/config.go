@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/viper"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/keychain"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/keychain"
 )
 
 func newConfigCmd() *cobra.Command {

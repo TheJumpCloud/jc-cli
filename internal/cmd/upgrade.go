@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/plan"
-	"github.com/klaassen-consulting/jc/internal/selfupdate"
-	"github.com/klaassen-consulting/jc/internal/version"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/selfupdate"
+	"github.com/TheJumpCloud/jc-cli/internal/version"
 )
 
 // The update check and the upgrade command.

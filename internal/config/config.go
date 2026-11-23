@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/keychain"
+	"github.com/TheJumpCloud/jc-cli/internal/keychain"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 )

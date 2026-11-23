@@ -3,10 +3,10 @@ package component
 import (
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/filter"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/filter"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // FilterChangedMsg is emitted when filters change.

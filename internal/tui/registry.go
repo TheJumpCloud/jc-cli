@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/klaassen-consulting/jc/internal/report"
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/report"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // Category groups related resources for the home screen.

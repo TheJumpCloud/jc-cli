@@ -17,7 +17,7 @@ func TestIsID(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"608b8cf181c10b3303716501", // a JumpCloud user id
-		"juergen",                  // a username
+		"jdoe",                     // a username
 		"",
 		"82bfcbd8-2612-4a5a-be65", // truncated
 	} {
@@ -41,7 +41,7 @@ func TestErrNotPWMID_ExplainsTheMismatch(t *testing.T) {
 		t.Errorf("the message should say what to pass instead: %v", jc)
 	}
 
-	other := ErrNotPWMID("juergen")
+	other := ErrNotPWMID("jdoe")
 	if strings.Contains(other.Error(), "JumpCloud object id") {
 		t.Errorf("a username is not a JumpCloud id: %v", other)
 	}
@@ -51,8 +51,8 @@ const usersJSON = `{"totalCount":1,"results":[{
   "id":"82bfcbd8-2612-4a5a-be65-f048c3927843",
   "externalId":"608b8cf181c10b3303716501",
   "employeeUuid":"82bfcbd8-2612-4a5a-be65-f048c3927843",
-  "name":"Juergen Klaassen","username":"juergen",
-  "email":"juergen@klaassen.consulting","status":"Active",
+  "name":"Jane Doe","username":"jdoe",
+  "email":"jdoe@example.com","status":"Active",
   "itemsCount":3,"passwordsCount":3,"passwordsScore":72,"weakPasswords":1}]}`
 
 func TestParseUsers(t *testing.T) {
@@ -92,10 +92,10 @@ func TestFindUser_ByWhatSomeoneTypes(t *testing.T) {
 	users, _ := ParseUsers(json.RawMessage(usersJSON))
 	for _, id := range []string{
 		"82bfcbd8-2612-4a5a-be65-f048c3927843",
-		"juergen",
-		"JUERGEN",
-		"juergen@klaassen.consulting",
-		"Juergen Klaassen",
+		"jdoe",
+		"JDOE",
+		"jdoe@example.com",
+		"Jane Doe",
 	} {
 		if _, err := FindUser(users, id); err != nil {
 			t.Errorf("FindUser(%q): %v", id, err)
@@ -204,7 +204,7 @@ func TestParseUsers_ReportsUndecodableRecords(t *testing.T) {
 
 	// The shape the API actually returns.
 	good := `{"totalCount":1,"results":[{"id":"82bfcbd8-2612-4a5a-be65-f048c3927843",` +
-		`"username":"juergen","groups":[{"id":"g1","name":"PWM Users"}]}]}`
+		`"username":"jdoe","groups":[{"id":"g1","name":"PWM Users"}]}]}`
 	users, err := ParseUsers(json.RawMessage(good))
 	if err != nil {
 		t.Fatalf("the live shape must decode: %v", err)

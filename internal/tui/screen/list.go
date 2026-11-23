@@ -8,17 +8,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/filter"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/component"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/fetch"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/filter"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/component"
-	"github.com/klaassen-consulting/jc/internal/tui/fetch"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // clipboardWriteFunc is the function used to write to clipboard.

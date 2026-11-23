@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // Compliance-view tuning constants. The "list of offenders" panels are

@@ -11,10 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // WindowsMDMPoliciesListScreen lists existing JumpCloud Windows

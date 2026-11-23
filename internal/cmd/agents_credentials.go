@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/agents"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/agents"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 // The three credential writes. CLI-ONLY: there are no MCP tools for these,

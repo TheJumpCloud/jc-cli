@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/passwordvault"
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/passwordvault"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 // Password Vault writes.

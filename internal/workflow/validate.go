@@ -8,7 +8,7 @@ import (
 
 	"github.com/expr-lang/expr"
 
-	"github.com/klaassen-consulting/jc/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
 )
 
 // Severity separates what will fail from what is merely suspect.
