@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1969,5 +1970,148 @@ func TestInsightsHelp_RunUsage(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "saved") {
 		t.Errorf("run help should mention saved searches, got:\n%s", out)
+	}
+}
+
+// startInsightsIntervalServer answers POST /events/interval and records the
+// request count and last body.
+func startInsightsIntervalServer(t *testing.T, status int, resp string) (*httptest.Server, *int, *map[string]any) {
+	t.Helper()
+	var hits int
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != http.MethodPost || r.URL.Path != "/events/interval" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write([]byte(resp))
+	}))
+	t.Cleanup(ts.Close)
+	return ts, &hits, &body
+}
+
+func runIntervalCmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(append([]string{"insights", "interval"}, args...))
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+const intervalTwoBuckets = `{"buckets":[{"key":1700000000000,"key_as_string":"2023-11-14T22:13:20Z","doc_count":3},{"key":1700003600000,"key_as_string":"2023-11-14T23:13:20Z","doc_count":7}]}`
+
+func TestInsightsInterval_BodyAndJSON(t *testing.T) {
+	setupUsersTest(t)
+	ts, hits, body := startInsightsIntervalServer(t, 200, intervalTwoBuckets)
+	overrideInsightsClient(t, ts.URL)
+
+	out, err := runIntervalCmd(t, "--service", "sso", "--last", "24h", "--interval-unit", "h", "--timezone", "-0500")
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if *hits != 1 {
+		t.Fatalf("requests = %d, want 1", *hits)
+	}
+	if got := (*body)["interval_unit"]; got != "h" {
+		t.Errorf("interval_unit = %v", got)
+	}
+	if got := (*body)["interval_value"]; got != "1" {
+		t.Errorf("interval_value = %v, want string \"1\"", got)
+	}
+	if got := (*body)["timezone"]; got != "-0500" {
+		t.Errorf("timezone = %v", got)
+	}
+	if svc, _ := (*body)["service"].([]any); len(svc) != 1 || svc[0] != "sso" {
+		t.Errorf("service = %v", (*body)["service"])
+	}
+	if (*body)["start_time"] == nil {
+		t.Error("start_time missing")
+	}
+
+	var buckets []map[string]any
+	if err := json.Unmarshal([]byte(out), &buckets); err != nil {
+		t.Fatalf("JSON parse error: %v\n%s", err, out)
+	}
+	if len(buckets) != 2 {
+		t.Errorf("buckets = %d, want 2", len(buckets))
+	}
+}
+
+func TestInsightsInterval_Table(t *testing.T) {
+	setupUsersTest(t)
+	ts, _, _ := startInsightsIntervalServer(t, 200, intervalTwoBuckets)
+	overrideInsightsClient(t, ts.URL)
+
+	out, err := runIntervalCmd(t, "--service", "sso", "--last", "24h", "--interval-unit", "h", "--output", "table")
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	for _, want := range []string{"2023-11-14T22:13:20Z", "2023-11-14T23:13:20Z", "doc_count", "7"} {
+		if !strings.Contains(strings.ToLower(out), strings.ToLower(want)) {
+			t.Errorf("table missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestInsightsInterval_Empty(t *testing.T) {
+	setupUsersTest(t)
+	ts, _, _ := startInsightsIntervalServer(t, 200, `{}`)
+	overrideInsightsClient(t, ts.URL)
+
+	out, err := runIntervalCmd(t, "--service", "sso", "--last", "24h", "--interval-unit", "d")
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("output = %q, want []", out)
+	}
+}
+
+func TestInsightsInterval_InvalidFlagsSendNothing(t *testing.T) {
+	cases := map[string][]string{
+		"missing unit": {"--service", "sso", "--last", "24h"},
+		"bad unit":     {"--service", "sso", "--last", "24h", "--interval-unit", "x"},
+		"zero value":   {"--service", "sso", "--last", "24h", "--interval-unit", "h", "--interval-value", "0"},
+		"negative":     {"--service", "sso", "--last", "24h", "--interval-unit", "h", "--interval-value=-1"},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			setupUsersTest(t)
+			ts, hits, _ := startInsightsIntervalServer(t, 200, intervalTwoBuckets)
+			overrideInsightsClient(t, ts.URL)
+
+			_, err := runIntervalCmd(t, args...)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var ce *CLIError
+			if !errors.As(err, &ce) || ce.ExitCode() != ExitUsage {
+				t.Errorf("want usage error (exit 2), got %v", err)
+			}
+			if !strings.Contains(err.Error(), "interval-") {
+				t.Errorf("message should name the flag: %v", err)
+			}
+			if *hits != 0 {
+				t.Errorf("requests = %d, want 0", *hits)
+			}
+		})
+	}
+}
+
+func TestInsightsInterval_402(t *testing.T) {
+	setupUsersTest(t)
+	ts, _, _ := startInsightsIntervalServer(t, 402, `{"message":"Directory Insights is not enabled for your organization"}`)
+	overrideInsightsClient(t, ts.URL)
+
+	_, err := runIntervalCmd(t, "--service", "sso", "--last", "24h", "--interval-unit", "h")
+	if err == nil || !strings.Contains(err.Error(), "not enabled") {
+		t.Fatalf("want 'not enabled' error, got %v", err)
 	}
 }

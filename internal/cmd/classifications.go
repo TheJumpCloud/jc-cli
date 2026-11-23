@@ -578,6 +578,7 @@ var commandClass = map[string]string{
 	// insights — Directory Insights queries. Read-only.
 	"jc insights count":       ClassReadOnly,
 	"jc insights distinct":    ClassReadOnly,
+	"jc insights interval":    ClassReadOnly, // POST, but a pure query
 	"jc insights query":       ClassReadOnly,
 	"jc insights run":         ClassReadOnly, // runs a saved query
 	"jc insights save":        ClassMutating, // persists a query def to JC

@@ -94,6 +94,17 @@ type insightsCountInput struct {
 	EventType string `json:"event_type,omitempty" jsonschema:"Filter by event type"`
 }
 
+type insightsIntervalInput struct {
+	Service       string `json:"service" jsonschema:"Event service to query"`
+	IntervalUnit  string `json:"interval_unit" jsonschema:"Bucket unit: s, m, h, d or w"`
+	IntervalValue int    `json:"interval_value,omitempty" jsonschema:"Bucket width in interval_unit units (default 1)"`
+	Timezone      string `json:"timezone,omitempty" jsonschema:"Timezone offset for bucket boundaries (e.g. -0500)"`
+	Last          string `json:"last,omitempty" jsonschema:"Time range shortcut (24h/7d/30d/1m)"`
+	Start         string `json:"start,omitempty" jsonschema:"Start time (RFC 3339 or YYYY-MM-DD)"`
+	End           string `json:"end,omitempty" jsonschema:"End time (RFC 3339 or YYYY-MM-DD)"`
+	EventType     string `json:"event_type,omitempty" jsonschema:"Filter by event type"`
+}
+
 type commandRunInput struct {
 	Command string `json:"command" jsonschema:"Command name or ID to run"`
 	Target  string `json:"target" jsonschema:"Device hostname/ID or device group name/ID to run on"`
@@ -1629,6 +1640,41 @@ func (s *Server) registerInsightsTools() {
 				return errorResult(err.Error()), nil, nil
 			}
 			return res, nil, nil
+		},
+	)
+
+	addTypedTool(s, "insights_interval", "Count JumpCloud Directory Insights events bucketed by time interval (e.g. logins per hour). Returns buckets with key_as_string and doc_count.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args insightsIntervalInput) (*mcp.CallToolResult, any, error) {
+			iv := api.IntervalOptions{Unit: args.IntervalUnit, Value: args.IntervalValue, Timezone: args.Timezone}
+			if iv.Value == 0 {
+				iv.Value = 1
+			}
+			if iv.Value < 1 {
+				return errorResult("interval_value must be a positive integer (>= 1)"), nil, nil
+			}
+			if err := api.ValidateInterval(iv); err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			if err := api.ValidateService(args.Service); err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			startTime, endTime, err := resolveTimeRange(args.Last, args.Start, args.End)
+			if err != nil {
+				return errorResult(err.Error()), nil, nil
+			}
+			client, err := newInsightsClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Insights client: %v", err)), nil, nil
+			}
+			query := api.InsightsQuery{Service: args.Service, StartTime: startTime, EndTime: endTime}
+			if args.EventType != "" {
+				query.SearchTermFilter = map[string]any{"event_type": args.EventType}
+			}
+			buckets, err := client.IntervalEvents(ctx, query, iv)
+			if err != nil {
+				return errorResult(fmt.Sprintf("querying interval: %v", err)), nil, nil
+			}
+			return rawListPage(buckets)
 		},
 	)
 
