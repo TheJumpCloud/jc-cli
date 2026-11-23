@@ -11,13 +11,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/direports"
-	"github.com/klaassen-consulting/jc/internal/emailsubs"
-	"github.com/klaassen-consulting/jc/internal/gcep"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/risksettings"
-	"github.com/klaassen-consulting/jc/internal/siem"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/direports"
+	"github.com/TheJumpCloud/jc-cli/internal/emailsubs"
+	"github.com/TheJumpCloud/jc-cli/internal/gcep"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/risksettings"
+	"github.com/TheJumpCloud/jc-cli/internal/siem"
 )
 
 // Tools for the last six API areas (KLA-485): Directory Insights interval

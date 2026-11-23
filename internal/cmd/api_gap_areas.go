@@ -12,13 +12,13 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/direports"
-	"github.com/klaassen-consulting/jc/internal/emailsubs"
-	"github.com/klaassen-consulting/jc/internal/gcep"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/risksettings"
-	"github.com/klaassen-consulting/jc/internal/siem"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/direports"
+	"github.com/TheJumpCloud/jc-cli/internal/emailsubs"
+	"github.com/TheJumpCloud/jc-cli/internal/gcep"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/risksettings"
+	"github.com/TheJumpCloud/jc-cli/internal/siem"
 )
 
 // The last six API areas without a command group (KLA-485): Directory

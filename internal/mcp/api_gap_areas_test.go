@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/siem"
+	"github.com/TheJumpCloud/jc-cli/internal/siem"
 )
 
 var gapWriteTools = []struct {

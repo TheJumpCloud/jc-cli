@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/siem"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/siem"
 )
 
 // gapServer stands in for the insights host (/insights/directory/v1), the
