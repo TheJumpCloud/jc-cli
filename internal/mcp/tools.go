@@ -3598,6 +3598,20 @@ func (s *Server) registerOrgTools() {
 }
 
 func (s *Server) registerAdminTools() {
+	addTypedTool(s, "admin_email_subscriptions_list", "List the JumpCloud notification emails (emailKey, category, title, subscribed) for the calling administrator, the one the API credentials identify. Cannot read another admin's preferences. Read-only.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			client, err := newV2ClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating API client: %v", err)), nil, nil
+			}
+			raw, err := client.Get(ctx, "/notifications/subscriptions/email")
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing email subscriptions: %v", err)), nil, nil
+			}
+			return textResult(string(raw)), nil, nil
+		},
+	)
+
 	addTypedTool(s, "admins_list", "List all JumpCloud administrators. Returns objects with id, email, role, enableMultiFactor.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args listInput) (*mcp.CallToolResult, any, error) {
 			client, err := newV1ClientFunc()
