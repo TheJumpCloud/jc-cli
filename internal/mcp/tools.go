@@ -1566,7 +1566,25 @@ func (s *Server) runMembershipTool(ctx context.Context, args membershipInput, op
 	return textResult(fmt.Sprintf("Member %s %s group %s.", args.Member, verb, args.Group)), nil, nil
 }
 
+type insightsReportsListInput struct {
+	Sort string `json:"sort,omitempty" jsonschema:"Sort field: CREATED_AT, EXPIRATION, REQUESTER_EMAIL, STATUS, TYPE or UPDATED_AT (a - prefix sorts ascending)"`
+}
+
 func (s *Server) registerInsightsTools() {
+	addTypedTool(s, "insights_reports_list", "List Directory Insights reports (type, status, expiration, artifacts). Read-only; requesting and downloading reports is CLI-only.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args insightsReportsListInput) (*mcp.CallToolResult, any, error) {
+			client, err := newInsightsClientFunc()
+			if err != nil {
+				return errorResult(fmt.Sprintf("creating Insights client: %v", err)), nil, nil
+			}
+			items, err := client.ListReports(ctx, args.Sort)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing reports: %v", err)), nil, nil
+			}
+			return rawListPage(items)
+		},
+	)
+
 	addTypedTool(s, "insights_query", "Query JumpCloud Directory Insights events. Returns audit/activity events matching the criteria.",
 		func(ctx context.Context, req *mcp.CallToolRequest, args insightsQueryInput) (*mcp.CallToolResult, any, error) {
 			client, err := newInsightsClientFunc()

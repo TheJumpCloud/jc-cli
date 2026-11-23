@@ -566,12 +566,15 @@ var commandClass = map[string]string{
 	"jc identity-providers update": ClassMutating,
 
 	// insights — Directory Insights queries. Read-only.
-	"jc insights count":    ClassReadOnly,
-	"jc insights distinct": ClassReadOnly,
-	"jc insights query":    ClassReadOnly,
-	"jc insights run":      ClassReadOnly, // runs a saved query
-	"jc insights save":     ClassMutating, // persists a query def to JC
-	"jc insights saved":    ClassReadOnly,
+	"jc insights count":            ClassReadOnly,
+	"jc insights distinct":         ClassReadOnly,
+	"jc insights query":            ClassReadOnly,
+	"jc insights reports download": ClassReadOnly,
+	"jc insights reports list":     ClassReadOnly,
+	"jc insights reports request":  ClassMutating, // queues a DI report; no delete exists
+	"jc insights run":              ClassReadOnly, // runs a saved query
+	"jc insights save":             ClassMutating, // persists a query def to JC
+	"jc insights saved":            ClassReadOnly,
 
 	// roles — RBAC scope sets (V2).
 	"jc roles list":   ClassReadOnly,

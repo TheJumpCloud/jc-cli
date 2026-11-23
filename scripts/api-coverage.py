@@ -98,10 +98,10 @@ AREA_TO_COMMAND = {
     # that name matched nothing in either document and was pure decoration.
     "EventQuery": "insights",              # /events, /events/count
     "EventDistinctQuery": "insights",      # /events/distinct
+    "Reports (Directory Insights)": "insights/reports",  # DI's own report family -- NOT the Console Reports `reports` covers
     # Deliberately absent, so they count as the gap they are: EventIntervalQuery
-    # (/events/interval), "Reports (Directory Insights)" (DI's own report
-    # family -- NOT the Console Reports the `reports` group covers), and SIEM
-    # Integration (/data-export). Nothing in internal/ references any of them.
+    # (/events/interval) and SIEM Integration (/data-export). Nothing in
+    # internal/ references either of them.
     "Groups": "groups",
     "Rules": "graph",
     "mdm": "apple-mdm/windows-mdm",

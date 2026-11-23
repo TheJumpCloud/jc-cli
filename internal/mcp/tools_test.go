@@ -396,7 +396,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		// Identity Providers
 		"identity_providers_list", "identity_providers_get", "identity_providers_create", "identity_providers_update", "identity_providers_delete",
 		// Insights
-		"insights_query", "insights_count", "insights_distinct",
+		"insights_query", "insights_count", "insights_distinct", "insights_reports_list",
 		// Apps
 		"apps_list", "apps_get", "apps_create", "apps_update", "apps_delete",
 		// Graph
@@ -597,8 +597,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 430 {
-		t.Errorf("expected 430 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 431 {
+		t.Errorf("expected 431 tools, got %d", len(result.Tools))
 	}
 }
 
