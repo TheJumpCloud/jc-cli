@@ -70,6 +70,7 @@ AREA_TO_COMMAND = {
     "Google EMM": "google-emm",
     "Workday Import": "workday",
     "Access Certification": "access-cert",
+    "GCEP": "gcep",
     "Workflows": "workflows",
     "System Group Associations": "graph",
     "IP Lists": "iplists",

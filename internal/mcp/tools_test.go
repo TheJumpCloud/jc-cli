@@ -352,6 +352,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"access_cert_review_items_list",
 		"access_cert_audit_report_get",
 		"access_cert_admin_queue_list",
+		// GCEP — the two reads; set and delete are CLI-only.
+		"gcep_config_get",
+		"gcep_device_state_get",
 		// Workday import — two verified reads; the rest is unprobed.
 		"workday_integrations_list",
 		"workday_integration_get",
@@ -597,8 +600,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 432 {
-		t.Errorf("expected 432 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 434 {
+		t.Errorf("expected 434 tools, got %d", len(result.Tools))
 	}
 }
 
