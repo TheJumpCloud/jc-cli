@@ -44,6 +44,8 @@ type buildSection struct {
 	Version   string `json:"version"`
 	GoVersion string `json:"go_version"`
 	OSArch    string `json:"os_arch"`
+	Commit    string `json:"commit,omitempty"`
+	Dirty     *bool  `json:"dirty,omitempty"`
 }
 
 type profileSection struct {
@@ -204,11 +206,23 @@ func collectDoctorReport(ctx context.Context, probe bool, timeout time.Duration,
 }
 
 func collectBuild() buildSection {
-	return buildSection{
+	rev, dirty, ok := version.Commit()
+	return buildFrom(rev, dirty, ok)
+}
+
+// buildFrom assembles the build section; commit and dirty are omitted when
+// the build has no VCS information.
+func buildFrom(rev string, dirty, ok bool) buildSection {
+	b := buildSection{
 		Version:   strings.TrimPrefix(version.Describe(), "v"),
 		GoVersion: runtime.Version(),
 		OSArch:    runtime.GOOS + "/" + runtime.GOARCH,
 	}
+	if ok {
+		b.Commit = rev
+		b.Dirty = &dirty
+	}
+	return b
 }
 
 func collectProfile(flagOrgSet bool) profileSection {
@@ -514,11 +528,19 @@ func printDoctorText(out io.Writer, rep doctorReport) error {
 		fmt.Fprintln(out)
 	}
 
-	section("Build",
-		[2]string{"Version", rep.Build.Version},
-		[2]string{"Platform", rep.Build.OSArch},
-		[2]string{"Go", rep.Build.GoVersion},
-	)
+	buildKVs := [][2]string{
+		{"Version", rep.Build.Version},
+		{"Platform", rep.Build.OSArch},
+		{"Go", rep.Build.GoVersion},
+	}
+	if rep.Build.Commit != "" {
+		commit := rep.Build.Commit
+		if rep.Build.Dirty != nil && *rep.Build.Dirty {
+			commit += " (dirty)"
+		}
+		buildKVs = append(buildKVs, [2]string{"Commit", commit})
+	}
+	section("Build", buildKVs...)
 
 	profileLine := rep.Profile.Active + "  (" + rep.Profile.Source + ")"
 	if len(rep.Profile.Available) > 0 {
