@@ -45,6 +45,7 @@ Aliases: i, insights`,
 	cmd.AddCommand(newInsightsQueryCmd())
 	cmd.AddCommand(newInsightsCountCmd())
 	cmd.AddCommand(newInsightsDistinctCmd())
+	cmd.AddCommand(newInsightsIntervalCmd())
 	cmd.AddCommand(newInsightsSaveCmd())
 	cmd.AddCommand(newInsightsSavedCmd())
 	cmd.AddCommand(newInsightsRunCmd())
@@ -320,6 +321,105 @@ func runInsightsDistinct(cmd *cobra.Command, service, last, start, end, eventTyp
 		writeCountFooter(cmd, len(items))
 	}
 
+	return nil
+}
+
+func newInsightsIntervalCmd() *cobra.Command {
+	var (
+		serviceFlag   string
+		lastFlag      string
+		startFlag     string
+		endFlag       string
+		eventTypeFlag string
+		unitFlag      string
+		valueFlag     int
+		timezoneFlag  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "interval",
+		Short: "Count Directory Insights events bucketed by time interval",
+		Long: `Count Directory Insights events per time bucket, to see activity trends
+without downloading every event.
+
+Examples:
+  jc insights interval --service sso --last 24h --interval-unit h
+  jc insights interval --service all --last 7d --interval-unit d -t
+  jc insights interval --service sso --last 7d --interval-unit h --interval-value 6 --timezone -0500
+
+Output: table shows key_as_string and doc_count per bucket; JSON is the buckets array.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInsightsInterval(cmd, serviceFlag, lastFlag, startFlag, endFlag, eventTypeFlag,
+				api.IntervalOptions{Unit: unitFlag, Value: valueFlag, Timezone: timezoneFlag})
+		},
+	}
+
+	cmd.Flags().StringVar(&serviceFlag, "service", "", "Service to query (e.g. sso, ldap, all; comma-separated for multiple)")
+	cmd.Flags().StringVar(&lastFlag, "last", "", "Time range shortcut (e.g. 24h, 7d, 30d, 1m)")
+	cmd.Flags().StringVar(&startFlag, "start", "", "Start time (date or RFC 3339)")
+	cmd.Flags().StringVar(&endFlag, "end", "", "End time (date or RFC 3339)")
+	cmd.Flags().StringVar(&eventTypeFlag, "event-type", "", "Filter by event type (e.g. sso_auth_failed)")
+	cmd.Flags().StringVar(&unitFlag, "interval-unit", "", "Bucket unit: s|m|h|d|w (required)")
+	cmd.Flags().IntVar(&valueFlag, "interval-value", 1, "Bucket width in --interval-unit units (>= 1)")
+	cmd.Flags().StringVar(&timezoneFlag, "timezone", "", "Timezone offset for bucket boundaries (e.g. -0500)")
+
+	_ = cmd.MarkFlagRequired("service")
+
+	return cmd
+}
+
+func runInsightsInterval(cmd *cobra.Command, service, last, start, end, eventType string, iv api.IntervalOptions) error {
+	usage := func(err error) error {
+		return NewCLIError(ErrCodeUsageError, err.Error(), "Interval units: s, m, h, d or w; --interval-value must be a positive integer")
+	}
+	if err := api.ValidateService(service); err != nil {
+		return err
+	}
+	if iv.Value < 1 {
+		return usage(fmt.Errorf("invalid --interval-value %d; must be a positive integer (>= 1)", iv.Value))
+	}
+	if err := api.ValidateInterval(iv); err != nil {
+		return usage(err)
+	}
+
+	startTime, endTime, err := resolveInsightsTimeRange(last, start, end)
+	if err != nil {
+		return err
+	}
+
+	query := api.InsightsQuery{Service: service, StartTime: startTime, EndTime: endTime}
+	if eventType != "" {
+		query.SearchTermFilter = map[string]any{"event_type": eventType}
+	}
+
+	if viper.GetBool("plan") {
+		body, err := json.Marshal(api.BuildIntervalBody(query, iv))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Plan: POST %s/events/interval (class: read-only, no changes)\nbody: %s\n", api.ResolveInsightsBaseURL(), body)
+		return nil
+	}
+
+	client, err := newInsightsClient()
+	if err != nil {
+		return err
+	}
+
+	buckets, err := client.IntervalEvents(cmd.Context(), query, iv)
+	if err != nil {
+		return err
+	}
+
+	opts := output.CurrentOptions()
+	opts.DefaultFields = []string{"key_as_string", "doc_count"}
+
+	if err := output.WriteList(cmd.OutOrStdout(), buckets, opts); err != nil {
+		return err
+	}
+	if !opts.Quiet && !opts.IDsOnly {
+		writeCountFooter(cmd, len(buckets))
+	}
 	return nil
 }
 
