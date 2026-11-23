@@ -128,7 +128,9 @@ func (t *bearerAuthTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	r := req.Clone(req.Context())
 	r.Header.Set("Authorization", "Bearer "+token)
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Accept", "application/json")
+	if r.Header.Get("Accept") == "" {
+		r.Header.Set("Accept", "application/json")
+	}
 	r.Header.Set("User-Agent", userAgent())
 
 	return t.base.RoundTrip(r)
@@ -177,7 +179,9 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	r.Header.Set("x-api-key", t.apiKey)
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Accept", "application/json")
+	if r.Header.Get("Accept") == "" {
+		r.Header.Set("Accept", "application/json")
+	}
 	r.Header.Set("User-Agent", userAgent())
 
 	return t.base.RoundTrip(r)

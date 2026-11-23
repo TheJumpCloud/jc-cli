@@ -38,6 +38,7 @@ AREA_TO_COMMAND = {
     "Active Directory": "ad",
     "User Groups": "groups",
     "Users": "users",
+    "Email Subscriptions": "admins/email-subscriptions",
     "G Suite": "gsuite",
     "Apple MDM": "apple-mdm",
     "Policies": "policies",
@@ -99,10 +100,11 @@ AREA_TO_COMMAND = {
     # that name matched nothing in either document and was pure decoration.
     "EventQuery": "insights",              # /events, /events/count
     "EventDistinctQuery": "insights",      # /events/distinct
+    "SIEM Integration": "insights/siem",   # /data-export/v2
     # Deliberately absent, so they count as the gap they are: EventIntervalQuery
-    # (/events/interval), "Reports (Directory Insights)" (DI's own report
-    # family -- NOT the Console Reports the `reports` group covers), and SIEM
-    # Integration (/data-export). Nothing in internal/ references any of them.
+    # (/events/interval) and "Reports (Directory Insights)" (DI's own report
+    # family -- NOT the Console Reports the `reports` group covers). Nothing in
+    # internal/ references either of them.
     "Groups": "groups",
     "Rules": "graph",
     "mdm": "apple-mdm/windows-mdm",

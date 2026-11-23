@@ -186,11 +186,13 @@ var commandClass = map[string]string{
 	"jc upgrade": ClassInternal,
 
 	// admins — JumpCloud admin user mgmt.
-	"jc admins create": ClassMutating,
-	"jc admins delete": ClassDestructive,
-	"jc admins get":    ClassReadOnly,
-	"jc admins list":   ClassReadOnly,
-	"jc admins update": ClassMutating,
+	"jc admins create":                   ClassMutating,
+	"jc admins delete":                   ClassDestructive,
+	"jc admins email-subscriptions list": ClassReadOnly,
+	"jc admins email-subscriptions set":  ClassMutating,
+	"jc admins get":                      ClassReadOnly,
+	"jc admins list":                     ClassReadOnly,
+	"jc admins update":                   ClassMutating,
 
 	// alerts — Monitoring & Alerting triage (V2).
 	"jc alerts list":        ClassReadOnly,
@@ -569,12 +571,14 @@ var commandClass = map[string]string{
 	"jc identity-providers update": ClassMutating,
 
 	// insights — Directory Insights queries. Read-only.
-	"jc insights count":    ClassReadOnly,
-	"jc insights distinct": ClassReadOnly,
-	"jc insights query":    ClassReadOnly,
-	"jc insights run":      ClassReadOnly, // runs a saved query
-	"jc insights save":     ClassMutating, // persists a query def to JC
-	"jc insights saved":    ClassReadOnly,
+	"jc insights count":       ClassReadOnly,
+	"jc insights distinct":    ClassReadOnly,
+	"jc insights query":       ClassReadOnly,
+	"jc insights run":         ClassReadOnly, // runs a saved query
+	"jc insights save":        ClassMutating, // persists a query def to JC
+	"jc insights saved":       ClassReadOnly,
+	"jc insights siem events": ClassReadOnly,
+	"jc insights siem test":   ClassReadOnly, // spec: confirms org binding, returns no events; re-class if a probe shows state change
 
 	// roles — RBAC scope sets (V2).
 	"jc roles list":   ClassReadOnly,

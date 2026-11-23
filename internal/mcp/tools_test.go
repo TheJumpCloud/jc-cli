@@ -402,7 +402,7 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		// Graph
 		"graph_traverse", "graph_bind", "graph_unbind",
 		// Admins
-		"admins_list", "admins_get", "admins_create", "admins_update", "admins_delete",
+		"admins_list", "admin_email_subscriptions_list", "admins_get", "admins_create", "admins_update", "admins_delete",
 		// Org
 		"org_list", "org_get", "org_settings", "org_update",
 		// Software
