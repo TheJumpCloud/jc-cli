@@ -70,7 +70,7 @@ func runRisk(t *testing.T, s *riskSettingsServer, args ...string) (string, strin
 	return out.String(), errb.String(), err
 }
 
-func exitOf(err error) int {
+func riskExitOf(err error) int {
 	var ee *ExitError
 	if errors.As(err, &ee) {
 		return ee.Code
@@ -102,7 +102,7 @@ func TestRiskSettingsList_FiltersAndTable(t *testing.T) {
 func TestRiskSettingsSet_Plan(t *testing.T) {
 	s := startRiskSettingsServer(t)
 	_, errOut, err := runRisk(t, s, "set", "enabled", "--value", "false", "--plan")
-	if exitOf(err) != 10 {
+	if riskExitOf(err) != 10 {
 		t.Fatalf("want exit 10, got %v", err)
 	}
 	if len(s.puts) != 0 {
@@ -135,7 +135,7 @@ func TestRiskSettingsSet_Rejections(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s := startRiskSettingsServer(t)
 			_, _, err := runRisk(t, s, args...)
-			if exitOf(err) != 2 {
+			if riskExitOf(err) != 2 {
 				t.Fatalf("want exit 2, got %v", err)
 			}
 			if len(s.puts) != 0 {
