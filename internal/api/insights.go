@@ -442,3 +442,100 @@ func ParseTimeRange(input string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("invalid time format %q; expected: 24h, 7d, 30d, 2006-01-02, or RFC 3339", input)
 }
+
+// ValidIntervalUnits are the bucket units the interval endpoint accepts.
+var ValidIntervalUnits = []string{"s", "m", "h", "d", "w"}
+
+// IntervalOptions are the bucketing parameters of an interval query.
+type IntervalOptions struct {
+	// Unit is one of ValidIntervalUnits (required).
+	Unit string
+	// Value is the bucket width in Unit; 0 means 1.
+	Value int
+	// Timezone is an offset such as "-0500"; empty means the server default.
+	Timezone string
+}
+
+// ValidateInterval checks the unit and value locally, so a bad flag never
+// costs a request.
+func ValidateInterval(opts IntervalOptions) error {
+	ok := false
+	for _, u := range ValidIntervalUnits {
+		if opts.Unit == u {
+			ok = true
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid --interval-unit %q; allowed values: %s", opts.Unit, strings.Join(ValidIntervalUnits, "|"))
+	}
+	if opts.Value < 0 {
+		return fmt.Errorf("invalid --interval-value %d; must be a positive integer (>= 1)", opts.Value)
+	}
+	return nil
+}
+
+// BuildIntervalBody builds the /events/interval request body. The spec types
+// interval_value as a string, so it is sent as one.
+func BuildIntervalBody(query InsightsQuery, opts IntervalOptions) map[string]any {
+	value := opts.Value
+	if value == 0 {
+		value = 1
+	}
+	body := map[string]any{
+		"service":        serviceToArray(query.Service),
+		"start_time":     query.StartTime,
+		"interval_unit":  opts.Unit,
+		"interval_value": strconv.Itoa(value),
+	}
+	if query.EndTime != "" {
+		body["end_time"] = query.EndTime
+	}
+	if opts.Timezone != "" {
+		body["timezone"] = opts.Timezone
+	}
+	if st := buildSearchTerm(query.SearchTermFilter); st != nil {
+		body["search_term"] = st
+	}
+	return body
+}
+
+// IntervalEvents sends a POST query to /events/interval and returns the
+// buckets (an empty slice when the window has none).
+func (c *InsightsClient) IntervalEvents(ctx context.Context, query InsightsQuery, opts IntervalOptions) ([]json.RawMessage, error) {
+	if err := ValidateInterval(opts); err != nil {
+		return nil, err
+	}
+	jsonBody, err := json.Marshal(BuildIntervalBody(query, opts))
+	if err != nil {
+		return nil, fmt.Errorf("marshalling interval body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/events/interval", bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, NewAPIError(resp.StatusCode, "/events/interval", respBody)
+	}
+
+	var parsed struct {
+		Buckets []json.RawMessage `json:"buckets"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing interval response: %w", err)
+	}
+	if parsed.Buckets == nil {
+		parsed.Buckets = []json.RawMessage{}
+	}
+	return parsed.Buckets, nil
+}
