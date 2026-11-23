@@ -37,6 +37,7 @@ AREA_TO_COMMAND = {
     "Active Directory": "ad",
     "User Groups": "groups",
     "Users": "users",
+    "Email Subscriptions": "admins/email-subscriptions",
     "G Suite": "gsuite",
     "Apple MDM": "apple-mdm",
     "Policies": "policies",
