@@ -56,7 +56,21 @@ build:
 stacks: [] # nothing the pipeline deploys
 
 qa:
-  mode: manual
+  mode: cli
+  cli:
+    environment: jc-test-org-bold-bison
+    secret: bold-bison
+    secretKeys: [JC_API_KEY, JC_ORG_ID, JC_REGION]
+    build:
+      - make build
+    allowlist:
+      - "jc --version"
+      - "jc doctor( .*)?"
+      - "jc [a-z-]+( [a-z-]+)* (list|get|describe|show)( .*)?"
+      - "jc api get .*"
+      - "jc [a-z-]+( [a-z-]+)* .*--plan( .*)?"
+    allowMutations: false
+    timeoutSeconds: 120
 
 mergeQueue:
   # No ticket stack to redeploy: re-verifying a candidate means building it and running the test gate.
