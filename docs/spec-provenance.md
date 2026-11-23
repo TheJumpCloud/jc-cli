@@ -12,7 +12,7 @@ A date in the file would also defeat `make verify-generated`, which regenerates 
 
 | Source | Operations | SHA-256 | Derives |
 |---|---:|---|---|
-| <https://docs.jumpcloud.com/new/console/index.yaml> | 1010 | `e86273e41a3eea09ad84c691064cedc49ffae0aadea2d2251829c23d3e7d18c6` | `docs/API_COVERAGE.md`, `internal/workflow/operations.json` |
+| <https://docs.jumpcloud.com/new/console/index.yaml> | 1017 | `2c55fa83996ac631f17eb83a8921e89c99ab19e45b660cab66517d3fae72b62c` | `docs/API_COVERAGE.md`, `internal/workflow/operations.json` |
 | <https://docs.jumpcloud.com/new/api/insights/directory/index.yaml> | 9 | `814417b6eb40ce02b004345dc4f6bd4296a9e5a1676a493b02d61c91e6ef2a5d` | `docs/API_COVERAGE.md` |
 
 The digest covers the whole document, so upstream reformatting or an edited description moves it while nothing jc derives changes. That is the point of the split: this file answers *is it the same document?*, and the regenerated artifacts answer *did anything we depend on change?*. A drift PR whose only diff is a digest means upstream republished and jc is unaffected.
