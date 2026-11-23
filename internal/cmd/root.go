@@ -143,7 +143,7 @@ interface.`,
 	// Devices & MDM
 	addToGroup(rootCmd, "devices",
 		newDevicesCmd(), newAppleMDMCmd(), newWindowsMDMCmd(), newSoftwareCmd(),
-		newCommandsCmd(), newSystemInsightsCmd(), newAssetsCmd(),
+		newCommandsCmd(), newSystemInsightsCmd(), newAssetsCmd(), newGCEPCmd(),
 	)
 
 	// Security & Policies

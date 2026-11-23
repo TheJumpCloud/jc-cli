@@ -905,6 +905,16 @@
       ]
     },
     {
+      "path": "jc gcep",
+      "description": "Manage the GCEP Google device-trust integration and read device trust state",
+      "long": "The organization's GCEP configuration (Google customer id, Google user email, state and the OS families it applies to) and each device's GCEP registration, management status and device users. 'config set' reads the configuration first and sends the complete body with only the given fields changed, then reads it back. 'config delete' removes the integration for the whole organization and needs --force when not at a terminal. MCP exposes the two reads only.",
+      "category": "Devices \u0026 MDM",
+      "subcommands": [
+        "config",
+        "device-state"
+      ]
+    },
+    {
       "path": "jc workday",
       "description": "Inspect the org's Workday HR-import integrations",
       "long": "The Workday integrations that feed employee records from HR into the directory. Deliberately incomplete: the workers listing and the import-results endpoint are not implemented because no tenant available has an integration configured and their response shapes have never been observed. The import write is held back too — it creates and updates real directory users from HR data with no dry run.",
@@ -2098,6 +2108,7 @@
     "custom-emails",
     "devices",
     "duo",
+    "gcep",
     "google-emm",
     "groups",
     "gsuite",

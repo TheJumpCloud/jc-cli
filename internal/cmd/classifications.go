@@ -437,6 +437,11 @@ var commandClass = map[string]string{
 	"jc devices settings sign-in set":       ClassMutating,
 	"jc devices settings password-sync get": ClassReadOnly,
 	"jc devices settings password-sync set": ClassMutating,
+	// GCEP: delete removes the integration for the whole organization.
+	"jc gcep config get":    ClassReadOnly,
+	"jc gcep config set":    ClassMutating,
+	"jc gcep config delete": ClassDestructive,
+	"jc gcep device-state":  ClassReadOnly,
 
 	// workflows — JumpCloud server-side event automation (KLA-485).
 	// trigger is destructive rather than merely mutating: its blast radius is
