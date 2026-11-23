@@ -49,6 +49,7 @@ Aliases: i, insights`,
 	cmd.AddCommand(newInsightsSaveCmd())
 	cmd.AddCommand(newInsightsSavedCmd())
 	cmd.AddCommand(newInsightsRunCmd())
+	cmd.AddCommand(newInsightsSiemCmd())
 
 	return cmd
 }
