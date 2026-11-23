@@ -58,6 +58,7 @@ stays resolved. "events resolve" therefore confirms like a delete, and says so.`
 		newIdentityRiskLoginTypesCmd(),
 		newIdentityRiskGeolocationsCmd(),
 		newIdentityRiskTimelineCmd(),
+		newIdentityRiskSettingsCmd(),
 	)
 	return cmd
 }

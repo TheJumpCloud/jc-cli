@@ -30,6 +30,7 @@ except ImportError:
 # if there is no command group at all (the hard coverage gap). Keep this in
 # sync with `jc --help`.
 AREA_TO_COMMAND = {
+    "Access Risk Settings": "identity-risk/settings",
     "Graph": "graph",
     "System Insights": "system-insights",
     "Assets": "assets",
