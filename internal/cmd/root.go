@@ -168,7 +168,7 @@ interface.`,
 	// AI & Automation
 	addToGroup(rootCmd, "ai",
 		newMcpCmd(), newAskCmd(), newExplainCmd(),
-		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newPasswordVaultCmd(), newPrivilegedAccessCmd(), newGoogleEMMCmd(), newWorkdayCmd(), newAccessCertCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
+		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newPasswordVaultCmd(), newPrivilegedAccessCmd(), newSIEMCmd(), newEmailSubscriptionsCmd(), newGCEPCmd(), newGoogleEMMCmd(), newWorkdayCmd(), newAccessCertCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
 	)
 
 	// Setup & Config

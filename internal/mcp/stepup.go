@@ -8,9 +8,12 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -43,10 +46,39 @@ func isExecutingDestructive(args any) bool {
 // the device hostname for devices_*). Used purely for the human-facing
 // step-up prompt — never persisted, never sent to the JumpCloud API.
 //
-// We try a small set of well-known field names in priority order. If
-// none are present, return an empty string and the prompt skips the
-// "on <target>" clause.
+// An input that implements stepUpTargeter names its own target (e.g.
+// "enabled=false" for a risk setting, where the field name alone would not
+// tell a threshold tweak from switching a feature off). Otherwise we try a
+// small set of well-known field names in priority order. If none are
+// present, return an empty string and the prompt skips the "on <target>"
+// clause.
 func destructiveTarget(args any) string {
+	return displaySafe(rawDestructiveTarget(args))
+}
+
+// displaySafe makes an agent-supplied target safe to show a human approver.
+// The target comes from tool arguments, which the agent controls: a newline,
+// a Unicode line or paragraph separator, an ANSI escape or a bidi override in
+// it could draw a fake prompt line or disguise the real change (e.g. a risk
+// value "90\n...enabled=true"). It is an allowlist: unless every rune is
+// printable (unicode.IsPrint: letters, marks, numbers, punctuation, symbols
+// and the ASCII space only), the whole target renders quoted, escapes
+// visible. It is never shortened — a cut could hide exactly the part the
+// approver needs to see.
+func displaySafe(s string) string {
+	if !utf8.ValidString(s) {
+		return strconv.QuoteToASCII(s)
+	}
+	if strings.IndexFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return strconv.QuoteToASCII(s)
+	}
+	return s
+}
+
+func rawDestructiveTarget(args any) string {
+	if t, ok := args.(stepUpTargeter); ok {
+		return t.stepUpTarget()
+	}
 	v := reflect.ValueOf(args)
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -337,4 +369,10 @@ func newStepUp(cfg stepUpConfig) (stepUpAuthenticator, error) {
 		}
 		return newTTYStepUp(cfg.APIKey), nil
 	}
+}
+
+// stepUpTargeter lets a tool input describe its target for the step-up
+// prompt when its fields are not one of the well-known names.
+type stepUpTargeter interface {
+	stepUpTarget() string
 }
