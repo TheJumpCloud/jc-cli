@@ -583,6 +583,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"bundle_show",
 		"bundle_status",
 		"bundle_apply",
+
+		// Access Risk settings: read-only; no tool changes a setting.
+		"identity_risk_settings_list",
 	}
 
 	toolNames := make(map[string]bool)
@@ -597,8 +600,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 430 {
-		t.Errorf("expected 430 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 431 {
+		t.Errorf("expected 431 tools, got %d", len(result.Tools))
 	}
 }
 

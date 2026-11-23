@@ -120,6 +120,9 @@ var commandClass = map[string]string{
 	"jc identity-risk geolocations":     ClassReadOnly,
 	// A POST that reads: the body carries the filter, nothing changes.
 	"jc identity-risk timeline": ClassReadOnly,
+	// Access Risk Detection settings: the write can switch detection off.
+	"jc identity-risk settings list": ClassReadOnly,
+	"jc identity-risk settings set":  ClassMutating,
 
 	// password-vault — the replacement for Password Manager. Tenant scope
 	// only in this PR: credentials, folders and websites follow.
