@@ -28,7 +28,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // Endpoint is the access-requests collection.

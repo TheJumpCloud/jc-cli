@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/mcp"
-	"github.com/klaassen-consulting/jc/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/mcp"
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
 	"github.com/spf13/cobra"
 )
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // Provider identifies which LLM service to use.

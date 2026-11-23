@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // serve returns a V2 client pointed at a server answering each path from the

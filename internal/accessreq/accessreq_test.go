@@ -8,7 +8,7 @@ import (
 
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 func TestFindPath(t *testing.T) {

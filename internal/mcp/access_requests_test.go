@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/accessreq"
+	"github.com/TheJumpCloud/jc-cli/internal/accessreq"
 )
 
 const (

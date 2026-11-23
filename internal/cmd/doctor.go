@@ -17,9 +17,9 @@ import (
 	"github.com/spf13/viper"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/version"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/version"
 )
 
 // doctorReport is the structured shape of `jc doctor`'s output. JSON

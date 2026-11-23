@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // TestListPolicyGroupMembers_Paginates guards the fix that switched

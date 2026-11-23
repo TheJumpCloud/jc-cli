@@ -12,8 +12,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 	"github.com/jmespath/go-jmespath"
-	"github.com/klaassen-consulting/jc/internal/config"
 	"github.com/spf13/viper"
 	"go.yaml.in/yaml/v3"
 )

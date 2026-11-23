@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/recipe"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // RecipeDispatcher is the command dispatcher used to execute recipe steps.

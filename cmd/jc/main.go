@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/klaassen-consulting/jc/internal/cmd"
+	"github.com/TheJumpCloud/jc-cli/internal/cmd"
 )
 
 func main() {

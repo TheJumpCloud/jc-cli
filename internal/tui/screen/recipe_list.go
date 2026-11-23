@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/recipe"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // recipeLoader loads the set of available recipes. Overridable for tests.

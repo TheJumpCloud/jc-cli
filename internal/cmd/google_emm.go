@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/googleemm"
-	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/googleemm"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
 )
 
 // newGoogleEMMCmd builds the `jc google-emm` group.

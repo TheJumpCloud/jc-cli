@@ -10,7 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/identityrisk"
+	"github.com/TheJumpCloud/jc-cli/internal/identityrisk"
 )
 
 // Identity Risk tools. Ten, matching the CLI one for one.

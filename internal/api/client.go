@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/version"
+	"github.com/TheJumpCloud/jc-cli/internal/version"
 )
 
 const (

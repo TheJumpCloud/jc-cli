@@ -129,11 +129,11 @@ func TestParsers_UndecodableIsAnErrorNotEmptiness(t *testing.T) {
 }
 
 func TestParseOrgNames(t *testing.T) {
-	names, total, err := ParseOrgNames(json.RawMessage(`{"totalCount":1,"orgNames":["KLAASSEN CONSULTING"]}`))
+	names, total, err := ParseOrgNames(json.RawMessage(`{"totalCount":1,"orgNames":["EXAMPLE ORG"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 1 || len(names) != 1 || names[0] != "KLAASSEN CONSULTING" {
+	if total != 1 || len(names) != 1 || names[0] != "EXAMPLE ORG" {
 		t.Errorf("got %v (total %d)", names, total)
 	}
 	if _, _, err := ParseOrgNames(json.RawMessage(`{"orgNames":[{"name":"x"}]}`)); err == nil {

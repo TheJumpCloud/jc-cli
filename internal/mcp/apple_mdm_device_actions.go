@@ -7,7 +7,7 @@ import (
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 )
 
 // The Apple MDM device actions. THIRTEEN tools for fourteen operations.

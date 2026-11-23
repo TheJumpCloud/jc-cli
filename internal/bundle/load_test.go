@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 )
 
 // TestLoadBuiltIn_AllValid is the packaging gate: every embedded

@@ -3,7 +3,7 @@ package screen
 import (
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 )
 
 // Every leaf on the home screen must be reachable: it lists through an

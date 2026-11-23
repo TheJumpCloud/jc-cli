@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/privaccess"
+	"github.com/TheJumpCloud/jc-cli/internal/privaccess"
 )
 
 // Privileged Access (PAM) tools, read-only. The contract and its workarounds

@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/privaccess"
+	"github.com/TheJumpCloud/jc-cli/internal/privaccess"
 )
 
 // Privileged Access write tools. Twelve, matching the CLI's write commands;
