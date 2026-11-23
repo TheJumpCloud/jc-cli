@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // WindowsMDMCSPShowScreen renders one Policy CSP setting in full —

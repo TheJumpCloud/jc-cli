@@ -9,7 +9,7 @@ import (
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 )
 
 // MCP App: Apple MDM payloads catalog + create-policy.

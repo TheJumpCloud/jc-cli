@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
 )
 
 // The row-count footer every list command writes to stderr, so that piping

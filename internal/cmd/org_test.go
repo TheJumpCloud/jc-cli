@@ -59,7 +59,7 @@ func sampleOrgs() []map[string]any {
 		{
 			"_id":         "aabbccddee112233aabb8001",
 			"id":          "aabbccddee112233aabb8001",
-			"displayName": "Klaassen Consulting",
+			"displayName": "Example Org",
 			"created":     "2023-01-01T00:00:00Z",
 			"logoUrl":     "",
 		},
@@ -97,8 +97,8 @@ func TestOrgList_JSON(t *testing.T) {
 	if org["_id"] != "aabbccddee112233aabb8001" {
 		t.Errorf("_id = %q, want 'aabbccddee112233aabb8001'", org["_id"])
 	}
-	if org["displayName"] != "Klaassen Consulting" {
-		t.Errorf("displayName = %q, want 'Klaassen Consulting'", org["displayName"])
+	if org["displayName"] != "Example Org" {
+		t.Errorf("displayName = %q, want 'Example Org'", org["displayName"])
 	}
 	if org["created"] != "2023-01-01T00:00:00Z" {
 		t.Errorf("created = %q, want '2023-01-01T00:00:00Z'", org["created"])
@@ -157,8 +157,8 @@ func TestOrgGet(t *testing.T) {
 		t.Fatalf("JSON parse error: %v\nOutput: %s", err, buf.String())
 	}
 
-	if result["displayName"] != "Klaassen Consulting" {
-		t.Errorf("displayName = %q, want 'Klaassen Consulting'", result["displayName"])
+	if result["displayName"] != "Example Org" {
+		t.Errorf("displayName = %q, want 'Example Org'", result["displayName"])
 	}
 	if result["_id"] != "aabbccddee112233aabb8001" {
 		t.Errorf("_id = %q, want 'aabbccddee112233aabb8001'", result["_id"])

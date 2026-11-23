@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
 )
 
 func setupRecipeTest(t *testing.T) {

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/usergroups"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/usergroups"
 )
 
 //go:embed apps_html/device.html

@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // category groups command paths under a sidebar heading on the site.

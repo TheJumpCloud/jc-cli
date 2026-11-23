@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 // Batch identifier sources (KLA-446): every single-identifier mutating

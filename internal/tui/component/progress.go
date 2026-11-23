@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // ProgressRing renders a single-metric progress bar with percentage.

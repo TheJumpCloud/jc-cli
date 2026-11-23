@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
 )
 
 func TestExportListToClipboard(t *testing.T) {

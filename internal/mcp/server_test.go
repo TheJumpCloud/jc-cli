@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 
-	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 )
 
 func setupTest(t *testing.T) {

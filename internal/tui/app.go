@@ -3,9 +3,9 @@ package tui
 import (
 	"time"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui/component"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui/component"
 )
 
 // App is the top-level Bubbletea model.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // runSchemaCmd executes a schema command and returns stdout output and error.

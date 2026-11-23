@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 
-	kc "github.com/klaassen-consulting/jc/internal/keychain"
+	kc "github.com/TheJumpCloud/jc-cli/internal/keychain"
 )
 
 // resetViper clears Viper's global state between tests.

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 func TestDeleteV1(t *testing.T) {

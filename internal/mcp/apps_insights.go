@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 //go:embed apps_html/insights.html

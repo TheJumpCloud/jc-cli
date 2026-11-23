@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 )
 
 // jc multi (KLA-441) — fan an inner jc command out across multiple

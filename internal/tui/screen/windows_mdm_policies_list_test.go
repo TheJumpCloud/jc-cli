@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // startWindowsPoliciesListServer stubs GET /policies (list) + GET

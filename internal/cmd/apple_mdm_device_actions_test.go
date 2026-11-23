@@ -45,7 +45,7 @@ func startDeviceActionServer(t *testing.T, deviceFound bool) (*httptest.Server, 
 
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/applemdms":
-			_, _ = w.Write([]byte(`[{"id":"690b6c939c0bf5000100039a","name":"Klaassen Consulting"}]`))
+			_, _ = w.Write([]byte(`[{"id":"690b6c939c0bf5000100039a","name":"Example Org"}]`))
 		case r.Method == http.MethodGet:
 			if !deviceFound {
 				w.WriteHeader(http.StatusNotFound)

@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/recipe"
 	"go.yaml.in/yaml/v3"
 )
 

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 func TestCompleteResourceNames(t *testing.T) {

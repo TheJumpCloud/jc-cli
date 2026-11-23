@@ -3,8 +3,8 @@ package screen
 import (
 	"testing"
 
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
 )
 
 // These tests run against the real embedded catalog (the apple_mdm

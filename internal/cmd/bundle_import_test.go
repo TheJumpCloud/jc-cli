@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/bundle"
-	"github.com/klaassen-consulting/jc/internal/mscp"
+	"github.com/TheJumpCloud/jc-cli/internal/bundle"
+	"github.com/TheJumpCloud/jc-cli/internal/mscp"
 )
 
 // seedMSCPCache pre-populates the mSCP cache dir (via XDG_CACHE_HOME)

@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/aigateway"
-	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/aigateway"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
 )
 
 // aiGatewayServerFields is the default column set for servers.

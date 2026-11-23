@@ -6,17 +6,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/transrule"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/component"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/fetch"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/workflow"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/schema"
-	"github.com/klaassen-consulting/jc/internal/transrule"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/component"
-	"github.com/klaassen-consulting/jc/internal/tui/fetch"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
-	"github.com/klaassen-consulting/jc/internal/workflow"
 )
 
 // DetailScreen shows all fields of a single resource.

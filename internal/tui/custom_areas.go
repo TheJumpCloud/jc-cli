@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/accesscert"
-	"github.com/klaassen-consulting/jc/internal/agents"
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/googleemm"
-	"github.com/klaassen-consulting/jc/internal/identityrisk"
-	"github.com/klaassen-consulting/jc/internal/passwordvault"
-	"github.com/klaassen-consulting/jc/internal/privaccess"
-	"github.com/klaassen-consulting/jc/internal/pwm"
-	"github.com/klaassen-consulting/jc/internal/schema"
-	"github.com/klaassen-consulting/jc/internal/workday"
+	"github.com/TheJumpCloud/jc-cli/internal/accesscert"
+	"github.com/TheJumpCloud/jc-cli/internal/agents"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/googleemm"
+	"github.com/TheJumpCloud/jc-cli/internal/identityrisk"
+	"github.com/TheJumpCloud/jc-cli/internal/passwordvault"
+	"github.com/TheJumpCloud/jc-cli/internal/privaccess"
+	"github.com/TheJumpCloud/jc-cli/internal/pwm"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/workday"
 )
 
 // ListFunc lists one resource through the same package code the CLI uses,

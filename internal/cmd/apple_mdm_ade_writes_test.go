@@ -33,7 +33,7 @@ func startADEWriteServer(t *testing.T, dropWrites bool) (*httptest.Server, *[]se
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/applemdms":
-			_, _ = w.Write([]byte(`[{"id":"690b6c939c0bf5000100039a","name":"Klaassen Consulting"}]`))
+			_, _ = w.Write([]byte(`[{"id":"690b6c939c0bf5000100039a","name":"Example Org"}]`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/systemgroups/"):
 			if strings.HasSuffix(r.URL.Path, testDeviceGroupID) {
 				_, _ = w.Write([]byte(`{"id":"` + testDeviceGroupID + `","name":"All Macs"}`))

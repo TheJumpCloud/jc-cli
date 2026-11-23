@@ -187,10 +187,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/plan"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

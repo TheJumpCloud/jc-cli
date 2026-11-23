@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/keychain"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/keychain"
 )
 
 // manifestSigner produces a tamper-evident record for a destructive MCP

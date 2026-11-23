@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 	"github.com/spf13/viper"
 )
 

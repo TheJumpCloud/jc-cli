@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // notAResource lists top-level command groups that legitimately have no

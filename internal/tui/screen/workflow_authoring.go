@@ -15,12 +15,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/schema"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
-	"github.com/klaassen-consulting/jc/internal/workflow"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/workflow"
 )
 
 // Authoring flow for `jc tui → Workflow Templates → <template> → n`.

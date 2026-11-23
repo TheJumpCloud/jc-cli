@@ -32,7 +32,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // ErrNameImmutable explains why an update may not change "name". Live: a new

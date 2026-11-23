@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 	"github.com/spf13/viper"
 )
 

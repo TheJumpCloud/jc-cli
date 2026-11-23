@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/accessreq"
-	"github.com/klaassen-consulting/jc/internal/version"
+	"github.com/TheJumpCloud/jc-cli/internal/accessreq"
+	"github.com/TheJumpCloud/jc-cli/internal/version"
 )
 
 // FieldDef describes a single field on a JumpCloud resource.

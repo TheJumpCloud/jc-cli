@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
-	"github.com/klaassen-consulting/jc/internal/bundle"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/bundle"
 )
 
 // makeApplePolicyJSON builds a realistic GET /policies/{id} response
