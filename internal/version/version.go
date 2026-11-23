@@ -55,16 +55,28 @@ func vcs() (rev string, dirty, ok bool) {
 		if !available {
 			return
 		}
-		for _, s := range info.Settings {
-			switch s.Key {
-			case "vcs.revision":
-				vcsRev, vcsOK = s.Value, true
-			case "vcs.modified":
-				vcsMod = s.Value == "true"
-			}
-		}
+		vcsRev, vcsMod, vcsOK = parseVCS(info.Settings)
 	})
 	return vcsRev, vcsMod, vcsOK
+}
+
+// parseVCS extracts the revision and modified flag from build settings.
+func parseVCS(settings []debug.BuildSetting) (rev string, dirty, ok bool) {
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev, ok = s.Value, true
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	return rev, dirty, ok
+}
+
+// Commit returns the full VCS revision this binary was built from and whether
+// the tree was dirty. ok is false when the build carries no VCS information.
+func Commit() (rev string, dirty, ok bool) {
+	return vcs()
 }
 
 func min(a, b int) int {

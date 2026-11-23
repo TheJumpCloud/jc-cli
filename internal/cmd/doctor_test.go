@@ -809,3 +809,40 @@ ask:
 		}
 	}
 }
+
+func TestBuildFrom_WithVCS(t *testing.T) {
+	rev := strings.Repeat("a", 40)
+	b := buildFrom(rev, true, true)
+	if b.Commit != rev || b.Dirty == nil || !*b.Dirty {
+		t.Fatalf("commit/dirty = %q/%v, want %q/true", b.Commit, b.Dirty, rev)
+	}
+	jb, _ := json.Marshal(doctorReport{Build: b})
+	if !strings.Contains(string(jb), `"commit":"`+rev+`"`) || !strings.Contains(string(jb), `"dirty":true`) {
+		t.Errorf("json missing commit/dirty: %s", jb)
+	}
+	var buf bytes.Buffer
+	if err := printDoctorText(&buf, doctorReport{Build: b}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Commit:") || !strings.Contains(buf.String(), rev+" (dirty)") {
+		t.Errorf("text missing commit line:\n%s", buf.String())
+	}
+}
+
+func TestBuildFrom_WithoutVCS(t *testing.T) {
+	b := buildFrom("", false, false)
+	if b.Commit != "" || b.Dirty != nil {
+		t.Fatalf("want no commit/dirty, got %q/%v", b.Commit, b.Dirty)
+	}
+	jb, _ := json.Marshal(doctorReport{Build: b})
+	if strings.Contains(string(jb), `"commit"`) || strings.Contains(string(jb), `"dirty"`) {
+		t.Errorf("json should omit commit/dirty: %s", jb)
+	}
+	var buf bytes.Buffer
+	if err := printDoctorText(&buf, doctorReport{Build: b}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "Commit") {
+		t.Errorf("text should not print a commit line:\n%s", buf.String())
+	}
+}
