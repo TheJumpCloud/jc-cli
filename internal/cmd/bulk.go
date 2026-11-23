@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
 )
 
 // bulkResult tracks the outcome of a single bulk operation row.

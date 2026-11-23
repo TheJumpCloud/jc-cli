@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

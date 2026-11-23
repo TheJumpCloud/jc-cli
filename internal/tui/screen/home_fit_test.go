@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 )
 
 // selectedLine returns the one view line holding the selected entry, failing

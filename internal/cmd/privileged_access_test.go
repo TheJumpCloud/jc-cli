@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 const pamDB = "dddddddddddddddddddddddd"

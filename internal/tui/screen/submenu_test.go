@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui"
 )
 
 func TestSubMenuScreen_Title(t *testing.T) {

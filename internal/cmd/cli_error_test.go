@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/filter"
-	"github.com/klaassen-consulting/jc/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/filter"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
 )
 
 // --- CLIError type tests ---

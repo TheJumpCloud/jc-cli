@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/featuresettings"
+	"github.com/TheJumpCloud/jc-cli/internal/featuresettings"
 )
 
 type featureSettingsListInput struct {

@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/apple_mdm"
-	"github.com/klaassen-consulting/jc/internal/bundle"
+	"github.com/TheJumpCloud/jc-cli/internal/apple_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/bundle"
 )
 
 // Report says what the conversion did — surfaced by the import command

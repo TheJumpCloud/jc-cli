@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // installFixtureSnapshot points the catalog cache at a temp dir

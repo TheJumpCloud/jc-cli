@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/recipe"
-	"github.com/klaassen-consulting/jc/internal/tui"
 )
 
 // withRecipeLoaders installs fake loaders for the duration of a test.

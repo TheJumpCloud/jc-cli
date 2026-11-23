@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // pagedAgents serves /agents as a cursor-paged endpoint, recording the query

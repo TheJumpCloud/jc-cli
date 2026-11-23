@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // Table renders a scrollable, sortable table of JSON data.

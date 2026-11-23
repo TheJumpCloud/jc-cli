@@ -1,6 +1,6 @@
 package mcp
 
-import "github.com/klaassen-consulting/jc/internal/recipe"
+import "github.com/TheJumpCloud/jc-cli/internal/recipe"
 
 // RecipeDispatcher is the command dispatcher used to execute recipe steps
 // from the MCP `recipe_run` tool (when called with Execute: true) and from

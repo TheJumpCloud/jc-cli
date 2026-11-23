@@ -6,13 +6,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/fetch"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/schema"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/fetch"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // formField holds the state for a single editable field.

@@ -13,12 +13,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/pwpolicy"
-	"github.com/klaassen-consulting/jc/internal/schema"
-	"github.com/klaassen-consulting/jc/internal/text"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/pwpolicy"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 )
 
 // newV1ClientForPasswordPolicy is overridable for tests.

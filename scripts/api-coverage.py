@@ -100,10 +100,14 @@ AREA_TO_COMMAND = {
     # that name matched nothing in either document and was pure decoration.
     "EventQuery": "insights",              # /events, /events/count
     "EventDistinctQuery": "insights",      # /events/distinct
-    # Deliberately absent, so they count as the gap they are: EventIntervalQuery
-    # (/events/interval), "Reports (Directory Insights)" (DI's own report
-    # family -- NOT the Console Reports the `reports` group covers), and SIEM
-    # Integration (/data-export). Nothing in internal/ references any of them.
+    "EventIntervalQuery": "insights",      # /events/interval -> `insights interval`
+    # DI's own report family -- NOT the Console Reports the `reports` group
+    # covers -- ships as `insights reports`.
+    "Reports (Directory Insights)": "insights",
+    "SIEM Integration": "siem",            # /data-export/v2
+    "Email Subscriptions": "email-subscriptions",
+    "Access Risk Settings": "identity-risk",  # `identity-risk settings`
+    "GCEP": "gcep",                        # reads only; PUT/DELETE held back
     "Groups": "groups",
     "Rules": "graph",
     "mdm": "apple-mdm/windows-mdm",
@@ -254,7 +258,7 @@ def main():
         lines.append("\n**Every in-scope area has a command group.**\n")
 
     # Area coverage is NOT per-operation coverage, and the difference is
-    # deliberate in five areas.
+    # deliberate in six areas.
     #
     # This table used to be emitted only in the zero-gap branch, on the
     # reasoning that 100% was the number most likely to be misread. That got
@@ -263,7 +267,7 @@ def main():
     # the document — exactly when the picture had become harder to read, not
     # easier. The caveat belongs with the number in every case.
     lines.append(
-        "Area-level, not per-operation. Five areas are deliberately partial, "
+        "Area-level, not per-operation. Six areas are deliberately partial, "
         "and the reason is recorded in each:\n\n"
         "| Area | Shipped | Held back, and why |\n"
         "|---|---|---|\n"
@@ -271,6 +275,7 @@ def main():
         "| Privileged Access | reads; server, database and website create/update/archive/clone/delete; credential archive/clone/delete; blocking-rule update/delete | credential create and edit (secret-bearing, and a full-replace edit could clear the secret), blocking-rule create (not atomic, undocumented criteria), connectors, resource managers, rotation and Excel import/export are not shipped; the secret, MFA-code, rotation-script, backup-key, connector-install-file and session-recording endpoints are never read |\n"
         "| Password Manager | reads | the API creates a shared folder and cannot delete one, so a write is one-way on a live tenant |\n"
         "| Google EMM | reads | six of the writes are device commands including `erase-device`; `DELETE` on an enterprise unbinds the org |\n"
+        "| GCEP | reads (configuration, device state) | `PUT` and `DELETE` of the configuration: no tenant has the integration, the body is undocumented, and `DELETE` disconnects the org from Google |\n"
         "| Workday Import | 2 of 9 | no tenant available has a Workday integration, so the other endpoints' response shapes have never been observed |\n")
 
     lines.append("## Covered areas (command group exists)\n")

@@ -474,7 +474,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
 )
 
 func TestSubMenuScreen_Title(t *testing.T) {
@@ -558,8 +558,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/klaassen-consulting/jc/internal/tui"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
+	"github.com/TheJumpCloud/jc-cli/internal/tui"
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 )
 
 // SubMenuScreen shows a small list of items within a grouping (e.g. Cloud Directories).

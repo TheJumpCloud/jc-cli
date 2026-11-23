@@ -6,7 +6,7 @@ import (
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // Windows Policy CSP catalog tools (KLA-460) — the read-only discovery

@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 
-	"github.com/klaassen-consulting/jc/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
 )
 
 // --- Test helpers ---
@@ -377,6 +377,10 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"privileged_access_credential_delete", "privileged_access_credential_archive",
 		"privileged_access_credential_unarchive", "privileged_access_credential_clone",
 		"privileged_access_blocking_rule_update", "privileged_access_blocking_rule_delete",
+		// The last six API areas (KLA-485).
+		"insights_event_histogram", "insights_reports_list", "insights_report_request",
+		"siem_events", "siem_connection_test", "email_subscriptions_list", "email_subscription_set",
+		"identity_risk_settings_list", "identity_risk_setting_set", "gcep_configuration", "gcep_device_state",
 		"ai_gateway_servers_list", "ai_gateway_server_get", "ai_gateway_redirect_uris_list", "ai_gateway_catalog_resolve", "ai_gateway_catalog_connector_get",
 		// Password Manager — the credential vault, read-only by design.
 		"password_manager_overview",
@@ -620,8 +624,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 471 {
-		t.Errorf("expected 471 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 482 {
+		t.Errorf("expected 482 tools, got %d", len(result.Tools))
 	}
 }
 

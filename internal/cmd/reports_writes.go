@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/plan"
-	"github.com/klaassen-consulting/jc/internal/report"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/report"
 )
 
 // readReportFile reads a --report-file path (or "-" for stdin) and returns the

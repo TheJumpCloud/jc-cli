@@ -3,8 +3,8 @@ package component
 import (
 	"strings"
 
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // StatusBar renders breadcrumbs, help hints, and loading state.

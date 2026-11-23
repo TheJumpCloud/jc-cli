@@ -12,10 +12,10 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/recipe"
-	"github.com/klaassen-consulting/jc/internal/version"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/recipe"
+	"github.com/TheJumpCloud/jc-cli/internal/version"
 )
 
 // validOutputFormats lists the accepted --output values.
@@ -168,7 +168,7 @@ interface.`,
 	// AI & Automation
 	addToGroup(rootCmd, "ai",
 		newMcpCmd(), newAskCmd(), newExplainCmd(),
-		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newPasswordVaultCmd(), newPrivilegedAccessCmd(), newGoogleEMMCmd(), newWorkdayCmd(), newAccessCertCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
+		newRecipeCmd(), newWorkflowsCmd(), newPasswordManagerCmd(), newPasswordVaultCmd(), newPrivilegedAccessCmd(), newSIEMCmd(), newEmailSubscriptionsCmd(), newGCEPCmd(), newGoogleEMMCmd(), newWorkdayCmd(), newAccessCertCmd(), newBulkCmd(), newMultiCmd(), newSchemaCmd(),
 	)
 
 	// Setup & Config

@@ -438,3 +438,35 @@ func TestChokepoint_NonDestructiveBypassesStepUp(t *testing.T) {
 		t.Errorf("step-up calls = %d, want 0 (non-destructive tool)", got)
 	}
 }
+
+// A target is agent input: control characters, ANSI escapes and bidi
+// overrides must not reach the approver's prompt as live characters.
+func TestDestructiveTarget_DisplaySafe(t *testing.T) {
+	for _, c := range []struct {
+		args any
+		want string
+	}{
+		{riskSettingSetInput{Name: "dormant_account_threshold_days", Value: "90\nApprove: enabled=true"},
+			`"dormant_account_threshold_days=90\nApprove: enabled=true"`},
+		{riskSettingSetInput{Name: "x", Value: "\x1b[2K\rok"}, `"x=\x1b[2K\rok"`},
+		{riskSettingSetInput{Name: "x", Value: "a\u202eb"}, "\"x=a\\u202eb\""},
+		{riskSettingSetInput{Name: "x", Value: "\xff"}, `"x=\xff"`},
+		{riskSettingSetInput{Name: "enabled", Value: "false"}, "enabled=false"},
+	} {
+		if got := destructiveTarget(c.args); got != c.want {
+			t.Errorf("got %s, want %s", got, c.want)
+		}
+	}
+	// Separators a display may break a line on.
+	for _, sep := range []string{"\u2028", "\u2029", "\u0085", "\u00a0", "\u3000", "\t"} {
+		got := destructiveTarget(riskSettingSetInput{Name: "x", Value: "a" + sep + "b"})
+		if got == "x=a"+sep+"b" || !strings.HasPrefix(got, `"`) {
+			t.Errorf("%U must make the target render quoted, got %s", []rune(sep)[0], got)
+		}
+	}
+	// Never shortened: the end of a long target is still shown.
+	long := destructiveTarget(riskSettingSetInput{Name: "n", Value: strings.Repeat("é", 300) + "enabled=false"})
+	if !strings.HasSuffix(long, "enabled=false") {
+		t.Errorf("a long target must be shown whole, got %d runes", len([]rune(long)))
+	}
+}

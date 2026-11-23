@@ -11,7 +11,7 @@ import (
 // The live enterprise, verbatim from the probe.
 const liveEnterprises = `{"count":1,"enterprises":[{
  "allowDeviceEnrollment":true,"contactEmail":"","createdAt":"2023-04-19T23:02:41.120Z",
- "deviceGroupId":"6440738accb5e7000144d1b2","displayName":"klaassen.consulting",
+ "deviceGroupId":"6440738accb5e7000144d1b2","displayName":"example.com",
  "enterpriseType":"MANAGED_GOOGLE_PLAY_ACCOUNTS_ENTERPRISE",
  "name":"enterprises/LC01m7doq1","objectId":"644073116f8b61c2b15ab423",
  "organizationObjectId":"5ec71e8e96bfda0611fc6c5b"}]}`
@@ -91,10 +91,10 @@ func TestFindEnterprise_ByEveryIdentifierAnOperatorMightType(t *testing.T) {
 	}
 	for _, id := range []string{
 		"644073116f8b61c2b15ab423", // object id
-		"klaassen.consulting",      // display name
+		"example.com",              // display name
 		"enterprises/LC01m7doq1",   // Google resource name
 		"LC01m7doq1",               // bare Google id
-		"KLAASSEN.CONSULTING",      // case-insensitive
+		"EXAMPLE.COM",              // case-insensitive
 	} {
 		got, err := FindEnterprise(list, id)
 		if err != nil {
@@ -157,7 +157,7 @@ func TestResolveEnterprise_AcceptsTheRealOne(t *testing.T) {
 	get := func(_ context.Context, _ string) (json.RawMessage, error) {
 		return json.RawMessage(liveEnterprises), nil
 	}
-	e, err := ResolveEnterprise(context.Background(), get, "klaassen.consulting")
+	e, err := ResolveEnterprise(context.Background(), get, "example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/accesscert"
+	"github.com/TheJumpCloud/jc-cli/internal/accesscert"
 )
 
 // Access Certification tools: the read-only half of the area. Every handler

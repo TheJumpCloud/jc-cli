@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // category groups command paths under a sidebar heading on the site.
@@ -56,7 +56,7 @@ var categories = []category{
 	},
 	{
 		Name: "Insights",
-		Commands: []string{"jc insights", "jc system-insights", "jc identity-risk",
+		Commands: []string{"jc insights", "jc siem", "jc system-insights", "jc identity-risk",
 			"jc alerts", "jc notification-channels", "jc reports", "jc search",
 			"jc saved-views"},
 	},
@@ -71,7 +71,7 @@ var categories = []category{
 	{
 		Name: "Org & Lifecycle",
 		Commands: []string{
-			"jc org", "jc user-states", "jc access-requests",
+			"jc org", "jc email-subscriptions", "jc user-states", "jc access-requests",
 			"jc custom-emails", "jc bulk", "jc graph",
 		},
 	},
@@ -79,7 +79,7 @@ var categories = []category{
 		Name: "AI & Automation",
 		Commands: []string{
 			"jc recipe", "jc multi", "jc mcp", "jc ask", "jc explain", "jc schema",
-			"jc password-vault", "jc privileged-access",
+			"jc password-vault", "jc privileged-access", "jc gcep",
 			"jc workflows",
 		},
 	},

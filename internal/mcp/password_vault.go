@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/passwordvault"
+	"github.com/TheJumpCloud/jc-cli/internal/passwordvault"
 )
 
 // Password Vault tools — the tenant scope. Credentials, folders and websites

@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/keychain"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/keychain"
 )
 
 // ResolvedAuth is the single source of truth for "what auth will jc

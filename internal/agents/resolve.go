@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/klaassen-consulting/jc/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
 )
 
 // Catalog turns the ids in this area's association responses into names.

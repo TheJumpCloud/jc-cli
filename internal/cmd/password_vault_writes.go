@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"github.com/klaassen-consulting/jc/internal/config"
-	"github.com/klaassen-consulting/jc/internal/output"
-	"github.com/klaassen-consulting/jc/internal/passwordvault"
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/config"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/passwordvault"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 // Password Vault writes.
@@ -148,12 +148,20 @@ func confirmWrite(cmd *cobra.Command, ctx context.Context, endpoint, what, id st
 	return nil
 }
 
-// vaultConfirm handles --plan and the confirmation prompt.
+// vaultConfirm handles --plan and the confirmation prompt for the one-way
+// vault writes.
 func vaultConfirm(cmd *cobra.Command, action, resource, target string, effects []string) (bool, error) {
+	return confirmChange(cmd, action, resource, target, effects, false)
+}
+
+// confirmChange handles --plan and the confirmation prompt. reversible is what
+// the plan reports to agents and tooling, so it must be true only when the
+// write can simply be set back.
+func confirmChange(cmd *cobra.Command, action, resource, target string, effects []string, reversible bool) (bool, error) {
 	if viper.GetBool("plan") {
 		return false, renderPlan(cmd, &plan.Plan{
 			Action: action, Resource: resource, Target: target,
-			Effects: effects, Reversible: false,
+			Effects: effects, Reversible: reversible,
 		})
 	}
 	if mustAbortWithoutTTY() {

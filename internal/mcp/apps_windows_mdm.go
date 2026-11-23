@@ -7,7 +7,7 @@ import (
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/windows_mdm"
+	"github.com/TheJumpCloud/jc-cli/internal/windows_mdm"
 )
 
 // MCP App: Windows custom MDM policies (KLA-459).

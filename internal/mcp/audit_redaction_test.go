@@ -80,6 +80,7 @@ var notASecret = map[string]string{
 	"partition_key":     "a partition field name",
 	"continuation_token": "an opaque page cursor returned by the previous page; " +
 		"it grants nothing on its own",
+	"email_key": "the name of a notification email (e.g. lockout-notice-admin), not a key that unlocks anything",
 	// Matched by the pattern, genuinely not credentials. Each one was read
 	// before being listed here.
 	"user_password_expiration_action": "an LDAP policy action name, not a password",

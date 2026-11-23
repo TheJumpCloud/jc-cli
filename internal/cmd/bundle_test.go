@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/bundle"
+	"github.com/TheJumpCloud/jc-cli/internal/bundle"
 )
 
 func runBundleCmd(t *testing.T, args ...string) (string, string, error) {

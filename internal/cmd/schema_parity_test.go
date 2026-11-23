@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/schema"
+	"github.com/TheJumpCloud/jc-cli/internal/schema"
 )
 
 // notAResource lists top-level command groups that legitimately have no
@@ -64,6 +64,11 @@ var notAResource = map[string]string{
 	"ai-gateway": "undocumented preview API whose server records can carry " +
 		"upstream credentials; every read goes through internal/aigateway, which " +
 		"redacts them, and a generic TUI list or detail screen would bypass that",
+	"siem": "a windowed export feed (one hour per request, cursor paging), not a " +
+		"collection to browse",
+	"email-subscriptions": "the calling admin's own preferences, a handful of toggles, " +
+		"not an org resource",
+	"gcep": "a singleton integration configuration plus a per-device lookup",
 	"privileged-access": "every read goes through internal/privaccess, which works " +
 		"around a broken detail endpoint, checks existence before reads whose " +
 		"absence signal is a retried 500, and redacts connection strings; a generic " +

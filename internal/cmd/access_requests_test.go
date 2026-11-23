@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klaassen-consulting/jc/internal/plan"
+	"github.com/TheJumpCloud/jc-cli/internal/plan"
 )
 
 // startAccessRequestsServer creates a mock JumpCloud V2 server that handles access request endpoints:

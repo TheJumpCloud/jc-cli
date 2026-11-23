@@ -372,7 +372,7 @@ func sampleOrgs() []map[string]any {
         {
             "_id":         "aabbccddee112233aabb8001",
             "id":          "aabbccddee112233aabb8001",
-            "displayName": "Klaassen Consulting",
+            "displayName": "Example Org",
             "created":     "2023-01-01T00:00:00Z",
             "logoUrl":     "",
         },

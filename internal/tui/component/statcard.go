@@ -1,8 +1,8 @@
 package component
 
 import (
+	"github.com/TheJumpCloud/jc-cli/internal/tui/style"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/klaassen-consulting/jc/internal/tui/style"
 )
 
 // StatCard renders a bordered card with a label and a value.

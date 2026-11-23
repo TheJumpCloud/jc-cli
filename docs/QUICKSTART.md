@@ -89,7 +89,9 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc admins list/get/create/update/delete` | Admin accounts |
 | `jc auth-policies list/get/create/update/delete` | Conditional access |
 | `jc iplists list/get/create/update/delete` | IP allow/block lists |
-| `jc insights query/count/distinct` | Directory Insights events |
+| `jc insights query/count/distinct/interval` | Directory Insights events and per-bucket counts |
+| `jc insights reports` | Directory Insights reports (request, list, download to a file) |
+| `jc siem events` | SIEM export feed, one hour per pull |
 | `jc graph traverse --from TYPE:NAME --to TYPE` | Association graph |
 | `jc agents` / `jc agent-groups` | AI agent identities, their credentials, and the groups that grant them apps |
 | `jc ai-gateway servers/redirect-uris/catalog` | AI Gateway configuration, read-only (preview) |
@@ -97,7 +99,9 @@ Multiple:  --filter "os:eq:Linux" --filter "active:eq:true"  (AND)
 | `jc access-cert` | Access Certification campaigns, runs, review items and audit reports (read-only) |
 | `jc password-policies` | Password policies; `for-user` shows which one applies |
 | `jc alerts` / `jc notification-channels` | Alert triage, health rules, and where alerts are delivered |
-| `jc identity-risk` | Identity risk detections and aggregates |
+| `jc identity-risk` | Identity risk detections, aggregates and detection settings |
+| `jc email-subscriptions` | Your own admin notification emails |
+| `jc gcep` | Google Chrome Enterprise Premium device trust (read-only) |
 | `jc reports` | Report templates, custom/builder/scheduled reports, export |
 | `jc workflows` | Server-side JumpCloud Workflows: validate, explain, create, trigger |
 | `jc password-vault` | Password Vault (replaces Password Manager) |

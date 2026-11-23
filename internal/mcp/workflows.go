@@ -10,10 +10,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/klaassen-consulting/jc/internal/api"
-	"github.com/klaassen-consulting/jc/internal/resolve"
-	"github.com/klaassen-consulting/jc/internal/text"
-	"github.com/klaassen-consulting/jc/internal/workflow"
+	"github.com/TheJumpCloud/jc-cli/internal/api"
+	"github.com/TheJumpCloud/jc-cli/internal/resolve"
+	"github.com/TheJumpCloud/jc-cli/internal/text"
+	"github.com/TheJumpCloud/jc-cli/internal/workflow"
 )
 
 type wfListInput struct {

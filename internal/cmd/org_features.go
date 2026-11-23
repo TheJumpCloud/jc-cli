@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klaassen-consulting/jc/internal/featuresettings"
-	"github.com/klaassen-consulting/jc/internal/output"
+	"github.com/TheJumpCloud/jc-cli/internal/featuresettings"
+	"github.com/TheJumpCloud/jc-cli/internal/output"
 )
 
 // newOrgFeaturesCmd builds `jc org features`: read-only access to the
