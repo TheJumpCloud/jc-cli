@@ -144,6 +144,14 @@ Manage JumpCloud devices (systems)
 - `--filter` `<string[]>` — Filter expressions (list)
 - `--confirm-erase` `<bool>` — Required safety flag for erase command
 
+#### `jc gcep`
+
+Manage the GCEP Google device-trust integration and read device trust state
+
+The organization's GCEP configuration (Google customer id, Google user email, state and the OS families it applies to) and each device's GCEP registration, management status and device users. 'config set' reads the configuration first and sends the complete body with only the given fields changed, then reads it back. 'config delete' removes the integration for the whole organization and needs --force when not at a terminal. MCP exposes the two reads only.
+
+**Subcommands:** `config`, `device-state`
+
 #### `jc apple-mdm`
 
 Manage Apple MDM configurations + browse schemas + emit mobileconfigs + create JC policies
@@ -841,6 +849,7 @@ Every resource has a JSON schema available via `jc schema <resource>`:
 - `custom-emails`
 - `devices`
 - `duo`
+- `gcep`
 - `google-emm`
 - `groups`
 - `gsuite`

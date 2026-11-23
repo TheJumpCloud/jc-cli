@@ -41,7 +41,7 @@ var categories = []category{
 	},
 	{
 		Name:     "Devices & MDM",
-		Commands: []string{"jc devices", "jc apple-mdm", "jc windows-mdm"},
+		Commands: []string{"jc devices", "jc apple-mdm", "jc windows-mdm", "jc gcep"},
 	},
 	{
 		Name:     "Apps & SSO",
