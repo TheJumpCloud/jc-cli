@@ -120,6 +120,9 @@ var commandClass = map[string]string{
 	"jc identity-risk geolocations":     ClassReadOnly,
 	// A POST that reads: the body carries the filter, nothing changes.
 	"jc identity-risk timeline": ClassReadOnly,
+	// Access Risk Detection settings: the write can switch detection off.
+	"jc identity-risk settings list": ClassReadOnly,
+	"jc identity-risk settings set":  ClassMutating,
 
 	// password-vault — the replacement for Password Manager. Tenant scope
 	// only in this PR: credentials, folders and websites follow.
@@ -183,11 +186,13 @@ var commandClass = map[string]string{
 	"jc upgrade": ClassInternal,
 
 	// admins — JumpCloud admin user mgmt.
-	"jc admins create": ClassMutating,
-	"jc admins delete": ClassDestructive,
-	"jc admins get":    ClassReadOnly,
-	"jc admins list":   ClassReadOnly,
-	"jc admins update": ClassMutating,
+	"jc admins create":                   ClassMutating,
+	"jc admins delete":                   ClassDestructive,
+	"jc admins email-subscriptions list": ClassReadOnly,
+	"jc admins email-subscriptions set":  ClassMutating,
+	"jc admins get":                      ClassReadOnly,
+	"jc admins list":                     ClassReadOnly,
+	"jc admins update":                   ClassMutating,
 
 	// alerts — Monitoring & Alerting triage (V2).
 	"jc alerts list":        ClassReadOnly,
@@ -437,6 +442,11 @@ var commandClass = map[string]string{
 	"jc devices settings sign-in set":       ClassMutating,
 	"jc devices settings password-sync get": ClassReadOnly,
 	"jc devices settings password-sync set": ClassMutating,
+	// GCEP: delete removes the integration for the whole organization.
+	"jc gcep config get":    ClassReadOnly,
+	"jc gcep config set":    ClassMutating,
+	"jc gcep config delete": ClassDestructive,
+	"jc gcep device-state":  ClassReadOnly,
 
 	// workflows — JumpCloud server-side event automation (KLA-485).
 	// trigger is destructive rather than merely mutating: its blast radius is
@@ -568,6 +578,7 @@ var commandClass = map[string]string{
 	// insights — Directory Insights queries. Read-only.
 	"jc insights count":            ClassReadOnly,
 	"jc insights distinct":         ClassReadOnly,
+	"jc insights interval":         ClassReadOnly, // POST, but a pure query
 	"jc insights query":            ClassReadOnly,
 	"jc insights reports download": ClassReadOnly,
 	"jc insights reports list":     ClassReadOnly,
@@ -575,6 +586,8 @@ var commandClass = map[string]string{
 	"jc insights run":              ClassReadOnly, // runs a saved query
 	"jc insights save":             ClassMutating, // persists a query def to JC
 	"jc insights saved":            ClassReadOnly,
+	"jc insights siem events":      ClassReadOnly,
+	"jc insights siem test":        ClassReadOnly, // spec: confirms org binding, returns no events; re-class if a probe shows state change
 
 	// roles — RBAC scope sets (V2).
 	"jc roles list":   ClassReadOnly,

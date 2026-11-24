@@ -30,6 +30,7 @@ except ImportError:
 # if there is no command group at all (the hard coverage gap). Keep this in
 # sync with `jc --help`.
 AREA_TO_COMMAND = {
+    "Access Risk Settings": "identity-risk/settings",
     "Graph": "graph",
     "System Insights": "system-insights",
     "Assets": "assets",
@@ -37,6 +38,7 @@ AREA_TO_COMMAND = {
     "Active Directory": "ad",
     "User Groups": "groups",
     "Users": "users",
+    "Email Subscriptions": "admins/email-subscriptions",
     "G Suite": "gsuite",
     "Apple MDM": "apple-mdm",
     "Policies": "policies",
@@ -69,6 +71,7 @@ AREA_TO_COMMAND = {
     "Google EMM": "google-emm",
     "Workday Import": "workday",
     "Access Certification": "access-cert",
+    "GCEP": "gcep",
     "Workflows": "workflows",
     "System Group Associations": "graph",
     "IP Lists": "iplists",
@@ -98,10 +101,9 @@ AREA_TO_COMMAND = {
     # that name matched nothing in either document and was pure decoration.
     "EventQuery": "insights",              # /events, /events/count
     "EventDistinctQuery": "insights",      # /events/distinct
+    "EventIntervalQuery": "insights",      # /events/interval
+    "SIEM Integration": "insights/siem",   # /data-export/v2
     "Reports (Directory Insights)": "insights/reports",  # DI's own report family -- NOT the Console Reports `reports` covers
-    # Deliberately absent, so they count as the gap they are: EventIntervalQuery
-    # (/events/interval) and SIEM Integration (/data-export). Nothing in
-    # internal/ references either of them.
     "Groups": "groups",
     "Rules": "graph",
     "mdm": "apple-mdm/windows-mdm",

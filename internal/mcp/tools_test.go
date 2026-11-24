@@ -352,6 +352,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"access_cert_review_items_list",
 		"access_cert_audit_report_get",
 		"access_cert_admin_queue_list",
+		// GCEP — the two reads; set and delete are CLI-only.
+		"gcep_config_get",
+		"gcep_device_state_get",
 		// Workday import — two verified reads; the rest is unprobed.
 		"workday_integrations_list",
 		"workday_integration_get",
@@ -396,13 +399,13 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		// Identity Providers
 		"identity_providers_list", "identity_providers_get", "identity_providers_create", "identity_providers_update", "identity_providers_delete",
 		// Insights
-		"insights_query", "insights_count", "insights_distinct", "insights_reports_list",
+		"insights_query", "insights_count", "insights_distinct", "insights_interval", "insights_reports_list",
 		// Apps
 		"apps_list", "apps_get", "apps_create", "apps_update", "apps_delete",
 		// Graph
 		"graph_traverse", "graph_bind", "graph_unbind",
 		// Admins
-		"admins_list", "admins_get", "admins_create", "admins_update", "admins_delete",
+		"admins_list", "admin_email_subscriptions_list", "admins_get", "admins_create", "admins_update", "admins_delete",
 		// Org
 		"org_list", "org_get", "org_settings", "org_update",
 		// Software
@@ -583,6 +586,9 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 		"bundle_show",
 		"bundle_status",
 		"bundle_apply",
+
+		// Access Risk settings: read-only; no tool changes a setting.
+		"identity_risk_settings_list",
 	}
 
 	toolNames := make(map[string]bool)
@@ -597,8 +603,8 @@ func TestMCP_ListTools_AllRegistered(t *testing.T) {
 	}
 
 	// Verify exact count — update when adding/removing tools.
-	if len(result.Tools) != 431 {
-		t.Errorf("expected 431 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 436 {
+		t.Errorf("expected 436 tools, got %d", len(result.Tools))
 	}
 }
 
@@ -2647,5 +2653,36 @@ func TestMCP_DescriptionsDoNotNameOtherTools(t *testing.T) {
 					"result or error message.", tl.name, other, other, tl.name)
 			}
 		}
+	}
+}
+
+func TestMCP_InsightsIntervalTool(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/insights/directory/v1/events/interval" && r.Method == "POST" {
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			w.Write([]byte(`{"buckets":[{"key":1,"key_as_string":"t","doc_count":2}]}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	t.Cleanup(srv.Close)
+	setupToolTest(t)
+	overrideInsightsClientForTest(t, srv.URL)
+	cs := connectToolTestServer(t, Options{})
+
+	result := callTool(t, cs, "insights_interval", map[string]any{
+		"service": "sso", "last": "24h", "interval_unit": "h",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %+v", result.Content)
+	}
+	if gotBody["interval_unit"] != "h" || gotBody["interval_value"] != "1" {
+		t.Errorf("body = %v", gotBody)
+	}
+
+	bad := callTool(t, cs, "insights_interval", map[string]any{"service": "sso", "last": "24h", "interval_unit": "x"})
+	if !bad.IsError {
+		t.Error("expected error for invalid interval_unit")
 	}
 }

@@ -316,6 +316,39 @@ func (s *Server) registerIdentityRiskTools() {
 			return listEnvelope(rows, &total)
 		},
 	)
+
+	// Read only, deliberately: these settings switch a detection feature on
+	// and off, so no MCP tool can change one.
+	addTypedTool(s, "identity_risk_settings_list", "The organization's Access Risk Detection settings, one row per setting with its name and value: whether detection is enabled and which IP lists are trusted. Read only; this tool cannot change a setting. Optional filter, e.g. setting.name:eq:enabled.",
+		func(ctx context.Context, req *mcp.CallToolRequest, args riskSettingsInput) (*mcp.CallToolResult, any, error) {
+			v := url.Values{}
+			if args.Filter != "" {
+				v.Add("filter", args.Filter)
+			}
+			raw, err := riskGetMCP(ctx, identityrisk.SettingsEndpoint, v)
+			if err != nil {
+				return errorResult(fmt.Sprintf("listing access risk settings: %v", err)), nil, nil
+			}
+			settings, perr := identityrisk.ParseSettings(raw)
+			if perr != nil {
+				return errorResult(perr.Error()), nil, nil
+			}
+			rows := make([]json.RawMessage, 0, len(settings))
+			for _, st := range settings {
+				b, merr := json.Marshal(st)
+				if merr != nil {
+					return errorResult(merr.Error()), nil, nil
+				}
+				rows = append(rows, b)
+			}
+			total := len(rows)
+			return listEnvelope(rows, &total)
+		},
+	)
+}
+
+type riskSettingsInput struct {
+	Filter string `json:"filter,omitempty" jsonschema:"Optional server-side filter, e.g. setting.name:eq:enabled"`
 }
 
 // riskGetMCP is the shared read path for the Identity Risk tools.

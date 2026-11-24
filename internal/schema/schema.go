@@ -862,6 +862,27 @@ var Resources = map[string]ResourceSchema{
 		},
 	},
 
+	// GCEP: one configuration per organization plus per-device trust state.
+	// Shapes are from the spec; see internal/gcep for what was not probed.
+	"gcep": {
+		Resource:      "gcep",
+		APIVersion:    "v2",
+		Verbs:         []string{"get", "update", "delete"},
+		DefaultFields: []string{"customerId", "googleUserEmail", "state", "connectedState", "applicableOsFamilies"},
+		Fields: []FieldDef{
+			{Name: "organizationObjectId", Type: "string", Description: "Owning organization", ReadOnly: true},
+			{Name: "customerId", Type: "string", Description: "Google customer id", Required: true},
+			{Name: "googleUserEmail", Type: "string", Description: "Google user email the integration acts as", Required: true},
+			{Name: "state", Type: "string", Description: "configuration_state_enabled, _disabled, _pending_delete or _unspecified", Required: true},
+			{Name: "connectedState", Type: "string", Description: "connected_state_connected, _disconnected or _unspecified", ReadOnly: true},
+			{Name: "applicableOsFamilies", Type: "array", Description: "OS families the integration applies to: mac_os, windows"},
+			{Name: "configuredByEmail", Type: "string", Description: "Email of the admin who configured it", ReadOnly: true},
+			{Name: "configuredByName", Type: "string", Description: "Name of the admin who configured it", ReadOnly: true},
+			{Name: "configuredByUserId", Type: "string", Description: "Id of the admin who configured it", ReadOnly: true},
+			{Name: "registeredAt", Type: "string", Description: "When the integration was registered", ReadOnly: true},
+		},
+	},
+
 	"workday": {
 		Resource:      "workday",
 		APIVersion:    "v2",
@@ -1587,6 +1608,18 @@ func BuildCommandManifest() CommandManifest {
 					"given. Audit-report downloads are pre-signed URLs; --no-urls strips them. " +
 					"No write operation is exposed.",
 				Subcommands: []string{"settings", "campaigns", "runs", "admin-queue"},
+			},
+			{
+				Path:        "jc gcep",
+				Description: "Manage the GCEP Google device-trust integration and read device trust state",
+				Long: "The organization's GCEP configuration (Google customer id, Google user email, " +
+					"state and the OS families it applies to) and each device's GCEP registration, " +
+					"management status and device users. 'config set' reads the configuration " +
+					"first and sends the complete body with only the given fields changed, then " +
+					"reads it back. 'config delete' removes the integration for the whole " +
+					"organization and needs --force when not at a terminal. MCP exposes the two " +
+					"reads only.",
+				Subcommands: []string{"config", "device-state"},
 			},
 			{
 				Path:        "jc workday",
