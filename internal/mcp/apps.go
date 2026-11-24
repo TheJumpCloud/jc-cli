@@ -197,8 +197,7 @@ func (s *Server) registerAppTool(spec appSpec) {
 		spec.Name,
 		spec.Description,
 		mcp.Meta{
-			"ui":             map[string]any{"resourceUri": spec.ResourceURI},
-			"ui/resourceUri": spec.ResourceURI, // legacy key for older hosts
+			"ui": map[string]any{"resourceUri": spec.ResourceURI},
 		},
 		func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
 			data, err := handler(ctx)
@@ -278,8 +277,7 @@ type typedAppSpec[In any] struct {
 // wrapped-error pattern) become one site instead of one per app.
 func registerTypedAppTool[In any](s *Server, spec typedAppSpec[In]) {
 	meta := mcp.Meta{
-		"ui":             map[string]any{"resourceUri": spec.ResourceURI},
-		"ui/resourceUri": spec.ResourceURI, // legacy key for older hosts
+		"ui": map[string]any{"resourceUri": spec.ResourceURI},
 	}
 	addToolWithMetaTyped(s, spec.Name, spec.Description, meta,
 		func(ctx context.Context, req *mcp.CallToolRequest, args In) (*mcp.CallToolResult, any, error) {
