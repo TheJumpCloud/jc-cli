@@ -107,6 +107,11 @@ const jc = window.jcApp;
 func TestCommonJSLifecycle(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
+		// GitHub's runners ship node; a silent skip there would leave the
+		// handshake untested, so CI must fail instead.
+		if os.Getenv("CI") != "" {
+			t.Fatal("node not on PATH in CI; the MCP Apps lifecycle test needs it")
+		}
 		t.Skip("node not on PATH; the lifecycle of common.js is checked where node exists (CI has it)")
 	}
 	dir := t.TempDir()
