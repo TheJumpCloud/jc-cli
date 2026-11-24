@@ -407,25 +407,17 @@
   var initialized = false;
   jcApp.onToolResult(function(params) {
     if (initialized) return;
-    // Only mark initialized after a successful render; a thrown error or
-    // null payload leaves initialized=false so the setTimeout fallback
-    // below takes over and issues a real callTool with proper error
-    // handling. Previously setting the flag up-front could leave the UI
-    // stuck on the loading spinner.
+    initialized = true;
     try {
       var data = jcApp.parseToolResult(params);
-      if (data) {
-        initialized = true;
-        renderAll(data);
-      }
-    } catch (e) { /* proactive fetch below will retry */ }
+      if (data) renderAll(data);
+      else showError("Empty response");
+    } catch (e) { showError(e.message || String(e)); }
   });
 
-  setTimeout(function() {
-    if (initialized) return;
-    initialized = true;
-    load(collectFilters(), null);
-  }, 500);
+  jcApp.onToolCancelled(function(p) {
+    showError("The tool call was cancelled" + (p && p.reason ? ": " + p.reason : "") + ".");
+  });
 
   document.getElementById("filters").addEventListener("submit", function(ev) {
     ev.preventDefault();

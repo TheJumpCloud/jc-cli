@@ -356,19 +356,22 @@
   var initialized = false;
   jcApp.onToolResult(function(params) {
     if (initialized) return;
+    initialized = true;
     try {
       var data = jcApp.parseToolResult(params);
       if (data) {
-        initialized = true;
         currentUser = (data.user && (data.user.username || data.user.id)) || "";
         renderAll(data);
-      }
-    } catch (e) { /* the message-without-data case shouldn't lock us */ }
+      } else showError("Empty response");
+    } catch (e) { showError(e.message || String(e)); }
   });
 
-  // No proactive fetch — without a user identifier we'd get nowhere. The
-  // refresh button only works after the host has pushed an initial result
-  // (which carries the username we use for subsequent calls).
+  jcApp.onToolCancelled(function(p) {
+    showError("The tool call was cancelled" + (p && p.reason ? ": " + p.reason : "") + ".");
+  });
+
+  // The host pushes the initial result (carrying the id used by Refresh);
+  // apps never fetch their own data on load.
 
   document.getElementById("refresh-btn").addEventListener("click", function() {
     refresh(this);

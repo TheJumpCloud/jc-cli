@@ -475,10 +475,16 @@
   var initialized = false;
   jcApp.onToolResult(function(params) {
     if (initialized) return;
+    initialized = true;
     try {
       var data = jcApp.parseToolResult(params);
-      if (data) { initialized = true; renderAll(data); }
-    } catch (e) { /* swallow — refresh button will recover */ }
+      if (data) renderAll(data);
+      else showError("Empty response");
+    } catch (e) { showError(e.message || String(e)); }
+  });
+
+  jcApp.onToolCancelled(function(p) {
+    showError("The tool call was cancelled" + (p && p.reason ? ": " + p.reason : "") + ".");
   });
 
   document.getElementById("refresh-btn").addEventListener("click", function() {

@@ -411,7 +411,7 @@ func TestDashboardHTML_Integrity(t *testing.T) {
 	}
 
 	// Raw template must carry the app-specific frame and the injection marker.
-	// postMessage/tools/call/ui/ready now live in common.js (injected at serve time).
+	// The postMessage plumbing lives in common.js (injected at serve time).
 	templateRequired := []string{
 		"<!DOCTYPE html>",
 		"<html",
@@ -427,10 +427,9 @@ func TestDashboardHTML_Integrity(t *testing.T) {
 	}
 
 	// The rendered HTML (what clients actually receive) must carry the
-	// scaffolding from common.js — postMessage, tools/call, ui/ready — and
-	// must no longer contain the marker.
+	// scaffolding from common.js and must no longer contain the marker.
 	rendered := renderAppHTML(dashboardHTML)
-	renderedRequired := []string{"postMessage", "tools/call", "ui/ready", "window.jcApp"}
+	renderedRequired := []string{"postMessage", "tools/call", "ui/initialize", "window.jcApp"}
 	for _, s := range renderedRequired {
 		if !strings.Contains(rendered, s) {
 			t.Errorf("rendered dashboard HTML missing scaffolding content: %q", s)

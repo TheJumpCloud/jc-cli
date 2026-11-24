@@ -251,7 +251,7 @@
     while (parent.firstChild) parent.removeChild(parent.firstChild);
   }
 
-  // Signal readiness to host (via shared scaffolding).
+  // Start the MCP Apps handshake; the host then pushes the tool result.
   jcApp.ready('JumpCloud Dashboard', '1.0.0');
 
   // --- Color constants ---
@@ -467,21 +467,9 @@
     } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
   });
 
-  // Proactive fetch (gives host time to push result first)
-  setTimeout(function() {
-    if (loaded) return;
-    jcApp.callTool('dashboard_view', {}).then(function(result) {
-      if (loaded) return;
-      loaded = true;
-      try {
-        var data = jcApp.parseToolResult(result);
-        if (data) renderDashboard(data);
-        else showError('Empty dashboard response');
-      } catch(e) { showError(e.message || 'Failed to parse dashboard data'); }
-    }).catch(function(err) {
-      if (!loaded) showError('Failed to fetch data: ' + (err.message || String(err)));
-    });
-  }, 500);
+  jcApp.onToolCancelled(function(p) {
+    showError("The tool call was cancelled" + (p && p.reason ? ": " + p.reason : "") + ".");
+  });
 
   // Refresh button
   document.getElementById('refresh-btn').addEventListener('click', function() {
