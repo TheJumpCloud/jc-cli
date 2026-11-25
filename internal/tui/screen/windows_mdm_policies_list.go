@@ -122,7 +122,7 @@ func (s *WindowsMDMPoliciesListScreen) loadCmd() tea.Cmd {
 			return loadWindowsPoliciesMsg{err: err}
 		}
 		rows := make([]windowsPolicyRow, 0, len(result.Data))
-		for _, raw := range result.Data {
+		for i, raw := range result.Data {
 			var p struct {
 				ID       string `json:"id"`
 				Name     string `json:"name"`
@@ -131,7 +131,7 @@ func (s *WindowsMDMPoliciesListScreen) loadCmd() tea.Cmd {
 				} `json:"template"`
 			}
 			if err := json.Unmarshal(raw, &p); err != nil {
-				continue
+				return loadWindowsPoliciesMsg{err: fmt.Errorf("policy %d of %d did not decode: %w — the list would be incomplete", i+1, len(result.Data), err)}
 			}
 			if p.Template.Name != windows_mdm.TemplateNameOMAURI &&
 				p.Template.Name != windows_mdm.TemplateNameRegistry {

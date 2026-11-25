@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -176,5 +177,24 @@ func TestMCPSavedViewsDelete_PlanAndExecute(t *testing.T) {
 	})
 	if cap["deletedPath"] != "/saved-views/aaa111aaa111aaa111aaa111" {
 		t.Errorf("delete hit wrong path: %v", cap["deletedPath"])
+	}
+}
+
+func TestFetchSavedViewMCP_UnreadableRecord(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"totalCount":2,"views":["oops",{"id":"aaa111aaa111aaa111aaa111","name":"x"}]}`))
+	}))
+	defer srv.Close()
+	overrideV2ClientForTest(t, srv.URL)
+	client, err := newV2ClientFunc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetchSavedViewMCP(context.Background(), client, "bbb"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("want unreadable error, got %v", err)
+	}
+	if v, err := fetchSavedViewMCP(context.Background(), client, "aaa111aaa111aaa111aaa111"); err != nil || v["name"] != "x" {
+		t.Errorf("readable match must still win: %v %v", v, err)
 	}
 }

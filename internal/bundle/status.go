@@ -135,6 +135,7 @@ func findAppliedPolicyGroup(ctx context.Context, client *api.V2Client, b *Bundle
 	marker := ProvenanceMarker(b)
 	defaultName := DefaultPolicyGroupName(b)
 	var nameMatch struct{ id, name string }
+	unreadable := 0
 	for _, raw := range result.Data {
 		var g struct {
 			ID          string `json:"id"`
@@ -142,6 +143,7 @@ func findAppliedPolicyGroup(ctx context.Context, client *api.V2Client, b *Bundle
 			Description string `json:"description"`
 		}
 		if err := json.Unmarshal(raw, &g); err != nil {
+			unreadable++
 			continue
 		}
 		if g.Description == marker {
@@ -153,6 +155,11 @@ func findAppliedPolicyGroup(ctx context.Context, client *api.V2Client, b *Bundle
 	}
 	if nameMatch.id != "" {
 		return nameMatch.id, nameMatch.name, false, nil
+	}
+	if unreadable > 0 {
+		return "", "", false, fmt.Errorf(
+			"no readable policy group found for bundle %s v%s; %d of %d policy group records could not be read, so it may be one of them",
+			b.Name, b.Version, unreadable, len(result.Data))
 	}
 	return "", "", false, fmt.Errorf(
 		"no policy group found for bundle %s v%s (looked for description %q, then name %q) — was the bundle applied?",

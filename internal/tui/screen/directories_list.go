@@ -75,10 +75,10 @@ func (s *DirectoriesListScreen) loadCmd() tea.Cmd {
 			return loadDirectoriesMsg{err: err}
 		}
 		rows := make([]directoryRow, 0, len(result.Data))
-		for _, raw := range result.Data {
+		for i, raw := range result.Data {
 			var obj map[string]any
 			if err := json.Unmarshal(raw, &obj); err != nil {
-				continue
+				return loadDirectoriesMsg{err: fmt.Errorf("directory %d of %d did not decode: %w — the list would be incomplete", i+1, len(result.Data), err)}
 			}
 			name, _ := obj["name"].(string)
 			id, _ := obj["id"].(string)

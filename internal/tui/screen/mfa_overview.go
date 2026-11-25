@@ -120,7 +120,7 @@ func (s *MFAOverviewScreen) loadCmd() tea.Cmd {
 		if err != nil {
 			return mfaOverviewLoadedMsg{err: fmt.Errorf("listing users: %w", err)}
 		}
-		for _, raw := range users.Data {
+		for i, raw := range users.Data {
 			var u struct {
 				Username string `json:"username"`
 				MFA      struct {
@@ -129,7 +129,7 @@ func (s *MFAOverviewScreen) loadCmd() tea.Cmd {
 				MFAEnrollment map[string]any `json:"mfaEnrollment"`
 			}
 			if err := json.Unmarshal(raw, &u); err != nil {
-				continue
+				return mfaOverviewLoadedMsg{err: fmt.Errorf("user %d of %d did not decode: %w — the list would be incomplete", i+1, len(users.Data), err)}
 			}
 			data.TotalUsers++
 			if u.MFA.Exclusion {

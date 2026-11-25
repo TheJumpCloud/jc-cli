@@ -950,6 +950,7 @@ func aliasUnderscoreID(rows []json.RawMessage) []json.RawMessage {
 		out[i] = r
 		var m map[string]json.RawMessage
 		if json.Unmarshal(r, &m) != nil {
+			// Safe: out[i] = r above keeps the row unchanged; it just gains no id alias.
 			continue
 		}
 		if _, has := m["id"]; has {

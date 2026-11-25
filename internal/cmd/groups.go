@@ -1159,13 +1159,15 @@ func runGroupsRemoveUserFromAll(cmd *cobra.Command, userIdentifier string) error
 		return err
 	}
 
-	var removed int
+	var removed, unreadable int
 	for _, raw := range result.Data {
 		var g struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 		}
 		if err := json.Unmarshal(raw, &g); err != nil {
+			// Not skipped silently: the user may still be in this group.
+			unreadable++
 			continue
 		}
 
@@ -1185,6 +1187,11 @@ func runGroupsRemoveUserFromAll(cmd *cobra.Command, userIdentifier string) error
 		}
 		removed++
 		fmt.Fprintf(cmd.OutOrStdout(), "Removed user %q from group %q.\n", userIdentifier, g.Name)
+	}
+
+	if unreadable > 0 {
+		return fmt.Errorf("could not check %d of %d groups (records did not decode); user %q may still be a member of them (removed from %d)",
+			unreadable, len(result.Data), userIdentifier, removed)
 	}
 
 	if removed == 0 {
