@@ -280,12 +280,14 @@ func FilterByApp(servers []json.RawMessage, appID string) []json.RawMessage {
 func FindServer(servers []json.RawMessage, ident string) (json.RawMessage, error) {
 	var matches []json.RawMessage
 	var ids []string
+	unreadable := 0
 	for _, s := range servers {
 		var v struct {
 			ID   string `json:"object_id"`
 			Name string `json:"name"`
 		}
 		if json.Unmarshal(s, &v) != nil {
+			unreadable++
 			continue
 		}
 		if v.ID == ident {
@@ -298,6 +300,9 @@ func FindServer(servers []json.RawMessage, ident string) (json.RawMessage, error
 	}
 	switch len(matches) {
 	case 0:
+		if unreadable > 0 {
+			return nil, fmt.Errorf("no readable AI Gateway server named or with id %q; %d of %d server records could not be read, so it may be one of them", ident, unreadable, len(servers))
+		}
 		return nil, fmt.Errorf("no AI Gateway server named or with id %q (see `jc ai-gateway servers list`)", ident)
 	case 1:
 		return matches[0], nil

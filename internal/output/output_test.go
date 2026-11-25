@@ -2169,3 +2169,16 @@ func TestWriteSingle_NullRawMessage_Battle(t *testing.T) {
 		t.Errorf("got invalid JSON %q", out)
 	}
 }
+
+func TestWriteIDs_UnreadableRow(t *testing.T) {
+	var buf bytes.Buffer
+	data := []json.RawMessage{json.RawMessage(`{"id":"a"}`), json.RawMessage(`"oops"`)}
+	err := writeIDs(&buf, data)
+	if err == nil || !strings.Contains(err.Error(), "row 2 of 2") {
+		t.Fatalf("want row-naming error, got %v", err)
+	}
+	buf.Reset()
+	if err := writeIDs(&buf, []json.RawMessage{json.RawMessage(`{"id":"a"}`), json.RawMessage(`{"name":"no id"}`)}); err != nil || buf.String() != "a\n" {
+		t.Errorf("absent id stays a normal skip: %q %v", buf.String(), err)
+	}
+}

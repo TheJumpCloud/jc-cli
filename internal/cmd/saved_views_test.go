@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -217,5 +218,26 @@ func TestSavedViewsDelete(t *testing.T) {
 	// The success message resolves the real name out of the list.
 	if !strings.Contains(out, "My Devices") {
 		t.Errorf("delete message should show resolved name, got: %q", out)
+	}
+}
+
+// A saved-view record that does not decode must not read as "not found".
+func TestFetchSavedView_UnreadableRecord(t *testing.T) {
+	setupUsersTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"totalCount":2,"views":["oops",{"id":"aaa111aaa111aaa111aaa111","name":"x"}]}`))
+	}))
+	defer srv.Close()
+	overrideV2Client(t, srv.URL)
+	client, err := newV2Client()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetchSavedView(context.Background(), client, "bbb"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("want unreadable error, got %v", err)
+	}
+	if v, err := fetchSavedView(context.Background(), client, "aaa111aaa111aaa111aaa111"); err != nil || v["name"] != "x" {
+		t.Errorf("readable match must still win: %v %v", v, err)
 	}
 }

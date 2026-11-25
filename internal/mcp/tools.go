@@ -7915,14 +7915,19 @@ func fetchSavedViewMCP(ctx context.Context, client *api.V2Client, id string) (ma
 	if err != nil {
 		return nil, err
 	}
+	unreadable := 0
 	for _, raw := range result.Data {
 		var obj map[string]any
 		if err := json.Unmarshal(raw, &obj); err != nil {
+			unreadable++
 			continue
 		}
 		if s, _ := obj["id"].(string); s == id {
 			return obj, nil
 		}
+	}
+	if unreadable > 0 {
+		return nil, fmt.Errorf("saved view %q not found among the readable records; %d of %d saved views could not be read, so it may be one of them", id, unreadable, len(result.Data))
 	}
 	return nil, fmt.Errorf("saved view %q not found", id)
 }

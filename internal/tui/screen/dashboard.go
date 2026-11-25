@@ -317,9 +317,21 @@ func (d *DashboardScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.ResourceKey {
 		case wkUserList:
-			d.userAgg = aggregateUsers(msg.Data)
+			agg, err := aggregateUsers(msg.Data)
+			if err != nil {
+				d.userAgg = nil
+				d.errors[msg.ResourceKey] = err.Error()
+			} else {
+				d.userAgg = agg
+			}
 		case wkDeviceList:
-			d.deviceAgg = aggregateDevices(msg.Data, time.Now())
+			agg, err := aggregateDevices(msg.Data, time.Now())
+			if err != nil {
+				d.deviceAgg = nil
+				d.errors[msg.ResourceKey] = err.Error()
+			} else {
+				d.deviceAgg = agg
+			}
 		case wkPolicies:
 			// Fire status fetches for each policy.
 			var statusCmds []tea.Cmd
@@ -345,7 +357,10 @@ func (d *DashboardScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			// Check if this is a policy status result.
 			if strings.HasPrefix(msg.ResourceKey, "dash:policy-status:") {
-				d.aggregatePolicyStatus(msg.Data)
+				if err := d.aggregatePolicyStatus(msg.Data); err != nil {
+					d.policyCompliance = nil
+					d.errors[wkPolicies] = err.Error()
+				}
 				d.updateViewport()
 				return d, nil
 			}
@@ -994,9 +1009,11 @@ func (d *DashboardScreen) renderErrorWidget(title, errMsg string, _ int) string 
 // --- Data Aggregation ---
 
 // aggregateUsers computes user status and MFA counts from raw user JSON.
-func aggregateUsers(data []json.RawMessage) *userAggregation {
+// A record that does not decode is an error: counts from fewer records would
+// read as complete.
+func aggregateUsers(data []json.RawMessage) (*userAggregation, error) {
 	agg := &userAggregation{}
-	for _, raw := range data {
+	for i, raw := range data {
 		var u struct {
 			Activated     bool `json:"activated"`
 			Suspended     bool `json:"suspended"`
@@ -1004,7 +1021,7 @@ func aggregateUsers(data []json.RawMessage) *userAggregation {
 			TOTPEnabled   bool `json:"totp_enabled"`
 		}
 		if err := json.Unmarshal(raw, &u); err != nil {
-			continue
+			return nil, fmt.Errorf("user %d of %d did not decode: %w — counts would be incomplete", i+1, len(data), err)
 		}
 		agg.Total++
 		switch {
@@ -1019,22 +1036,22 @@ func aggregateUsers(data []json.RawMessage) *userAggregation {
 			agg.MFAOn++
 		}
 	}
-	return agg
+	return agg, nil
 }
 
 // aggregateDevices computes OS distribution and connectivity buckets from raw device JSON.
 // The now parameter enables deterministic testing of time-based connectivity bucketing.
-func aggregateDevices(data []json.RawMessage, now time.Time) *deviceAggregation {
+func aggregateDevices(data []json.RawMessage, now time.Time) (*deviceAggregation, error) {
 	agg := &deviceAggregation{
 		OSCounts: make(map[string]int),
 	}
-	for _, raw := range data {
+	for i, raw := range data {
 		var dev struct {
 			OS          string `json:"os"`
 			LastContact string `json:"lastContact"`
 		}
 		if err := json.Unmarshal(raw, &dev); err != nil {
-			continue
+			return nil, fmt.Errorf("device %d of %d did not decode: %w — counts would be incomplete", i+1, len(data), err)
 		}
 		agg.Total++
 
@@ -1064,20 +1081,20 @@ func aggregateDevices(data []json.RawMessage, now time.Time) *deviceAggregation 
 		}
 		agg.Offline++
 	}
-	return agg
+	return agg, nil
 }
 
 // aggregatePolicyStatus accumulates policy status counts from a single policy's statuses.
-func (d *DashboardScreen) aggregatePolicyStatus(data []json.RawMessage) {
+func (d *DashboardScreen) aggregatePolicyStatus(data []json.RawMessage) error {
 	if d.policyCompliance == nil {
 		d.policyCompliance = &policyComplianceAgg{}
 	}
-	for _, raw := range data {
+	for i, raw := range data {
 		var s struct {
 			Status string `json:"status"`
 		}
 		if err := json.Unmarshal(raw, &s); err != nil {
-			continue
+			return fmt.Errorf("policy status %d of %d did not decode: %w — compliance would be incomplete", i+1, len(data), err)
 		}
 		switch strings.ToLower(s.Status) {
 		case "applied", "success":
@@ -1088,6 +1105,7 @@ func (d *DashboardScreen) aggregatePolicyStatus(data []json.RawMessage) {
 			d.policyCompliance.Failed++
 		}
 	}
+	return nil
 }
 
 // buildOSBarItems converts an OS count map to sorted BarItems.

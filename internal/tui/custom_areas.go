@@ -262,6 +262,8 @@ func MatchRows(rows []json.RawMessage, term string) []json.RawMessage {
 	for _, r := range rows {
 		var m map[string]any
 		if json.Unmarshal(r, &m) != nil {
+			// An unreadable row cannot be tested, so keep it visible rather than hide it.
+			out = append(out, r)
 			continue
 		}
 		for _, v := range m {

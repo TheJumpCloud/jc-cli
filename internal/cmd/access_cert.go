@@ -66,6 +66,7 @@ func flattenItemUsername(rows []json.RawMessage) []json.RawMessage {
 		out[i] = r
 		var m map[string]json.RawMessage
 		if json.Unmarshal(r, &m) != nil {
+			// Safe: out[i] = r above keeps the row unchanged; only the derived column is missing.
 			continue
 		}
 		var snap struct {

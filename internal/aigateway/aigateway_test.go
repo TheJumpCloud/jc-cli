@@ -152,3 +152,16 @@ func TestFindServerAndFilterByApp(t *testing.T) {
 		t.Errorf("FilterByApp with no match = %v, want an empty non-nil slice", got)
 	}
 }
+
+func TestFindServer_UnreadableRecord(t *testing.T) {
+	servers := []json.RawMessage{json.RawMessage(`{"object_id":5,"name":"Wiki"}`), json.RawMessage(serverA)}
+	if _, err := FindServer(servers, "Wiki"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("want unreadable error, got %v", err)
+	}
+	if s, err := FindServer(servers, "Salesforce"); err != nil || !strings.Contains(string(s), "aaaa") {
+		t.Errorf("readable match must still win: %s %v", s, err)
+	}
+	if _, err := FindServer([]json.RawMessage{json.RawMessage(serverA)}, "nope"); err == nil || strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("plain not-found expected, got %v", err)
+	}
+}

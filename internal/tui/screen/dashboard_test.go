@@ -397,7 +397,10 @@ func TestAggregateUsers(t *testing.T) {
 		json.RawMessage(`{"account_locked":true}`),
 	}
 
-	agg := aggregateUsers(data)
+	agg, err := aggregateUsers(data)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if agg.Total != 4 {
 		t.Errorf("Total = %d, want 4", agg.Total)
 	}
@@ -426,7 +429,10 @@ func TestAggregateDevices(t *testing.T) {
 		json.RawMessage(`{"os":"","lastContact":""}`),
 	}
 
-	agg := aggregateDevices(data, now)
+	agg, err := aggregateDevices(data, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if agg.Total != 3 {
 		t.Errorf("Total = %d, want 3", agg.Total)
 	}
@@ -460,7 +466,10 @@ func TestAggregateDevices_ConnectivityBuckets(t *testing.T) {
 		json.RawMessage(`{"os":"Linux","lastContact":"2025-12-16T12:00:00Z"}`),
 	}
 
-	agg := aggregateDevices(data, now)
+	agg, err := aggregateDevices(data, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if agg.Online != 1 {
 		t.Errorf("Online = %d, want 1", agg.Online)
 	}
@@ -805,3 +814,38 @@ var errTest = &testError{}
 type testError struct{}
 
 func (e *testError) Error() string { return "test error" }
+
+func TestAggregate_UnreadableRecordIsAnError(t *testing.T) {
+	if _, err := aggregateUsers([]json.RawMessage{json.RawMessage(`{"activated":true}`), json.RawMessage(`{"suspended":"yes"}`)}); err == nil || !strings.Contains(err.Error(), "user 2 of 2") {
+		t.Errorf("users: %v", err)
+	}
+	if _, err := aggregateDevices([]json.RawMessage{json.RawMessage(`{"os":5}`)}, time.Now()); err == nil {
+		t.Error("devices: want error")
+	}
+	d := &DashboardScreen{errors: map[string]string{}}
+	if err := d.aggregatePolicyStatus([]json.RawMessage{json.RawMessage(`{"status":{}}`)}); err == nil {
+		t.Error("policy status: want error")
+	}
+	// Absent fields stay a normal record.
+	agg, err := aggregateUsers([]json.RawMessage{json.RawMessage(`{}`)})
+	if err != nil || agg.Total != 1 {
+		t.Errorf("empty record: %v %v", agg, err)
+	}
+}
+
+func TestDashboardScreen_UnreadableUserRecordShowsError(t *testing.T) {
+	d := NewDashboardScreen()
+	d.Init()
+	d.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	d.Update(fetch.ListResultMsg{
+		ResourceKey: wkUserList,
+		Data:        []json.RawMessage{json.RawMessage(`{"activated":true}`), json.RawMessage(`{"suspended":"yes"}`)},
+		Generation:  d.generations[wkUserList],
+	})
+	if d.userAgg != nil {
+		t.Error("counts must not be presented from fewer records")
+	}
+	if !strings.Contains(d.errors[wkUserList], "user 2 of 2") {
+		t.Errorf("error = %q", d.errors[wkUserList])
+	}
+}

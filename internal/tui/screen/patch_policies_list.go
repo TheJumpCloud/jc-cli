@@ -98,7 +98,7 @@ func (s *PatchPoliciesListScreen) loadCmd() tea.Cmd {
 			return loadPatchPoliciesMsg{err: err}
 		}
 		var rows []patchPolicyRow
-		for _, raw := range result.Data {
+		for i, raw := range result.Data {
 			var p struct {
 				ID       string `json:"id"`
 				Name     string `json:"name"`
@@ -107,7 +107,7 @@ func (s *PatchPoliciesListScreen) loadCmd() tea.Cmd {
 				} `json:"template"`
 			}
 			if err := json.Unmarshal(raw, &p); err != nil {
-				continue
+				return loadPatchPoliciesMsg{err: fmt.Errorf("policy %d of %d did not decode: %w — the list would be incomplete", i+1, len(result.Data), err)}
 			}
 			os, ok := patchPolicyTemplates[p.Template.Name]
 			if !ok {
