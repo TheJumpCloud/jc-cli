@@ -2711,3 +2711,41 @@ func TestGroupsRemoveMember_HelpShowsFlags(t *testing.T) {
 		t.Errorf("help missing --all: %s", out)
 	}
 }
+
+// A group that does not decode may still hold the user: the command must fail
+// and say so, while still reporting the groups it did remove.
+func TestGroupsRemoveMember_AllGroupsUnreadableRecord(t *testing.T) {
+	setupUsersTest(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/usergroups" && r.Method == http.MethodGet:
+			w.Write([]byte(`[{"id":"aabbccddee112233aabb0001","name":"Eng"},{"id":123,"name":"Broken"}]`))
+		case r.URL.Path == "/systemusers" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"results": membershipSampleUsers(), "totalCount": 2})
+		case strings.HasSuffix(r.URL.Path, "/members") && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+	overrideV1Client(t, ts.URL)
+	overrideV2Client(t, ts.URL)
+
+	cmd := NewRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"groups", "remove-member", "--all", "--user", "jdoe"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "could not check 1 of 2 groups") || !strings.Contains(err.Error(), "may still be a member") {
+		t.Fatalf("want unreadable-groups error, got %v", err)
+	}
+	if !strings.Contains(buf.String(), `from group "Eng"`) {
+		t.Errorf("removed group not reported: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "not a member of any groups") {
+		t.Errorf("must not claim non-membership: %s", buf.String())
+	}
+}

@@ -1,6 +1,7 @@
 package version
 
 import (
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -56,5 +57,31 @@ func TestDescribe_DirtyIsNotHidden(t *testing.T) {
 func TestDescribe_IsStable(t *testing.T) {
 	if a, b := Describe(), Describe(); a != b {
 		t.Errorf("Describe is not stable: %q then %q", a, b)
+	}
+}
+
+func TestParseVCS(t *testing.T) {
+	rev := strings.Repeat("b", 40)
+	got, dirty, ok := parseVCS([]debug.BuildSetting{
+		{Key: "vcs.revision", Value: rev},
+		{Key: "vcs.modified", Value: "true"},
+	})
+	if got != rev || !dirty || !ok {
+		t.Errorf("parseVCS = %q,%v,%v", got, dirty, ok)
+	}
+	got, dirty, ok = parseVCS([]debug.BuildSetting{{Key: "vcs.revision", Value: rev}, {Key: "vcs.modified", Value: "false"}})
+	if got != rev || dirty || !ok {
+		t.Errorf("clean parseVCS = %q,%v,%v", got, dirty, ok)
+	}
+	if got, dirty, ok := parseVCS(nil); got != "" || dirty || ok {
+		t.Errorf("absent parseVCS = %q,%v,%v", got, dirty, ok)
+	}
+}
+
+func TestCommitMatchesVCS(t *testing.T) {
+	r1, d1, ok1 := Commit()
+	r2, d2, ok2 := vcs()
+	if r1 != r2 || d1 != d2 || ok1 != ok2 {
+		t.Error("Commit() should mirror vcs()")
 	}
 }

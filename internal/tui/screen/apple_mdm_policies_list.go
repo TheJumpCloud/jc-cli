@@ -120,7 +120,7 @@ func (s *AppleMDMPoliciesListScreen) loadCmd() tea.Cmd {
 			return loadPoliciesMsg{err: err}
 		}
 		rows := make([]policyRow, 0, len(result.Data))
-		for _, raw := range result.Data {
+		for i, raw := range result.Data {
 			var p struct {
 				ID       string `json:"id"`
 				Name     string `json:"name"`
@@ -129,7 +129,7 @@ func (s *AppleMDMPoliciesListScreen) loadCmd() tea.Cmd {
 				} `json:"template"`
 			}
 			if err := json.Unmarshal(raw, &p); err != nil {
-				continue
+				return loadPoliciesMsg{err: fmt.Errorf("policy %d of %d did not decode: %w — the list would be incomplete", i+1, len(result.Data), err)}
 			}
 			if !strings.HasPrefix(p.Template.Name, customMDMTemplateFamilyPrefix) {
 				continue

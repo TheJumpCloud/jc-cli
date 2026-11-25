@@ -732,10 +732,10 @@ func applyJMESPathSingleAndWrite(w io.Writer, data json.RawMessage, opts Options
 // --- IDs formatter ---
 
 func writeIDs(w io.Writer, data []json.RawMessage) error {
-	for _, raw := range data {
+	for i, raw := range data {
 		var m map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &m); err != nil {
-			continue
+			return fmt.Errorf("--ids: row %d of %d did not decode: %w — its ID cannot be listed and a script would act on fewer objects", i+1, len(data), err)
 		}
 		// Look for "id", "_id", "ID", or "objectId" (V2 service accounts,
 		// password policies, and other resources key on objectId), then

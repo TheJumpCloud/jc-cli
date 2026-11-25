@@ -130,6 +130,7 @@ func userRecipeFile(name string) string {
 		path := filepath.Join(dir, e.Name())
 		r, err := recipe.ParseFile(path)
 		if err != nil {
+			// Safe: the selected recipe was loaded from a file that parsed, so a file that doesn't parse cannot be it.
 			continue
 		}
 		if r.Name == name {
